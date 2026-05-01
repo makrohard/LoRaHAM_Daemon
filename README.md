@@ -1,9 +1,8 @@
 ![LoRaHAM_Pi](https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_logo.png?raw=true)
 
-# LoRaHAM_Daemon (english)
+# LoRaHAM_Daemon (english) - Device Driver
 
-LoRaHAM_Daemon is a Raspberry Pi software driver for the hardware upgrade project LoRaHAM_Pi and LoRaHAM Cartridge for 
-radio amateurs to enable LoRa with high transmission power and thus long range on a single board computer.
+LoRaHAM_Daemon is Raspberry Pi software for the LoRaHAM_Pi hardware upgrade project and LoRaHAM modules for amateur radio operators, enabling high-power LoRa operation with long range on a single-board computer. The daemon is a device driver that allows users (without any hardware programming knowledge) to easily operate the system.
 
 First code for the LoRaHAM Pi hardware | https://www.loraham.de/produkt/loraham-pi/
 
@@ -165,9 +164,9 @@ This project is licensed under **GNU GPL v3** with additional commercial restric
 
 ![LoRaHAM_Pi](https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_logo.png?raw=true)
 
-# LoRaHAM_Daemon (deutsch)
+# LoRaHAM_Daemon (deutsch) - Gerätetreiber
 
-LoRaHAM_Daemon ist eine Raspberry Pi Software für das Hardware-Upgrade-Projekt LoRaHAM_Pi und LoRaHAM Cartridge für Funkamateure, um LoRa mit hoher Sendeleistung und somit großer Reichweite auf einem Einplatinencomputer zu ermöglichen.
+LoRaHAM_Daemon ist eine Raspberry Pi Software für das Hardware-Upgrade-Projekt LoRaHAM_Pi und LoRaHAM Cartridge für Funkamateure, um LoRa mit hoher Sendeleistung und somit großer Reichweite auf einem Einplatinencomputer zu ermöglichen. Der Daemon ist ein Gerätetreiber, mit dem ein Nutzer (ohne Programmierkenntnisse der Hardware) diese einfach nutzen kann.
 
 Erster Code für die LoRaHAM Pi Hardware | https://www.loraham.de/produkt/loraham-pi/
 
