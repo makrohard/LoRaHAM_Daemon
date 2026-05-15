@@ -2,6 +2,7 @@
 #include "config.h"
 #include "kiss.h"
 #include "loraham_kiss_tnc.h"
+#include "loraham_sock.h"
 #include "tcp_server.h"
 #include "tnc2.h"
 
@@ -324,6 +325,32 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
     }
 
     printf("[TNC2] %s\n", tnc2);
+
+    {
+        uint8_t lora_pkt[LHKT_LORAHAM_TX_MAX];
+        size_t lora_len = 0;
+
+        ret = loraham_build_aprs_packet(tnc2,
+                                        lora_pkt,
+                                        sizeof(lora_pkt),
+                                        &lora_len);
+        if (ret != LHKT_OK) {
+            if (stats) {
+                stats->loraham_drop++;
+
+                if (ret == LHKT_ERR_LONG) {
+                    stats->tx_drop_oversize++;
+                }
+            }
+
+            printf("[LoRaHAM] TX dry-run drop: err=%d tnc2_len=%zu\n",
+                   ret,
+                   tnc2_len);
+            return ret;
+        }
+
+        printf("[LoRaHAM] TX dry-run packet len=%zu\n", lora_len);
+    }
 
     return LHKT_OK;
 }
