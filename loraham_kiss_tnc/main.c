@@ -1,16 +1,19 @@
 #include "config.h"
 #include "loraham_kiss_tnc.h"
+#include "tcp_server.h"
 
 #include <errno.h>
 #include <getopt.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /*
  * Main program skeleton.
- * This step handles defaults, config file loading and CLI overrides.
- * The TCP/KISS event loop follows later.
+ * This step handles defaults, config file loading, CLI overrides
+ * and a one-client TCP/KISS listener.
  */
 
 static void print_usage(const char *prog)
@@ -271,6 +274,73 @@ static void print_config(const lhkt_config_t *cfg)
            cfg->power);
 }
 
+/*
+ * Temporary TCP skeleton:
+ * Accept one client and read bytes until the client disconnects.
+ * KISS decoding and LoRaHAM socket handling follow in the next step.
+ */
+static int run_tcp_skeleton(const lhkt_config_t *cfg, lhkt_stats_t *stats)
+{
+    int listen_fd;
+    int client_fd;
+    char peer[64];
+    uint8_t buf[512];
+    ssize_t n;
+
+    listen_fd = lhkt_tcp_server_listen(cfg->kiss_host, cfg->kiss_port);
+    if (listen_fd < 0) {
+        fprintf(stderr, "[ERR] KISS/TCP listen failed on %s:%d\n",
+                cfg->kiss_host,
+                cfg->kiss_port);
+        return 1;
+    }
+
+    printf("[KISS] Listening on %s:%d\n", cfg->kiss_host, cfg->kiss_port);
+    printf("[KISS] Waiting for one client...\n");
+
+    client_fd = lhkt_tcp_server_accept(listen_fd, peer, sizeof(peer));
+    if (client_fd < 0) {
+        fprintf(stderr, "[ERR] KISS/TCP accept failed\n");
+        lhkt_tcp_server_close(listen_fd);
+        return 1;
+    }
+
+    printf("[KISS] Client connected: %s\n", peer);
+
+    for (;;) {
+        n = read(client_fd, buf, sizeof(buf));
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            fprintf(stderr, "[ERR] KISS/TCP read failed\n");
+            break;
+        }
+
+        if (n == 0) {
+            printf("[KISS] Client disconnected\n");
+            if (stats) {
+                stats->client_disconnects++;
+            }
+            break;
+        }
+
+        if (stats) {
+            stats->kiss_rx++;
+        }
+
+        if (cfg->verbose) {
+            printf("[KISS] %zd bytes received\n", n);
+        }
+    }
+
+    lhkt_tcp_server_close(client_fd);
+    lhkt_tcp_server_close(listen_fd);
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     lhkt_config_t cfg;
@@ -302,9 +372,11 @@ int main(int argc, char **argv)
     printf("[Init] LoRaHAM KISS TNC bridge\n");
     print_config(&cfg);
 
-    printf("[Init] Skeleton OK - main loop follows later\n");
+    ret = run_tcp_skeleton(&cfg, &stats);
 
-    (void)stats;
+    if (cfg.stats_interval > 0 || cfg.verbose) {
+        lhkt_stats_print(&stats);
+    }
 
-    return 0;
+    return ret;
 }
