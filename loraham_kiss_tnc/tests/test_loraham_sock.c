@@ -104,6 +104,115 @@ static void test_extract_flush_without_newline(void)
     assert(strcmp(out, "DJ0CHE-10>APRS:hi") == 0);
 }
 
+
+static void test_extract_two_packets_one_buffer(void)
+{
+    loraham_rx_state_t state;
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+
+    const uint8_t data[] = {
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, LORAHAM_APRS_HDR2,
+        'A','>','B',':','1','\n',
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, LORAHAM_APRS_HDR2,
+        'C','>','D',':','2','\n'
+    };
+
+    loraham_rx_state_init(&state);
+
+    assert(loraham_extract_tnc2(&state, data, sizeof(data), out, sizeof(out), &out_len) == 1);
+    assert(strcmp(out, "A>B:1") == 0);
+
+    assert(loraham_extract_tnc2(&state, NULL, 0, out, sizeof(out), &out_len) == 1);
+    assert(strcmp(out, "C>D:2") == 0);
+}
+
+static void test_extract_split_payload(void)
+{
+    loraham_rx_state_t state;
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+
+    const uint8_t part1[] = {
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, LORAHAM_APRS_HDR2,
+        'A','>','B'
+    };
+
+    const uint8_t part2[] = {
+        ':','C','\n'
+    };
+
+    loraham_rx_state_init(&state);
+
+    assert(loraham_extract_tnc2(&state, part1, sizeof(part1), out, sizeof(out), &out_len) == 0);
+    assert(out_len == 0);
+
+    assert(loraham_extract_tnc2(&state, part2, sizeof(part2), out, sizeof(out), &out_len) == 1);
+    assert(strcmp(out, "A>B:C") == 0);
+}
+
+static void test_extract_noise_before_header(void)
+{
+    loraham_rx_state_t state;
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+
+    const uint8_t data[] = {
+        'n','o','i','s','e',
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, LORAHAM_APRS_HDR2,
+        'A','>','B',':','C','\n'
+    };
+
+    loraham_rx_state_init(&state);
+
+    assert(loraham_extract_tnc2(&state, data, sizeof(data), out, sizeof(out), &out_len) == 1);
+    assert(strcmp(out, "A>B:C") == 0);
+}
+
+static void test_extract_invalid_header_recovery(void)
+{
+    loraham_rx_state_t state;
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+
+    const uint8_t data[] = {
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, 0x02,
+        'x','x',
+        LORAHAM_APRS_HDR0, LORAHAM_APRS_HDR1, LORAHAM_APRS_HDR2,
+        'A','>','B',':','C','\n'
+    };
+
+    loraham_rx_state_init(&state);
+
+    assert(loraham_extract_tnc2(&state, data, sizeof(data), out, sizeof(out), &out_len) == 1);
+    assert(strcmp(out, "A>B:C") == 0);
+}
+
+static void test_extract_oversized_rx_packet(void)
+{
+    loraham_rx_state_t state;
+    uint8_t data[LHKT_LORAHAM_HDR_LEN + LHKT_TNC2_MAX_LINE];
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+    size_t i;
+
+    data[0] = LORAHAM_APRS_HDR0;
+    data[1] = LORAHAM_APRS_HDR1;
+    data[2] = LORAHAM_APRS_HDR2;
+
+    for (i = 0; i < LHKT_TNC2_MAX_LINE; i++) {
+        data[LHKT_LORAHAM_HDR_LEN + i] = 'A';
+    }
+
+    loraham_rx_state_init(&state);
+
+    assert(loraham_extract_tnc2(&state, data, sizeof(data), out, sizeof(out), &out_len) == LHKT_ERR_LONG);
+    assert(out_len == 0);
+
+    assert(loraham_extract_tnc2(&state, NULL, 0, out, sizeof(out), &out_len) == 0);
+}
+
+
 static void test_ignore_noise_without_header(void)
 {
     loraham_rx_state_t state;
@@ -125,6 +234,11 @@ int main(void)
     test_extract_with_newline();
     test_extract_split_header();
     test_extract_flush_without_newline();
+    test_extract_two_packets_one_buffer();
+    test_extract_split_payload();
+    test_extract_noise_before_header();
+    test_extract_invalid_header_recovery();
+    test_extract_oversized_rx_packet();
     test_ignore_noise_without_header();
 
     puts("test_loraham_sock: OK");

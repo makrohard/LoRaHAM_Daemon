@@ -136,21 +136,109 @@ int loraham_build_aprs_packet(const char *tnc2,
     return LHKT_OK;
 }
 
+
+static uint8_t loraham_hdr_byte(size_t pos)
+{
+    static const uint8_t hdr[LHKT_LORAHAM_HDR_LEN] = {
+        LORAHAM_APRS_HDR0,
+        LORAHAM_APRS_HDR1,
+        LORAHAM_APRS_HDR2
+    };
+
+    return hdr[pos];
+}
+
+static void loraham_rx_packet_clear(loraham_rx_state_t *state)
+{
+    if (!state) {
+        return;
+    }
+
+    state->len = 0;
+    state->seen_header = 0;
+    state->hdr_len = 0;
+}
+
+static void loraham_pending_consume(loraham_rx_state_t *state, size_t len)
+{
+    if (!state || len == 0) {
+        return;
+    }
+
+    if (len >= state->pending_len) {
+        state->pending_len = 0;
+        return;
+    }
+
+    memmove(state->pending,
+            state->pending + len,
+            state->pending_len - len);
+    state->pending_len -= len;
+}
+
+static int loraham_append_payload(loraham_rx_state_t *state, uint8_t b)
+{
+    if (!state) {
+        return LHKT_ERR;
+    }
+
+    if (state->len >= sizeof(state->buf) - 1) {
+        return LHKT_ERR_LONG;
+    }
+
+    state->buf[state->len++] = b;
+    return LHKT_OK;
+}
+
+static int loraham_append_hdr_prefix(loraham_rx_state_t *state)
+{
+    size_t i;
+    int ret;
+
+    for (i = 0; i < state->hdr_len; i++) {
+        ret = loraham_append_payload(state, loraham_hdr_byte(i));
+        if (ret != LHKT_OK) {
+            return ret;
+        }
+    }
+
+    state->hdr_len = 0;
+    return LHKT_OK;
+}
+
+
 static int loraham_emit_tnc2(loraham_rx_state_t *state,
                              char *tnc2_out,
                              size_t tnc2_size,
-                             size_t *tnc2_len)
+                             size_t *tnc2_len,
+                             int flush_partial_header,
+                             int keep_header_seen)
 {
+    int ret;
+
     if (!state || !tnc2_out || !tnc2_len || tnc2_size == 0) {
         return LHKT_ERR;
     }
 
-    if (state->len == 0) {
+    if (flush_partial_header && state->seen_header && state->hdr_len > 0) {
+        ret = loraham_append_hdr_prefix(state);
+        if (ret != LHKT_OK) {
+            loraham_rx_state_init(state);
+            *tnc2_len = 0;
+            return ret;
+        }
+    }
+
+    if (!state->seen_header || state->len == 0) {
+        state->hdr_len = 0;
+        if (!keep_header_seen && state->len == 0) {
+            state->seen_header = 0;
+        }
         return 0;
     }
 
     if (state->len >= tnc2_size) {
-        loraham_rx_state_init(state);
+        loraham_rx_packet_clear(state);
         *tnc2_len = 0;
         return LHKT_ERR_NOSPACE;
     }
@@ -159,7 +247,10 @@ static int loraham_emit_tnc2(loraham_rx_state_t *state,
     tnc2_out[state->len] = '\0';
     *tnc2_len = state->len;
 
-    loraham_rx_state_init(state);
+    state->len = 0;
+    state->hdr_len = 0;
+    state->seen_header = keep_header_seen ? 1 : 0;
+
     return 1;
 }
 
@@ -167,6 +258,7 @@ static int loraham_emit_tnc2(loraham_rx_state_t *state,
  * Search for 0x3c 0xff 0x01 before accepting text.
  * data_len == 0 flushes a pending packet without CR/LF.
  */
+
 int loraham_extract_tnc2(loraham_rx_state_t *state,
                          const uint8_t *data,
                          size_t data_len,
@@ -174,8 +266,8 @@ int loraham_extract_tnc2(loraham_rx_state_t *state,
                          size_t tnc2_size,
                          size_t *tnc2_len)
 {
-    size_t i;
     uint8_t b;
+    int ret;
 
     if (!state || !tnc2_out || !tnc2_len) {
         return LHKT_ERR;
@@ -183,63 +275,99 @@ int loraham_extract_tnc2(loraham_rx_state_t *state,
 
     *tnc2_len = 0;
 
-    if (data_len == 0) {
-        return loraham_emit_tnc2(state, tnc2_out, tnc2_size, tnc2_len);
-    }
-
-    if (!data) {
+    if (data_len > 0 && !data) {
         return LHKT_ERR;
     }
 
-    for (i = 0; i < data_len; i++) {
-        b = data[i];
-
-        if (!state->seen_header) {
-            if (state->len == 0) {
-                if (b == LORAHAM_APRS_HDR0) {
-                    state->buf[0] = b;
-                    state->len = 1;
-                }
-                continue;
-            }
-
-            if (state->len == 1) {
-                if (b == LORAHAM_APRS_HDR1) {
-                    state->buf[1] = b;
-                    state->len = 2;
-                } else if (b == LORAHAM_APRS_HDR0) {
-                    state->buf[0] = b;
-                    state->len = 1;
-                } else {
-                    state->len = 0;
-                }
-                continue;
-            }
-
-            if (state->len == 2) {
-                if (b == LORAHAM_APRS_HDR2) {
-                    state->seen_header = 1;
-                    state->len = 0;
-                } else if (b == LORAHAM_APRS_HDR0) {
-                    state->buf[0] = b;
-                    state->len = 1;
-                } else {
-                    state->len = 0;
-                }
-                continue;
-            }
-        }
-
-        if (b == '\r' || b == '\n') {
-            return loraham_emit_tnc2(state, tnc2_out, tnc2_size, tnc2_len);
-        }
-
-        if (state->len >= sizeof(state->buf) - 1) {
+    if (data_len > 0) {
+        if (data_len > sizeof(state->pending) - state->pending_len) {
             loraham_rx_state_init(state);
             return LHKT_ERR_LONG;
         }
 
-        state->buf[state->len++] = b;
+        memcpy(state->pending + state->pending_len, data, data_len);
+        state->pending_len += data_len;
+    }
+
+    while (state->pending_len > 0) {
+        b = state->pending[0];
+        loraham_pending_consume(state, 1);
+
+        if (!state->seen_header) {
+            if (b == loraham_hdr_byte(state->hdr_len)) {
+                state->hdr_len++;
+                if (state->hdr_len == LHKT_LORAHAM_HDR_LEN) {
+                    state->seen_header = 1;
+                    state->len = 0;
+                    state->hdr_len = 0;
+                }
+            } else if (b == LORAHAM_APRS_HDR0) {
+                state->hdr_len = 1;
+            } else {
+                state->hdr_len = 0;
+            }
+
+            continue;
+        }
+
+        if (state->hdr_len > 0) {
+            if (b == loraham_hdr_byte(state->hdr_len)) {
+                state->hdr_len++;
+                if (state->hdr_len == LHKT_LORAHAM_HDR_LEN) {
+                    ret = loraham_emit_tnc2(state,
+                                            tnc2_out,
+                                            tnc2_size,
+                                            tnc2_len,
+                                            0,
+                                            1);
+                    if (ret != 0) {
+                        return ret;
+                    }
+                }
+
+                continue;
+            }
+
+            ret = loraham_append_hdr_prefix(state);
+            if (ret != LHKT_OK) {
+                loraham_rx_state_init(state);
+                return ret;
+            }
+        }
+
+        if (b == '\r' || b == '\n') {
+            ret = loraham_emit_tnc2(state,
+                                    tnc2_out,
+                                    tnc2_size,
+                                    tnc2_len,
+                                    1,
+                                    0);
+            if (ret != 0) {
+                return ret;
+            }
+
+            continue;
+        }
+
+        if (b == LORAHAM_APRS_HDR0) {
+            state->hdr_len = 1;
+            continue;
+        }
+
+        ret = loraham_append_payload(state, b);
+        if (ret != LHKT_OK) {
+            loraham_rx_state_init(state);
+            return ret;
+        }
+    }
+
+    if (data_len == 0) {
+        return loraham_emit_tnc2(state,
+                                 tnc2_out,
+                                 tnc2_size,
+                                 tnc2_len,
+                                 1,
+                                 0);
     }
 
     return 0;

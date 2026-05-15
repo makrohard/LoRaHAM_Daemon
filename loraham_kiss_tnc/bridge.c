@@ -242,37 +242,10 @@ static int handle_loraham_rx_chunk(int client_fd,
     size_t tnc2_len;
     int ret;
 
-    ret = loraham_extract_tnc2(rx_state,
-                               buf,
-                               len,
-                               tnc2,
-                               sizeof(tnc2),
-                               &tnc2_len);
-    if (ret == 1) {
-        if (stats) {
-            stats->loraham_rx++;
-        }
-
-        return send_tnc2_to_kiss_client(client_fd, tnc2, stats);
-    }
-
-    if (ret < 0) {
-        if (stats) {
-            stats->loraham_drop++;
-        }
-
-        printf("[LoRaHAM] RX drop: err=%d\n", ret);
-        return ret;
-    }
-
-    /*
-     * The current daemon commonly writes raw packets without newline.
-     * For small Unix-socket reads this usually flushes one complete packet.
-     */
-    if (rx_state->seen_header) {
+    for (;;) {
         ret = loraham_extract_tnc2(rx_state,
-                                   NULL,
-                                   0,
+                                   buf,
+                                   len,
                                    tnc2,
                                    sizeof(tnc2),
                                    &tnc2_len);
@@ -281,7 +254,10 @@ static int handle_loraham_rx_chunk(int client_fd,
                 stats->loraham_rx++;
             }
 
-            return send_tnc2_to_kiss_client(client_fd, tnc2, stats);
+            ret = send_tnc2_to_kiss_client(client_fd, tnc2, stats);
+            if (ret != LHKT_OK) {
+                return ret;
+            }
         }
 
         if (ret < 0) {
@@ -289,9 +265,20 @@ static int handle_loraham_rx_chunk(int client_fd,
                 stats->loraham_drop++;
             }
 
-            printf("[LoRaHAM] RX flush drop: err=%d\n", ret);
+            printf("[LoRaHAM] RX drop: err=%d\n", ret);
             return ret;
         }
+
+        /*
+         * Drain queued packets. A zero-length call also flushes
+         * one packet without CR/LF.
+         */
+        if (!buf) {
+            break;
+        }
+
+        buf = NULL;
+        len = 0;
     }
 
     return LHKT_OK;

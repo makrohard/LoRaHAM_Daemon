@@ -13,11 +13,15 @@ extern "C" {
 #define LORAHAM_APRS_HDR0 0x3c
 #define LORAHAM_APRS_HDR1 0xff
 #define LORAHAM_APRS_HDR2 0x01
+#define LHKT_LORAHAM_RX_PENDING 1024
 
 typedef struct {
     uint8_t buf[LHKT_TNC2_MAX_LINE];
     size_t len;
     int seen_header;
+    size_t hdr_len;
+    uint8_t pending[LHKT_LORAHAM_RX_PENDING];
+    size_t pending_len;
 } loraham_rx_state_t;
 
 void loraham_rx_state_init(loraham_rx_state_t *state);
