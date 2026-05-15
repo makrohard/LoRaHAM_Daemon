@@ -232,7 +232,6 @@ static int send_tnc2_to_kiss_client(int client_fd,
     return LHKT_OK;
 }
 
-
 #ifdef LHKT_TEST
 int lhkt_test_send_tnc2_to_kiss_client(int client_fd,
                                        const char *tnc2,
@@ -341,7 +340,8 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
 
     data_fd = loraham_sock_connect(cfg->data_socket);
     if (data_fd < 0) {
-        fprintf(stderr, "[ERR] LoRaHAM data socket connect failed: %s\n",
+        fprintf(stderr,
+                "[ERR] LoRaHAM data socket connect failed: %s\n",
                 cfg->data_socket);
         return 1;
     }
@@ -362,24 +362,24 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     }
 
     printf("[KISS] Listening on %s:%d\n", cfg->kiss_host, cfg->kiss_port);
-    printf("[KISS] Waiting for one client...\n");
-
-    client_fd = lhkt_tcp_server_accept(listen_fd, peer, sizeof(peer));
-    if (client_fd < 0) {
-        fprintf(stderr, "[ERR] KISS/TCP accept failed\n");
-        lhkt_tcp_server_close(listen_fd);
-        lhkt_tcp_server_close(data_fd);
-        return 1;
-    }
-
-    printf("[KISS] Client connected: %s\n", peer);
+    printf("[KISS] Waiting for client...\n");
 
     for (;;) {
         FD_ZERO(&rfds);
-        FD_SET(client_fd, &rfds);
         FD_SET(data_fd, &rfds);
+        max_fd = data_fd;
 
-        max_fd = client_fd > data_fd ? client_fd : data_fd;
+        if (client_fd >= 0) {
+            FD_SET(client_fd, &rfds);
+            if (client_fd > max_fd) {
+                max_fd = client_fd;
+            }
+        } else {
+            FD_SET(listen_fd, &rfds);
+            if (listen_fd > max_fd) {
+                max_fd = listen_fd;
+            }
+        }
 
         ret = select(max_fd + 1, &rfds, NULL, NULL, NULL);
         if (ret < 0) {
@@ -391,7 +391,24 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
             break;
         }
 
-        if (FD_ISSET(client_fd, &rfds)) {
+        if (client_fd < 0 && FD_ISSET(listen_fd, &rfds)) {
+            client_fd = lhkt_tcp_server_accept(listen_fd, peer, sizeof(peer));
+            if (client_fd < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+
+                fprintf(stderr, "[ERR] KISS/TCP accept failed\n");
+                continue;
+            }
+
+            kiss_decoder_init(&kiss_dec);
+            kiss_params_init(&kiss_params);
+
+            printf("[KISS] Client connected: %s\n", peer);
+        }
+
+        if (client_fd >= 0 && FD_ISSET(client_fd, &rfds)) {
             n = read(client_fd, buf, sizeof(buf));
             if (n < 0) {
                 if (errno == EINTR) {
@@ -399,7 +416,12 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 }
 
                 fprintf(stderr, "[ERR] KISS/TCP read failed\n");
-                break;
+                lhkt_tcp_server_close(client_fd);
+                client_fd = -1;
+                kiss_decoder_init(&kiss_dec);
+                kiss_params_init(&kiss_params);
+                printf("[KISS] Waiting for client...\n");
+                continue;
             }
 
             if (n == 0) {
@@ -407,7 +429,13 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 if (stats) {
                     stats->client_disconnects++;
                 }
-                break;
+
+                lhkt_tcp_server_close(client_fd);
+                client_fd = -1;
+                kiss_decoder_init(&kiss_dec);
+                kiss_params_init(&kiss_params);
+                printf("[KISS] Waiting for client...\n");
+                continue;
             }
 
             if (cfg->verbose) {
@@ -470,11 +498,36 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 printf("[LoRaHAM] %zd bytes received\n", n);
             }
 
-            handle_loraham_rx_chunk(client_fd, &lora_rx, buf, (size_t)n, stats);
+            if (client_fd < 0) {
+                loraham_rx_state_init(&lora_rx);
+                if (stats) {
+                    stats->loraham_drop++;
+                }
+
+                if (cfg->verbose) {
+                    printf("[LoRaHAM] RX drop: no KISS client\n");
+                }
+            } else {
+                ret = handle_loraham_rx_chunk(client_fd,
+                                              &lora_rx,
+                                              buf,
+                                              (size_t)n,
+                                              stats);
+                if (ret == LHKT_ERR) {
+                    printf("[KISS] Client write failed, disconnecting\n");
+                    lhkt_tcp_server_close(client_fd);
+                    client_fd = -1;
+                    kiss_decoder_init(&kiss_dec);
+                    kiss_params_init(&kiss_params);
+                    printf("[KISS] Waiting for client...\n");
+                }
+            }
         }
     }
 
-    lhkt_tcp_server_close(client_fd);
+    if (client_fd >= 0) {
+        lhkt_tcp_server_close(client_fd);
+    }
     lhkt_tcp_server_close(listen_fd);
     lhkt_tcp_server_close(data_fd);
 
