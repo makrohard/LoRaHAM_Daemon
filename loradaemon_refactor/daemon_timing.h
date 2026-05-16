@@ -9,4 +9,8 @@
 
 #define DAEMON_RSSI_TICK_INTERVAL 10
 
+/* --- Counter-based tick helper --- */
+
+int daemon_tick_due(int *counter, int interval);
+
 #endif

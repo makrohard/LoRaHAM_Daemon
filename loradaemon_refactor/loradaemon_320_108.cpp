@@ -1900,9 +1900,7 @@ int main(int argc, char *argv[]) {
                         }
 
                         // --- RSSI tick ---
-                        rssi_tick_counter++;
-                        if(rssi_tick_counter >= DAEMON_RSSI_TICK_INTERVAL) {
-                            rssi_tick_counter = 0;
+                        if(daemon_tick_due(&rssi_tick_counter, DAEMON_RSSI_TICK_INTERVAL)) {
 
                             // 433: nur lesen wenn aktiv und kein TX laeuft
                             if(getrssi_433_active && !txBusy433) {
