@@ -161,6 +161,8 @@ int client_conf868[MAX_CLIENTS] = {0};
 
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
+RadioChannelRuntime runtime_433;
+RadioChannelRuntime runtime_868;
 
 // --- Pin-Setup für LED
 #define PIN_433 13
@@ -1330,6 +1332,19 @@ int main(int argc, char *argv[]) {
     radio_channel_open_sockets(&channel_433);
     radio_channel_open_sockets(&channel_868);
 
+    radio_channel_runtime_init(&runtime_433,
+                               &mode_433,
+                               &receivedFlag433,
+                               &txBusy433,
+                               &cad433_active,
+                               &getrssi_433_active);
+    radio_channel_runtime_init(&runtime_868,
+                               &mode_868,
+                               &receivedFlag868,
+                               &txBusy868,
+                               &cad868_active,
+                               &getrssi_868_active);
+
     LED_init();
     lora_init();
 
@@ -1906,16 +1921,8 @@ int main(int argc, char *argv[]) {
 
                         // --- Auto-Stop: Pruefe ob noch ein Conf-Client verbunden ist ---
                         {
-                            if(!client_set_has_clients(client_conf433, MAX_CLIENTS) && getrssi_433_active) {
-                                getrssi_433_active = false;
-                                printf("[CONF 433] kein Client mehr verbunden -> GETRSSI auto-stop\n");
-                                fflush(stdout);
-                            }
-                            if(!client_set_has_clients(client_conf868, MAX_CLIENTS) && getrssi_868_active) {
-                                getrssi_868_active = false;
-                                printf("[CONF 868] kein Client mehr verbunden -> GETRSSI auto-stop\n");
-                                fflush(stdout);
-                            }
+                            radio_channel_getrssi_autostop(&channel_433, &runtime_433, "CONF 433");
+                            radio_channel_getrssi_autostop(&channel_868, &runtime_868, "CONF 868");
                         }
 
                         // --- 10-Hz-Tick: select-Timeout = 10ms, alle 10 Loops = 100ms ---
