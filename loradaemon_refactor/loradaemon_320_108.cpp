@@ -1362,25 +1362,25 @@ int main(int argc, char *argv[]) {
         if(ret<0){perror("select"); continue;}
 
         // --- Neue DATA Clients ---
-        if(FD_ISSET(data433_fd,&readfds)){
+        if(event_loop_select_ready_fd(&readfds, data433_fd)){
             int new_fd=accept(data433_fd,NULL,NULL);
             if(new_fd>=0){client_set_add(client_data433, MAX_CLIENTS, new_fd);} /*printf("Neuer DATA433-Client verbunden.\n");*/ }
-            if(FD_ISSET(data868_fd,&readfds)){
+            if(event_loop_select_ready_fd(&readfds, data868_fd)){
                 int new_fd=accept(data868_fd,NULL,NULL);
                 if(new_fd>=0){client_set_add(client_data868, MAX_CLIENTS, new_fd);} /*printf("Neuer DATA868-Client verbunden.\n");*/ }
 
                 // --- Neue CONFIG Clients ---
-                if(FD_ISSET(conf433_fd,&readfds)){
+                if(event_loop_select_ready_fd(&readfds, conf433_fd)){
                     int new_fd=accept(conf433_fd,NULL,NULL);
                     if(new_fd>=0){client_set_add(client_conf433, MAX_CLIENTS, new_fd);} /*printf("Neuer CONF433-Client verbunden.\n");*/ }
-                    if(FD_ISSET(conf868_fd,&readfds)){
+                    if(event_loop_select_ready_fd(&readfds, conf868_fd)){
                         int new_fd=accept(conf868_fd,NULL,NULL);
                         if(new_fd>=0){client_set_add(client_conf868, MAX_CLIENTS, new_fd);} /*printf("Neuer CONF868-Client verbunden.\n");*/ }
 
 
                         // --- DATA433-Clients bearbeiten ---
                         for(int i=0;i<MAX_CLIENTS;i++){
-                            if(client_data433[i] > 0 && FD_ISSET(client_data433[i], &readfds)) {
+                            if(client_data433[i] > 0 && event_loop_select_ready_fd(&readfds, client_data433[i])) {
                                 uint8_t large_buf[2048]; // Großer Puffer für den Socket-Eingang
                                 ssize_t n = read(client_data433[i], large_buf, sizeof(large_buf));
 
@@ -1469,7 +1469,7 @@ int main(int argc, char *argv[]) {
                         // --- DATA868-Clients bearbeiten ---
                         for(int i=0;i<MAX_CLIENTS;i++){
 
-                            if(client_data868[i] > 0 && FD_ISSET(client_data868[i], &readfds)) {
+                            if(client_data868[i] > 0 && event_loop_select_ready_fd(&readfds, client_data868[i])) {
                                 uint8_t large_buf[2048]; // Großer Puffer für den Socket-Eingang
                                 ssize_t n = read(client_data868[i], large_buf, sizeof(large_buf));
 
@@ -1558,7 +1558,7 @@ int main(int argc, char *argv[]) {
                         // --- CONFIG Clients bearbeiten ---
                         // parse_config kann hier eingefügt werden
                         for(int i=0;i<MAX_CLIENTS;i++){
-                            if(client_conf433[i]>0 && FD_ISSET(client_conf433[i],&readfds)){
+                            if(client_conf433[i]>0 && event_loop_select_ready_fd(&readfds, client_conf433[i])){
                                 ssize_t n = read(client_conf433[i],buf,buf_SIZE-1);
                                 if(n<=0){
                                     client_set_close_slot(client_conf433, i);
@@ -1581,7 +1581,7 @@ int main(int argc, char *argv[]) {
                                      */
                                 }
                             }
-                            if(client_conf868[i]>0 && FD_ISSET(client_conf868[i],&readfds)){
+                            if(client_conf868[i]>0 && event_loop_select_ready_fd(&readfds, client_conf868[i])){
                                 ssize_t n = read(client_conf868[i],buf,buf_SIZE-1);
                                 if(n<=0){
                                     client_set_close_slot(client_conf868, i);

@@ -29,6 +29,15 @@ int event_loop_select_has_fd(const EventLoopSelectSet *set, int fd)
     return FD_ISSET(fd, &set->readfds) ? 1 : 0;
 }
 
+
+int event_loop_select_ready_fd(const fd_set *ready, int fd)
+{
+    if (fd < 0)
+        return 0;
+
+    return FD_ISSET(fd, ready) ? 1 : 0;
+}
+
 int event_loop_select_wait(const EventLoopSelectSet *set,
                            fd_set *ready,
                            int timeout_usec)

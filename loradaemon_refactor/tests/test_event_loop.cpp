@@ -108,6 +108,35 @@ static void test_select_wait_timeout(void)
                event_loop_select_wait(&set, &ready, 1000), 0);
 }
 
+
+static void test_select_ready_fd(void)
+{
+    EventLoopSelectSet set;
+    fd_set ready;
+    int fds[2];
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] pipe setup for ready fd\n");
+        return;
+    }
+
+    event_loop_select_reset(&set);
+    event_loop_select_add_fd(&set, fds[0]);
+    (void)write(fds[1], &ch, 1);
+
+    expect_int("ready wait returns one fd",
+               event_loop_select_wait(&set, &ready, 100000), 1);
+    expect_int("ready helper sees fd",
+               event_loop_select_ready_fd(&ready, fds[0]), 1);
+    expect_int("ready helper ignores negative fd",
+               event_loop_select_ready_fd(&ready, -1), 0);
+
+    close(fds[0]);
+    close(fds[1]);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -134,6 +163,7 @@ int main(int argc, char **argv)
     test_select_set_ignores_negative_fd();
     test_select_wait_readable_pipe();
     test_select_wait_timeout();
+    test_select_ready_fd();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
