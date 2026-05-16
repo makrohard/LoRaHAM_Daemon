@@ -36,4 +36,8 @@ long daemon_deadline_timer_timeout_ms(const DaemonDeadlineTimer *timer,
 int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
                               long now_ms);
 
+/* --- Monotonic time --- */
+
+long daemon_now_ms(void);
+
 #endif

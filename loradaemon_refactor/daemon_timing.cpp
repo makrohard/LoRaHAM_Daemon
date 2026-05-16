@@ -1,5 +1,7 @@
 #include "daemon_timing.h"
 
+#include <time.h>
+
 /* --- Counter-based tick helper --- */
 
 int daemon_tick_due(int *counter, int interval)
@@ -55,5 +57,15 @@ int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
     } while (now_ms >= timer->next_due_ms);
 
     return 1;
+}
+
+/* --- Monotonic time --- */
+
+long daemon_now_ms(void)
+{
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
 }
 

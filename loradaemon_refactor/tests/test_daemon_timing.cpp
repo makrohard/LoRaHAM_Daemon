@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 /*
  * Daemon timing unit tests.
@@ -83,6 +84,22 @@ static void test_deadline_timer(void)
                (int)daemon_deadline_timer_timeout_ms(&timer, 1400), 0);
 }
 
+
+static void test_monotonic_now_ms(void)
+{
+    long t1 = daemon_now_ms();
+    usleep(1000);
+    long t2 = daemon_now_ms();
+
+    if (t2 >= t1) {
+        g_ok++;
+        printf("[ OK ] monotonic now does not go backwards\n");
+    } else {
+        g_fail++;
+        printf("[FAIL] monotonic now went backwards: %ld -> %ld\n", t1, t2);
+    }
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -107,6 +124,7 @@ int main(int argc, char **argv)
     test_plain_counter_tick();
     test_state_counter_tick();
     test_deadline_timer();
+    test_monotonic_now_ms();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
