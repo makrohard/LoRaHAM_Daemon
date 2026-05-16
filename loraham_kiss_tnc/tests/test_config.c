@@ -32,6 +32,7 @@ static void test_defaults(void)
     assert(cfg.preamble == 8);
     assert(cfg.syncword == 0x12);
     assert(cfg.ldro == 1);
+    assert(cfg.ldro_auto == 0);
     assert(cfg.power == 17);
 }
 
@@ -46,6 +47,9 @@ static void test_parse_line(void)
     char line6[] = "mode = FSK";
     char line7[] = "tx_settle_ms = 250";
     char line8[] = "tx_return_ms = 750";
+    char line9[] = "ldro = AUTO";
+    char line10[] = "ldro = auto";
+    char line11[] = "ldro = false";
 
     lhkt_config_defaults(&cfg);
 
@@ -71,6 +75,22 @@ static void test_parse_line(void)
 
     assert(lhkt_config_parse_line(&cfg, line8, 8) == LHKT_OK);
     assert(cfg.tx_return_ms == 750);
+
+    cfg.ldro = 0;
+    cfg.ldro_auto = 0;
+    assert(lhkt_config_parse_line(&cfg, line9, 9) == LHKT_OK);
+    assert(cfg.ldro == 0);
+    assert(cfg.ldro_auto == 1);
+
+    cfg.ldro = 0;
+    cfg.ldro_auto = 0;
+    assert(lhkt_config_parse_line(&cfg, line10, 10) == LHKT_OK);
+    assert(cfg.ldro == 0);
+    assert(cfg.ldro_auto == 1);
+
+    assert(lhkt_config_parse_line(&cfg, line11, 11) == LHKT_OK);
+    assert(cfg.ldro == 0);
+    assert(cfg.ldro_auto == 0);
 }
 
 static void test_hash_only_comments(void)
@@ -142,6 +162,7 @@ static void test_load_file(void)
     assert(cfg.preamble == 12);
     assert(cfg.syncword == 0x45);
     assert(cfg.ldro == 0);
+    assert(cfg.ldro_auto == 0);
     assert(cfg.power == 14);
 
     unlink(path);
@@ -157,6 +178,7 @@ static void test_reject_invalid(void)
     char bad5[] = "mode = BADMODE";
     char bad6[] = "mode = LORA FREQ=1";
     char bad7[] = "tx_return_ms = 60001";
+    char bad8[] = "ldro = maybe";
 
     lhkt_config_defaults(&cfg);
 
@@ -167,6 +189,7 @@ static void test_reject_invalid(void)
     assert(lhkt_config_parse_line(&cfg, bad5, 5) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad6, 6) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad7, 7) == LHKT_ERR_FORMAT);
+    assert(lhkt_config_parse_line(&cfg, bad8, 8) == LHKT_ERR_FORMAT);
 }
 
 int main(void)

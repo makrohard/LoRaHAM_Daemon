@@ -38,6 +38,7 @@ void lhkt_config_defaults(lhkt_config_t *cfg)
     cfg->preamble = 8;
     cfg->syncword = 0x12;
     cfg->ldro = 1;
+    cfg->ldro_auto = 0;
     cfg->power = 17;
 }
 

@@ -59,6 +59,7 @@ typedef struct {
     int preamble;
     int syncword;
     int ldro;
+    int ldro_auto;
     int power;
 } lhkt_config_t;
 

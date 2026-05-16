@@ -300,13 +300,24 @@ void lhkt_cli_print_config(const lhkt_config_t *cfg)
         printf("[CFG] tx_freq=%.6f\n", cfg->tx_freq);
     }
 
-    printf("[CFG] sf=%d bw=%.3f cr=%d crc=%d preamble=%d syncword=0x%02X ldro=%d power=%d\n",
-           cfg->sf,
-           cfg->bw,
-           cfg->cr,
-           cfg->crc,
-           cfg->preamble,
-           cfg->syncword,
-           cfg->ldro,
-           cfg->power);
+    if (cfg->ldro_auto) {
+        printf("[CFG] sf=%d bw=%.3f cr=%d crc=%d preamble=%d syncword=0x%02X ldro=AUTO power=%d\n",
+               cfg->sf,
+               cfg->bw,
+               cfg->cr,
+               cfg->crc,
+               cfg->preamble,
+               cfg->syncword,
+               cfg->power);
+    } else {
+        printf("[CFG] sf=%d bw=%.3f cr=%d crc=%d preamble=%d syncword=0x%02X ldro=%d power=%d\n",
+               cfg->sf,
+               cfg->bw,
+               cfg->cr,
+               cfg->crc,
+               cfg->preamble,
+               cfg->syncword,
+               cfg->ldro,
+               cfg->power);
+    }
 }

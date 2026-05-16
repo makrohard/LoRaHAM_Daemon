@@ -450,22 +450,42 @@ int loraham_extract_tnc2(loraham_rx_state_t *state,
     return 0;
 }
 
+static const char *loraham_ldro_value(const lhkt_config_t *cfg,
+                                      char *buf,
+                                      size_t buf_size)
+{
+    if (!cfg || !buf || buf_size == 0) {
+        return "0";
+    }
+
+    if (cfg->ldro_auto) {
+        return "AUTO";
+    }
+
+    snprintf(buf, buf_size, "%d", cfg->ldro ? 1 : 0);
+    return buf;
+}
+
 static int loraham_send_config_line(int conf_fd,
                                     const lhkt_config_t *cfg,
                                     double freq,
                                     int have_freq)
 {
     char line[256];
+    char ldro_buf[8];
+    const char *ldro_value;
     int ret;
 
     if (conf_fd < 0 || !cfg) {
         return LHKT_ERR;
     }
 
+    ldro_value = loraham_ldro_value(cfg, ldro_buf, sizeof(ldro_buf));
+
     if (have_freq) {
         ret = snprintf(line,
                        sizeof(line),
-                       "SET MODE=%s FREQ=%.6f SF=%d BW=%.3f CR=%d CRC=%d PREAMBLE=%d SYNC=0x%02X LDRO=%d POWER=%d\n",
+                       "SET MODE=%s FREQ=%.6f SF=%d BW=%.3f CR=%d CRC=%d PREAMBLE=%d SYNC=0x%02X LDRO=%s POWER=%d\n",
                        cfg->mode,
                        freq,
                        cfg->sf,
@@ -474,12 +494,12 @@ static int loraham_send_config_line(int conf_fd,
                        cfg->crc,
                        cfg->preamble,
                        cfg->syncword,
-                       cfg->ldro,
+                       ldro_value,
                        cfg->power);
     } else {
         ret = snprintf(line,
                        sizeof(line),
-                       "SET MODE=%s SF=%d BW=%.3f CR=%d CRC=%d PREAMBLE=%d SYNC=0x%02X LDRO=%d POWER=%d\n",
+                       "SET MODE=%s SF=%d BW=%.3f CR=%d CRC=%d PREAMBLE=%d SYNC=0x%02X LDRO=%s POWER=%d\n",
                        cfg->mode,
                        cfg->sf,
                        cfg->bw,
@@ -487,7 +507,7 @@ static int loraham_send_config_line(int conf_fd,
                        cfg->crc,
                        cfg->preamble,
                        cfg->syncword,
-                       cfg->ldro,
+                       ldro_value,
                        cfg->power);
     }
 

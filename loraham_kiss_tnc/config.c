@@ -349,9 +349,15 @@ int lhkt_config_parse_line(lhkt_config_t *cfg, char *line, unsigned int line_no)
     }
 
     if (strcmp(key, "ldro") == 0) {
+        if (strcmp(value, "AUTO") == 0 || strcmp(value, "auto") == 0) {
+            cfg->ldro_auto = 1;
+            return LHKT_OK;
+        }
+
         ret = parse_bool_value(value, &bval);
         if (ret == LHKT_OK) {
             cfg->ldro = bval;
+            cfg->ldro_auto = 0;
         }
         return ret;
     }
