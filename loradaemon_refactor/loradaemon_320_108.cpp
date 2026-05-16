@@ -148,6 +148,7 @@
 #include "unix_socket.h"
 #include "client_set.h"
 #include "config_parser.h"
+#include "radio_channel.h"
 
 // --- Globale Socket-FDs
 int data433_fd = -1, data868_fd = -1;
@@ -269,7 +270,6 @@ volatile bool getrssi_868_active = false;
 // --- Modusverwaltung: LoRa oder FSK pro Band ---
 // Default: LORA -> volle Rückwärtskompatibilität mit alten Clients
 // Umschalten nur durch explizites "SET MODE=FSK" bzw. "SET MODE=LORA"
-typedef enum { RADIO_MODE_LORA, RADIO_MODE_FSK } RadioMode_t;
 volatile RadioMode_t mode_433 = RADIO_MODE_LORA;
 volatile RadioMode_t mode_868 = RADIO_MODE_LORA;
 
