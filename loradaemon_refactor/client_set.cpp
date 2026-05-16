@@ -58,3 +58,12 @@ void client_set_broadcast(int *clients, int max_clients, const char *msg)
             write(clients[i], msg, len);
     }
 }
+
+
+void client_set_broadcast_bytes(int *clients, int max_clients, const uint8_t *buf, size_t len)
+{
+    for (int i = 0; i < max_clients; i++) {
+        if (clients[i] > 0)
+            write(clients[i], buf, len);
+    }
+}

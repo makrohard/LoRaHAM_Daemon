@@ -1697,9 +1697,7 @@ int main(int argc, char *argv[]) {
                                     }
 
                                     if(len433 > 0){
-                                        for(int i=0;i<MAX_CLIENTS;i++)
-                                            //if(client_data433[i]>0) send_frame(client_data433[i],rx_buf_433,len433);
-                                            if(client_data433[i]>0) write(client_data433[i],rx_buf_433,len433);
+                                        client_set_broadcast_bytes(client_data433, MAX_CLIENTS, rx_buf_433, len433);
                                     }
 
                                     len433=0;
@@ -1799,9 +1797,7 @@ int main(int argc, char *argv[]) {
                                     }
 
                                     if(len868 > 0){
-                                        for(int i=0;i<MAX_CLIENTS;i++)
-                                            //if(client_data868[i]>0) send_frame(client_data868[i],rx_buf_868,len868);
-                                            if(client_data868[i]>0) write(client_data868[i],rx_buf_868,len868);
+                                        client_set_broadcast_bytes(client_data868, MAX_CLIENTS, rx_buf_868, len868);
                                     }
 
                                     len868=0;
