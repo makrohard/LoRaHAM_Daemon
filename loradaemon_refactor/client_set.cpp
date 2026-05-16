@@ -1,5 +1,7 @@
 #include "client_set.h"
 
+#include "event_loop.h"
+
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -47,6 +49,12 @@ int client_set_has_clients(int *clients, int max_clients)
     }
 
     return 0;
+}
+
+
+int client_set_slot_ready(int *clients, int index, const fd_set *ready)
+{
+    return clients[index] > 0 && event_loop_select_ready_fd(ready, clients[index]);
 }
 
 void client_set_add_fds(int *clients, int max_clients, fd_set *readfds, int *maxfd)

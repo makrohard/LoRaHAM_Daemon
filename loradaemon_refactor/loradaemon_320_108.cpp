@@ -1361,7 +1361,7 @@ int main(int argc, char *argv[]) {
 
                         // --- DATA433-Clients bearbeiten ---
                         for(int i=0;i<MAX_CLIENTS;i++){
-                            if(client_data433[i] > 0 && event_loop_select_ready_fd(&readfds, client_data433[i])) {
+                            if(client_set_slot_ready(client_data433, i, &readfds)) {
                                 uint8_t large_buf[2048]; // Großer Puffer für den Socket-Eingang
                                 ssize_t n = read(client_data433[i], large_buf, sizeof(large_buf));
 
@@ -1450,7 +1450,7 @@ int main(int argc, char *argv[]) {
                         // --- DATA868-Clients bearbeiten ---
                         for(int i=0;i<MAX_CLIENTS;i++){
 
-                            if(client_data868[i] > 0 && event_loop_select_ready_fd(&readfds, client_data868[i])) {
+                            if(client_set_slot_ready(client_data868, i, &readfds)) {
                                 uint8_t large_buf[2048]; // Großer Puffer für den Socket-Eingang
                                 ssize_t n = read(client_data868[i], large_buf, sizeof(large_buf));
 
@@ -1539,7 +1539,7 @@ int main(int argc, char *argv[]) {
                         // --- CONFIG Clients bearbeiten ---
                         // parse_config kann hier eingefügt werden
                         for(int i=0;i<MAX_CLIENTS;i++){
-                            if(client_conf433[i]>0 && event_loop_select_ready_fd(&readfds, client_conf433[i])){
+                            if(client_set_slot_ready(client_conf433, i, &readfds)){
                                 ssize_t n = read(client_conf433[i],buf,buf_SIZE-1);
                                 if(n<=0){
                                     client_set_close_slot(client_conf433, i);
@@ -1562,7 +1562,7 @@ int main(int argc, char *argv[]) {
                                      */
                                 }
                             }
-                            if(client_conf868[i]>0 && event_loop_select_ready_fd(&readfds, client_conf868[i])){
+                            if(client_set_slot_ready(client_conf868, i, &readfds)){
                                 ssize_t n = read(client_conf868[i],buf,buf_SIZE-1);
                                 if(n<=0){
                                     client_set_close_slot(client_conf868, i);
