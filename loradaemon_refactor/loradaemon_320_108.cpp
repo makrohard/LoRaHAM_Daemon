@@ -159,6 +159,9 @@ int client_data868[MAX_CLIENTS] = {0};
 int client_conf433[MAX_CLIENTS] = {0};
 int client_conf868[MAX_CLIENTS] = {0};
 
+RadioChannelIo channel_433;
+RadioChannelIo channel_868;
+
 // --- Pin-Setup für LED
 #define PIN_433 13
 #define PIN_868 19
@@ -1307,10 +1310,25 @@ int main(int argc, char *argv[]) {
         freopen("/tmp/lora_daemon.log", "w", stderr);
     }
 
-    data433_fd = setup_unix_socket(DATA433_SOCKET, MAX_CLIENTS);
-    data868_fd = setup_unix_socket(DATA868_SOCKET, MAX_CLIENTS);
-    conf433_fd = setup_unix_socket(CONF433_SOCKET, MAX_CLIENTS);
-    conf868_fd = setup_unix_socket(CONF868_SOCKET, MAX_CLIENTS);
+    radio_channel_io_init(&channel_433,
+                          RADIO_BAND_433,
+                          DATA433_SOCKET,
+                          CONF433_SOCKET,
+                          &data433_fd,
+                          &conf433_fd,
+                          client_data433,
+                          client_conf433);
+    radio_channel_io_init(&channel_868,
+                          RADIO_BAND_868,
+                          DATA868_SOCKET,
+                          CONF868_SOCKET,
+                          &data868_fd,
+                          &conf868_fd,
+                          client_data868,
+                          client_conf868);
+
+    radio_channel_open_sockets(&channel_433);
+    radio_channel_open_sockets(&channel_868);
 
     LED_init();
     lora_init();
