@@ -13,13 +13,14 @@ rx_only=0
 
 verbose=0
 stats_interval=60
+tx_settle_ms=100
+tx_return_ms=1000
 
 mode=LORA
 
-# Optional frequency/config values.
-# Leave unset/commented if the daemon should keep its current config.
-# rx_freq=433.775
-# tx_freq=433.900
+# Default 433 MHz LoRa-APRS frequencies.
+rx_freq=433.775
+tx_freq=433.900
 
 sf=12
 bw=125.0
