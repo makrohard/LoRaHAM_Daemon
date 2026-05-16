@@ -1249,54 +1249,51 @@ void lora_init() {
 /* --- Data client TX handling --- */
 
 
-static int send_data433_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
+typedef struct {
+    const char *tag;
+    int band;
+    volatile RadioMode_t *mode;
+} DataTxDaemonContext;
+
+static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
-    (void)ctx;
+    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
 
     // --- CAD-Guard: LoRa only ---
-    if (mode_433 == RADIO_MODE_LORA) {
+    if (*tx->mode == RADIO_MODE_LORA) {
         int cad_wait = 0;
-        while (((radio_433->getModemStatus() & 0x01)) && cad_wait < 300) {
+
+        while (cad_wait < 300) {
+            int modem_status = (tx->band == 433)
+                ? radio_433->getModemStatus()
+                : radio_868->getModemStatus();
+
+            if ((modem_status & 0x01) == 0)
+                break;
+
             usleep(10000);
             cad_wait++;
         }
+
         if (cad_wait >= 300) {
-            printf("[433] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n");
+            printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
             return 1;
         }
     }
 
     printf("  -> Sende Chunk: %zu Bytes (Offset: %zu)\n", len, offset);
 
-    LED_433(1);
-    lora_send(chunk, len, 433);
-    LED_433(0);
+    if (tx->band == 433)
+        LED_433(1);
+    else
+        LED_868(1);
 
-    return 0;
-}
+    lora_send(chunk, len, tx->band);
 
-static int send_data868_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
-{
-    (void)ctx;
-
-    // --- CAD-Guard: LoRa only ---
-    if (mode_868 == RADIO_MODE_LORA) {
-        int cad_wait = 0;
-        while (((radio_868->getModemStatus() & 0x01)) && cad_wait < 300) {
-            usleep(10000);
-            cad_wait++;
-        }
-        if (cad_wait >= 300) {
-            printf("[868] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n");
-            return 1;
-        }
-    }
-
-    printf("  -> Sende Chunk: %zu Bytes (Offset: %zu)\n", len, offset);
-
-    LED_868(1);
-    lora_send(chunk, len, 868);
-    LED_868(0);
+    if (tx->band == 433)
+        LED_433(0);
+    else
+        LED_868(0);
 
     return 0;
 }
@@ -1396,6 +1393,10 @@ int main(int argc, char *argv[]) {
     DaemonDeadlineTimer rssi_timer;
     daemon_deadline_timer_init(&rssi_timer, daemon_now_ms(), DAEMON_RSSI_INTERVAL_MS);
 
+    // --- DATA TX callbacks ---
+    DataTxDaemonContext data_tx_433_ctx = {"433", 433, &mode_433};
+    DataTxDaemonContext data_tx_868_ctx = {"868", 868, &mode_868};
+
 
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 
@@ -1417,9 +1418,9 @@ int main(int argc, char *argv[]) {
 
                         // --- DATA Clients bearbeiten ---
                         data_tx_process_clients("433", client_data433, MAX_CLIENTS,
-                                                &readfds, send_data433_chunk, NULL);
+                                                &readfds, send_data_chunk, &data_tx_433_ctx);
                         data_tx_process_clients("868", client_data868, MAX_CLIENTS,
-                                                &readfds, send_data868_chunk, NULL);
+                                                &readfds, send_data_chunk, &data_tx_868_ctx);
 
                         // --- CONFIG Clients bearbeiten ---
                         // parse_config kann hier eingefügt werden
