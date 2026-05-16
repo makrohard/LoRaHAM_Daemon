@@ -1,5 +1,7 @@
 #include "radio_channel.h"
 
+#include <RadioLib.h>
+
 #include "daemon_protocol.h"
 #include "unix_socket.h"
 #include "client_set.h"
@@ -58,5 +60,23 @@ void radio_channel_getrssi_autostop(RadioChannelIo *io,
         printf("[%s] kein Client mehr verbunden -> GETRSSI auto-stop\n", tag);
         fflush(stdout);
     }
+}
+
+/* --- Radio channel RSSI --- */
+
+float radio_channel_read_live_rssi(Module *mod,
+                                   volatile RadioMode_t mode,
+                                   bool is_hf)
+{
+    uint8_t reg = (mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
+    int16_t raw = mod->SPIgetRegValue(reg, 7, 0);
+
+    if (raw < 0)
+        return -200.0f;
+
+    if (mode == RADIO_MODE_LORA)
+        return (is_hf ? -157.0f : -164.0f) + (float)raw;
+
+    return -((float)raw) / 2.0f;
 }
 

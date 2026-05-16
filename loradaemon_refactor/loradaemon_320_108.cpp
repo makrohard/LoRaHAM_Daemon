@@ -278,34 +278,7 @@ volatile bool getrssi_868_active = false;
 volatile RadioMode_t mode_433 = RADIO_MODE_LORA;
 volatile RadioMode_t mode_868 = RADIO_MODE_LORA;
 
-// --- Live-Channel-RSSI direkt aus dem SX127x Hardware-Register lesen ---
-//
-// HINTERGRUND:
-// RadioLib's SX127x::getRSSI() liefert im LoRa-Mode den RSSI des LETZTEN
-// empfangenen Pakets (Register 0x1A = RegPktRssiValue), nicht den aktuellen
-// Kanal-Pegel. Fuer Spektrum-Monitoring (Funkkopfhoerer, ISM-Stoerquellen)
-// brauchen wir aber den kontinuierlichen Live-Wert vom Analog-Frontend / AGC.
-// Wir lesen daher das passende Register direkt per SPI:
-//
-// SX127x Register-Mapping (Datasheet):
-//   FSK-Mode:  RegRssiValue = 0x11  Formel: RSSI = -reg/2 [dBm]
-//   LoRa-Mode: RegRssiValue = 0x1B  Formel: RSSI = -164 + reg (LF Band <525MHz)
-//                                            RSSI = -157 + reg (HF Band >=779MHz)
-//
-// is_hf = false: 433-Modul (LF Band)
-// is_hf = true : 868-Modul (HF Band)
-static float read_live_rssi(Module *mod, volatile RadioMode_t mode, bool is_hf) {
-    uint8_t reg = (mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
-    int16_t raw = mod->SPIgetRegValue(reg, 7, 0);
-    if (raw < 0) return -200.0f;   // SPI-Fehler signalisieren
-    if (mode == RADIO_MODE_LORA) {
-        return (is_hf ? -157.0f : -164.0f) + (float)raw;
-    } else {
-        // FSK
-        return -((float)raw) / 2.0f;
-    }
-}
-
+// --- Live RSSI helper moved to radio_channel.cpp ---
 //void setNonBlocking(int fd) {
 //fcntl(fd, F_SETFL, O_NONBLOCK);
 //}
@@ -1932,7 +1905,7 @@ int main(int argc, char *argv[]) {
 
                             // 433: nur lesen wenn aktiv und kein TX laeuft
                             if(getrssi_433_active && !txBusy433) {
-                                float rssi433 = read_live_rssi(mod_433, mode_433, false);
+                                float rssi433 = radio_channel_read_live_rssi(mod_433, mode_433, false);
                                 char rssi_msg[32];
                                 snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi433);
                                 client_set_broadcast(client_conf433, MAX_CLIENTS, rssi_msg);
@@ -1940,7 +1913,7 @@ int main(int argc, char *argv[]) {
 
                             // 868: nur lesen wenn aktiv und kein TX laeuft
                             if(getrssi_868_active && !txBusy868) {
-                                float rssi868 = read_live_rssi(mod_868, mode_868, true);
+                                float rssi868 = radio_channel_read_live_rssi(mod_868, mode_868, true);
                                 char rssi_msg[32];
                                 snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi868);
                                 client_set_broadcast(client_conf868, MAX_CLIENTS, rssi_msg);

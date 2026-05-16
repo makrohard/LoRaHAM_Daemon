@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+class Module;
+
 /* --- Radio channel identity --- */
 
 typedef enum {
@@ -40,6 +42,12 @@ void radio_channel_io_init(RadioChannelIo *ch,
 
 void radio_channel_open_sockets(RadioChannelIo *ch);
 
+
+/* --- Radio channel RSSI --- */
+
+float radio_channel_read_live_rssi(Module *mod,
+                                   volatile RadioMode_t mode,
+                                   bool is_hf);
 
 /* --- Radio channel runtime flags --- */
 
