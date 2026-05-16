@@ -52,6 +52,50 @@ static int write_all_fd(int fd, const uint8_t *buf, size_t len)
     return LHKT_OK;
 }
 
+static void sleep_ms(int ms)
+{
+    struct timeval tv;
+
+    if (ms <= 0) {
+        return;
+    }
+
+    tv.tv_sec = ms / 1000;
+    tv.tv_usec = (ms % 1000) * 1000;
+
+    while (select(0, NULL, NULL, NULL, &tv) < 0 && errno == EINTR) {
+        tv.tv_sec = ms / 1000;
+        tv.tv_usec = (ms % 1000) * 1000;
+    }
+}
+
+static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
+{
+    int conf_fd;
+    int ret;
+
+    if (!cfg || freq <= 0.0) {
+        return LHKT_ERR_FORMAT;
+    }
+
+    conf_fd = loraham_sock_connect(cfg->conf_socket);
+    if (conf_fd < 0) {
+        printf("[LoRaHAM] Config socket not connected: %s\n", cfg->conf_socket);
+        return LHKT_ERR;
+    }
+
+    ret = loraham_send_config_freq(conf_fd, cfg, freq);
+    lhkt_tcp_server_close(conf_fd);
+
+    if (ret != LHKT_OK) {
+        printf("[LoRaHAM] Config send failed: freq=%.6f\n", freq);
+        return ret;
+    }
+
+    printf("[LoRaHAM] Config sent: freq=%.6f\n", freq);
+    return LHKT_OK;
+}
+
 /*
  * TX path:
  * KISS data frame -> AX.25 UI -> TNC2 -> LoRaHAM packet -> daemon socket.
@@ -139,6 +183,27 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             return LHKT_ERR;
         }
 
+        if (!cfg->have_tx_freq || !cfg->have_rx_freq) {
+            if (stats) {
+                stats->loraham_drop++;
+            }
+
+            printf("[LoRaHAM] TX drop: rx_freq and tx_freq required\n");
+            return LHKT_ERR_FORMAT;
+        }
+
+        ret = send_loraham_config_freq(cfg, cfg->tx_freq);
+        if (ret != LHKT_OK) {
+            if (stats) {
+                stats->loraham_drop++;
+            }
+
+            printf("[LoRaHAM] TX drop: switch to tx_freq failed\n");
+            return ret;
+        }
+
+        sleep_ms(cfg->tx_settle_ms);
+
         printf("[LoRaHAM] TX packet len=%zu\n", lora_len);
 
         if (loraham_sock_write(data_fd, lora_pkt, lora_len) < 0) {
@@ -147,7 +212,17 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             }
 
             printf("[LoRaHAM] TX write failed\n");
+            sleep_ms(cfg->tx_return_ms);
+            send_loraham_config_freq(cfg, cfg->rx_freq);
             return LHKT_ERR;
+        }
+
+        sleep_ms(cfg->tx_return_ms);
+
+        ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+        if (ret != LHKT_OK) {
+            printf("[LoRaHAM] RX freq restore failed\n");
+            return ret;
         }
 
         if (stats) {
@@ -412,6 +487,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 client_fd = -1;
                 kiss_decoder_init(&kiss_dec);
                 kiss_params_init(&kiss_params);
+                loraham_rx_state_init(&lora_rx);
                 printf("[KISS] Waiting for client...\n");
             }
             continue;
@@ -430,6 +506,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
 
             kiss_decoder_init(&kiss_dec);
             kiss_params_init(&kiss_params);
+            loraham_rx_state_init(&lora_rx);
 
             printf("[KISS] Client connected: %s\n", peer);
         }
@@ -446,6 +523,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 client_fd = -1;
                 kiss_decoder_init(&kiss_dec);
                 kiss_params_init(&kiss_params);
+                loraham_rx_state_init(&lora_rx);
                 printf("[KISS] Waiting for client...\n");
                 continue;
             }
@@ -460,6 +538,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 client_fd = -1;
                 kiss_decoder_init(&kiss_dec);
                 kiss_params_init(&kiss_params);
+                loraham_rx_state_init(&lora_rx);
                 printf("[KISS] Waiting for client...\n");
                 continue;
             }
@@ -482,6 +561,17 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                         printf("[KISS] Data frame: port=%u len=%zu\n",
                                kiss_frame.port,
                                kiss_frame.data_len);
+
+                        if (kiss_frame.port != 0) {
+                            if (stats) {
+                                stats->kiss_drop++;
+                            }
+
+                            printf("[KISS] Drop unsupported port: %u\n",
+                                   kiss_frame.port);
+                            continue;
+                        }
+
                         handle_kiss_data_frame(&kiss_frame, cfg, stats, data_fd);
                     } else if (cfg->verbose) {
                         printf("[KISS] Command: port=%u cmd=%u len=%zu\n",
