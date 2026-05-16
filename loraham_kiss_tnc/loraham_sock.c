@@ -1,8 +1,10 @@
 #include "loraham_sock.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -12,6 +14,8 @@
  * TX writes one complete LoRaHAM APRS packet.
  * RX scans a byte stream for the LoRaHAM APRS header.
  */
+
+#define LHKT_LORAHAM_WRITE_TIMEOUT_SEC 2
 
 void loraham_rx_state_init(loraham_rx_state_t *state)
 {
@@ -65,18 +69,70 @@ ssize_t loraham_sock_read(int fd,
     return read(fd, buf, buf_size);
 }
 
+static int loraham_wait_writable(int fd)
+{
+    fd_set wfds;
+    struct timeval tv;
+    int ret;
+
+    if (fd < 0 || fd >= FD_SETSIZE) {
+        return -1;
+    }
+
+    for (;;) {
+        FD_ZERO(&wfds);
+        FD_SET(fd, &wfds);
+
+        tv.tv_sec = LHKT_LORAHAM_WRITE_TIMEOUT_SEC;
+        tv.tv_usec = 0;
+
+        ret = select(fd + 1, NULL, &wfds, NULL, &tv);
+        if (ret < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            return -1;
+        }
+
+        if (ret == 0) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+
+        return 0;
+    }
+}
+
 ssize_t loraham_sock_write(int fd,
                            const uint8_t *buf,
                            size_t len)
 {
     size_t done;
     ssize_t n;
+    int flags;
+    int saved_errno;
+    ssize_t result;
 
-    if (fd < 0 || !buf) {
+    if (fd < 0 || fd >= FD_SETSIZE || (!buf && len > 0)) {
+        return -1;
+    }
+
+    if (len == 0) {
+        return 0;
+    }
+
+    flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0) {
+        return -1;
+    }
+
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         return -1;
     }
 
     done = 0;
+    result = -1;
 
     while (done < len) {
         n = write(fd, buf + done, len - done);
@@ -85,17 +141,36 @@ ssize_t loraham_sock_write(int fd,
                 continue;
             }
 
-            return -1;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (loraham_wait_writable(fd) < 0) {
+                    goto out;
+                }
+
+                continue;
+            }
+
+            goto out;
         }
 
         if (n == 0) {
-            return -1;
+            errno = EPIPE;
+            goto out;
         }
 
         done += (size_t)n;
     }
 
-    return (ssize_t)done;
+    result = (ssize_t)done;
+
+out:
+    saved_errno = errno;
+    if (fcntl(fd, F_SETFL, flags) < 0 && result >= 0) {
+        result = -1;
+        saved_errno = errno;
+    }
+    errno = saved_errno;
+
+    return result;
 }
 
 /*

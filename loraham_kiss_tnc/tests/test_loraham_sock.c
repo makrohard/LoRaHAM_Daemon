@@ -1,8 +1,35 @@
 #include "loraham_sock.h"
 
 #include <assert.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+static void test_sock_write_socketpair(void)
+{
+    int sv[2];
+    int flags_before;
+    int flags_after;
+    const uint8_t msg[] = { 'O', 'K' };
+    uint8_t buf[2];
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    flags_before = fcntl(sv[0], F_GETFL, 0);
+    assert(flags_before >= 0);
+
+    assert(loraham_sock_write(sv[0], msg, sizeof(msg)) == (ssize_t)sizeof(msg));
+    assert(read(sv[1], buf, sizeof(buf)) == (ssize_t)sizeof(buf));
+    assert(memcmp(buf, msg, sizeof(msg)) == 0);
+
+    flags_after = fcntl(sv[0], F_GETFL, 0);
+    assert(flags_after == flags_before);
+
+    close(sv[0]);
+    close(sv[1]);
+}
 
 static void test_build_packet(void)
 {
@@ -256,6 +283,7 @@ static void test_ignore_noise_without_header(void)
 
 int main(void)
 {
+    test_sock_write_socketpair();
     test_build_packet();
     test_build_packet_limit();
     test_extract_with_newline();
