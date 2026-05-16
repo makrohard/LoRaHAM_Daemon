@@ -4,7 +4,7 @@
  * Integrationstest fuer loraham_daemon.
  *
  * Kompilieren:
- *   gcc -std=c11 -Wall -Wextra -O2 -o test_loradaemon_interface test_loradaemon_interface.c
+ *   gcc -std=c11 -Wall -Wextra -O2 -o test_loradaemon_interface test_loradaemon_320_108_interface.c
  *
  * Gegen laufenden Daemon testen:
  *   ./test_loradaemon_interface

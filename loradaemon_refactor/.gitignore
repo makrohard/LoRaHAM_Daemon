@@ -1,6 +1,6 @@
 # Built test binaries
-/test_loradaemon_interface
-/test_loradaemon_320_108_interface
+/tests/test_loradaemon_interface
+/tests/test_loradaemon_320_108_interface
 
 # Optional local daemon binaries built inside this test directory
 /loraham_daemon

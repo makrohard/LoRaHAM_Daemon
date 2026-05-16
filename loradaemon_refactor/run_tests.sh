@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-TEST_BIN="$SCRIPT_DIR/test_loradaemon_interface"
+TEST_BIN="$SCRIPT_DIR/tests/test_loradaemon_interface"
 DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
 tx_tests=false
@@ -10,7 +10,7 @@ rx_seconds="${RX_SECONDS:-15}"
 
 usage() {
   cat <<EOF_HELP
-Usage: ./loradaemon_tests/run_tests.sh [--TX] [--rx-seconds N]
+Usage: ./loradaemon_refactor/run_tests.sh [--TX] [--rx-seconds N]
 
 Builds the daemon and interface test, then runs the test with its own daemon.
 
