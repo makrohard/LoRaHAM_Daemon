@@ -1,6 +1,7 @@
 #include "client_set.h"
 
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 /* --- Client slot handling --- */
@@ -15,6 +16,18 @@ int client_set_add(int *clients, int max_clients, int fd)
     }
 
     return 0;
+}
+
+
+int client_set_accept(int listen_fd, int *clients, int max_clients)
+{
+    int fd = accept(listen_fd, NULL, NULL);
+
+    if (fd < 0)
+        return fd;
+
+    client_set_add(clients, max_clients, fd);
+    return fd;
 }
 
 void client_set_close_slot(int *clients, int index)

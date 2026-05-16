@@ -1363,19 +1363,15 @@ int main(int argc, char *argv[]) {
 
         // --- Neue DATA Clients ---
         if(event_loop_select_ready_fd(&readfds, data433_fd)){
-            int new_fd=accept(data433_fd,NULL,NULL);
-            if(new_fd>=0){client_set_add(client_data433, MAX_CLIENTS, new_fd);} /*printf("Neuer DATA433-Client verbunden.\n");*/ }
+            client_set_accept(data433_fd, client_data433, MAX_CLIENTS); /*printf("Neuer DATA433-Client verbunden.\n");*/ }
             if(event_loop_select_ready_fd(&readfds, data868_fd)){
-                int new_fd=accept(data868_fd,NULL,NULL);
-                if(new_fd>=0){client_set_add(client_data868, MAX_CLIENTS, new_fd);} /*printf("Neuer DATA868-Client verbunden.\n");*/ }
+                client_set_accept(data868_fd, client_data868, MAX_CLIENTS); /*printf("Neuer DATA868-Client verbunden.\n");*/ }
 
                 // --- Neue CONFIG Clients ---
                 if(event_loop_select_ready_fd(&readfds, conf433_fd)){
-                    int new_fd=accept(conf433_fd,NULL,NULL);
-                    if(new_fd>=0){client_set_add(client_conf433, MAX_CLIENTS, new_fd);} /*printf("Neuer CONF433-Client verbunden.\n");*/ }
+                    client_set_accept(conf433_fd, client_conf433, MAX_CLIENTS); /*printf("Neuer CONF433-Client verbunden.\n");*/ }
                     if(event_loop_select_ready_fd(&readfds, conf868_fd)){
-                        int new_fd=accept(conf868_fd,NULL,NULL);
-                        if(new_fd>=0){client_set_add(client_conf868, MAX_CLIENTS, new_fd);} /*printf("Neuer CONF868-Client verbunden.\n");*/ }
+                        client_set_accept(conf868_fd, client_conf868, MAX_CLIENTS); /*printf("Neuer CONF868-Client verbunden.\n");*/ }
 
 
                         // --- DATA433-Clients bearbeiten ---

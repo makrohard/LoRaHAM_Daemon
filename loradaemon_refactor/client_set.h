@@ -8,6 +8,7 @@
 /* --- Client slot handling --- */
 
 int client_set_add(int *clients, int max_clients, int fd);
+int client_set_accept(int listen_fd, int *clients, int max_clients);
 void client_set_close_slot(int *clients, int index);
 void client_set_add_fds(int *clients, int max_clients, fd_set *readfds, int *maxfd);
 int client_set_has_clients(int *clients, int max_clients);
