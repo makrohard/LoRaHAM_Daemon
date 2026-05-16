@@ -144,6 +144,9 @@
 #include <RadioLib.h>
 #include <lgpio.h>
 
+#include "unix_socket.h"
+#include "client_set.h"
+
 #define buf_SIZE 256
 #define MAX_CLIENTS 10
 
@@ -248,14 +251,7 @@ ssize_t send_frame(int fd,const uint8_t *buf,uint8_t len){
     return write(fd,buf,len);
 }
 
-// --- CAD-Statusmeldung an alle verbundenen CONF-Clients senden ---
-void send_to_conf_clients(int *clients, const char *msg) {
-    size_t len = strlen(msg);
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i] > 0)
-            write(clients[i], msg, len);
-    }
-}
+// --- CAD broadcast helper moved to client_set.cpp ---
 
 
 // --- Flag für empfangene Pakete 868 ---
@@ -1300,22 +1296,7 @@ void lora_init() {
     fflush(stdout);
 }
 
-// --- Unix Socket Setup ---
-int setup_unix_socket(const char *path) {
-    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (fd < 0) { perror("socket"); exit(EXIT_FAILURE); }
-
-    struct sockaddr_un addr;
-    memset(&addr,0,sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, path, sizeof(addr.sun_path)-1);
-    unlink(path);
-
-    if (bind(fd,(struct sockaddr*)&addr,sizeof(addr))<0){perror("bind");exit(EXIT_FAILURE);}
-    if (listen(fd, MAX_CLIENTS)<0){perror("listen");exit(EXIT_FAILURE);}
-
-    return fd;
-}
+// --- Unix socket setup moved to unix_socket.cpp ---
 
 int main(int argc, char *argv[]) {
     int opt;
@@ -1357,10 +1338,10 @@ int main(int argc, char *argv[]) {
         freopen("/tmp/lora_daemon.log", "w", stderr);
     }
 
-    data433_fd = setup_unix_socket(DATA433_SOCKET);
-    data868_fd = setup_unix_socket(DATA868_SOCKET);
-    conf433_fd = setup_unix_socket(CONF433_SOCKET);
-    conf868_fd = setup_unix_socket(CONF868_SOCKET);
+    data433_fd = setup_unix_socket(DATA433_SOCKET, MAX_CLIENTS);
+    data868_fd = setup_unix_socket(DATA868_SOCKET, MAX_CLIENTS);
+    conf433_fd = setup_unix_socket(CONF433_SOCKET, MAX_CLIENTS);
+    conf868_fd = setup_unix_socket(CONF868_SOCKET, MAX_CLIENTS);
 
     LED_init();
     lora_init();
@@ -1882,7 +1863,7 @@ int main(int argc, char *argv[]) {
                                 setFlashFlag433();
                                 if (!cad433_active) {
                                     LED_433(1);
-                                    send_to_conf_clients(client_conf433, "CAD=1\n");
+                                    client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=1\n");
                                     //printf("[\e[93m433\e[0m] CAD: Kanal belegt\n");
                                     cad433_active = true;
                                 }
@@ -1890,7 +1871,7 @@ int main(int argc, char *argv[]) {
                                 // Wenn das Modem NICHTS mehr sieht UND wir gerade kein Paket verarbeiten
                                 if (cad433_active && !receivedFlag433) {
                                     LED_433(0);
-                                    send_to_conf_clients(client_conf433, "CAD=0\n");
+                                    client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=0\n");
                                     //printf("[\e[93m433\e[0m] CAD: Kanal frei\n");
                                     cad433_active = false;
                                 }
@@ -1908,7 +1889,7 @@ int main(int argc, char *argv[]) {
                                 setFlashFlag868();
                                 if (!cad868_active) {
                                     LED_868(1);
-                                    send_to_conf_clients(client_conf868, "CAD=1\n");
+                                    client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=1\n");
                                     //printf("[\e[93m868\e[0m] CAD: Kanal belegt\n");
                                     cad868_active = true;
                                 }
@@ -1916,7 +1897,7 @@ int main(int argc, char *argv[]) {
                                 // Wenn das Modem NICHTS mehr sieht UND wir gerade kein Paket verarbeiten
                                 if (cad868_active && !receivedFlag868) {
                                     LED_868(0);
-                                    send_to_conf_clients(client_conf868, "CAD=0\n");
+                                    client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=0\n");
                                     //printf("[\e[93m868\e[0m] CAD: Kanal frei\n");
                                     cad868_active = false;
                                 }
@@ -1980,7 +1961,7 @@ int main(int argc, char *argv[]) {
                                 float rssi433 = read_live_rssi(mod_433, mode_433, false);
                                 char rssi_msg[32];
                                 snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi433);
-                                send_to_conf_clients(client_conf433, rssi_msg);
+                                client_set_broadcast(client_conf433, MAX_CLIENTS, rssi_msg);
                             }
 
                             // 868: nur lesen wenn aktiv und kein TX laeuft
@@ -1988,7 +1969,7 @@ int main(int argc, char *argv[]) {
                                 float rssi868 = read_live_rssi(mod_868, mode_868, true);
                                 char rssi_msg[32];
                                 snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi868);
-                                send_to_conf_clients(client_conf868, rssi_msg);
+                                client_set_broadcast(client_conf868, MAX_CLIENTS, rssi_msg);
                             }
                         }
 

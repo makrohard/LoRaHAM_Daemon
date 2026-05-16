@@ -130,6 +130,8 @@ build_daemon() {
     -O2 \
     -o "$DAEMON_OUT" \
     "$DAEMON_SRC" \
+    "$SCRIPT_DIR/unix_socket.cpp" \
+    "$SCRIPT_DIR/client_set.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
     -llgpio
