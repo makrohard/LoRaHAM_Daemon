@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-TEST_BIN="$SCRIPT_DIR/tests/test_loradaemon_interface"
+TEST_DIR="$SCRIPT_DIR/tests"
 DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
 tx_tests=false
@@ -12,7 +12,7 @@ usage() {
   cat <<EOF_HELP
 Usage: ./loradaemon_refactor/run_tests.sh [--TX] [--rx-seconds N]
 
-Builds the daemon and interface test, then runs the test with its own daemon.
+Builds the daemon and test binaries, then runs each test with its own daemon.
 
 Options:
   --TX             Run RF transmit tests too
@@ -58,10 +58,61 @@ fi
 
 "$SCRIPT_DIR/build.sh"
 
-cmd=("$TEST_BIN" --bin "$DAEMON_BIN")
+tests=(
+  "$TEST_DIR/test_interface_baseline"
+  "$TEST_DIR/test_config_stream"
+  "$TEST_DIR/test_client_lifecycle"
+  "$TEST_DIR/test_known_issues"
+)
 
-if [[ "$tx_tests" == true ]]; then
-  cmd+=(--rf-tx --rx-seconds "$rx_seconds")
+overall_rc=0
+results=()
+
+for test_bin in "${tests[@]}"; do
+  echo
+  echo "================================================================"
+  echo "Running: $test_bin"
+  echo "================================================================"
+
+  cmd=("$test_bin" --bin "$DAEMON_BIN")
+
+  if [[ "$test_bin" == "$TEST_DIR/test_interface_baseline" && "$tx_tests" == true ]]; then
+    cmd+=(--rf-tx --rx-seconds "$rx_seconds")
+  fi
+
+  if "${cmd[@]}"; then
+    results+=("OK   $(basename "$test_bin")")
+  else
+    rc=$?
+    results+=("FAIL $(basename "$test_bin") rc=$rc")
+    overall_rc=1
+  fi
+
+  sleep 1
+
+  if pgrep -x loraham_daemon >/dev/null; then
+    echo "ERROR: loraham_daemon is still running after $test_bin"
+    pgrep -af loraham_daemon || true
+    pkill -TERM -x loraham_daemon 2>/dev/null || true
+    sleep 1
+    pkill -KILL -x loraham_daemon 2>/dev/null || true
+    results+=("FAIL $(basename "$test_bin") daemon-still-running")
+    overall_rc=1
+  fi
+done
+
+echo
+echo "================================================================"
+echo "Final test summary"
+echo "================================================================"
+for result in "${results[@]}"; do
+  echo "$result"
+done
+
+if [[ "$overall_rc" -eq 0 ]]; then
+  echo "OVERALL OK"
+else
+  echo "OVERALL FAIL"
 fi
 
-exec "${cmd[@]}"
+exit "$overall_rc"

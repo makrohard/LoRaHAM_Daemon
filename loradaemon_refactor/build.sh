@@ -5,9 +5,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 TEST_DIR="$SCRIPT_DIR/tests"
 
-TEST_SRC="$TEST_DIR/test_loradaemon_320_108_interface.c"
-TEST_OUT="$TEST_DIR/test_loradaemon_interface"
-
 DAEMON_SRC="$SCRIPT_DIR/loradaemon_320_108.cpp"
 DAEMON_OUT="$SCRIPT_DIR/loraham_daemon"
 
@@ -140,33 +137,39 @@ build_daemon() {
   echo "Built daemon: $DAEMON_OUT"
 }
 
-build_test() {
-  if [[ ! -f "$TEST_SRC" ]]; then
-    echo "ERROR: test source file not found: $TEST_SRC" >&2
-    exit 1
-  fi
+build_one_test() {
+  local src="$1"
+  local out="$2"
 
   "$cc" \
     -std=c11 \
     -Wall \
     -Wextra \
     -O2 \
-    -o "$TEST_OUT" \
-    "$TEST_SRC"
+    -I"$TEST_DIR" \
+    -o "$out" \
+    "$src"
 
-  echo "Built test:   $TEST_OUT"
+  echo "Built test:   $out"
+}
+
+build_tests() {
+  build_one_test "$TEST_DIR/test_interface_baseline.c" "$TEST_DIR/test_interface_baseline"
+  build_one_test "$TEST_DIR/test_config_stream.c" "$TEST_DIR/test_config_stream"
+  build_one_test "$TEST_DIR/test_client_lifecycle.c" "$TEST_DIR/test_client_lifecycle"
+  build_one_test "$TEST_DIR/test_known_issues.c" "$TEST_DIR/test_known_issues"
 }
 
 case "${1:-all}" in
   all)
     build_daemon
-    build_test
+    build_tests
     ;;
   daemon)
     build_daemon
     ;;
-  test)
-    build_test
+  test|tests)
+    build_tests
     ;;
   *)
     echo "Usage: $0 [all|daemon|test]" >&2
