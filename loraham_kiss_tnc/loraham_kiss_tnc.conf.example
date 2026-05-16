@@ -12,7 +12,13 @@ conf_socket=/tmp/loraconf433.sock
 rx_only=0
 
 verbose=0
+
+# Runtime stats. Set to 0 to disable.
 stats_interval=60
+
+# TX timing in milliseconds.
+# tx_settle_ms: wait after switching to TX frequency before sending.
+# tx_return_ms: wait after TX before switching back to RX frequency.
 tx_settle_ms=100
 tx_return_ms=1000
 
