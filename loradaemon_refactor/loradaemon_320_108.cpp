@@ -1301,18 +1301,6 @@ static int send_data868_chunk(uint8_t *chunk, size_t len, size_t offset, void *c
     return 0;
 }
 
-static void process_data433_clients(const fd_set *readfds)
-{
-    data_tx_process_clients("433", client_data433, MAX_CLIENTS,
-                            readfds, send_data433_chunk, NULL);
-}
-
-static void process_data868_clients(const fd_set *readfds)
-{
-    data_tx_process_clients("868", client_data868, MAX_CLIENTS,
-                            readfds, send_data868_chunk, NULL);
-}
-
 // --- Unix socket setup moved to unix_socket.cpp ---
 
 int main(int argc, char *argv[]) {
@@ -1428,8 +1416,10 @@ int main(int argc, char *argv[]) {
 
 
                         // --- DATA Clients bearbeiten ---
-                        process_data433_clients(&readfds);
-                        process_data868_clients(&readfds);
+                        data_tx_process_clients("433", client_data433, MAX_CLIENTS,
+                                                &readfds, send_data433_chunk, NULL);
+                        data_tx_process_clients("868", client_data868, MAX_CLIENTS,
+                                                &readfds, send_data868_chunk, NULL);
 
                         // --- CONFIG Clients bearbeiten ---
                         // parse_config kann hier eingefügt werden
