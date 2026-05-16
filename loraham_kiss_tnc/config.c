@@ -166,6 +166,25 @@ static int parse_optional_freq(const char *value,
     return LHKT_OK;
 }
 
+static int is_safe_token(const char *text)
+{
+    size_t i;
+
+    if (!text || text[0] == '\0') {
+        return 0;
+    }
+
+    for (i = 0; text[i] != '\0'; i++) {
+        if (!isalnum((unsigned char)text[i]) &&
+            text[i] != '_' &&
+            text[i] != '-') {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 /*
  * Parse one config line.
  * Empty lines and lines starting with '#' are ignored.
@@ -226,6 +245,10 @@ int lhkt_config_parse_line(lhkt_config_t *cfg, char *line, unsigned int line_no)
     }
 
     if (strcmp(key, "mode") == 0) {
+        if (!is_safe_token(value)) {
+            return LHKT_ERR_FORMAT;
+        }
+
         return copy_string(cfg->mode, sizeof(cfg->mode), value);
     }
 

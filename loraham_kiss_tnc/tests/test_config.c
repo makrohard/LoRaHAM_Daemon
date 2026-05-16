@@ -133,6 +133,7 @@ static void test_reject_invalid(void)
     char bad2[] = "sf = 99";
     char bad3[] = "unknown_key = value";
     char bad4[] = "not_a_key_value_line";
+    char bad5[] = "mode = LORA FREQ=1";
 
     lhkt_config_defaults(&cfg);
 
@@ -140,6 +141,7 @@ static void test_reject_invalid(void)
     assert(lhkt_config_parse_line(&cfg, bad2, 2) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad3, 3) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad4, 4) == LHKT_ERR_FORMAT);
+    assert(lhkt_config_parse_line(&cfg, bad5, 5) == LHKT_ERR_FORMAT);
 }
 
 int main(void)
