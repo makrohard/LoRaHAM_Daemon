@@ -146,6 +146,7 @@
 
 #include "daemon_protocol.h"
 #include "daemon_timing.h"
+#include "data_tx.h"
 #include "event_loop.h"
 #include "unix_socket.h"
 #include "client_set.h"
@@ -1259,8 +1260,7 @@ static void process_data433_clients(const fd_set *readfds)
 
                 ssize_t bytes_sent = 0;
                 while(bytes_sent < n) {
-                    ssize_t chunk_size = n - bytes_sent;
-                    if(chunk_size > 255) chunk_size = 255;
+                    ssize_t chunk_size = (ssize_t)data_tx_chunk_size((size_t)(n - bytes_sent));
 
                     // --- CAD-Guard: LoRa only ---
                     if (mode_433 == RADIO_MODE_LORA) {
@@ -1301,8 +1301,7 @@ static void process_data868_clients(const fd_set *readfds)
 
                 ssize_t bytes_sent = 0;
                 while(bytes_sent < n) {
-                    ssize_t chunk_size = n - bytes_sent;
-                    if(chunk_size > 255) chunk_size = 255;
+                    ssize_t chunk_size = (ssize_t)data_tx_chunk_size((size_t)(n - bytes_sent));
 
                     // --- CAD-Guard: LoRa only ---
                     if (mode_868 == RADIO_MODE_LORA) {

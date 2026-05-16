@@ -136,6 +136,7 @@ build_daemon() {
     "$SCRIPT_DIR/radio_channel.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
+    "$SCRIPT_DIR/data_tx.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
     -llgpio
@@ -213,7 +214,26 @@ build_one_event_loop_test() {
   echo "Built test:   $out"
 }
 
+build_one_data_tx_test() {
+  local src="$1"
+  local out="$2"
+
+  "$cxx" \
+    -std=c++11 \
+    -Wall \
+    -Wextra \
+    -O2 \
+    -I"$TEST_DIR" \
+    -I"$SCRIPT_DIR" \
+    -o "$out" \
+    "$src" \
+    "$SCRIPT_DIR/data_tx.cpp"
+
+  echo "Built test:   $out"
+}
+
 build_tests() {
+  build_one_data_tx_test "$TEST_DIR/test_data_tx.cpp" "$TEST_DIR/test_data_tx"
   build_one_event_loop_test "$TEST_DIR/test_event_loop.cpp" "$TEST_DIR/test_event_loop"
   build_one_timing_test "$TEST_DIR/test_daemon_timing.cpp" "$TEST_DIR/test_daemon_timing"
   build_one_test "$TEST_DIR/test_rssi_multiclient.c" "$TEST_DIR/test_rssi_multiclient"
