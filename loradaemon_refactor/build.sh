@@ -135,6 +135,7 @@ build_daemon() {
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/radio_channel.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
+    "$SCRIPT_DIR/event_loop.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
     -llgpio

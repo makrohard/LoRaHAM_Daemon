@@ -146,6 +146,7 @@
 
 #include "daemon_protocol.h"
 #include "daemon_timing.h"
+#include "event_loop.h"
 #include "unix_socket.h"
 #include "client_set.h"
 #include "config_parser.h"
@@ -1322,6 +1323,7 @@ int main(int argc, char *argv[]) {
     LED_init();
     lora_init();
 
+    EventLoopSelectSet event_set;
     fd_set readfds;
     uint8_t buf[buf_SIZE];
     uint8_t tx_buf[buf_SIZE];  // ← NEU: nur zum Senden
@@ -1344,26 +1346,21 @@ int main(int argc, char *argv[]) {
 
     while (1) {
 
-        FD_ZERO(&readfds);
-        FD_SET(data433_fd, &readfds);
-        FD_SET(data868_fd, &readfds);
-        FD_SET(conf433_fd, &readfds);
-        FD_SET(conf868_fd, &readfds);
+        event_loop_select_reset(&event_set);
+        event_loop_select_add_fd(&event_set, data433_fd);
+        event_loop_select_add_fd(&event_set, data868_fd);
+        event_loop_select_add_fd(&event_set, conf433_fd);
+        event_loop_select_add_fd(&event_set, conf868_fd);
 
-        int maxfd = data433_fd;
-        if (data868_fd > maxfd) maxfd = data868_fd;
-        if (conf433_fd > maxfd) maxfd = conf433_fd;
-        if (conf868_fd > maxfd) maxfd = conf868_fd;
-        maxfd += 1;
-
-        client_set_add_fds(client_data433, MAX_CLIENTS, &readfds, &maxfd);
-        client_set_add_fds(client_data868, MAX_CLIENTS, &readfds, &maxfd);
-        client_set_add_fds(client_conf433, MAX_CLIENTS, &readfds, &maxfd);
-        client_set_add_fds(client_conf868, MAX_CLIENTS, &readfds, &maxfd);
+        client_set_add_fds(client_data433, MAX_CLIENTS, &event_set.readfds, &event_set.maxfd);
+        client_set_add_fds(client_data868, MAX_CLIENTS, &event_set.readfds, &event_set.maxfd);
+        client_set_add_fds(client_conf433, MAX_CLIENTS, &event_set.readfds, &event_set.maxfd);
+        client_set_add_fds(client_conf868, MAX_CLIENTS, &event_set.readfds, &event_set.maxfd);
 
         // --- Select timeout ---
         struct timeval tv = {0, DAEMON_SELECT_TIMEOUT_USEC};
-        int ret = select(maxfd, &readfds, NULL, NULL, &tv);
+        readfds = event_set.readfds;
+        int ret = select(event_set.maxfd, &readfds, NULL, NULL, &tv);
         if(ret<0){perror("select"); continue;}
 
         // --- Neue DATA Clients ---
