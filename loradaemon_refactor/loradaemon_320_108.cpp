@@ -145,6 +145,7 @@
 #include <lgpio.h>
 
 #include "daemon_protocol.h"
+#include "daemon_timing.h"
 #include "unix_socket.h"
 #include "client_set.h"
 #include "config_parser.h"
@@ -1333,7 +1334,7 @@ int main(int argc, char *argv[]) {
     int cad_counter = 0;
     int cad_band    = 0;   // 0 = nächster CAD-Scan für 433, 1 = für 868
 
-    // --- GETRSSI Tick-Zähler: select-Timeout = 10ms, alle 10 Loops -> 100ms = 10 Hz ---
+    // --- GETRSSI Tick-Zaehler ---
     int rssi_tick_counter = 0;
 
 
@@ -1359,8 +1360,8 @@ int main(int argc, char *argv[]) {
         client_set_add_fds(client_conf433, MAX_CLIENTS, &readfds, &maxfd);
         client_set_add_fds(client_conf868, MAX_CLIENTS, &readfds, &maxfd);
 
-        // Timeout für select: 10ms -> Loop bleibt schnell
-        struct timeval tv = {0, 10000}; // 10ms
+        // --- Select timeout ---
+        struct timeval tv = {0, DAEMON_SELECT_TIMEOUT_USEC};
         int ret = select(maxfd, &readfds, NULL, NULL, &tv);
         if(ret<0){perror("select"); continue;}
 
@@ -1898,9 +1899,9 @@ int main(int argc, char *argv[]) {
                             radio_channel_getrssi_autostop(&channel_868, &runtime_868, "CONF 868");
                         }
 
-                        // --- 10-Hz-Tick: select-Timeout = 10ms, alle 10 Loops = 100ms ---
+                        // --- RSSI tick ---
                         rssi_tick_counter++;
-                        if(rssi_tick_counter >= 10) {
+                        if(rssi_tick_counter >= DAEMON_RSSI_TICK_INTERVAL) {
                             rssi_tick_counter = 0;
 
                             // 433: nur lesen wenn aktiv und kein TX laeuft
