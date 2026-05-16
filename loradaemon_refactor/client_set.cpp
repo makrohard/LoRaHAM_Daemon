@@ -25,6 +25,17 @@ void client_set_close_slot(int *clients, int index)
     clients[index] = 0;
 }
 
+
+int client_set_has_clients(int *clients, int max_clients)
+{
+    for (int i = 0; i < max_clients; i++) {
+        if (clients[i] > 0)
+            return 1;
+    }
+
+    return 0;
+}
+
 void client_set_add_fds(int *clients, int max_clients, fd_set *readfds, int *maxfd)
 {
     for (int i = 0; i < max_clients; i++) {

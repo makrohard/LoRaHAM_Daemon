@@ -8,6 +8,7 @@
 int client_set_add(int *clients, int max_clients, int fd);
 void client_set_close_slot(int *clients, int index);
 void client_set_add_fds(int *clients, int max_clients, fd_set *readfds, int *maxfd);
+int client_set_has_clients(int *clients, int max_clients);
 
 /* --- Client text broadcast --- */
 

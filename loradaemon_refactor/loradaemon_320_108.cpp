@@ -1902,18 +1902,12 @@ int main(int argc, char *argv[]) {
 
                         // --- Auto-Stop: Pruefe ob noch ein Conf-Client verbunden ist ---
                         {
-                            bool any_conf433 = false;
-                            bool any_conf868 = false;
-                            for(int i = 0; i < MAX_CLIENTS; i++) {
-                                if(client_conf433[i] > 0) any_conf433 = true;
-                                if(client_conf868[i] > 0) any_conf868 = true;
-                            }
-                            if(!any_conf433 && getrssi_433_active) {
+                            if(!client_set_has_clients(client_conf433, MAX_CLIENTS) && getrssi_433_active) {
                                 getrssi_433_active = false;
                                 printf("[CONF 433] kein Client mehr verbunden -> GETRSSI auto-stop\n");
                                 fflush(stdout);
                             }
-                            if(!any_conf868 && getrssi_868_active) {
+                            if(!client_set_has_clients(client_conf868, MAX_CLIENTS) && getrssi_868_active) {
                                 getrssi_868_active = false;
                                 printf("[CONF 868] kein Client mehr verbunden -> GETRSSI auto-stop\n");
                                 fflush(stdout);
