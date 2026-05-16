@@ -21,4 +21,19 @@ int daemon_tick_state_due(DaemonTick *tick);
 
 int daemon_tick_due(int *counter, int interval);
 
+/* --- Deadline timer helper --- */
+
+typedef struct {
+    long interval_ms;
+    long next_due_ms;
+} DaemonDeadlineTimer;
+
+void daemon_deadline_timer_init(DaemonDeadlineTimer *timer,
+                                long now_ms,
+                                long interval_ms);
+long daemon_deadline_timer_timeout_ms(const DaemonDeadlineTimer *timer,
+                                      long now_ms);
+int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
+                              long now_ms);
+
 #endif

@@ -58,6 +58,31 @@ static void test_state_counter_tick(void)
     expect_int("state tick reset", tick.counter, 0);
 }
 
+
+static void test_deadline_timer(void)
+{
+    DaemonDeadlineTimer timer;
+
+    daemon_deadline_timer_init(&timer, 1000, 100);
+
+    expect_int("deadline init interval", (int)timer.interval_ms, 100);
+    expect_int("deadline init next due", (int)timer.next_due_ms, 1100);
+
+    expect_int("deadline timeout before due",
+               (int)daemon_deadline_timer_timeout_ms(&timer, 1050), 50);
+    expect_int("deadline not due before due",
+               daemon_deadline_timer_due(&timer, 1099), 0);
+    expect_int("deadline due at due time",
+               daemon_deadline_timer_due(&timer, 1100), 1);
+    expect_int("deadline advances once", (int)timer.next_due_ms, 1200);
+
+    expect_int("deadline catches up after delay",
+               daemon_deadline_timer_due(&timer, 1350), 1);
+    expect_int("deadline catch-up next due", (int)timer.next_due_ms, 1400);
+    expect_int("deadline timeout when overdue",
+               (int)daemon_deadline_timer_timeout_ms(&timer, 1400), 0);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -81,6 +106,7 @@ int main(int argc, char **argv)
 
     test_plain_counter_tick();
     test_state_counter_tick();
+    test_deadline_timer();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
