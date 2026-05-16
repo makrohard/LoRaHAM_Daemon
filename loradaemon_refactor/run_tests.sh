@@ -62,6 +62,7 @@ tests=(
   "$TEST_DIR/test_config_parser"
   "$TEST_DIR/test_interface_baseline"
   "$TEST_DIR/test_config_stream"
+  "$TEST_DIR/test_rssi_multiclient"
   "$TEST_DIR/test_client_lifecycle"
   "$TEST_DIR/test_known_issues"
 )
