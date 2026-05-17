@@ -2,6 +2,7 @@
 #define LORAHAM_CONFIG_DISPATCH_H
 
 #include "client_set.h"
+#include "config_apply.h"
 #include "daemon_protocol.h"
 #include "radio_channel.h"
 
@@ -12,13 +13,6 @@
 #include <sys/types.h>
 
 /* --- CONFIG client dispatch --- */
-
-template<typename RadioT>
-using ConfigApplyFn = void (*)(RadioT& radio,
-                               const char *tag,
-                               const char *cmd,
-                               volatile RadioMode_t& mode,
-                               volatile bool& getrssi_active);
 
 template<typename RadioT>
 struct ConfigDispatchContext {
