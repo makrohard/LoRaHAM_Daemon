@@ -1,7 +1,7 @@
 #ifndef LORAHAM_DAEMON_TIMING_H
 #define LORAHAM_DAEMON_TIMING_H
 
-/* --- Current select-loop timing --- */
+/* --- Event-loop timing --- */
 
 #define DAEMON_EVENT_LOOP_TIMEOUT_USEC 10000
 
