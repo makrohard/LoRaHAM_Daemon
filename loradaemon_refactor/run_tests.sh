@@ -68,7 +68,6 @@ tests=(
   "$TEST_DIR/test_client_queued_broadcast"
   "$TEST_DIR/test_client_slow_output"
   "$TEST_DIR/test_event_loop_output_flush"
-  "$TEST_DIR/test_client_read_disconnect_cleanup"
   "$TEST_DIR/test_tx_result"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/check_tx_result_propagation.sh"

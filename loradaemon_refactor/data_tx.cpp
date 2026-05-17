@@ -1,6 +1,5 @@
 #include "data_tx.h"
 
-#include "client_set.h"
 #include "client_slot.h"
 
 #include <errno.h>
@@ -87,41 +86,3 @@ void data_tx_process_slots(const char *tag,
     }
 }
 
-void data_tx_process_clients_with_output(const char *tag,
-                                         int *clients,
-                                         ClientOutputQueue *queues,
-                                         int max_clients,
-                                         const EventLoopReadySet *readfds,
-                                         DataTxChunkHandler handler,
-                                         void *ctx)
-{
-    for(int i=0;i<max_clients;i++){
-        if(client_set_slot_ready(clients, i, readfds)) {
-            uint8_t large_buf[2048];
-            ssize_t n = queues
-                ? client_set_read_slot_with_output(clients, queues, i, large_buf, sizeof(large_buf))
-                : client_set_read_slot(clients, i, large_buf, sizeof(large_buf));
-
-            if(n > 0) {
-                printf("[DEBUG %s] %zd Bytes vom Socket erhalten. Zerteile in LoRa-Pakete...\n", tag, n);
-
-                size_t processed = data_tx_for_each_chunk(large_buf, (size_t)n, handler, ctx);
-                if (processed < (size_t)n) {
-                    printf("[DEBUG %s] DATA-TX aborted after %zu/%zd bytes\n",
-                           tag, processed, n);
-                }
-            }
-        }
-    }
-}
-
-void data_tx_process_clients(const char *tag,
-                             int *clients,
-                             int max_clients,
-                             const EventLoopReadySet *readfds,
-                             DataTxChunkHandler handler,
-                             void *ctx)
-{
-    data_tx_process_clients_with_output(tag, clients, NULL, max_clients,
-                                        readfds, handler, ctx);
-}

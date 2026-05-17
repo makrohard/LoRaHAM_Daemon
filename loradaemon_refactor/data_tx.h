@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "client_set.h"
 #include "client_slot.h"
 #include "event_loop.h"
 
@@ -31,19 +30,6 @@ void data_tx_process_slots(const char *tag,
                            DataTxChunkHandler handler,
                            void *ctx);
 
-void data_tx_process_clients(const char *tag,
-                             int *clients,
-                             int max_clients,
-                             const EventLoopReadySet *readfds,
-                             DataTxChunkHandler handler,
-                             void *ctx);
 
-void data_tx_process_clients_with_output(const char *tag,
-                                         int *clients,
-                                         ClientOutputQueue *queues,
-                                         int max_clients,
-                                         const EventLoopReadySet *readfds,
-                                         DataTxChunkHandler handler,
-                                         void *ctx);
 
 #endif

@@ -1,5 +1,5 @@
 #include "../data_tx.h"
-#include "../client_set.h"
+#include "../client_slot.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -12,8 +12,8 @@
 /*
  * DATA TX unit tests.
  *
- * This locks the LoRa packet chunk size before DATA TX handling is moved
- * out of the daemon file.
+ * DATA clients are ClientSlot-based in the daemon. These tests lock the
+ * chunking behavior and the slot-based DATA read/close path.
  */
 
 static int g_ok = 0;
@@ -31,7 +31,6 @@ static void expect_size(const char *name, size_t actual, size_t expected)
         printf("[FAIL] %s: expected %zu, got %zu\n", name, expected, actual);
     }
 }
-
 
 static void expect_int(const char *name, int actual, int expected)
 {
@@ -54,7 +53,6 @@ static void test_chunk_size(void)
     expect_size("max plus one", data_tx_chunk_size(256), 255);
     expect_size("large input", data_tx_chunk_size(2048), 255);
 }
-
 
 typedef struct {
     int calls;
@@ -112,80 +110,20 @@ static void test_chunk_iterator_stop(void)
     expect_int("iterator stop call count", rec.calls, 2);
 }
 
+/* --- DATA TX dispatch via ClientSlot --- */
 
-
-/* --- Client close helpers --- */
-
-static int wait_peer_closed(int fd)
+static void test_process_slots_epoll(void)
 {
-    struct pollfd pfd;
-    char buf[8];
-
-    pfd.fd = fd;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-
-    if (poll(&pfd, 1, 1000) <= 0)
-        return 0;
-
-    if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
-        return 1;
-
-    if (pfd.revents & POLLIN) {
-        ssize_t n = read(fd, buf, sizeof(buf));
-        if (n == 0)
-            return 1;
-        if (n < 0 && errno != EINTR)
-            return 1;
-    }
-
-    return 0;
-}
-
-static void test_client_set_close_all(void)
-{
-    int a[2];
-    int b[2];
-    int clients[4] = {0};
-
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, a) != 0 ||
-        socketpair(AF_UNIX, SOCK_STREAM, 0, b) != 0) {
-        g_fail++;
-        printf("[FAIL] close all socketpair setup\n");
-        return;
-    }
-
-    clients[0] = a[1];
-    clients[2] = b[1];
-
-    client_set_close_all(clients, 4);
-
-    expect_int("close all slot 0", clients[0], 0);
-    expect_int("close all slot 1", clients[1], 0);
-    expect_int("close all slot 2", clients[2], 0);
-    expect_int("close all slot 3", clients[3], 0);
-    expect_int("close all peer A closed", wait_peer_closed(a[0]), 1);
-    expect_int("close all peer B closed", wait_peer_closed(b[0]), 1);
-
-    close(a[0]);
-    close(b[0]);
-}
-
-
-
-/* --- DATA TX dispatch via event loop --- */
-
-static void test_process_clients_epoll(void)
-{
-    const char *name = "process clients epoll wait";
+    const char *name = "process slots epoll wait";
     int sv[2];
-    int clients[2] = {0};
+    ClientSlot slots[2];
     EventLoopSet set;
     EventLoopReadySet ready;
     uint8_t payload[300];
     ChunkRecorder rec = {0, {0}, {0}};
 
     memset(payload, 'A', sizeof(payload));
+    client_slot_init_all(slots, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
         g_fail++;
@@ -193,11 +131,11 @@ static void test_process_clients_epoll(void)
         return;
     }
 
-    clients[0] = sv[1];
+    client_slot_set_fd(&slots[0], sv[1]);
 
     if (event_loop_init(&set) != 0) {
         close(sv[0]);
-        client_set_close_slot(clients, 0);
+        client_slot_close(&slots[0]);
         g_fail++;
         printf("[FAIL] %s epoll init\n", name);
         return;
@@ -205,40 +143,41 @@ static void test_process_clients_epoll(void)
 
     if (write(sv[0], payload, sizeof(payload)) != (ssize_t)sizeof(payload)) {
         close(sv[0]);
-        client_set_close_slot(clients, 0);
+        client_slot_close(&slots[0]);
         event_loop_close(&set);
         g_fail++;
         printf("[FAIL] %s write\n", name);
         return;
     }
 
-    event_loop_add_fd(&set, sv[1]);
+    event_loop_add_fd(&set, slots[0].fd);
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
-    data_tx_process_clients(name, clients, 2, &ready, record_chunk, &rec);
+    data_tx_process_slots(name, slots, 2, &ready, record_chunk, &rec);
 
-    expect_int("process clients call count", rec.calls, 2);
-    expect_size("process clients first chunk", rec.sizes[0], 255);
-    expect_size("process clients second chunk", rec.sizes[1], 45);
-    expect_size("process clients second offset", rec.offsets[1], 255);
+    expect_int("process slots call count", rec.calls, 2);
+    expect_size("process slots first chunk", rec.sizes[0], 255);
+    expect_size("process slots second chunk", rec.sizes[1], 45);
+    expect_size("process slots second offset", rec.offsets[1], 255);
+    expect_int("process slots client kept", client_slot_has_client(&slots[0]), 1);
 
     close(sv[0]);
-    client_set_close_slot(clients, 0);
+    client_slot_close(&slots[0]);
     event_loop_close(&set);
 }
 
-
-static void test_process_clients_abort_on_handler_error(void)
+static void test_process_slots_abort_on_handler_error(void)
 {
-    const char *name = "process clients abort on handler error";
+    const char *name = "process slots abort on handler error";
     int sv[2];
-    int clients[2] = {0};
+    ClientSlot slots[2];
     EventLoopSet set;
     EventLoopReadySet ready;
     uint8_t payload[600];
     ChunkRecorder rec = {0, {0}, {0}};
 
     memset(payload, 'B', sizeof(payload));
+    client_slot_init_all(slots, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
         g_fail++;
@@ -246,11 +185,11 @@ static void test_process_clients_abort_on_handler_error(void)
         return;
     }
 
-    clients[0] = sv[1];
+    client_slot_set_fd(&slots[0], sv[1]);
 
     if (event_loop_init(&set) != 0) {
         close(sv[0]);
-        client_set_close_slot(clients, 0);
+        client_slot_close(&slots[0]);
         g_fail++;
         printf("[FAIL] %s epoll init\n", name);
         return;
@@ -258,28 +197,71 @@ static void test_process_clients_abort_on_handler_error(void)
 
     if (write(sv[0], payload, sizeof(payload)) != (ssize_t)sizeof(payload)) {
         close(sv[0]);
-        client_set_close_slot(clients, 0);
+        client_slot_close(&slots[0]);
         event_loop_close(&set);
         g_fail++;
         printf("[FAIL] %s write\n", name);
         return;
     }
 
-    event_loop_add_fd(&set, sv[1]);
+    event_loop_add_fd(&set, slots[0].fd);
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
-    data_tx_process_clients(name, clients, 2, &ready, stop_on_second_chunk, &rec);
+    data_tx_process_slots(name, slots, 2, &ready, stop_on_second_chunk, &rec);
 
     expect_int("process abort call count", rec.calls, 2);
     expect_size("process abort first chunk", rec.sizes[0], 255);
     expect_size("process abort second chunk", rec.sizes[1], 255);
     expect_size("process abort second offset", rec.offsets[1], 255);
+    expect_int("process abort client kept", client_slot_has_client(&slots[0]), 1);
 
     close(sv[0]);
-    client_set_close_slot(clients, 0);
+    client_slot_close(&slots[0]);
     event_loop_close(&set);
 }
 
+static void test_process_slots_eof_closes_and_resets_output(void)
+{
+    const char *name = "process slots eof";
+    int sv[2];
+    ClientSlot slots[1];
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    ChunkRecorder rec = {0, {0}, {0}};
+    const uint8_t pending[] = {'q'};
+
+    client_slot_init_all(slots, 1);
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        g_fail++;
+        printf("[FAIL] %s socketpair\n", name);
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+    expect_int("slot eof append", client_output_queue_append(&slots[0].output, pending, sizeof(pending)), 1);
+    expect_size("slot eof output pending", client_output_queue_pending(&slots[0].output), sizeof(pending));
+
+    close(sv[0]);
+
+    if (event_loop_init(&set) != 0) {
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] %s epoll init\n", name);
+        return;
+    }
+
+    event_loop_add_fd(&set, slots[0].fd);
+    expect_int("slot eof wait", event_loop_wait(&set, &ready, 100000), 1);
+
+    data_tx_process_slots("TEST", slots, 1, &ready, record_chunk, &rec);
+
+    expect_int("slot eof no chunks", rec.calls, 0);
+    expect_int("slot eof client closed", slots[0].fd, 0);
+    expect_size("slot eof output reset", client_output_queue_pending(&slots[0].output), 0);
+
+    event_loop_close(&set);
+}
 
 /* --- CLI parsing and test sequence --- */
 
@@ -305,9 +287,9 @@ int main(int argc, char **argv)
     test_chunk_size();
     test_chunk_iterator();
     test_chunk_iterator_stop();
-    test_client_set_close_all();
-    test_process_clients_epoll();
-    test_process_clients_abort_on_handler_error();
+    test_process_slots_epoll();
+    test_process_slots_abort_on_handler_error();
+    test_process_slots_eof_closes_and_resets_output();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

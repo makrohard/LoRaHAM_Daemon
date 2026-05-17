@@ -27,6 +27,17 @@ require() {
   fi
 }
 
+reject() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+
+  if grep -Fq -- "$pattern" "$file"; then
+    echo "ERROR: obsolete ClientSlot compatibility item remains: $label" >&2
+    rc=1
+  fi
+}
+
 require "$HEADER" "typedef struct {" "ClientSlot typedef"
 require "$HEADER" "int fd;" "fd stored in ClientSlot"
 require "$HEADER" "ClientOutputQueue output;" "output queue stored in ClientSlot"
@@ -59,6 +70,12 @@ require "$DAEMON" "client_slot_broadcast_queued(client_conf433_slots" "433 CONF 
 require "$DAEMON" "client_slot_broadcast_queued(client_conf868_slots" "868 CONF broadcasts use ClientSlot"
 require "$REFACTOR_DIR/build.sh" '"$SCRIPT_DIR/client_slot.cpp"' "client_slot linked in build"
 require "$REFACTOR_DIR/run_tests.sh" '"$TEST_DIR/test_client_slot"' "test_client_slot in run_tests"
+
+reject "$DATA_TX_H" "data_tx_process_clients(" "old DATA TX clients API"
+reject "$DATA_TX_H" "data_tx_process_clients_with_output" "old DATA TX clients-with-output API"
+reject "$DATA_TX_CPP" "void data_tx_process_clients(" "old DATA TX clients implementation"
+reject "$DATA_TX_CPP" "void data_tx_process_clients_with_output" "old DATA TX clients-with-output implementation"
+reject "$REFACTOR_DIR/run_tests.sh" "test_client_read_disconnect_cleanup" "old read-disconnect cleanup test"
 
 for pattern in \
   'client_data433' \

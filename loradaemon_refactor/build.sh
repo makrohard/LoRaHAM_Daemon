@@ -339,19 +339,6 @@ build_one_event_loop_output_flush_test() {
     "${event_loop_sources[@]}"
 }
 
-build_one_client_read_disconnect_cleanup_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/data_tx.cpp" \
-    "$SCRIPT_DIR/client_slot.cpp" \
-    "$SCRIPT_DIR/config_stream.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
 
 build_one_rf_packet_test() {
   local src="$1"
@@ -474,7 +461,6 @@ build_tests() {
   build_one_client_queued_broadcast_test "$TEST_DIR/test_client_queued_broadcast.cpp" "$TEST_DIR/test_client_queued_broadcast"
   build_one_client_slow_output_test "$TEST_DIR/test_client_slow_output.cpp" "$TEST_DIR/test_client_slow_output"
   build_one_event_loop_output_flush_test "$TEST_DIR/test_event_loop_output_flush.cpp" "$TEST_DIR/test_event_loop_output_flush"
-  build_one_client_read_disconnect_cleanup_test "$TEST_DIR/test_client_read_disconnect_cleanup.cpp" "$TEST_DIR/test_client_read_disconnect_cleanup"
   build_one_tx_result_test "$TEST_DIR/test_tx_result.cpp" "$TEST_DIR/test_tx_result"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
