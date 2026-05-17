@@ -65,6 +65,7 @@ tests=(
   "$TEST_DIR/test_client_queued_broadcast"
   "$TEST_DIR/test_client_slow_output"
   "$TEST_DIR/test_event_loop_output_flush"
+  "$TEST_DIR/check_no_blocking_broadcast_paths.sh"
   "$TEST_DIR/test_client_read_disconnect_cleanup"
   "$TEST_DIR/test_rf_packet"
   "$TEST_DIR/test_event_loop"
