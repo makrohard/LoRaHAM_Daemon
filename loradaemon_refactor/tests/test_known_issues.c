@@ -33,7 +33,9 @@ static int test_conf868_log_prefix_source_contract(void)
         return TEST_FAIL;
     }
 
-    ctx_end = strstr(ctx868, "/* --- Main loop context");
+    ctx_end = strstr(ctx868, "/* --- Loop context");
+    if (!ctx_end)
+        ctx_end = strstr(ctx868, "/* --- Main loop context");
     if (!ctx_end) {
         free(source);
         return TEST_FAIL;

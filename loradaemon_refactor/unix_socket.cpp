@@ -7,7 +7,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-/* --- Unix-Socket anlegen wie im ursprünglichen In-File-Helper --- */
+/* --- Unix socket lifecycle ---------------------------------------------- */
+// Unix-Socket anlegen wie im ursprünglichen In-File-Helper.
 int setup_unix_socket(const char *path, int backlog)
 {
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -35,7 +36,7 @@ int setup_unix_socket(const char *path, int backlog)
     return fd;
 }
 
-/* --- Unix-Socket schließen und Socket-Datei entfernen --- */
+// Unix-Socket schließen und Socket-Datei entfernen.
 void close_unix_socket(int *fd, const char *path)
 {
     if (fd && *fd >= 0) {

@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-/* --- CONFIG client dispatch --- */
+/* --- CONFIG client dispatch -------------------------------------------- */
 
 template<typename RadioT>
 struct ConfigDispatchContext {

@@ -1,6 +1,6 @@
 #include "config_apply.h"
 
-/* --- Low-level CONFIG parameter apply functions --- */
+/* --- CONFIG parameter apply --------------------------------------------- */
 
 void apply_lora_param(SX1278 &radio, const char *tag, const std::string &key, const std::string &val) {
     int state = 0;

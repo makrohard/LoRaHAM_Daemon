@@ -146,7 +146,8 @@
 #include "radio_channel.h"
 #include "config_dispatch.h"
 
-// --- Globale Socket- und Client-Zustände
+/* --- Global socket/client state ----------------------------------------- */
+// Globale Socket- und Client-Zustände
 int data433_fd = -1, data868_fd = -1;
 int conf433_fd = -1, conf868_fd = -1;
 
@@ -155,7 +156,8 @@ int client_data868[MAX_CLIENTS] = {0};
 int client_conf433[MAX_CLIENTS] = {0};
 int client_conf868[MAX_CLIENTS] = {0};
 
-// --- Kanal-Zustand für Socket- und Clientverwaltung
+/* --- Channel IO state ---------------------------------------------------- */
+// Kanal-Zustand für Socket- und Clientverwaltung
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
 
@@ -186,13 +188,13 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
 
 static void daemon_runtime_init(EventLoopSet *event_set)
 {
-    // --- Event-Backend ---
+    // Event backend.
     if (event_loop_init(event_set) != 0)
         perror("epoll");
     printf("[Daemon] Event-Backend: %s\n",
            event_loop_backend_name(event_loop_backend(event_set)));
 
-    // --- Signal-Stop ---
+    // Stop signals.
     daemon_lifecycle_reset_stop();
     if (daemon_lifecycle_install_signal_handlers() != 0)
         perror("sigaction");
@@ -219,7 +221,8 @@ static void daemon_enter_background(void)
     freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
     freopen("/tmp/lora_daemon.log", "w", stderr);
 }
-// --- Runtime-Zustand pro Band
+/* --- Radio runtime state ------------------------------------------------- */
+// Runtime-Zustand pro Band
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -446,7 +449,7 @@ void lora_send(uint8_t *buf, size_t len, int band) {
 }
 
 
-/* --- CONFIG apply: see config_apply.cpp --- */
+/* --- CONFIG apply module ------------------------------------------------ */
 
 // --- Init LoRa ---
 void lora_init() {
@@ -602,7 +605,7 @@ typedef struct {
 #define DATA_TX_CAD_MAX_WAIT_TICKS 300
 #define DATA_TX_CAD_SLEEP_USEC 10000
 
-/* --- DATA TX helpers: modem status, LED and CAD wait ---------------------- */
+/* --- DATA TX hardware helpers -------------------------------------------- */
 static int data_tx_modem_status(int band)
 {
     return (band == 433)
@@ -636,12 +639,12 @@ static int data_tx_wait_channel_free(DataTxDaemonContext *tx)
     return 1;
 }
 
-/* --- DATA TX callback: send one queued chunk ----------------------------- */
+/* --- DATA TX send callback ----------------------------------------------- */
 static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
     DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
 
-    // --- CAD-Guard: LoRa only ---
+    // CAD guard: LoRa only.
     if (data_tx_wait_channel_free(tx)) {
         printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
         return 1;
@@ -656,7 +659,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     return 0;
 }
 
-/* --- Context factories: DATA TX and CONFIG dispatch ----------------------- */
+/* --- Runtime context factories ------------------------------------------- */
 
 static DataTxDaemonContext daemon_data_tx_context(const char *tag,
                                                    int band,
@@ -699,7 +702,7 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
     return ctx;
 }
 
-/* --- Main loop context: RSSI timer plus DATA/CONFIG state ---------------- */
+/* --- Loop context --------------------------------------------------------- */
 typedef struct {
     DaemonDeadlineTimer rssi_timer;
     DataTxDaemonContext data_tx_433_ctx;
@@ -710,21 +713,21 @@ typedef struct {
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
 {
-    // --- GETRSSI Timer ---
+    // RSSI timer.
     daemon_deadline_timer_init(&ctx->rssi_timer,
                                daemon_now_ms(),
                                DAEMON_RSSI_INTERVAL_MS);
 
-    // --- DATA TX callbacks ---
+    // DATA TX contexts.
     ctx->data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433);
     ctx->data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868);
 
-    // --- CONFIG dispatch ---
+    // CONFIG contexts.
     ctx->config_433_ctx = daemon_config_433_context();
     ctx->config_868_ctx = daemon_config_868_context();
 }
 
-/* --- Main runtime context: event loop, buffers and loop state ------------ */
+/* --- Main runtime context ------------------------------------------------ */
 typedef struct {
     EventLoopSet event_set;
     EventLoopReadySet readfds;
@@ -739,7 +742,7 @@ static void daemon_main_context_init(DaemonMainContext *ctx)
     daemon_runtime_init(&ctx->event_set);
     daemon_loop_context_init(&ctx->loop_ctx);
 }
-/* --- CONFIG dispatch execution ------------------------------------------- */
+/* --- CONFIG dispatch ----------------------------------------------------- */
 static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ctx,
                                     ConfigDispatchContext<RFM95> *config_868_ctx,
                                     const EventLoopReadySet *readfds,
@@ -749,7 +752,7 @@ static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ct
     config_dispatch_context<RFM95>(config_868_ctx, MAX_CLIENTS, readfds, buf);
 }
 
-/* --- Ready sockets: accept DATA clients and CONFIG clients ---------------- */
+/* --- Socket dispatch ----------------------------------------------------- */
 static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          ConfigDispatchContext<RFM95> *config_868_ctx,
                                          DataTxDaemonContext *data_tx_433_ctx,
@@ -769,7 +772,7 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
 }
 
 
-/* --- CAD status: LoRa activity and CONFIG broadcasts ---------------------- */
+/* --- CAD status ---------------------------------------------------------- */
 static void daemon_process_cad_status(int band)
 {
     if (band == 433) {
@@ -868,7 +871,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
     }
 }
 
-/* --- CAD/RSSI wrapper: keep polling order readable ------------------------ */
+/* --- CAD/RSSI polling ---------------------------------------------------- */
 static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
 {
     daemon_process_cad_status(433);
@@ -876,13 +879,13 @@ static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
     daemon_process_rssi_stream(rssi_timer);
 }
 
-/* --- Main loop logging ---------------------------------------------------- */
+/* --- Main loop logging --------------------------------------------------- */
 static void daemon_log_loop_start(void)
 {
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 }
 
-/* --- RX helpers: special cases -------------------------------------------- */
+/* --- RX special cases ---------------------------------------------------- */
 static void daemon_discard_rx_during_tx(int band)
 {
     if (band == 433) {
@@ -897,7 +900,7 @@ static void daemon_discard_rx_during_tx(int band)
     printf("[868] RX während TX - verwerfe Paket\n");
 }
 
-/* --- RX output: HEX/ASCII and packet print -------------------------------- */
+/* --- RX output ----------------------------------------------------------- */
 static void daemon_print_hex_bytes(const uint8_t *buf, int len)
 {
     for (int i = 0; i < len; i++) {
@@ -916,7 +919,7 @@ static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
     }
 }
 
-/* --- RX band metadata: tag/color/mode/RSSI -------------------------------- */
+/* --- RX presentation metadata ------------------------------------------- */
 static const char *daemon_band_tag(int band)
 {
     if (band == 433)
@@ -997,7 +1000,7 @@ static void daemon_print_fsk_packet(const char *band,
     printf(" RSSI: %.2f dBm\n", rssi);
 }
 
-/* --- RX forwarding to DATA clients ---------------------------------------- */
+/* --- RX forwarding ------------------------------------------------------- */
 static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
 {
     if (len <= 0)
@@ -1011,7 +1014,7 @@ static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
     client_set_broadcast_bytes(client_data868, MAX_CLIENTS, buf, len);
 }
 
-/* --- RX IRQ/FIFO sequence ------------------------------------------------- */
+/* --- RX IRQ/FIFO sequence ------------------------------------------------ */
 static void daemon_restart_receive_after_empty_rx(int band)
 {
     if (band == 433) {
@@ -1095,7 +1098,7 @@ static void daemon_print_rx_packet(int band, uint8_t *buf, int len)
         daemon_print_fsk_packet(tag, color, buf, len, rssi);
 }
 
-/* --- RX band access: flags, TX state and readData() ----------------------- */
+/* --- RX radio accessors -------------------------------------------------- */
 static bool daemon_rx_flag_active(int band)
 {
     if (band == 433)
@@ -1120,7 +1123,7 @@ static int16_t daemon_read_rx_data(int band, uint8_t *buf, size_t buf_len)
     return radio_868->readData(buf, buf_len);
 }
 
-/* --- RX flow: process one band ------------------------------------------- */
+/* --- RX band flow -------------------------------------------------------- */
 static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 {
     // Gemeinsamer RX-Ablauf; die 433/868-Originalkommentare stehen in den Wrappern.
@@ -1155,7 +1158,7 @@ static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 }
 
 
-/* --- Original band entry points: keep 433/868 easy to find --------------- */
+/* --- RX band entry points ------------------------------------------------ */
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
     // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
@@ -1168,7 +1171,7 @@ static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
     daemon_process_radio_band(868, rx_buf_868);
 }
 
-/* --- Polling order: 433, 868, then CAD/RSSI ------------------------------- */
+/* --- Radio polling order ------------------------------------------------- */
 static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
@@ -1180,7 +1183,7 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
     daemon_process_cad_rssi(rssi_timer);
 }
 
-/* --- Main loop iteration: wait, sockets, radio polling ------------------- */
+/* --- Main loop iteration ------------------------------------------------- */
 static void daemon_process_loop_iteration(EventLoopSet *event_set,
                                           EventLoopReadySet *readfds,
                                           DaemonLoopContext *loop_ctx,
@@ -1188,7 +1191,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
                                           uint8_t (&rx_buf_433)[buf_SIZE],
                                           uint8_t (&rx_buf_868)[buf_SIZE])
 {
-    // --- Event wait ---
+    // Wait for socket events.
     int ret = daemon_wait_for_events(event_set, readfds);
     if (ret < 0) {
         perror("event_loop_wait");
@@ -1205,7 +1208,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     daemon_process_radio_polling(&loop_ctx->rssi_timer, rx_buf_433, rx_buf_868);
 }
 
-/* --- Polling loop lifecycle --------------------------------------------- */
+/* --- Polling loop -------------------------------------------------------- */
 static void daemon_run_polling_loop(DaemonMainContext *ctx)
 {
     daemon_log_loop_start();
@@ -1217,10 +1220,10 @@ static void daemon_run_polling_loop(DaemonMainContext *ctx)
                                       ctx->buf,
                                       ctx->rx_buf_433,
                                       ctx->rx_buf_868);
-    } // while stop not requested
+    }
 }
 
-/* --- Daemon run: context init, polling loop and shutdown ----------------- */
+/* --- Daemon run ---------------------------------------------------------- */
 static void daemon_run(void)
 {
     DaemonMainContext main_ctx;
@@ -1232,7 +1235,7 @@ static void daemon_run(void)
     daemon_shutdown_cleanup(&main_ctx.event_set);
 }
 
-/* --- Startup helpers: signals and command-line parsing -------------------- */
+/* --- Startup helpers ----------------------------------------------------- */
 static void daemon_ignore_sigpipe(void)
 {
     // SIGPIPE ignorieren: write() auf geschlossenen Socket crasht sonst den Daemon
@@ -1259,7 +1262,7 @@ static bool daemon_parse_args(int argc, char *argv[])
     return is_daemon;
 }
 
-/* --- Startup sequence: signals, args, background mode and radio IO ------- */
+/* --- Startup sequence ---------------------------------------------------- */
 static void daemon_startup_sequence(int argc, char *argv[])
 {
     daemon_ignore_sigpipe();
@@ -1272,7 +1275,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_radio_io_init();
 }
 
-/* --- Main entry: startup, contexts and polling loop ----------------------- */
+/* --- Main entry ---------------------------------------------------------- */
 
 int main(int argc, char *argv[]) {
     daemon_startup_sequence(argc, argv);

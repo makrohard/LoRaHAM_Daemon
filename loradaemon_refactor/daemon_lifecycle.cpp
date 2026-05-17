@@ -3,7 +3,7 @@
 #include <signal.h>
 #include <string.h>
 
-/* --- daemon stop request --- */
+/* --- Daemon stop handling ---------------------------------------------- */
 
 static volatile sig_atomic_t daemon_stop_requested_flag = 0;
 

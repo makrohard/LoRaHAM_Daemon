@@ -2,7 +2,7 @@
 
 #include <unistd.h>
 
-/* --- epoll backend --- */
+/* --- epoll backend ------------------------------------------------------ */
 
 int event_loop_epoll_init(EventLoopEpollSet *set)
 {

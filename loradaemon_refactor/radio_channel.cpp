@@ -9,7 +9,7 @@
 
 #include <stdio.h>
 
-/* --- Radio channel socket/client state --- */
+/* --- Channel socket state ----------------------------------------------- */
 
 void radio_channel_io_init(RadioChannelIo *ch,
                            RadioBand_t band,
@@ -56,7 +56,7 @@ void radio_channel_open_sockets(RadioChannelIo *ch)
 }
 
 
-/* --- Radio channel runtime flags --- */
+/* --- Channel runtime state ---------------------------------------------- */
 
 void radio_channel_runtime_init(RadioChannelRuntime *rt,
                                 volatile RadioMode_t *mode,
@@ -83,7 +83,8 @@ void radio_channel_getrssi_autostop(RadioChannelIo *io,
     }
 }
 
-/* --- Live-RSSI direkt aus dem SX127x-Register lesen --- */
+/* --- Channel RSSI -------------------------------------------------------- */
+// Live-RSSI direkt aus dem SX127x-Register lesen.
 
 float radio_channel_read_live_rssi(Module *mod,
                                    volatile RadioMode_t mode,

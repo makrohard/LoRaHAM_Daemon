@@ -2,7 +2,7 @@
 
 #include <time.h>
 
-/* --- Counter-based tick helper --- */
+/* --- Tick timers -------------------------------------------------------- */
 
 int daemon_tick_due(int *counter, int interval)
 {
@@ -27,7 +27,7 @@ int daemon_tick_state_due(DaemonTick *tick)
     return daemon_tick_due(&tick->counter, tick->interval);
 }
 
-/* --- Deadline timer helper --- */
+/* --- Deadline timers ---------------------------------------------------- */
 
 void daemon_deadline_timer_init(DaemonDeadlineTimer *timer,
                                 long now_ms,
@@ -59,7 +59,7 @@ int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
     return 1;
 }
 
-/* --- Monotonic time --- */
+/* --- Monotonic clock ---------------------------------------------------- */
 
 long daemon_now_ms(void)
 {

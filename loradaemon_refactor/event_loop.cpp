@@ -1,6 +1,6 @@
 #include "event_loop.h"
 
-/* --- epoll-only event-loop wrapper --- */
+/* --- Event-loop wrapper ------------------------------------------------- */
 
 int event_loop_init(EventLoopSet *set)
 {
