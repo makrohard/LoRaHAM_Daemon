@@ -191,7 +191,10 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 - no warranty; use at your own risk
 
 ## Changelog
+Refactored by Johannes Loose / 410733@gmail.com
 
-- Fix FSK SHAPING parsing: BT values now map to RadioLib constants instead of truncating to 0.
-- Fix TX bounds checks: invalid or oversized packets are rejected before copy/transmit.
-- Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
+- Structurally refactored loradaemon_320_108, introduced an EPOLL-only event loop, and test-covered the cleanup without intended functional changes.
+- Bugfixes
+  - Fix FSK SHAPING parsing: BT values now map to RadioLib constants instead of truncating to 0.
+  - Fix TX bounds checks: invalid or oversized packets are rejected before copy/transmit.
+  - Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
