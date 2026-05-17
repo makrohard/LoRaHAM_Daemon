@@ -30,6 +30,9 @@ require "$VALIDATE" "cmd.malformed_tokens" "validation rejects malformed tokens"
 require "$REFACTOR_DIR/build.sh" '"$SCRIPT_DIR/config_validate.cpp"' "config_validate in build"
 require "$REFACTOR_DIR/run_tests.sh" '"$TEST_DIR/test_config_validate"' "config_validate test in run_tests"
 require "$REFACTOR_DIR/run_tests.sh" '"$TEST_DIR/test_config_apply_transactional"' "config apply transactional test in run_tests"
+require "$REFACTOR_DIR/README.md" "validate complete commands transactionally" "README architecture documents config_validate"
+require "$REFACTOR_DIR/README.md" "The complete CONFIG command is validated before side effects start" "README documents transactional CONFIG behavior"
+require "$REFACTOR_DIR/README.md" "Malformed tokens such as" "README documents malformed token rejection"
 
 validation_line=$(grep -n 'config_validate_command(parsed, mode_flag, &validation)' "$APPLY" | head -n1 | cut -d: -f1 || true)
 getrssi_line=$(grep -n 'if(key == "GETRSSI")' "$APPLY" | head -n1 | cut -d: -f1 || true)

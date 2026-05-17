@@ -21,7 +21,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | UNIX sockets | `unix_socket.cpp` | Create and remove socket files |
 | Client handling | `client_set.cpp` | Client slots, reads, closes, broadcasts |
 | DATA TX | `data_tx.cpp` | Split DATA socket writes into RF chunks |
-| CONFIG parser/apply | `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_apply.cpp`, `config_dispatch.h` | Parse `SET KEY=VALUE` commands, validate values strictly, and apply RadioLib settings |
+| CONFIG parser/apply | `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Parse `SET KEY=VALUE` commands, validate complete commands transactionally, and apply RadioLib settings |
 | Radio channel state | `radio_channel.cpp` | Per-band socket/client state, RSSI auto-stop, live RSSI |
 | Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | RSSI timing and signal-based shutdown |
 
@@ -89,6 +89,8 @@ Important behavior:
 - One-shot clients that close after a final unterminated command are still accepted for compatibility.
 - Keys are parsed case-insensitively.
 - Values are parsed strictly: malformed suffixes, empty values, `nan`, `inf`, and partial numbers are rejected.
+- The complete CONFIG command is validated before side effects start; invalid commands do not change `MODE`, `GETRSSI`, or radio parameters.
+- Malformed tokens such as `BROKEN`, `NOVALUE=`, or `=BAD` reject the whole CONFIG command.
 - `MODE=` is applied before other radio parameters.
 - `GETRSSI=` is handled directly.
 - LoRa-only keys are ignored in FSK mode.
@@ -207,6 +209,9 @@ Refactored by Johannes Loose / 410733@gmail.com
 - Documentation: CONFIG parameter table now reflects strict accepted value ranges.
 - Hardening prep: TX send path now returns TxResult and DATA-TX aborts on send failures.
 - Hardening prep: radio init now records per-band health and guards failed hardware paths.
+- Hardening prep: CONFIG commands are validated as a whole before side-effecting apply starts.
+- Hardening: malformed CONFIG tokens are now reported and rejected before apply.
+- Tests: CONFIG transactional apply now has direct side-effect coverage.
 - QA: add a static check that production paths do not call legacy blocking broadcast wrappers.
 - QA: add slow-client output tests for non-blocking queued broadcasts.
 - Hardening: read-side client disconnects now reset their queued output immediately.
