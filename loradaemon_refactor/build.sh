@@ -25,6 +25,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/config_parser.cpp"
   "$SCRIPT_DIR/config_value.cpp"
   "$SCRIPT_DIR/config_policy.cpp"
+  "$SCRIPT_DIR/config_validate.cpp"
   "$SCRIPT_DIR/config_stream.cpp"
   "$SCRIPT_DIR/config_apply.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
@@ -367,6 +368,20 @@ build_one_tx_result_test() {
     "$SCRIPT_DIR/tx_result.cpp"
 }
 
+
+build_one_config_validate_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/config_validate.cpp" \
+    "$SCRIPT_DIR/config_parser.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp"
+}
+
 build_one_config_policy_test() {
   local src="$1"
   local out="$2"
@@ -429,6 +444,7 @@ build_tests() {
   build_one_config_stream_buffer_test "$TEST_DIR/test_config_stream_buffer.cpp" "$TEST_DIR/test_config_stream_buffer"
   build_one_config_value_test "$TEST_DIR/test_config_value.cpp" "$TEST_DIR/test_config_value"
   build_one_config_policy_test "$TEST_DIR/test_config_policy.cpp" "$TEST_DIR/test_config_policy"
+  build_one_config_validate_test "$TEST_DIR/test_config_validate.cpp" "$TEST_DIR/test_config_validate"
   build_one_config_dispatch_test "$TEST_DIR/test_config_dispatch.cpp" "$TEST_DIR/test_config_dispatch"
   build_one_test "$TEST_DIR/test_interface_baseline.c" "$TEST_DIR/test_interface_baseline"
   build_one_test "$TEST_DIR/test_config_stream.c" "$TEST_DIR/test_config_stream"

@@ -10,6 +10,7 @@
 #include <RadioLib.h>
 #include "config_parser.h"
 #include "config_value.h"
+#include "config_validate.h"
 
 /* --- CONFIG apply callback --- */
 
@@ -54,6 +55,16 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
 
     if(!parsed.has_params)
         return;
+
+    ConfigValidationResult validation;
+    if(!config_validate_command(parsed, mode_flag, &validation)) {
+        printf("[%s] CONFIG rejected: %s=%s (%s)\n",
+               tag,
+               validation.key.c_str(),
+               validation.value.c_str(),
+               validation.reason.c_str());
+        return;
+    }
 
     // --- 1. Pass: MODE= zuerst, GETRSSI= direkt, Rest sammeln ---
     std::vector<std::pair<std::string,std::string>> tokens;
