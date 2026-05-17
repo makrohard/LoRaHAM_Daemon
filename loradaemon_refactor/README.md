@@ -21,7 +21,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | UNIX sockets | `unix_socket.cpp` | Create and remove socket files |
 | Client handling | `client_set.cpp` | Client slots, reads, closes, broadcasts |
 | DATA TX | `data_tx.cpp` | Split DATA socket writes into RF chunks |
-| CONFIG parser/apply | `config_parser.cpp`, `config_apply.cpp`, `config_dispatch.h` | Parse `SET KEY=VALUE` commands and apply RadioLib settings |
+| CONFIG parser/apply | `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_apply.cpp`, `config_dispatch.h` | Parse `SET KEY=VALUE` commands, validate values strictly, and apply RadioLib settings |
 | Radio channel state | `radio_channel.cpp` | Per-band socket/client state, RSSI auto-stop, live RSSI |
 | Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | RSSI timing and signal-based shutdown |
 
@@ -88,6 +88,7 @@ Important behavior:
 - CONF input is line-framed: one newline-terminated line is one command.
 - One-shot clients that close after a final unterminated command are still accepted for compatibility.
 - Keys are parsed case-insensitively.
+- Values are parsed strictly: malformed suffixes, empty values, `nan`, `inf`, and partial numbers are rejected.
 - `MODE=` is applied before other radio parameters.
 - `GETRSSI=` is handled directly.
 - LoRa-only keys are ignored in FSK mode.
@@ -109,22 +110,22 @@ Important behavior:
 | Key | Mode | Default | Accepted values | Common values | Meaning |
 |---|---|---|---|---|---|
 | `MODE` | global | `LORA` | `LORA`, `FSK` | `LORA`, `FSK` | Select RadioLib mode |
-| `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | number > 0, MHz | `433.775`, `433.900`, `869.525` | RF frequency |
-| `POWER` | LORA/FSK | `10` | `0` to `20` dBm | `10`, `17`, `20` | TX power |
-| `GETRSSI` | global | `0` | `0`, `1` | `1` start, `0` stop | Stream live RSSI to CONF clients |
-| `SF` | LORA | 433: `12`, 868: `11` | `7` to `12` | `12`, `11`, `10`, `7` | LoRa spreading factor |
-| `BW` | LORA | 433: `125`, 868: `250` | `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz | `125`, `250` | LoRa bandwidth |
-| `CR` | LORA | `5` | `5` to `8` | `5` | LoRa coding rate (`4/5` to `4/8`) |
-| `CRC` | LORA | `1` | `0`, `1` | `1` | LoRa CRC off/on |
-| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: `6` to `65535`; FSK: `>=0` | `8`, `16`, `32` | Preamble length |
-| `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: 1 byte; FSK: 1 or 2 bytes | `0x12`, `0x2B`, `0x2DD4` | Sync word |
-| `LDRO` | LORA | 433: `1`, 868: `AUTO` | `AUTO`, `0`, `1` | `AUTO`, `1` for SF12/BW125 | Low Data Rate Optimization |
-| `BR` | FSK | RadioLib/default unset by daemon | number > 0, kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |
-| `FREQDEV` | FSK | RadioLib/default unset by daemon | number > 0, kHz | `2.2`, `3.0`, `5.0`, `10.0` | Frequency deviation |
-| `RXBW` | FSK | RadioLib/default unset by daemon | number > 0, kHz | `6.3`, `12.5`, `20.8`, `25.0`, `250.0` | RX filter bandwidth |
-| `OOK` | FSK | RadioLib/default | `0`, `1` | `0` FSK, `1` OOK | Enable OOK mode |
-| `SHAPING` | FSK | RadioLib/default | RadioLib-valid float | `0.0`, `0.3`, `0.5`, `1.0` | Data shaping / Gaussian filter |
-| `ENCODING` | FSK | RadioLib/default | `0`, `1`, `2` | `0` NRZ, `1` Manchester, `2` Whitening | FSK encoding |
+| `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number > `0`, MHz; RadioLib rejects unsupported bands | `433.775`, `433.900`, `869.525` | RF frequency |
+| `POWER` | LORA/FSK | `10` | integer `0` to `20` dBm | `10`, `17`, `20` | TX power |
+| `GETRSSI` | global | `0` | exact `0`, `1` | `1` start, `0` stop | Stream live RSSI to CONF clients |
+| `SF` | LORA | 433: `12`, 868: `11` | integer `7` to `12` | `12`, `11`, `10`, `7` | LoRa spreading factor |
+| `BW` | LORA | 433: `125`, 868: `250` | exact `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz | `125`, `250` | LoRa bandwidth |
+| `CR` | LORA | `5` | integer `5` to `8` | `5` | LoRa coding rate (`4/5` to `4/8`) |
+| `CRC` | LORA | `1` | exact `0`, `1` | `1` | LoRa CRC off/on |
+| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `65535`; FSK: integer `>=0` | `8`, `16`, `32` | Preamble length |
+| `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00` to `0xFF` or decimal `0` to `255`; FSK: 1 or 2 non-zero bytes, max `0xFFFF` | `0x12`, `0x2B`, `0x2DD4` | Sync word |
+| `LDRO` | LORA | 433: `1`, 868: `AUTO` | exact `AUTO`, `auto`, `0`, `1` | `AUTO`, `1` for SF12/BW125 | Low Data Rate Optimization |
+| `BR` | FSK | RadioLib/default unset by daemon | strict number `0.5` to `300.0` kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |
+| `FREQDEV` | FSK | RadioLib/default unset by daemon | strict number `>0` to `200.0` kHz; RadioLib may reject invalid BR/FREQDEV combinations | `2.2`, `3.0`, `5.0`, `10.0` | Frequency deviation |
+| `RXBW` | FSK | RadioLib/default unset by daemon | exact `2.6`, `3.1`, `3.9`, `5.2`, `6.3`, `7.8`, `10.4`, `12.5`, `15.6`, `20.8`, `25.0`, `31.25`, `31.3`, `41.7`, `50.0`, `62.5`, `83.3`, `100.0`, `125.0`, `166.7`, `200.0`, `250.0` kHz | `6.3`, `12.5`, `20.8`, `25.0`, `250.0` | RX filter bandwidth |
+| `OOK` | FSK | RadioLib/default | exact `0`, `1` | `0` FSK, `1` OOK | Enable OOK mode |
+| `SHAPING` | FSK | RadioLib/default | exact `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0` | `0.0`, `0.3`, `0.5`, `1.0` | Data shaping / Gaussian filter |
+| `ENCODING` | FSK | RadioLib/default | integer `0`, `1`, `2` | `0` NRZ, `1` Manchester, `2` Whitening | FSK encoding |
 
 ## CONF output messages
 
@@ -203,6 +204,7 @@ Refactored by Johannes Loose / 410733@gmail.com
 - Hardening prep: add strict CONFIG value parser helpers and tests.
 - Hardening: CONFIG apply uses strict value parsers instead of partial atoi/atof parsing.
 - Hardening: CONFIG value policy is separated and unit-tested.
+- Documentation: CONFIG parameter table now reflects strict accepted value ranges.
 - QA: add a static check that production paths do not call legacy blocking broadcast wrappers.
 - QA: add slow-client output tests for non-blocking queued broadcasts.
 - Hardening: read-side client disconnects now reset their queued output immediately.
