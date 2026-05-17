@@ -133,23 +133,82 @@ static int public_sockets_removed(void)
     return TEST_PASS;
 }
 
+
+static int wait_client_closed_after_shutdown(int fd, int timeout_ms)
+{
+    long deadline = now_ms() + timeout_ms;
+
+    while (now_ms() < deadline) {
+        struct pollfd pfd;
+        char buf[8];
+        int remaining = (int)(deadline - now_ms());
+        int pr;
+
+        if (remaining < 1)
+            remaining = 1;
+
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        pr = poll(&pfd, 1, remaining);
+        if (pr < 0) {
+            if (errno == EINTR)
+                continue;
+            return TEST_FAIL;
+        }
+
+        if (pr == 0)
+            continue;
+
+        if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+            return TEST_PASS;
+
+        if (pfd.revents & POLLIN) {
+            ssize_t n = read(fd, buf, sizeof(buf));
+            if (n == 0)
+                return TEST_PASS;
+            if (n < 0 && errno != EINTR)
+                return TEST_PASS;
+        }
+    }
+
+    return TEST_FAIL;
+}
 static int test_sigterm_shutdown_cleans_sockets(void)
 {
+    int client_fd;
+
     if (!daemon_alive()) {
         fail_msg("daemon not running before SIGTERM");
         return TEST_FAIL;
     }
 
+    client_fd = connect_unix_retry(SOCK_CONF_433, 2000);
+    if (client_fd < 0) {
+        fail_msg("cannot connect shutdown observer client");
+        return TEST_FAIL;
+    }
+
     if (kill(-g_daemon_pid, SIGTERM) != 0) {
+        close(client_fd);
         fail_msg("SIGTERM failed");
         return TEST_FAIL;
     }
 
     if (wait_owned_daemon_exit(4000) != TEST_PASS) {
+        close(client_fd);
         fail_msg("daemon did not exit after SIGTERM");
         return TEST_FAIL;
     }
 
+    if (wait_client_closed_after_shutdown(client_fd, 1000) != TEST_PASS) {
+        close(client_fd);
+        fail_msg("client socket stayed open after daemon shutdown");
+        return TEST_FAIL;
+    }
+
+    close(client_fd);
     return public_sockets_removed();
 }
 
