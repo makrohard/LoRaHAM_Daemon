@@ -177,6 +177,16 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     close_unix_socket(&conf433_fd, CONF433_SOCKET);
     close_unix_socket(&conf868_fd, CONF868_SOCKET);
 }
+
+static int daemon_wait_for_events(EventLoopSet *event_set,
+                                  EventLoopReadySet *readfds)
+{
+    event_loop_reset(event_set);
+    radio_channel_add_fds(&channel_433, event_set);
+    radio_channel_add_fds(&channel_868, event_set);
+
+    return event_loop_wait(event_set, readfds, DAEMON_SELECT_TIMEOUT_USEC);
+}
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -828,12 +838,8 @@ int main(int argc, char *argv[]) {
 
     while (!daemon_lifecycle_stop_requested()) {
 
-        event_loop_reset(&event_set);
-        radio_channel_add_fds(&channel_433, &event_set);
-        radio_channel_add_fds(&channel_868, &event_set);
-
         // --- Event wait ---
-        int ret = event_loop_wait(&event_set, &readfds, DAEMON_SELECT_TIMEOUT_USEC);
+        int ret = daemon_wait_for_events(&event_set, &readfds);
         if(ret<0){perror("event_loop_wait"); continue;}
 
         // --- Neue Clients ---
