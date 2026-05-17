@@ -728,6 +728,47 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
 /* --- CONFIG dispatch wiring --- */
 
+
+static DataTxDaemonContext daemon_data_tx_context(const char *tag,
+                                                   int band,
+                                                   volatile RadioMode_t *mode)
+{
+    DataTxDaemonContext ctx = {tag, band, mode};
+
+    return ctx;
+}
+
+static ConfigDispatchContext<SX1278> daemon_config_433_context(void)
+{
+    ConfigDispatchContext<SX1278> ctx = {
+        client_conf433,
+        radio_433,
+        "CONF 433",
+        "[CONF433]",
+        &mode_433,
+        &getrssi_433_active,
+        config_apply_command<SX1278>,
+        setFlag433
+    };
+
+    return ctx;
+}
+
+static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
+{
+    ConfigDispatchContext<RFM95> ctx = {
+        client_conf868,
+        radio_868,
+        "CONF 868",
+        NULL,
+        &mode_868,
+        &getrssi_868_active,
+        config_apply_command<RFM95>,
+        setFlag868
+    };
+
+    return ctx;
+}
 static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ctx,
                                     ConfigDispatchContext<RFM95> *config_868_ctx,
                                     const EventLoopReadySet *readfds,
@@ -904,30 +945,12 @@ int main(int argc, char *argv[]) {
     daemon_deadline_timer_init(&rssi_timer, daemon_now_ms(), DAEMON_RSSI_INTERVAL_MS);
 
     // --- DATA TX callbacks ---
-    DataTxDaemonContext data_tx_433_ctx = {"433", 433, &mode_433};
-    DataTxDaemonContext data_tx_868_ctx = {"868", 868, &mode_868};
+    DataTxDaemonContext data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433);
+    DataTxDaemonContext data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868);
 
     // --- CONFIG dispatch ---
-    ConfigDispatchContext<SX1278> config_433_ctx = {
-        client_conf433,
-        radio_433,
-        "CONF 433",
-        "[CONF433]",
-        &mode_433,
-        &getrssi_433_active,
-        config_apply_command<SX1278>,
-        setFlag433
-    };
-    ConfigDispatchContext<RFM95> config_868_ctx = {
-        client_conf868,
-        radio_868,
-        "CONF 868",
-        NULL,
-        &mode_868,
-        &getrssi_868_active,
-        config_apply_command<RFM95>,
-        setFlag868
-    };
+    ConfigDispatchContext<SX1278> config_433_ctx = daemon_config_433_context();
+    ConfigDispatchContext<RFM95> config_868_ctx = daemon_config_868_context();
 
 
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
