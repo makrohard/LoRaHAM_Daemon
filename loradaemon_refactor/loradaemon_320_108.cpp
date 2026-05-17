@@ -906,80 +906,10 @@ static void daemon_log_loop_start(void)
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 }
 
-static void daemon_ignore_sigpipe(void)
+static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
+                                         uint8_t (&rx_buf_433)[buf_SIZE],
+                                         uint8_t (&rx_buf_868)[buf_SIZE])
 {
-    // SIGPIPE ignorieren: write() auf geschlossenen Socket crasht sonst den Daemon
-    signal(SIGPIPE, SIG_IGN);
-}
-
-static bool daemon_parse_args(int argc, char *argv[])
-{
-    int opt;
-    bool is_daemon = false;
-
-    // Parsen der Argumente
-    while ((opt = getopt(argc, argv, "d")) != -1) {
-        switch (opt) {
-            case 'd':
-                is_daemon = true;
-                break;
-            default:
-                fprintf(stderr, "Nutzung: %s [-d]\n", argv[0]);
-                exit(EXIT_FAILURE);
-        }
-    }
-
-    return is_daemon;
-}
-
-// --- Unix socket setup moved to unix_socket.cpp ---
-
-int main(int argc, char *argv[]) {
-    daemon_ignore_sigpipe();
-    bool is_daemon = daemon_parse_args(argc, argv);
-
-    // --- Userspace-Daemon Implementation ---
-    if (is_daemon)
-        daemon_enter_background();
-
-    daemon_radio_io_init();
-
-    EventLoopSet event_set;
-    daemon_runtime_init(&event_set);
-
-    EventLoopReadySet readfds;
-    uint8_t buf[buf_SIZE];
-    uint8_t rx_buf_433[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
-    uint8_t rx_buf_868[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
-
-    // --- GETRSSI Timer ---
-    DaemonDeadlineTimer rssi_timer;
-    daemon_deadline_timer_init(&rssi_timer, daemon_now_ms(), DAEMON_RSSI_INTERVAL_MS);
-
-    // --- DATA TX callbacks ---
-    DataTxDaemonContext data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433);
-    DataTxDaemonContext data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868);
-
-    // --- CONFIG dispatch ---
-    ConfigDispatchContext<SX1278> config_433_ctx = daemon_config_433_context();
-    ConfigDispatchContext<RFM95> config_868_ctx = daemon_config_868_context();
-
-    daemon_log_loop_start();
-
-    while (!daemon_lifecycle_stop_requested()) {
-
-        // --- Event wait ---
-        int ret = daemon_wait_for_events(&event_set, &readfds);
-        if (ret < 0) {
-            perror("event_loop_wait");
-            continue;
-        }
-
-        // --- Socket Clients bearbeiten ---
-        daemon_process_ready_sockets(&config_433_ctx, &config_868_ctx,
-                                    &data_tx_433_ctx, &data_tx_868_ctx,
-                                    &readfds, buf);
-
                         // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
                         if(receivedFlag433){
                             if(txBusy433 == false){
@@ -1192,7 +1122,84 @@ int main(int argc, char *argv[]) {
 
 
         // --- CAD/RSSI Überwachung ---
-        daemon_process_cad_rssi(&rssi_timer);
+        daemon_process_cad_rssi(rssi_timer);
+}
+
+static void daemon_ignore_sigpipe(void)
+{
+    // SIGPIPE ignorieren: write() auf geschlossenen Socket crasht sonst den Daemon
+    signal(SIGPIPE, SIG_IGN);
+}
+
+static bool daemon_parse_args(int argc, char *argv[])
+{
+    int opt;
+    bool is_daemon = false;
+
+    // Parsen der Argumente
+    while ((opt = getopt(argc, argv, "d")) != -1) {
+        switch (opt) {
+            case 'd':
+                is_daemon = true;
+                break;
+            default:
+                fprintf(stderr, "Nutzung: %s [-d]\n", argv[0]);
+                exit(EXIT_FAILURE);
+        }
+    }
+
+    return is_daemon;
+}
+
+// --- Unix socket setup moved to unix_socket.cpp ---
+
+int main(int argc, char *argv[]) {
+    daemon_ignore_sigpipe();
+    bool is_daemon = daemon_parse_args(argc, argv);
+
+    // --- Userspace-Daemon Implementation ---
+    if (is_daemon)
+        daemon_enter_background();
+
+    daemon_radio_io_init();
+
+    EventLoopSet event_set;
+    daemon_runtime_init(&event_set);
+
+    EventLoopReadySet readfds;
+    uint8_t buf[buf_SIZE];
+    uint8_t rx_buf_433[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
+    uint8_t rx_buf_868[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
+
+    // --- GETRSSI Timer ---
+    DaemonDeadlineTimer rssi_timer;
+    daemon_deadline_timer_init(&rssi_timer, daemon_now_ms(), DAEMON_RSSI_INTERVAL_MS);
+
+    // --- DATA TX callbacks ---
+    DataTxDaemonContext data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433);
+    DataTxDaemonContext data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868);
+
+    // --- CONFIG dispatch ---
+    ConfigDispatchContext<SX1278> config_433_ctx = daemon_config_433_context();
+    ConfigDispatchContext<RFM95> config_868_ctx = daemon_config_868_context();
+
+    daemon_log_loop_start();
+
+    while (!daemon_lifecycle_stop_requested()) {
+
+        // --- Event wait ---
+        int ret = daemon_wait_for_events(&event_set, &readfds);
+        if (ret < 0) {
+            perror("event_loop_wait");
+            continue;
+        }
+
+        // --- Socket Clients bearbeiten ---
+        daemon_process_ready_sockets(&config_433_ctx, &config_868_ctx,
+                                    &data_tx_433_ctx, &data_tx_868_ctx,
+                                    &readfds, buf);
+
+        daemon_process_radio_polling(&rssi_timer, rx_buf_433, rx_buf_868);
 
     } // while stop not requested
 
