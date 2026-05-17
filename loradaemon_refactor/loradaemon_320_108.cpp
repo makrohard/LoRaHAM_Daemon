@@ -201,6 +201,28 @@ static void daemon_runtime_init(EventLoopSet *event_set)
     if (daemon_lifecycle_install_signal_handlers() != 0)
         perror("sigaction");
 }
+
+static void daemon_enter_background(void)
+{
+    pid_t pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS); // Elternprozess beenden
+
+    if (setsid() < 0) exit(EXIT_FAILURE); // Neue Session
+
+    pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    umask(0);
+    chdir("/");
+
+    // FIX: Deskriptoren nicht einfach schließen, sondern umleiten
+    // Das verhindert, dass neue Sockets die IDs 0, 1 oder 2 einnehmen.
+    freopen("/dev/null", "r", stdin);
+    freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
+    freopen("/tmp/lora_daemon.log", "w", stderr);
+}
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -789,26 +811,8 @@ int main(int argc, char *argv[]) {
     }
 
     // --- Userspace-Daemon Implementation ---
-    if (is_daemon) {
-        pid_t pid = fork();
-        if (pid < 0) exit(EXIT_FAILURE);
-        if (pid > 0) exit(EXIT_SUCCESS); // Elternprozess beenden
-
-        if (setsid() < 0) exit(EXIT_FAILURE); // Neue Session
-
-        pid = fork();
-        if (pid < 0) exit(EXIT_FAILURE);
-        if (pid > 0) exit(EXIT_SUCCESS);
-
-        umask(0);
-        chdir("/");
-
-        // FIX: Deskriptoren nicht einfach schließen, sondern umleiten
-        // Das verhindert, dass neue Sockets die IDs 0, 1 oder 2 einnehmen.
-        freopen("/dev/null", "r", stdin);
-        freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
-        freopen("/tmp/lora_daemon.log", "w", stderr);
-    }
+    if (is_daemon)
+        daemon_enter_background();
 
     radio_channel_io_init(&channel_433,
                           RADIO_BAND_433,
