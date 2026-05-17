@@ -36,7 +36,12 @@ void event_loop_close(EventLoopSet *set)
 {
     if (set->backend == EVENT_LOOP_BACKEND_EPOLL)
         event_loop_epoll_close(&set->epoll_backend);
+    else {
+        set->epoll_backend.epoll_fd = -1;
+        set->epoll_backend.registered_fds = 0;
+    }
 
+    event_loop_select_reset(&set->select_backend);
     set->backend = EVENT_LOOP_BACKEND_SELECT;
 }
 
