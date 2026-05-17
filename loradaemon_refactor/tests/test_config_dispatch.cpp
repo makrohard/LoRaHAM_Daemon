@@ -305,7 +305,6 @@ static void test_dispatch_closes_eof_client(void)
 
     client_slot_set_fd(&slots[0], sv[1]);
     client_output_queue_append(&slots[0].output, (const uint8_t *)"pending", 7);
-    slots[0].stream.len = 3;
 
     close(sv[0]);
 
