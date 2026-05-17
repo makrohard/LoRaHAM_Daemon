@@ -906,6 +906,7 @@ static void daemon_log_loop_start(void)
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 }
 
+/* --- RX helpers: special cases -------------------------------------------- */
 static void daemon_discard_rx_during_tx(int band)
 {
     if (band == 433) {
@@ -920,6 +921,7 @@ static void daemon_discard_rx_during_tx(int band)
     printf("[868] RX während TX - verwerfe Paket\n");
 }
 
+/* --- RX output: HEX/ASCII and packet print -------------------------------- */
 static void daemon_print_hex_bytes(const uint8_t *buf, int len)
 {
     for (int i = 0; i < len; i++) {
@@ -938,6 +940,7 @@ static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
     }
 }
 
+/* --- RX band metadata: tag/color/mode/RSSI -------------------------------- */
 static const char *daemon_band_tag(int band)
 {
     if (band == 433)
@@ -1018,6 +1021,7 @@ static void daemon_print_fsk_packet(const char *band,
     printf(" RSSI: %.2f dBm\n", rssi);
 }
 
+/* --- RX forwarding to DATA clients ---------------------------------------- */
 static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
 {
     if (len <= 0)
@@ -1031,6 +1035,7 @@ static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
     client_set_broadcast_bytes(client_data868, MAX_CLIENTS, buf, len);
 }
 
+/* --- RX IRQ/FIFO sequence ------------------------------------------------- */
 static void daemon_restart_receive_after_empty_rx(int band)
 {
     if (band == 433) {
@@ -1062,7 +1067,10 @@ static void daemon_prepare_rx_packet(int band, uint8_t *buf, size_t buf_len)
         receivedFlag433 = false;
         memset(buf, 0, buf_len);
 
-        // Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData().
+        // WICHTIG: Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData() aufrufen!
+        // Grund: SX127x RegIrqFlags2 Bit3 = FifoOverrun -> schreibt man 0xFF rein,
+        // wird Bit3 gesetzt und der FIFO wird gelöscht (laut Datasheet).
+        // Im LoRa-Modus trifft das nicht zu (anderes Register).
         if (mode_433 == RADIO_MODE_LORA)
             radio_433->clearIrq(0xFFFFFFFF);
         return;
@@ -1071,7 +1079,10 @@ static void daemon_prepare_rx_packet(int band, uint8_t *buf, size_t buf_len)
     receivedFlag868 = false;
     memset(buf, 0, buf_len);
 
-    // Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData().
+    // WICHTIG: Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData() aufrufen!
+    // Grund: SX127x RegIrqFlags2 Bit3 = FifoOverrun -> schreibt man 0xFF rein,
+    // wird Bit3 gesetzt und der FIFO wird gelöscht (laut Datasheet).
+    // Im LoRa-Modus trifft das nicht zu (anderes Register).
     if (mode_868 == RADIO_MODE_LORA)
         radio_868->clearIrq(0xFFFFFFFF);
 }
@@ -1108,6 +1119,7 @@ static void daemon_print_rx_packet(int band, uint8_t *buf, int len)
         daemon_print_fsk_packet(tag, color, buf, len, rssi);
 }
 
+/* --- RX band access: flags, TX state and readData() ----------------------- */
 static bool daemon_rx_flag_active(int band)
 {
     if (band == 433)
@@ -1132,8 +1144,10 @@ static int16_t daemon_read_rx_data(int band, uint8_t *buf, size_t buf_len)
     return radio_868->readData(buf, buf_len);
 }
 
+/* --- RX flow: process one band ------------------------------------------- */
 static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 {
+    // Shared 433/868 RX flow; original band comments remain in the wrappers.
     if (!daemon_rx_flag_active(band))
         return;
 
@@ -1165,6 +1179,7 @@ static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 }
 
 
+/* --- Original band entry points: keep 433/868 easy to find --------------- */
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
     // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
@@ -1177,6 +1192,7 @@ static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
     daemon_process_radio_band(868, rx_buf_868);
 }
 
+/* --- Polling order: 433, 868, then CAD/RSSI ------------------------------- */
 static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
