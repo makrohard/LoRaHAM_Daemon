@@ -938,6 +938,38 @@ static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
     }
 }
 
+static const char *daemon_band_tag(int band)
+{
+    if (band == 433)
+        return "433";
+
+    return "868";
+}
+
+static const char *daemon_band_color(int band)
+{
+    if (band == 433)
+        return "93m";
+
+    return "32m";
+}
+
+static RadioMode_t daemon_band_mode(int band)
+{
+    if (band == 433)
+        return mode_433;
+
+    return mode_868;
+}
+
+static float daemon_band_rssi(int band)
+{
+    if (band == 433)
+        return radio_433->getRSSI();
+
+    return radio_868->getRSSI();
+}
+
 static void daemon_print_lora_packet(const char *band,
                                      const char *color,
                                      uint8_t *buf,
@@ -1066,18 +1098,14 @@ static void daemon_clear_irq_after_rx_read(int band)
 
 static void daemon_print_rx_packet(int band, uint8_t *buf, int len)
 {
-    if (band == 433) {
-        if (mode_433 == RADIO_MODE_LORA)
-            daemon_print_lora_packet("433", "93m", buf, len, radio_433->getRSSI());
-        else
-            daemon_print_fsk_packet("433", "93m", buf, len, radio_433->getRSSI());
-        return;
-    }
+    const char *tag = daemon_band_tag(band);
+    const char *color = daemon_band_color(band);
+    float rssi = daemon_band_rssi(band);
 
-    if (mode_868 == RADIO_MODE_LORA)
-        daemon_print_lora_packet("868", "32m", buf, len, radio_868->getRSSI());
+    if (daemon_band_mode(band) == RADIO_MODE_LORA)
+        daemon_print_lora_packet(tag, color, buf, len, rssi);
     else
-        daemon_print_fsk_packet("868", "32m", buf, len, radio_868->getRSSI());
+        daemon_print_fsk_packet(tag, color, buf, len, rssi);
 }
 
 static bool daemon_rx_flag_active(int band)
@@ -1133,10 +1161,6 @@ static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
     daemon_print_rx_packet(band, rx_buf, len);
     daemon_broadcast_rx_data(band, rx_buf, len);
 
-    len = 0;
-    (void)len;
-    //radio_868->standby();
-    //radio_868->clearIrqFlags(0xFFFFFFFF);
     daemon_finish_rx_packet(band, rx_buf, sizeof(rx_buf));
 }
 
