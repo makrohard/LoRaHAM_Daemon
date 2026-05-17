@@ -1,10 +1,13 @@
 #ifndef LORAHAM_RADIO_CONTROLLER_H
 #define LORAHAM_RADIO_CONTROLLER_H
 
+#include <memory>
+
+#include "hal/RPi/PiHal.h"
+#include <RadioLib.h>
+
 #include "radio_channel.h"
 #include "radio_health.h"
-
-class PiHal;
 
 /* --- Radio hardware/runtime state --------------------------------------- */
 
@@ -14,9 +17,9 @@ struct RadioController {
     const char *tag;
     bool is_hf;
 
-    PiHal *hal;
-    Module *mod;
-    RadioT *radio;
+    std::unique_ptr<PiHal> hal;
+    std::unique_ptr<Module> mod;
+    std::unique_ptr<RadioT> radio;
 
     volatile RadioHealth health;
     volatile RadioMode_t mode;
@@ -47,9 +50,9 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->tag = tag;
     ctrl->is_hf = is_hf;
 
-    ctrl->hal = nullptr;
-    ctrl->mod = nullptr;
-    ctrl->radio = nullptr;
+    ctrl->hal.reset();
+    ctrl->mod.reset();
+    ctrl->radio.reset();
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->mode = RADIO_MODE_LORA;

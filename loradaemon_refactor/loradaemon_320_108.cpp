@@ -310,15 +310,11 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
             ctrl->radio->clearIrq(0xFFFFFFFF);
         }
 
-        delete ctrl->radio;
-        ctrl->radio = nullptr;
+        ctrl->radio.reset();
     }
 
-    delete ctrl->mod;
-    ctrl->mod = nullptr;
-
-    delete ctrl->hal;
-    ctrl->hal = nullptr;
+    ctrl->mod.reset();
+    ctrl->hal.reset();
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->received = false;
@@ -582,13 +578,13 @@ void lora_init() {
 
     LED_433(1);
 
-    radio_controller_433.hal   = new PiHal(0);
-    radio_controller_433.mod   = new Module(radio_controller_433.hal, 8, 25, 5, 24);
-    radio_controller_433.radio = new SX1278(radio_controller_433.mod);
+    radio_controller_433.hal.reset(new PiHal(0));
+    radio_controller_433.mod.reset(new Module(radio_controller_433.hal.get(), 8, 25, 5, 24));
+    radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
 
-    radio_controller_868.hal   = new PiHal(0);
-    radio_controller_868.mod   = new Module(radio_controller_868.hal, 7, 16, 6, 12);
-    radio_controller_868.radio = new RFM95(radio_controller_868.mod);
+    radio_controller_868.hal.reset(new PiHal(0));
+    radio_controller_868.mod.reset(new Module(radio_controller_868.hal.get(), 7, 16, 6, 12));
+    radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
 
     int state_433 = radio_controller_433.radio->begin();
     if (state_433 == RADIOLIB_ERR_NONE) {
@@ -1009,7 +1005,7 @@ static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
         !radio_controller_ready(ctrl) || !ctrl->mod)
         return;
 
-    float rssi = radio_channel_read_live_rssi(ctrl->mod,
+    float rssi = radio_channel_read_live_rssi(ctrl->mod.get(),
                                               ctrl->mode,
                                               ctrl->is_hf);
     char rssi_msg[32];

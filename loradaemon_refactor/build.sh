@@ -358,8 +358,16 @@ build_one_radio_controller_skeleton_test() {
   local src="$1"
   local out="$2"
 
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for radio controller skeleton test." >&2
+      exit 1
+    fi
+  fi
+
   build_one_cpp_sources \
     "$out" \
+    "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/radio_health.cpp"
 }
@@ -368,8 +376,16 @@ build_one_radio_controller_accessors_test() {
   local src="$1"
   local out="$2"
 
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for radio controller accessors test." >&2
+      exit 1
+    fi
+  fi
+
   build_one_cpp_sources \
     "$out" \
+    "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/radio_health.cpp"
 }

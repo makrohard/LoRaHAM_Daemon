@@ -18,7 +18,6 @@ static void test_callback(void)
 int main(void)
 {
     RadioController<TestRadio> ctrl;
-    TestRadio radio;
 
     radio_controller_init(&ctrl,
                           RADIO_BAND_868,
@@ -40,10 +39,10 @@ int main(void)
     assert(radio_controller_health(&ctrl) == RADIO_HEALTH_READY);
     assert(radio_controller_ready(&ctrl));
 
-    ctrl.radio = &radio;
+    ctrl.radio.reset(new TestRadio());
     assert(fabs(radio_controller_packet_rssi(&ctrl) - (-87.25f)) < 0.001f);
 
-    ctrl.radio = nullptr;
+    ctrl.radio.reset();
     assert(radio_controller_packet_rssi(&ctrl) == -200.0f);
 
     assert(radio_controller_band_number<TestRadio>(nullptr) == 0);

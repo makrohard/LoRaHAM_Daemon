@@ -68,8 +68,8 @@ done
 
 require "radio_controller_433.health" "433 health in controller"
 require "radio_controller_868.health" "868 health in controller"
-require "radio_controller_433.radio = new SX1278" "433 radio pointer in controller"
-require "radio_controller_868.radio = new RFM95" "868 radio pointer in controller"
+require "radio_controller_433.radio.reset(new SX1278" "433 radio unique_ptr allocation"
+require "radio_controller_868.radio.reset(new RFM95" "868 radio unique_ptr allocation"
 require "radio_controller_433.received = true" "433 callback writes controller"
 require "radio_controller_868.received = true" "868 callback writes controller"
 
