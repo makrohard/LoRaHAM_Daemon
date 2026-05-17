@@ -113,23 +113,30 @@ static void record_apply_config(FakeRadio& radio,
     getrssi_active = true;
 }
 
+static void init_fake_controller(RadioController<FakeRadio> *ctrl,
+                                 FakeRadio *radio,
+                                 RadioHealth health)
+{
+    radio_controller_init(ctrl,
+                          RADIO_BAND_433,
+                          "TEST",
+                          false,
+                          fake_rx_callback,
+                          13);
+    ctrl->radio = radio;
+    ctrl->health = health;
+}
+
 static ConfigDispatchContext<FakeRadio> make_context(ClientSlot *slots,
-                                                     FakeRadio *radio,
-                                                     volatile RadioHealth *health,
-                                                     volatile RadioMode_t *mode,
-                                                     volatile bool *getrssi_active,
+                                                     RadioController<FakeRadio> *ctrl,
                                                      const char *prefix)
 {
     ConfigDispatchContext<FakeRadio> ctx = {
         slots,
-        radio,
-        health,
+        ctrl,
         "CONF TEST",
         prefix,
-        mode,
-        getrssi_active,
-        record_apply_config,
-        fake_rx_callback
+        record_apply_config
     };
 
     return ctx;
@@ -145,9 +152,8 @@ static void test_dispatch_ready_client(void)
     EventLoopSet set;
     EventLoopReadySet readfds;
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi_active = false;
-    volatile RadioHealth health = RADIO_HEALTH_READY;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, &radio, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     client_slot_init_all(slots, 2);
@@ -168,15 +174,15 @@ static void test_dispatch_ready_client(void)
     expect_int("ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx =
-        make_context(slots, &radio, &health, &mode, &getrssi_active, "[TEST]");
+        make_context(slots, &ctrl, "[TEST]");
 
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
 
     expect_int("apply called once", g_apply_state.calls, 1);
     expect_str("apply tag", g_apply_state.tag, "CONF TEST");
     expect_str("apply cmd", g_apply_state.cmd, "SET GETRSSI=1");
-    expect_int("mode updated by apply", mode == RADIO_MODE_FSK, 1);
-    expect_int("getrssi updated by apply", getrssi_active == true, 1);
+    expect_int("mode updated by apply", ctrl.mode == RADIO_MODE_FSK, 1);
+    expect_int("getrssi updated by apply", ctrl.getrssi_active == true, 1);
     expect_int("callback restored", radio.callback_count, 1);
     expect_int("startReceive called", radio.start_receive_count, 1);
     expect_int("client still open", client_slot_has_client(&slots[0]), 1);
@@ -194,9 +200,8 @@ static void test_dispatch_ready_client_epoll(void)
     EventLoopSet set;
     EventLoopReadySet readfds;
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi_active = false;
-    volatile RadioHealth health = RADIO_HEALTH_READY;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, &radio, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     client_slot_init_all(slots, 2);
@@ -224,7 +229,7 @@ static void test_dispatch_ready_client_epoll(void)
     expect_int("ready epoll wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx =
-        make_context(slots, &radio, &health, &mode, &getrssi_active, "[TEST]");
+        make_context(slots, &ctrl, "[TEST]");
 
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
 
@@ -246,9 +251,8 @@ static void test_dispatch_ignores_not_ready_client(void)
     EventLoopSet set;
     EventLoopReadySet readfds;
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi_active = false;
-    volatile RadioHealth health = RADIO_HEALTH_FAILED;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, &radio, RADIO_HEALTH_FAILED);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     client_slot_init_all(slots, 2);
@@ -269,7 +273,7 @@ static void test_dispatch_ignores_not_ready_client(void)
     expect_int("not ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx =
-        make_context(slots, &radio, &health, &mode, &getrssi_active, NULL);
+        make_context(slots, &ctrl, NULL);
 
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
 
@@ -290,9 +294,8 @@ static void test_dispatch_closes_eof_client(void)
     EventLoopSet set;
     EventLoopReadySet readfds;
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi_active = false;
-    volatile RadioHealth health = RADIO_HEALTH_READY;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, &radio, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     client_slot_init_all(slots, 2);
@@ -313,7 +316,7 @@ static void test_dispatch_closes_eof_client(void)
     expect_int("eof wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx =
-        make_context(slots, &radio, &health, &mode, &getrssi_active, NULL);
+        make_context(slots, &ctrl, NULL);
 
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
 

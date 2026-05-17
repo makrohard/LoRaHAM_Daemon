@@ -1,0 +1,4 @@
+# LoRaHAM_Daemon
+
+## Changelog
+- Refactor: CONFIG-Dispatch-Kontext nutzt den RadioController als Hardware-/Runtime-Quelle.

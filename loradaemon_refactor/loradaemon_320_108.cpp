@@ -370,6 +370,15 @@ static void daemon_radio_controller_sync_legacy_state(void)
     radio_controller_868.rx_drops = rx_drop_868;
 }
 
+static void daemon_radio_controller_sync_config_to_legacy_state(void)
+{
+    mode_433 = radio_controller_433.mode;
+    getrssi_433_active = radio_controller_433.getrssi_active;
+
+    mode_868 = radio_controller_868.mode;
+    getrssi_868_active = radio_controller_868.getrssi_active;
+}
+
 // --- Callback für 868 ---
 void setFlag868(void) {
     receivedFlag868 = true;
@@ -888,14 +897,10 @@ static ConfigDispatchContext<SX1278> daemon_config_433_context(void)
 {
     ConfigDispatchContext<SX1278> ctx = {
         client_conf433_slots,
-        radio_433,
-        &radio_health_433,
+        &radio_controller_433,
         "CONF 433",
         "[CONF433]",
-        &mode_433,
-        &getrssi_433_active,
-        config_apply_command<SX1278>,
-        setFlag433
+        config_apply_command<SX1278>
     };
 
     return ctx;
@@ -905,14 +910,10 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
 {
     ConfigDispatchContext<RFM95> ctx = {
         client_conf868_slots,
-        radio_868,
-        &radio_health_868,
+        &radio_controller_868,
         "CONF 868",
         "[CONF868]",
-        &mode_868,
-        &getrssi_868_active,
-        config_apply_command<RFM95>,
-        setFlag868
+        config_apply_command<RFM95>
     };
 
     return ctx;
@@ -989,6 +990,7 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
                           readfds, send_data_chunk, data_tx_868_ctx);
 
     process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
+    daemon_radio_controller_sync_config_to_legacy_state();
 
     radio_channel_flush_ready(&channel_433, readfds);
     radio_channel_flush_ready(&channel_868, readfds);
