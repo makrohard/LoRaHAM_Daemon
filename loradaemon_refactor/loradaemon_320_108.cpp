@@ -1437,10 +1437,12 @@ int main(int argc, char *argv[]) {
                         // --- CONFIG Clients bearbeiten ---
                         config_dispatch_clients<SX1278>(client_conf433, MAX_CLIENTS, &readfds, buf,
                                                         *radio_433, "CONF 433", "[CONF433]",
-                                                        mode_433, getrssi_433_active, setFlag433);
+                                                        mode_433, getrssi_433_active,
+                                                        parse_and_apply_config_generic<SX1278>, setFlag433);
                         config_dispatch_clients<RFM95>(client_conf868, MAX_CLIENTS, &readfds, buf,
                                                        *radio_868, "CONF 868", NULL,
-                                                       mode_868, getrssi_868_active, setFlag868);
+                                                       mode_868, getrssi_868_active,
+                                                       parse_and_apply_config_generic<RFM95>, setFlag868);
 
 
 
