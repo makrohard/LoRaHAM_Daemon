@@ -145,6 +145,20 @@ static void test_unknown_keys_preserve_compatibility(void)
     expect_int("unknown key result flag", result.valid, 1);
 }
 
+
+static void test_malformed_token_rejects_whole_command(void)
+{
+    int ok = 0;
+    ConfigValidationResult result =
+        validate("SET GETRSSI=1 SF=12 BROKEN",
+                 RADIO_MODE_LORA, &ok);
+
+    expect_int("malformed token rejected", ok, 0);
+    expect_int("malformed result flag", result.valid, 0);
+    expect_str("malformed token key", result.key, "BROKEN");
+}
+
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -172,6 +186,7 @@ int main(int argc, char **argv)
     test_invalid_mode_rejects_whole_command();
     test_ignored_wrong_mode_keys_preserve_compatibility();
     test_unknown_keys_preserve_compatibility();
+    test_malformed_token_rejects_whole_command();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

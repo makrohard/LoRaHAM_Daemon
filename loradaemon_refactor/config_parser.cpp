@@ -57,6 +57,8 @@ ConfigCommand config_parse_command(const char *cmd)
                 } else {
                     result.tokens.push_back({key, val});
                 }
+            } else {
+                result.malformed_tokens.push_back(token);
             }
         }
 

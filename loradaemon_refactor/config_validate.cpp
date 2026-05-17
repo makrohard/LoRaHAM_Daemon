@@ -197,6 +197,13 @@ bool config_validate_command(const ConfigCommand &cmd,
     if (!cmd.is_set || !cmd.has_params)
         return true;
 
+    if (!cmd.malformed_tokens.empty()) {
+        config_validation_reject(result, cmd.malformed_tokens[0],
+                                 "",
+                                 "malformed token");
+        return false;
+    }
+
     RadioMode_t target_mode = current_mode;
 
     if (!cmd.mode.empty()) {

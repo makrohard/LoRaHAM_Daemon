@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REFACTOR_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 APPLY="$REFACTOR_DIR/config_apply.h"
+PARSER="$REFACTOR_DIR/config_parser.h"
+VALIDATE="$REFACTOR_DIR/config_validate.cpp"
 
 rc=0
 
@@ -23,6 +25,8 @@ require() {
 require "$APPLY" "#include \"config_validate.h\"" "config validation include"
 require "$APPLY" "config_validate_command(parsed, mode_flag, &validation)" "whole-command validation before apply"
 require "$APPLY" "CONFIG rejected" "reject log"
+require "$PARSER" "malformed_tokens" "parser reports malformed tokens"
+require "$VALIDATE" "cmd.malformed_tokens" "validation rejects malformed tokens"
 require "$REFACTOR_DIR/build.sh" '"$SCRIPT_DIR/config_validate.cpp"' "config_validate in build"
 require "$REFACTOR_DIR/run_tests.sh" '"$TEST_DIR/test_config_validate"' "config_validate test in run_tests"
 

@@ -77,6 +77,27 @@ static void expect_token(const char *name, const ConfigCommand &cmd,
     }
 }
 
+
+static void expect_malformed_token(const char *name, const ConfigCommand &cmd,
+                                   size_t index, const char *value)
+{
+    if (index >= cmd.malformed_tokens.size()) {
+        g_fail++;
+        printf("[FAIL] %s: missing malformed token %zu\n", name, index);
+        return;
+    }
+
+    if (cmd.malformed_tokens[index] == value) {
+        g_ok++;
+        printf("[ OK ] %s\n", name);
+    } else {
+        g_fail++;
+        printf("[FAIL] %s: expected malformed '%s', got '%s'\n",
+               name, value, cmd.malformed_tokens[index].c_str());
+    }
+}
+
+
 /* --- Parser behavior tests --- */
 
 static void test_unknown_command(void)
@@ -126,14 +147,19 @@ static void test_lowercase_keys(void)
     expect_token("lowercase token SYNC value preserved", cmd, 2, "SYNC", "0x2dd4");
 }
 
-static void test_malformed_tokens_are_ignored(void)
+static void test_malformed_tokens_are_reported(void)
 {
     ConfigCommand cmd = config_parse_command(
         "SET MODE=LORA BROKEN NOVALUE= =BAD KEY=ok EMPTY=\n");
 
     expect_str("malformed command mode", cmd.mode, "LORA");
-    expect_size("malformed tokens ignored", cmd.tokens.size(), 1);
+    expect_size("malformed tokens excluded from normal tokens", cmd.tokens.size(), 1);
     expect_token("valid token survives malformed input", cmd, 0, "KEY", "ok");
+    expect_size("malformed token count", cmd.malformed_tokens.size(), 4);
+    expect_malformed_token("malformed bare token", cmd, 0, "BROKEN");
+    expect_malformed_token("malformed empty value", cmd, 1, "NOVALUE=");
+    expect_malformed_token("malformed empty key", cmd, 2, "=BAD");
+    expect_malformed_token("malformed trailing empty", cmd, 3, "EMPTY=");
 }
 
 /* --- CLI parsing and test sequence --- */
@@ -161,7 +187,7 @@ int main(int argc, char **argv)
     test_set_without_params();
     test_lora_command();
     test_lowercase_keys();
-    test_malformed_tokens_are_ignored();
+    test_malformed_tokens_are_reported();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

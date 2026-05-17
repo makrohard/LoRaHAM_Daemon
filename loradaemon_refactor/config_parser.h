@@ -13,6 +13,7 @@ struct ConfigCommand {
     std::string text;
     std::string mode;
     std::vector<std::pair<std::string, std::string>> tokens;
+    std::vector<std::string> malformed_tokens;
 };
 
 /* --- SET KEY=VALUE tokenizer --- */
