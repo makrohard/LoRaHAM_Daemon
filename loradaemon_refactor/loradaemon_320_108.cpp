@@ -185,7 +185,7 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
     radio_channel_add_fds(&channel_433, event_set);
     radio_channel_add_fds(&channel_868, event_set);
 
-    return event_loop_wait(event_set, readfds, DAEMON_SELECT_TIMEOUT_USEC);
+    return event_loop_wait(event_set, readfds, DAEMON_EVENT_LOOP_TIMEOUT_USEC);
 }
 
 static void daemon_runtime_init(EventLoopSet *event_set)

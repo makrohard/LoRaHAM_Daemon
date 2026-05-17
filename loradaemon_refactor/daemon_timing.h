@@ -3,7 +3,7 @@
 
 /* --- Current select-loop timing --- */
 
-#define DAEMON_SELECT_TIMEOUT_USEC 10000
+#define DAEMON_EVENT_LOOP_TIMEOUT_USEC 10000
 
 /* --- Current RSSI stream cadence --- */
 
