@@ -138,6 +138,7 @@ build_daemon() {
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
+    "$SCRIPT_DIR/event_loop_epoll.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
@@ -235,6 +236,7 @@ build_one_data_tx_test() {
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
+    "$SCRIPT_DIR/event_loop_epoll.cpp" \
 
   echo "Built test:   $out"
 }
@@ -263,6 +265,7 @@ build_one_config_dispatch_test() {
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
+    "$SCRIPT_DIR/event_loop_epoll.cpp" \
 
   echo "Built test:   $out"
 }

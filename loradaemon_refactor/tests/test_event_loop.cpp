@@ -69,7 +69,7 @@ static void test_select_set_ignores_negative_fd(void)
 static void test_select_wait_readable_pipe(void)
 {
     EventLoopSelectSet set;
-    EventLoopReadySet ready;
+    EventLoopSelectReadySet ready;
     int fds[2];
     char ch = 'x';
 
@@ -102,7 +102,7 @@ static void test_select_wait_readable_pipe(void)
 static void test_select_wait_timeout(void)
 {
     EventLoopSelectSet set;
-    EventLoopReadySet ready;
+    EventLoopSelectReadySet ready;
 
     event_loop_select_reset(&set);
 
@@ -114,7 +114,7 @@ static void test_select_wait_timeout(void)
 static void test_select_ready_fd(void)
 {
     EventLoopSelectSet set;
-    EventLoopReadySet ready;
+    EventLoopSelectReadySet ready;
     int fds[2];
     char ch = 'x';
 
@@ -272,6 +272,50 @@ static void test_backend_neutral_wait_readable_pipe(void)
     close(fds[1]);
 }
 
+
+static void test_backend_neutral_epoll_wait_readable_pipe(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] generic epoll pipe setup\n");
+        return;
+    }
+
+    if (event_loop_init_epoll(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] generic epoll init\n");
+        return;
+    }
+
+    expect_int("generic backend epoll",
+               event_loop_backend(&set) == EVENT_LOOP_BACKEND_EPOLL, 1);
+
+    event_loop_add_fd(&set, fds[0]);
+    expect_int("generic epoll has registered fds",
+               event_loop_has_registered_fds(&set), 1);
+
+    (void)write(fds[1], &ch, 1);
+
+    expect_int("generic epoll wait returns readable",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("generic epoll ready helper sees fd",
+               event_loop_ready_fd(&ready, fds[0]), 1);
+
+    event_loop_close(&set);
+    expect_int("generic epoll close switches to select",
+               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
+
+    close(fds[0]);
+    close(fds[1]);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -305,6 +349,7 @@ int main(int argc, char **argv)
     test_backend_selection();
     test_backend_neutral_aliases();
     test_backend_neutral_wait_readable_pipe();
+    test_backend_neutral_epoll_wait_readable_pipe();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

@@ -34,7 +34,7 @@ int event_loop_select_fd_limit(const EventLoopSelectSet *set)
     return set->maxfd;
 }
 
-int event_loop_select_ready_fd(const EventLoopReadySet *ready, int fd)
+int event_loop_select_ready_fd(const EventLoopSelectReadySet *ready, int fd)
 {
     if (fd < 0)
         return 0;
@@ -43,7 +43,7 @@ int event_loop_select_ready_fd(const EventLoopReadySet *ready, int fd)
 }
 
 int event_loop_select_wait(const EventLoopSelectSet *set,
-                           EventLoopReadySet *ready,
+                           EventLoopSelectReadySet *ready,
                            int timeout_usec)
 {
     struct timeval tv;

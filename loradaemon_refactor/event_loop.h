@@ -2,19 +2,30 @@
 #define LORAHAM_EVENT_LOOP_H
 
 #include "event_loop_select.h"
+#include "event_loop_epoll.h"
 
 /* --- backend-neutral event loop --- */
 
 typedef enum {
-    EVENT_LOOP_BACKEND_SELECT = 0
+    EVENT_LOOP_BACKEND_SELECT = 0,
+    EVENT_LOOP_BACKEND_EPOLL = 1
 } EventLoopBackend;
 
 typedef struct {
     EventLoopBackend backend;
     EventLoopSelectSet select_backend;
+    EventLoopEpollSet epoll_backend;
 } EventLoopSet;
 
+typedef struct {
+    EventLoopBackend backend;
+    EventLoopSelectReadySet select_ready;
+    EventLoopEpollReadySet epoll_ready;
+} EventLoopReadySet;
+
 void event_loop_init_select(EventLoopSet *set);
+int event_loop_init_epoll(EventLoopSet *set);
+void event_loop_close(EventLoopSet *set);
 EventLoopBackend event_loop_backend(const EventLoopSet *set);
 void event_loop_reset(EventLoopSet *set);
 void event_loop_add_fd(EventLoopSet *set, int fd);

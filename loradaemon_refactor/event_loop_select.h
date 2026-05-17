@@ -12,15 +12,15 @@ typedef struct {
 
 typedef struct {
     fd_set readfds;
-} EventLoopReadySet;
+} EventLoopSelectReadySet;
 
 void event_loop_select_reset(EventLoopSelectSet *set);
 void event_loop_select_add_fd(EventLoopSelectSet *set, int fd);
 int event_loop_select_has_fd(const EventLoopSelectSet *set, int fd);
 int event_loop_select_fd_limit(const EventLoopSelectSet *set);
-int event_loop_select_ready_fd(const EventLoopReadySet *ready, int fd);
+int event_loop_select_ready_fd(const EventLoopSelectReadySet *ready, int fd);
 int event_loop_select_wait(const EventLoopSelectSet *set,
-                           EventLoopReadySet *ready,
+                           EventLoopSelectReadySet *ready,
                            int timeout_usec);
 
 #endif
