@@ -164,6 +164,21 @@ int client_conf868[MAX_CLIENTS] = {0};
 
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
+
+static void daemon_shutdown_cleanup(EventLoopSet *event_set)
+{
+    event_loop_close(event_set);
+
+    client_set_close_all(client_data433, MAX_CLIENTS);
+    client_set_close_all(client_data868, MAX_CLIENTS);
+    client_set_close_all(client_conf433, MAX_CLIENTS);
+    client_set_close_all(client_conf868, MAX_CLIENTS);
+
+    close_unix_socket(&data433_fd, DATA433_SOCKET);
+    close_unix_socket(&data868_fd, DATA868_SOCKET);
+    close_unix_socket(&conf433_fd, CONF433_SOCKET);
+    close_unix_socket(&conf868_fd, CONF868_SOCKET);
+}
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -1159,16 +1174,7 @@ int main(int argc, char *argv[]) {
     } // while stop not requested
 
     printf("[Daemon] Stop requested\n");
-    event_loop_close(&event_set);
-    client_set_close_all(client_data433, MAX_CLIENTS);
-    client_set_close_all(client_data868, MAX_CLIENTS);
-    client_set_close_all(client_conf433, MAX_CLIENTS);
-    client_set_close_all(client_conf868, MAX_CLIENTS);
-
-    close_unix_socket(&data433_fd, DATA433_SOCKET);
-    close_unix_socket(&data868_fd, DATA868_SOCKET);
-    close_unix_socket(&conf433_fd, CONF433_SOCKET);
-    close_unix_socket(&conf868_fd, CONF868_SOCKET);
+    daemon_shutdown_cleanup(&event_set);
 
     return 0;
 }
