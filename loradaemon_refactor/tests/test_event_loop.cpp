@@ -104,9 +104,9 @@ static void test_epoll_wait_timeout(void)
 
 /* --- event-loop wrapper --- */
 
-static void test_backend_names(void)
+static void test_backend_name(void)
 {
-    expect_int("backend name epoll",
+    expect_int("event-loop backend name",
                strcmp(event_loop_backend_name(EVENT_LOOP_BACKEND_EPOLL), "epoll") == 0, 1);
 }
 
@@ -294,7 +294,7 @@ int main(int argc, char **argv)
     test_epoll_init_reset_close();
     test_epoll_wait_readable_pipe();
     test_epoll_wait_timeout();
-    test_backend_names();
+    test_backend_name();
     test_event_loop_init();
     test_backend_reset_preserves_epoll();
     test_backend_close_epoll_clears_state();
