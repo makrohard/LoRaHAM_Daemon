@@ -82,7 +82,7 @@ void client_set_add_to_event_loop(int *clients, int max_clients, EventLoopSet *s
     }
 }
 
-/* --- Client text broadcast --- */
+/* --- Statusmeldungen an alle verbundenen Clients senden --- */
 
 void client_set_broadcast(int *clients, int max_clients, const char *msg)
 {
@@ -95,6 +95,7 @@ void client_set_broadcast(int *clients, int max_clients, const char *msg)
 }
 
 
+/* --- Rohdaten an alle verbundenen Clients senden --- */
 void client_set_broadcast_bytes(int *clients, int max_clients, const uint8_t *buf, size_t len)
 {
     for (int i = 0; i < max_clients; i++) {

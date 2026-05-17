@@ -4,7 +4,7 @@
 
 #include <stdio.h>
 
-/* --- DATA TX chunking --- */
+/* --- Rohdaten vom DATA-Socket in LoRa-Pakete zerteilen --- */
 
 size_t data_tx_chunk_size(size_t remaining)
 {

@@ -83,7 +83,7 @@ void radio_channel_getrssi_autostop(RadioChannelIo *io,
     }
 }
 
-/* --- Radio channel RSSI --- */
+/* --- Live-RSSI direkt aus dem SX127x-Register lesen --- */
 
 float radio_channel_read_live_rssi(Module *mod,
                                    volatile RadioMode_t mode,

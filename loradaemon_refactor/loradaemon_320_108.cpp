@@ -146,7 +146,7 @@
 #include "radio_channel.h"
 #include "config_dispatch.h"
 
-// --- Globale Socket-FDs
+// --- Globale Socket- und Client-Zustände
 int data433_fd = -1, data868_fd = -1;
 int conf433_fd = -1, conf868_fd = -1;
 
@@ -155,6 +155,7 @@ int client_data868[MAX_CLIENTS] = {0};
 int client_conf433[MAX_CLIENTS] = {0};
 int client_conf868[MAX_CLIENTS] = {0};
 
+// --- Kanal-Zustand für Socket- und Clientverwaltung
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
 
@@ -218,6 +219,7 @@ static void daemon_enter_background(void)
     freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
     freopen("/tmp/lora_daemon.log", "w", stderr);
 }
+// --- Runtime-Zustand pro Band
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -267,9 +269,6 @@ void LED_868(int state) {
 }
 
 
-// --- CAD broadcast helper moved to client_set.cpp ---
-
-
 // --- Flag für empfangene Pakete 868 ---
 volatile bool receivedFlag868 = false;
 volatile bool receivedFlag433 = false;
@@ -296,12 +295,6 @@ volatile bool getrssi_868_active = false;
 // Umschalten nur durch explizites "SET MODE=FSK" bzw. "SET MODE=LORA"
 volatile RadioMode_t mode_433 = RADIO_MODE_LORA;
 volatile RadioMode_t mode_868 = RADIO_MODE_LORA;
-
-// --- Live RSSI helper moved to radio_channel.cpp ---
-//void setNonBlocking(int fd) {
-//fcntl(fd, F_SETFL, O_NONBLOCK);
-//}
-
 
 // --- Callback für 868 ---
 void setFlag868(void) {
@@ -855,7 +848,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
     radio_channel_getrssi_autostop(&channel_433, &runtime_433, "CONF 433");
     radio_channel_getrssi_autostop(&channel_868, &runtime_868, "CONF 868");
 
-    // Functional change: RSSI cadence is now time-based.
+    // RSSI-Takt ist zeitbasiert.
     if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
         // 433: nur lesen wenn aktiv und kein TX laeuft
         if (getrssi_433_active && !txBusy433) {
@@ -1130,7 +1123,7 @@ static int16_t daemon_read_rx_data(int band, uint8_t *buf, size_t buf_len)
 /* --- RX flow: process one band ------------------------------------------- */
 static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 {
-    // Shared 433/868 RX flow; original band comments remain in the wrappers.
+    // Gemeinsamer RX-Ablauf; die 433/868-Originalkommentare stehen in den Wrappern.
     if (!daemon_rx_flag_active(band))
         return;
 
@@ -1279,7 +1272,6 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_radio_io_init();
 }
 
-// --- Unix socket setup moved to unix_socket.cpp ---
 /* --- Main entry: startup, contexts and polling loop ----------------------- */
 
 int main(int argc, char *argv[]) {
