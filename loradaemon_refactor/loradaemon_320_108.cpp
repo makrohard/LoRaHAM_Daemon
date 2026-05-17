@@ -152,6 +152,7 @@
 #include "client_set.h"
 #include "config_parser.h"
 #include "radio_channel.h"
+#include "config_dispatch.h"
 
 // --- Globale Socket-FDs
 int data433_fd = -1, data868_fd = -1;
@@ -1140,7 +1141,6 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
     printf("\n");
 }
 
-#include "config_dispatch.h"
 
 // --- Init LoRa ---
 void lora_init() {
