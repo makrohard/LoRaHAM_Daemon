@@ -690,20 +690,24 @@ static void daemon_radio_io_init(void)
 
 /* --- DATA TX structure: context, CAD guard and send callback -------------- */
 
-typedef struct {
-    RadioControllerTxView radio;
-} DataTxDaemonContext;
+template<typename RadioT>
+struct DataTxDaemonContext {
+    RadioController<RadioT> *ctrl;
+};
 
 #define DATA_TX_CAD_MAX_WAIT_TICKS 300
 #define DATA_TX_CAD_SLEEP_USEC 10000
 
 /* --- DATA TX hardware helpers -------------------------------------------- */
-static int data_tx_modem_status(DataTxDaemonContext *tx)
+template<typename RadioT>
+static int data_tx_modem_status(DataTxDaemonContext<RadioT> *tx)
 {
-    if (!tx->radio.read_modem_status)
+    RadioController<RadioT> *ctrl = tx->ctrl;
+
+    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
         return 0;
 
-    return tx->radio.read_modem_status(tx->radio.modem_status_ctx);
+    return ctrl->radio->getModemStatus();
 }
 
 static void data_tx_led(int band, int state)
@@ -714,11 +718,13 @@ static void data_tx_led(int band, int state)
         LED_868(state);
 }
 
-static int data_tx_wait_channel_free(DataTxDaemonContext *tx)
+template<typename RadioT>
+static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 {
+    RadioController<RadioT> *ctrl = tx->ctrl;
     int cad_wait = 0;
 
-    if (!tx->radio.mode || *tx->radio.mode != RADIO_MODE_LORA)
+    if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return 0;
 
     while (cad_wait < DATA_TX_CAD_MAX_WAIT_TICKS) {
@@ -733,31 +739,35 @@ static int data_tx_wait_channel_free(DataTxDaemonContext *tx)
 }
 
 /* --- DATA TX send callback ----------------------------------------------- */
+template<typename RadioT>
 static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
-    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
+    DataTxDaemonContext<RadioT> *tx = (DataTxDaemonContext<RadioT> *)ctx;
+    RadioController<RadioT> *ctrl = tx->ctrl;
+    const char *tag = radio_controller_tag(ctrl);
+    int band = radio_controller_band_number(ctrl);
 
-    if (!tx->radio.health || !radio_health_is_ready(*tx->radio.health)) {
-        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tx->radio.tag);
+    if (!radio_controller_ready(ctrl)) {
+        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
         return 1;
     }
 
     // CAD guard: LoRa only.
     if (data_tx_wait_channel_free(tx)) {
-        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->radio.tag);
-        printf("[%s] DATA-TX abgebrochen: %s\n", tx->radio.tag,
+        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tag);
+        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
                tx_result_name(TX_RESULT_CAD_TIMEOUT));
         return 1;
     }
 
     printf("  -> Sende Chunk: %zu Bytes (Offset: %zu)\n", len, offset);
 
-    data_tx_led(tx->radio.band, 1);
-    TxResult result = lora_send(chunk, len, tx->radio.band);
-    data_tx_led(tx->radio.band, 0);
+    data_tx_led(band, 1);
+    TxResult result = lora_send(chunk, len, band);
+    data_tx_led(band, 0);
 
     if (!tx_result_is_ok(result)) {
-        printf("[%s] DATA-TX abgebrochen: %s\n", tx->radio.tag,
+        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
                tx_result_name(result));
         return 1;
     }
@@ -769,10 +779,10 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 /* --- Runtime context factories ------------------------------------------- */
 
 template<typename RadioT>
-static DataTxDaemonContext daemon_data_tx_context(RadioController<RadioT> *ctrl)
+static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT> *ctrl)
 {
-    DataTxDaemonContext ctx = {
-        radio_controller_tx_view(ctrl)
+    DataTxDaemonContext<RadioT> ctx = {
+        ctrl
     };
 
     return ctx;
@@ -807,8 +817,8 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
 /* --- Loop context --------------------------------------------------------- */
 typedef struct {
     DaemonDeadlineTimer rssi_timer;
-    DataTxDaemonContext data_tx_433_ctx;
-    DataTxDaemonContext data_tx_868_ctx;
+    DataTxDaemonContext<SX1278> data_tx_433_ctx;
+    DataTxDaemonContext<RFM95> data_tx_868_ctx;
     ConfigDispatchContext<SX1278> config_433_ctx;
     ConfigDispatchContext<RFM95> config_868_ctx;
 } DaemonLoopContext;
@@ -861,8 +871,8 @@ static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ct
 /* --- Socket dispatch ----------------------------------------------------- */
 static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          ConfigDispatchContext<RFM95> *config_868_ctx,
-                                         DataTxDaemonContext *data_tx_433_ctx,
-                                         DataTxDaemonContext *data_tx_868_ctx,
+                                         DataTxDaemonContext<SX1278> *data_tx_433_ctx,
+                                         DataTxDaemonContext<RFM95> *data_tx_868_ctx,
                                          const EventLoopReadySet *readfds,
                                          uint8_t *buf)
 {
@@ -870,9 +880,9 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
     radio_channel_accept_ready(&channel_868, readfds);
 
     data_tx_process_slots("433", client_data433_slots, MAX_CLIENTS,
-                          readfds, send_data_chunk, data_tx_433_ctx);
+                          readfds, send_data_chunk<SX1278>, data_tx_433_ctx);
     data_tx_process_slots("868", client_data868_slots, MAX_CLIENTS,
-                          readfds, send_data_chunk, data_tx_868_ctx);
+                          readfds, send_data_chunk<RFM95>, data_tx_868_ctx);
 
     process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
     radio_channel_flush_ready(&channel_433, readfds);
