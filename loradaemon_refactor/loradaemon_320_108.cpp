@@ -762,7 +762,7 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
         client_conf868,
         radio_868,
         "CONF 868",
-        NULL,
+        "[CONF868]",
         &mode_868,
         &getrssi_868_active,
         config_apply_command<RFM95>,
