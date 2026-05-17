@@ -115,6 +115,7 @@ static void test_dispatch_ready_client(void)
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
+    volatile RadioHealth health = RADIO_HEALTH_READY;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     config_stream_init_all(streams, 2);
@@ -139,6 +140,7 @@ static void test_dispatch_ready_client(void)
         streams,
         NULL,
         &radio,
+        &health,
         "CONF TEST",
         "[TEST]",
         &mode,
@@ -174,6 +176,7 @@ static void test_dispatch_ready_client_epoll(void)
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
+    volatile RadioHealth health = RADIO_HEALTH_READY;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     config_stream_init_all(streams, 2);
@@ -205,6 +208,7 @@ static void test_dispatch_ready_client_epoll(void)
         streams,
         NULL,
         &radio,
+        &health,
         "CONF TEST",
         "[TEST]",
         &mode,
@@ -236,6 +240,7 @@ static void test_dispatch_ignores_not_ready_client(void)
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
+    volatile RadioHealth health = RADIO_HEALTH_FAILED;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     config_stream_init_all(streams, 2);
@@ -248,15 +253,19 @@ static void test_dispatch_ignores_not_ready_client(void)
 
     clients[0] = sv[1];
 
+    const char *cmd = "SET GETRSSI=1\n";
+    write(sv[0], cmd, strlen(cmd));
+
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
-    expect_int("not ready wait", event_loop_wait(&set, &readfds, 1000), 0);
+    expect_int("not ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx = {
         clients,
         streams,
         NULL,
         &radio,
+        &health,
         "CONF TEST",
         NULL,
         &mode,
@@ -287,6 +296,7 @@ static void test_dispatch_closes_eof_client(void)
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
+    volatile RadioHealth health = RADIO_HEALTH_READY;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     config_stream_init_all(streams, 2);
@@ -310,6 +320,7 @@ static void test_dispatch_closes_eof_client(void)
         streams,
         NULL,
         &radio,
+        &health,
         "CONF TEST",
         NULL,
         &mode,

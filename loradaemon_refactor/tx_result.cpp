@@ -15,6 +15,8 @@ const char *tx_result_name(TxResult result)
             return "BUSY";
         case TX_RESULT_CAD_TIMEOUT:
             return "CAD_TIMEOUT";
+        case TX_RESULT_RADIO_NOT_READY:
+            return "RADIO_NOT_READY";
         case TX_RESULT_RADIO_ERROR:
             return "RADIO_ERROR";
     }

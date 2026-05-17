@@ -141,6 +141,7 @@
 #include "daemon_lifecycle.h"
 #include "data_tx.h"
 #include "tx_result.h"
+#include "radio_health.h"
 #include "rf_packet.h"
 #include "event_loop.h"
 #include "unix_socket.h"
@@ -250,6 +251,9 @@ PiHal* hal_868 = nullptr;
 Module* mod_868 = nullptr;
 RFM95* radio_868 = nullptr;
 
+volatile RadioHealth radio_health_433 = RADIO_HEALTH_UNINITIALIZED;
+volatile RadioHealth radio_health_868 = RADIO_HEALTH_UNINITIALIZED;
+
 int h = -1;
 int chip = -1;
 
@@ -351,6 +355,27 @@ static bool lora_send_valid_band(int band)
     return band == 433 || band == 868;
 }
 
+static volatile RadioHealth *daemon_radio_health_ptr(int band)
+{
+    if (band == 433)
+        return &radio_health_433;
+
+    return &radio_health_868;
+}
+
+static RadioHealth daemon_radio_health(int band)
+{
+    if (!lora_send_valid_band(band))
+        return RADIO_HEALTH_FAILED;
+
+    return *daemon_radio_health_ptr(band);
+}
+
+static bool daemon_radio_ready(int band)
+{
+    return radio_health_is_ready(daemon_radio_health(band));
+}
+
 static void lora_print_tx_preview(const uint8_t *buf, size_t len)
 {
     size_t preview_len = rf_packet_preview_len(len);
@@ -393,6 +418,13 @@ TxResult lora_send(uint8_t *buf, size_t len, int band) {
         printf("[SEND %d] invalid band\n", band);
         fflush(stdout);
         return TX_RESULT_INVALID_BAND;
+    }
+
+    if (!daemon_radio_ready(band)) {
+        printf("[SEND %d] radio not ready: %s\n",
+               band, radio_health_name(daemon_radio_health(band)));
+        fflush(stdout);
+        return TX_RESULT_RADIO_NOT_READY;
     }
 
     RfPacketValidation packet_state = rf_packet_validate(buf, len);
@@ -531,8 +563,13 @@ TxResult lora_send(uint8_t *buf, size_t len, int band) {
 void lora_init() {
     printf("[Init] Starte Dualband LoRa Receiver (433 + 868)\n");
 
+    radio_health_433 = RADIO_HEALTH_UNINITIALIZED;
+    radio_health_868 = RADIO_HEALTH_UNINITIALIZED;
+
     if (h < 0) {
         printf("[GPIO] Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
+        radio_health_433 = RADIO_HEALTH_FAILED;
+        radio_health_868 = RADIO_HEALTH_FAILED;
         return;
     }
 
@@ -546,90 +583,111 @@ void lora_init() {
     mod_868   = new Module(hal_868, 7, 16, 6, 12);
     radio_868 = new RFM95(mod_868);
 
-    if (radio_433->begin() == RADIOLIB_ERR_NONE)
+    int state_433 = radio_433->begin();
+    if (state_433 == RADIOLIB_ERR_NONE) {
+        radio_health_433 = RADIO_HEALTH_READY;
         printf("[433] Init OK\n");
-    else printf("[433] Init FEHLGESCHLAGEN\n");
 
+        // LoRa-APRS:
+        radio_433->setFrequency(433.900);
+        radio_433->setSpreadingFactor(12);
+        radio_433->setBandwidth(125.0);
+        radio_433->setSyncWord(0x12);
+        radio_433->setPreambleLength(8);
+        radio_433->setCodingRate(5);
+        radio_433->setCRC(true);
+        radio_433->autoLDRO();
+        radio_433->forceLDRO(1);
+        radio_433->setOutputPower(10);
 
-    // LoRa-APRS:
+        /*
+         *
+         * // LoRa DX Cluster:
+         *    radio_433->setFrequency(433.900);
+         *    radio_433->setSpreadingFactor(10);
+         *    radio_433->setBandwidth(125.0);
+         *    radio_433->setSyncWord(0x12);
+         *    radio_433->setPreambleLength(8);
+         *    radio_433->setCodingRate(5);
+         *    radio_433->setCRC(true);
+         *    radio_433->autoLDRO();
+         *    radio_433->setOutputPower(10);
+         *
+         *
+         *
+         * // Meshtastic 433:
+         *
+         *    radio_433->setFrequency(433.900); // DB0ARD
+         *    radio_433->setSpreadingFactor(11);
+         *    radio_433->setBandwidth(125.0);
+         *    radio_433->setSyncWord(0x2B);
+         *    radio_433->setPreambleLength(16);
+         *    radio_433->setCodingRate(5);
+         *    radio_433->setCRC(true);
+         *    radio_433->autoLDRO();
+         *    radio_433->setOutputPower(10);
+         *
+         *
+         * // Meshcom:
+         *
+         *    radio_433->setFrequency(433.175);
+         *    radio_433->setSpreadingFactor(11);
+         *    radio_433->setBandwidth(250.0);
+         *    radio_433->setSyncWord(0x2B);
+         *    radio_433->setPreambleLength(8);
+         *    radio_433->setCodingRate(6);
+         *    radio_433->setCRC(true);
+         *    //radio_433->autoLDRO();
+         *    radio_433->setOutputPower(10);
+         */
+        radio_433->setPacketReceivedAction(setFlag433); // Callback nutzen
+    } else {
+        radio_health_433 = RADIO_HEALTH_FAILED;
+        printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
+    }
 
-    radio_433->setFrequency(433.900);
-    radio_433->setSpreadingFactor(12);
-    radio_433->setBandwidth(125.0);
-    radio_433->setSyncWord(0x12);
-    radio_433->setPreambleLength(8);
-    radio_433->setCodingRate(5);
-    radio_433->setCRC(true);
-    radio_433->autoLDRO();
-    radio_433->forceLDRO(1);
-    radio_433->setOutputPower(10);
+    LED_433(0);
 
-    /*
-     *
-     * // LoRa DX Cluster:
-     *    radio_433->setFrequency(433.900);
-     *    radio_433->setSpreadingFactor(10);
-     *    radio_433->setBandwidth(125.0);
-     *    radio_433->setSyncWord(0x12);
-     *    radio_433->setPreambleLength(8);
-     *    radio_433->setCodingRate(5);
-     *    radio_433->setCRC(true);
-     *    radio_433->autoLDRO();
-     *    radio_433->setOutputPower(10);
-     *
-     *
-     *
-     * // Meshtastic 433:
-     *
-     *    radio_433->setFrequency(433.900); // DB0ARD
-     *    radio_433->setSpreadingFactor(11);
-     *    radio_433->setBandwidth(125.0);
-     *    radio_433->setSyncWord(0x2B);
-     *    radio_433->setPreambleLength(16);
-     *    radio_433->setCodingRate(5);
-     *    radio_433->setCRC(true);
-     *    radio_433->autoLDRO();
-     *    radio_433->setOutputPower(10);
-     *
-     *
-     * // Meshcom:
-     *
-     *    radio_433->setFrequency(433.175);
-     *    radio_433->setSpreadingFactor(11);
-     *    radio_433->setBandwidth(250.0);
-     *    radio_433->setSyncWord(0x2B);
-     *    radio_433->setPreambleLength(8);
-     *    radio_433->setCodingRate(6);
-     *    radio_433->setCRC(true);
-     *    //radio_433->autoLDRO();
-     *    radio_433->setOutputPower(10);
-     * /*
-     */
-     radio_433->setPacketReceivedAction(setFlag433); // Callback nutzen
-     LED_433(0);
+    LED_868(1);
 
-     LED_868(1);
-     if (radio_868->begin() == RADIOLIB_ERR_NONE)
-         printf("[868] Init OK\n");
-    else printf("[868] Init FEHLGESCHLAGEN\n");
+    int state_868 = radio_868->begin();
+    if (state_868 == RADIOLIB_ERR_NONE) {
+        radio_health_868 = RADIO_HEALTH_READY;
+        printf("[868] Init OK\n");
 
-    radio_868->setFrequency(869.525);
-    radio_868->setSpreadingFactor(11);
-    radio_868->setBandwidth(250.0);
-    radio_868->setSyncWord(0x2B);
-    radio_868->setPreambleLength(16);
-    radio_868->setCodingRate(5);
-    radio_868->setCRC(true);
-    radio_868->autoLDRO();
-    radio_868->setOutputPower(10);
+        radio_868->setFrequency(869.525);
+        radio_868->setSpreadingFactor(11);
+        radio_868->setBandwidth(250.0);
+        radio_868->setSyncWord(0x2B);
+        radio_868->setPreambleLength(16);
+        radio_868->setCodingRate(5);
+        radio_868->setCRC(true);
+        radio_868->autoLDRO();
+        radio_868->setOutputPower(10);
 
-    radio_868->setPacketReceivedAction(setFlag868); // Callback nutzen
+        radio_868->setPacketReceivedAction(setFlag868); // Callback nutzen
+    } else {
+        radio_health_868 = RADIO_HEALTH_FAILED;
+        printf("[868] Init FEHLGESCHLAGEN: %d\n", state_868);
+    }
+
     LED_868(0);
 
-    radio_433->startReceive();
-    radio_868->startReceive();
+    if (radio_health_is_ready(radio_health_433))
+        radio_433->startReceive();
+    else
+        printf("[433] RX nicht gestartet: %s\n",
+               radio_health_name(radio_health_433));
+
+    if (radio_health_is_ready(radio_health_868))
+        radio_868->startReceive();
+    else
+        printf("[868] RX nicht gestartet: %s\n",
+               radio_health_name(radio_health_868));
+
     fflush(stdout);
 }
+
 
 static void daemon_radio_io_init(void)
 {
@@ -685,6 +743,7 @@ typedef struct {
     const char *tag;
     int band;
     volatile RadioMode_t *mode;
+    volatile RadioHealth *health;
 } DataTxDaemonContext;
 
 #define DATA_TX_CAD_MAX_WAIT_TICKS 300
@@ -693,6 +752,9 @@ typedef struct {
 /* --- DATA TX hardware helpers -------------------------------------------- */
 static int data_tx_modem_status(int band)
 {
+    if (!daemon_radio_ready(band))
+        return 0;
+
     return (band == 433)
         ? radio_433->getModemStatus()
         : radio_868->getModemStatus();
@@ -729,6 +791,11 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
     DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
 
+    if (!radio_health_is_ready(*tx->health)) {
+        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tx->tag);
+        return 1;
+    }
+
     // CAD guard: LoRa only.
     if (data_tx_wait_channel_free(tx)) {
         printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
@@ -757,9 +824,10 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
 static DataTxDaemonContext daemon_data_tx_context(const char *tag,
                                                    int band,
-                                                   volatile RadioMode_t *mode)
+                                                   volatile RadioMode_t *mode,
+                                                   volatile RadioHealth *health)
 {
-    DataTxDaemonContext ctx = {tag, band, mode};
+    DataTxDaemonContext ctx = {tag, band, mode, health};
 
     return ctx;
 }
@@ -771,6 +839,7 @@ static ConfigDispatchContext<SX1278> daemon_config_433_context(void)
         config_stream_conf433,
         output_conf433,
         radio_433,
+        &radio_health_433,
         "CONF 433",
         "[CONF433]",
         &mode_433,
@@ -789,6 +858,7 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
         config_stream_conf868,
         output_conf868,
         radio_868,
+        &radio_health_868,
         "CONF 868",
         "[CONF868]",
         &mode_868,
@@ -817,8 +887,8 @@ static void daemon_loop_context_init(DaemonLoopContext *ctx)
                                DAEMON_RSSI_INTERVAL_MS);
 
     // DATA TX contexts.
-    ctx->data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433);
-    ctx->data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868);
+    ctx->data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433, &radio_health_433);
+    ctx->data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868, &radio_health_868);
 
     // CONFIG stream buffers.
     config_stream_init_all(config_stream_conf433, MAX_CLIENTS);
@@ -880,6 +950,9 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
 /* --- CAD status ---------------------------------------------------------- */
 static void daemon_process_cad_status(int band)
 {
+    if (!daemon_radio_ready(band))
+        return;
+
     if (band == 433) {
         if (mode_433 != RADIO_MODE_LORA)
             return;
@@ -959,7 +1032,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
     // RSSI-Takt ist zeitbasiert.
     if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
         // 433: nur lesen wenn aktiv und kein TX laeuft
-        if (getrssi_433_active && !txBusy433) {
+        if (getrssi_433_active && !txBusy433 && daemon_radio_ready(433)) {
             float rssi433 = radio_channel_read_live_rssi(mod_433, mode_433, false);
             char rssi_msg[32];
             snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi433);
@@ -967,7 +1040,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
         }
 
         // 868: nur lesen wenn aktiv und kein TX laeuft
-        if (getrssi_868_active && !txBusy868) {
+        if (getrssi_868_active && !txBusy868 && daemon_radio_ready(868)) {
             float rssi868 = radio_channel_read_live_rssi(mod_868, mode_868, true);
             char rssi_msg[32];
             snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi868);
@@ -1268,6 +1341,9 @@ static bool daemon_rx_read_ok(int band, int16_t state)
 /* --- RX band flow -------------------------------------------------------- */
 static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 {
+    if (!daemon_radio_ready(band))
+        return;
+
     // Gemeinsamer RX-Ablauf; die 433/868-Originalkommentare stehen in den Wrappern.
     if (!daemon_rx_flag_active(band))
         return;

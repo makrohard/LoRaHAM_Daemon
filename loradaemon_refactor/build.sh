@@ -33,6 +33,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
+  "$SCRIPT_DIR/radio_health.cpp"
 )
 
 try_source_radiolib_dir() {
@@ -345,6 +346,17 @@ build_one_rf_packet_test() {
 
 
 
+
+build_one_radio_health_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/radio_health.cpp"
+}
+
 build_one_tx_result_test() {
   local src="$1"
   local out="$2"
@@ -392,6 +404,7 @@ build_one_config_dispatch_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/client_set.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp"
     "$SCRIPT_DIR/config_stream.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -405,6 +418,7 @@ build_tests() {
   build_one_event_loop_output_flush_test "$TEST_DIR/test_event_loop_output_flush.cpp" "$TEST_DIR/test_event_loop_output_flush"
   build_one_client_read_disconnect_cleanup_test "$TEST_DIR/test_client_read_disconnect_cleanup.cpp" "$TEST_DIR/test_client_read_disconnect_cleanup"
   build_one_tx_result_test "$TEST_DIR/test_tx_result.cpp" "$TEST_DIR/test_tx_result"
+  build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
   build_one_event_loop_test "$TEST_DIR/test_event_loop.cpp" "$TEST_DIR/test_event_loop"
   build_one_timing_test "$TEST_DIR/test_daemon_timing.cpp" "$TEST_DIR/test_daemon_timing"

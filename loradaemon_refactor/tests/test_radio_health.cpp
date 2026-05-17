@@ -1,9 +1,9 @@
-#include "../tx_result.h"
+#include "../radio_health.h"
 
 #include <stdio.h>
 #include <string.h>
 
-/* --- TX result helper tests --- */
+/* --- Radio health helper tests --- */
 
 static int g_ok = 0;
 static int g_fail = 0;
@@ -30,23 +30,27 @@ static void expect_str(const char *name, const char *actual, const char *expecte
     }
 }
 
-static void test_tx_result_names(void)
+static void test_radio_health_names(void)
 {
-    expect_str("tx ok name", tx_result_name(TX_RESULT_OK), "OK");
-    expect_str("tx invalid band name", tx_result_name(TX_RESULT_INVALID_BAND), "INVALID_BAND");
-    expect_str("tx invalid packet name", tx_result_name(TX_RESULT_INVALID_PACKET), "INVALID_PACKET");
-    expect_str("tx busy name", tx_result_name(TX_RESULT_BUSY), "BUSY");
-    expect_str("tx cad timeout name", tx_result_name(TX_RESULT_CAD_TIMEOUT), "CAD_TIMEOUT");
-    expect_str("tx radio not ready name", tx_result_name(TX_RESULT_RADIO_NOT_READY), "RADIO_NOT_READY");
-    expect_str("tx radio error name", tx_result_name(TX_RESULT_RADIO_ERROR), "RADIO_ERROR");
+    expect_str("health uninitialized name",
+               radio_health_name(RADIO_HEALTH_UNINITIALIZED),
+               "UNINITIALIZED");
+    expect_str("health ready name",
+               radio_health_name(RADIO_HEALTH_READY),
+               "READY");
+    expect_str("health failed name",
+               radio_health_name(RADIO_HEALTH_FAILED),
+               "FAILED");
 }
 
-static void test_tx_result_ok(void)
+static void test_radio_health_ready(void)
 {
-    expect_int("tx ok is ok", tx_result_is_ok(TX_RESULT_OK), 1);
-    expect_int("tx busy is not ok", tx_result_is_ok(TX_RESULT_BUSY), 0);
-    expect_int("tx radio not ready is not ok", tx_result_is_ok(TX_RESULT_RADIO_NOT_READY), 0);
-    expect_int("tx radio error is not ok", tx_result_is_ok(TX_RESULT_RADIO_ERROR), 0);
+    expect_int("uninitialized is not ready",
+               radio_health_is_ready(RADIO_HEALTH_UNINITIALIZED), 0);
+    expect_int("ready is ready",
+               radio_health_is_ready(RADIO_HEALTH_READY), 1);
+    expect_int("failed is not ready",
+               radio_health_is_ready(RADIO_HEALTH_FAILED), 0);
 }
 
 int main(int argc, char **argv)
@@ -68,8 +72,8 @@ int main(int argc, char **argv)
         }
     }
 
-    test_tx_result_names();
-    test_tx_result_ok();
+    test_radio_health_names();
+    test_radio_health_ready();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

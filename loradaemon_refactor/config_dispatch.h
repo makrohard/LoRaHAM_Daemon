@@ -6,6 +6,7 @@
 #include "config_stream.h"
 #include "daemon_protocol.h"
 #include "radio_channel.h"
+#include "radio_health.h"
 
 #include <stddef.h>
 #include <errno.h>
@@ -22,6 +23,7 @@ struct ConfigDispatchContext {
     ConfigStreamBuffer *streams;
     ClientOutputQueue *output_queues;
     RadioT *radio;
+    volatile RadioHealth *health;
     const char *tag;
     const char *prefix;
     volatile RadioMode_t *mode;
@@ -33,6 +35,7 @@ struct ConfigDispatchContext {
 template<typename RadioT>
 struct ConfigLineApplyContext {
     RadioT *radio;
+    volatile RadioHealth *health;
     const char *tag;
     const char *prefix;
     volatile RadioMode_t *mode;
@@ -50,6 +53,13 @@ static void config_dispatch_apply_line(const char *line, void *user)
     if(ctx->prefix)
         printf("%s", ctx->prefix);
 
+    if(!radio_health_is_ready(*ctx->health)) {
+        printf(" RADIO=%s CONFIG ignored\n",
+               radio_health_name(*ctx->health));
+        fflush(stdout);
+        return;
+    }
+
     ctx->apply_config(*ctx->radio, ctx->tag, line,
                       *ctx->mode, *ctx->getrssi_active);
 
@@ -66,6 +76,7 @@ static void config_dispatch_client(int *clients,
                                    const EventLoopReadySet *readfds,
                                    uint8_t *buf,
                                    RadioT& radio,
+                                   volatile RadioHealth& health,
                                    const char *tag,
                                    const char *prefix,
                                    volatile RadioMode_t& mode,
@@ -78,6 +89,7 @@ static void config_dispatch_client(int *clients,
 
     ConfigLineApplyContext<RadioT> line_ctx = {
         &radio,
+        &health,
         tag,
         prefix,
         &mode,
@@ -133,6 +145,7 @@ static void config_dispatch_clients(int *clients,
                                     const EventLoopReadySet *readfds,
                                     uint8_t *buf,
                                     RadioT& radio,
+                                    volatile RadioHealth& health,
                                     const char *tag,
                                     const char *prefix,
                                     volatile RadioMode_t& mode,
@@ -142,7 +155,7 @@ static void config_dispatch_clients(int *clients,
 {
     for(int i=0;i<max_clients;i++){
         config_dispatch_client<RadioT>(clients, streams, output_queues, i, readfds, buf,
-                                       radio, tag, prefix,
+                                       radio, health, tag, prefix,
                                        mode, getrssi_active,
                                        apply_config, rx_callback);
     }
@@ -157,7 +170,7 @@ static void config_dispatch_context(ConfigDispatchContext<RadioT> *ctx,
     config_dispatch_clients<RadioT>(ctx->clients, ctx->streams,
                                     ctx->output_queues,
                                     max_clients, readfds, buf,
-                                    *ctx->radio, ctx->tag, ctx->prefix,
+                                    *ctx->radio, *ctx->health, ctx->tag, ctx->prefix,
                                     *ctx->mode, *ctx->getrssi_active,
                                     ctx->apply_config, ctx->rx_callback);
 }

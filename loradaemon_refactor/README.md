@@ -206,6 +206,7 @@ Refactored by Johannes Loose / 410733@gmail.com
 - Hardening: CONFIG value policy is separated and unit-tested.
 - Documentation: CONFIG parameter table now reflects strict accepted value ranges.
 - Hardening prep: TX send path now returns TxResult and DATA-TX aborts on send failures.
+- Hardening prep: radio init now records per-band health and guards failed hardware paths.
 - QA: add a static check that production paths do not call legacy blocking broadcast wrappers.
 - QA: add slow-client output tests for non-blocking queued broadcasts.
 - Hardening: read-side client disconnects now reset their queued output immediately.
