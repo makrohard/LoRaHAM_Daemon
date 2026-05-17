@@ -213,6 +213,7 @@ build_one_event_loop_test() {
     "$src" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
+    "$SCRIPT_DIR/event_loop_epoll.cpp" \
 
   echo "Built test:   $out"
 }

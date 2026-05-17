@@ -1,4 +1,5 @@
 #include "../event_loop.h"
+#include "../event_loop_epoll.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -139,6 +140,82 @@ static void test_select_ready_fd(void)
 }
 
 
+
+/* --- epoll backend scaffold --- */
+
+static void test_epoll_init_reset_close(void)
+{
+    EventLoopEpollSet set;
+
+    expect_int("epoll init", event_loop_epoll_init(&set), 0);
+    expect_int("epoll starts empty",
+               event_loop_epoll_has_registered_fds(&set), 0);
+
+    event_loop_epoll_reset(&set);
+    expect_int("epoll reset keeps backend usable", set.epoll_fd >= 0, 1);
+    expect_int("epoll reset clears fds",
+               event_loop_epoll_has_registered_fds(&set), 0);
+
+    event_loop_epoll_close(&set);
+    expect_int("epoll close clears fd", set.epoll_fd, -1);
+}
+
+static void test_epoll_wait_readable_pipe(void)
+{
+    EventLoopEpollSet set;
+    EventLoopEpollReadySet ready;
+    int fds[2];
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] epoll pipe setup\n");
+        return;
+    }
+
+    if (event_loop_epoll_init(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] epoll init for pipe\n");
+        return;
+    }
+
+    expect_int("epoll add pipe fd", event_loop_epoll_add_fd(&set, fds[0]), 0);
+    expect_int("epoll has registered fds",
+               event_loop_epoll_has_registered_fds(&set), 1);
+
+    (void)write(fds[1], &ch, 1);
+
+    expect_int("epoll wait returns readable",
+               event_loop_epoll_wait(&set, &ready, 100000), 1);
+    expect_int("epoll ready helper sees fd",
+               event_loop_epoll_ready_fd(&ready, fds[0]), 1);
+    expect_int("epoll ready helper ignores negative fd",
+               event_loop_epoll_ready_fd(&ready, -1), 0);
+
+    event_loop_epoll_close(&set);
+    close(fds[0]);
+    close(fds[1]);
+}
+
+static void test_epoll_wait_timeout(void)
+{
+    EventLoopEpollSet set;
+    EventLoopEpollReadySet ready;
+
+    if (event_loop_epoll_init(&set) != 0) {
+        g_fail++;
+        printf("[FAIL] epoll init for timeout\n");
+        return;
+    }
+
+    expect_int("epoll wait timeout with no fds",
+               event_loop_epoll_wait(&set, &ready, 1000), 0);
+
+    event_loop_epoll_close(&set);
+}
+
 /* --- backend-neutral wrapper --- */
 
 static void test_backend_selection(void)
@@ -222,6 +299,9 @@ int main(int argc, char **argv)
     test_select_wait_readable_pipe();
     test_select_wait_timeout();
     test_select_ready_fd();
+    test_epoll_init_reset_close();
+    test_epoll_wait_readable_pipe();
+    test_epoll_wait_timeout();
     test_backend_selection();
     test_backend_neutral_aliases();
     test_backend_neutral_wait_readable_pipe();
