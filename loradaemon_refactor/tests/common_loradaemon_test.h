@@ -526,11 +526,15 @@ static TEST_UNUSED int wait_client_closed_after_shutdown(int fd, int timeout_ms)
 
 /* --- CLI smoke helper --- */
 
-static TEST_UNUSED int test_cli_invalid_option(const char *bin)
+static TEST_UNUSED int run_cli_capture(const char *bin,
+                                       const char *arg1,
+                                       const char *arg2,
+                                       char *out,
+                                       size_t out_size,
+                                       int *exit_code)
 {
     pid_t pid;
     int pipefd[2];
-    char out[1024];
     ssize_t n;
     int status;
 
@@ -552,12 +556,19 @@ static TEST_UNUSED int test_cli_invalid_option(const char *bin)
         dup2(pipefd[1], STDOUT_FILENO);
         dup2(pipefd[1], STDERR_FILENO);
         close(pipefd[1]);
-        execl(bin, bin, "-x", (char *)NULL);
+
+        if (arg2)
+            execl(bin, bin, arg1, arg2, (char *)NULL);
+        else if (arg1)
+            execl(bin, bin, arg1, (char *)NULL);
+        else
+            execl(bin, bin, (char *)NULL);
+
         _exit(127);
     }
 
     close(pipefd[1]);
-    n = read(pipefd[0], out, sizeof(out) - 1);
+    n = read(pipefd[0], out, out_size - 1);
     close(pipefd[0]);
 
     waitpid(pid, &status, 0);
@@ -567,11 +578,46 @@ static TEST_UNUSED int test_cli_invalid_option(const char *bin)
 
     out[n] = '\0';
 
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    if (!WIFEXITED(status))
+        return TEST_FAIL;
+
+    *exit_code = WEXITSTATUS(status);
+    return TEST_PASS;
+}
+
+static TEST_UNUSED int test_cli_invalid_option(const char *bin)
+{
+    char out[1024];
+    int exit_code = 0;
+    int ret = run_cli_capture(bin, "-x", NULL, out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+
+    if (exit_code == 0)
         return TEST_FAIL;
 
     if (strstr(out, "Nutzung:") == NULL &&
         strstr(out, "invalid option") == NULL)
+        return TEST_FAIL;
+
+    return TEST_PASS;
+}
+
+static TEST_UNUSED int test_cli_help_option(const char *bin,
+                                            const char *option)
+{
+    char out[1024];
+    int exit_code = 0;
+    int ret = run_cli_capture(bin, option, "--help", out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+
+    if (exit_code != 0)
+        return TEST_FAIL;
+
+    if (strstr(out, "Nutzung:") == NULL)
         return TEST_FAIL;
 
     return TEST_PASS;

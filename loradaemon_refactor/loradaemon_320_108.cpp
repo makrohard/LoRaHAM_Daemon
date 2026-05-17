@@ -131,6 +131,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <getopt.h>
+#include <stdarg.h>
 
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
@@ -167,6 +169,80 @@ ClientSlot client_conf868_slots[MAX_CLIENTS];
 // Kanal-Zustand für Socket- und Clientverwaltung
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
+
+/* --- Logging ------------------------------------------------------------- */
+typedef enum {
+    DAEMON_LOG_NORMAL = 0,
+    DAEMON_LOG_VERBOSE = 1,
+    DAEMON_LOG_DEBUG = 2
+} DaemonLogLevel;
+
+static DaemonLogLevel daemon_log_level = DAEMON_LOG_NORMAL;
+
+static bool daemon_verbose_enabled(void)
+{
+    return daemon_log_level >= DAEMON_LOG_VERBOSE;
+}
+
+static bool daemon_debug_enabled(void)
+{
+    return daemon_log_level >= DAEMON_LOG_DEBUG;
+}
+
+static void daemon_vlog(const char *prefix, const char *fmt, va_list ap)
+{
+    printf("%s ", prefix);
+    vprintf(fmt, ap);
+    printf("\n");
+}
+
+static void daemon_log(const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    daemon_vlog("[Daemon]", fmt, ap);
+    va_end(ap);
+}
+
+static void daemon_verbose(const char *fmt, ...)
+{
+    va_list ap;
+
+    if (!daemon_verbose_enabled())
+        return;
+
+    va_start(ap, fmt);
+    daemon_vlog("[VERBOSE]", fmt, ap);
+    va_end(ap);
+}
+
+static void daemon_debug(const char *fmt, ...)
+{
+    va_list ap;
+
+    if (!daemon_debug_enabled())
+        return;
+
+    va_start(ap, fmt);
+    daemon_vlog("[DEBUG]", fmt, ap);
+    va_end(ap);
+}
+
+static void daemon_debug_band(const char *tag, const char *fmt, ...)
+{
+    va_list ap;
+    char prefix[32];
+
+    if (!daemon_debug_enabled())
+        return;
+
+    snprintf(prefix, sizeof(prefix), "[DEBUG %s]", tag ? tag : "?");
+
+    va_start(ap, fmt);
+    daemon_vlog(prefix, fmt, ap);
+    va_end(ap);
+}
 
 static void daemon_radio_shutdown_cleanup(void);
 
@@ -1372,19 +1448,40 @@ static void daemon_ignore_sigpipe(void)
     signal(SIGPIPE, SIG_IGN);
 }
 
+static void daemon_print_usage(const char *argv0)
+{
+    printf("Nutzung: %s [-d] [-v|--verbose] [--debug] [--help]\n", argv0);
+}
+
 static bool daemon_parse_args(int argc, char *argv[])
 {
     int opt;
     bool is_daemon = false;
+    static const struct option long_options[] = {
+        {"verbose", no_argument, 0, 'v'},
+        {"debug",   no_argument, 0, 1000},
+        {"help",    no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
 
     // Parsen der Argumente
-    while ((opt = getopt(argc, argv, "d")) != -1) {
+    while ((opt = getopt_long(argc, argv, "dvh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'd':
                 is_daemon = true;
                 break;
+            case 'v':
+                if (daemon_log_level < DAEMON_LOG_VERBOSE)
+                    daemon_log_level = DAEMON_LOG_VERBOSE;
+                break;
+            case 1000:
+                daemon_log_level = DAEMON_LOG_DEBUG;
+                break;
+            case 'h':
+                daemon_print_usage(argv[0]);
+                exit(EXIT_SUCCESS);
             default:
-                fprintf(stderr, "Nutzung: %s [-d]\n", argv[0]);
+                daemon_print_usage(argv[0]);
                 exit(EXIT_FAILURE);
         }
     }
