@@ -11,70 +11,6 @@ static const char *g_bin = NULL;
 
 /* --- Source contracts for readability fixes --- */
 
-static int daemon_source_path(char *out, size_t out_size)
-{
-    const char *slash;
-
-    if (!g_bin || out_size == 0)
-        return TEST_FAIL;
-
-    slash = strrchr(g_bin, '/');
-    if (!slash)
-        return snprintf(out, out_size,
-                        "loradaemon_refactor/loradaemon_320_108.cpp") > 0
-            ? TEST_PASS
-            : TEST_FAIL;
-
-    if (snprintf(out, out_size, "%.*s/loradaemon_320_108.cpp",
-                 (int)(slash - g_bin), g_bin) >= (int)out_size)
-        return TEST_FAIL;
-
-    return TEST_PASS;
-}
-
-static char *read_text_file(const char *path)
-{
-    FILE *fp;
-    long size;
-    char *data;
-
-    fp = fopen(path, "rb");
-    if (!fp)
-        return NULL;
-
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        fclose(fp);
-        return NULL;
-    }
-
-    size = ftell(fp);
-    if (size < 0) {
-        fclose(fp);
-        return NULL;
-    }
-
-    if (fseek(fp, 0, SEEK_SET) != 0) {
-        fclose(fp);
-        return NULL;
-    }
-
-    data = (char *)malloc((size_t)size + 1);
-    if (!data) {
-        fclose(fp);
-        return NULL;
-    }
-
-    if (fread(data, 1, (size_t)size, fp) != (size_t)size) {
-        free(data);
-        fclose(fp);
-        return NULL;
-    }
-
-    data[size] = '\0';
-    fclose(fp);
-    return data;
-}
-
 static int test_conf868_log_prefix_source_contract(void)
 {
     char source_path[1024];
@@ -82,10 +18,11 @@ static int test_conf868_log_prefix_source_contract(void)
     char *ctx868;
     char *ctx_end;
 
-    if (daemon_source_path(source_path, sizeof(source_path)) != TEST_PASS)
+    if (source_contract_daemon_source_path(g_bin, source_path,
+                                           sizeof(source_path)) != TEST_PASS)
         return TEST_FAIL;
 
-    source = read_text_file(source_path);
+    source = source_contract_read_text_file(source_path);
     if (!source)
         return TEST_FAIL;
 
