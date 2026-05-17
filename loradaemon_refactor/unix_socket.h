@@ -3,5 +3,6 @@
 
 /* Unix socket setup for local daemon IPC. */
 int setup_unix_socket(const char *path, int backlog);
+void close_unix_socket(int *fd, const char *path);
 
 #endif

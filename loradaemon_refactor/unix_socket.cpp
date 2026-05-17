@@ -34,3 +34,14 @@ int setup_unix_socket(const char *path, int backlog)
 
     return fd;
 }
+
+void close_unix_socket(int *fd, const char *path)
+{
+    if (fd && *fd >= 0) {
+        close(*fd);
+        *fd = -1;
+    }
+
+    if (path)
+        unlink(path);
+}
