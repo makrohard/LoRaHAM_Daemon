@@ -14,6 +14,12 @@ cxx="${CXX:-g++}"
 radiolib_cflags=()
 radiolib_libs=()
 
+event_loop_sources=(
+  "$SCRIPT_DIR/event_loop.cpp"
+  "$SCRIPT_DIR/event_loop_select.cpp"
+  "$SCRIPT_DIR/event_loop_epoll.cpp"
+)
+
 try_source_radiolib_dir() {
   local dir="$1"
 
@@ -137,9 +143,7 @@ build_daemon() {
     "$SCRIPT_DIR/radio_channel.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/daemon_lifecycle.cpp" \
-    "$SCRIPT_DIR/event_loop.cpp" \
-    "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp" \
+    "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
@@ -228,9 +232,7 @@ build_one_event_loop_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
-    "$SCRIPT_DIR/event_loop.cpp" \
-    "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp"
+    "${event_loop_sources[@]}"
 }
 
 build_one_data_tx_test() {
@@ -242,10 +244,9 @@ build_one_data_tx_test() {
     "$src" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
-    "$SCRIPT_DIR/event_loop.cpp" \
-    "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp"
+    "${event_loop_sources[@]}"
 }
+
 build_one_config_dispatch_test() {
   local src="$1"
   local out="$2"
@@ -268,9 +269,7 @@ build_one_config_dispatch_test() {
     -o "$out" \
     "$src" \
     "$SCRIPT_DIR/client_set.cpp" \
-    "$SCRIPT_DIR/event_loop.cpp" \
-    "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp" \
+    "${event_loop_sources[@]}"
 
   echo "Built test:   $out"
 }
