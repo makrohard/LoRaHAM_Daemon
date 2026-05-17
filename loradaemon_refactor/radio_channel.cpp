@@ -31,21 +31,21 @@ void radio_channel_io_init(RadioChannelIo *ch,
 
 
 
-void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSelectSet *set)
+void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
 {
-    event_loop_select_add_fd(set, *ch->data_listen_fd);
-    event_loop_select_add_fd(set, *ch->conf_listen_fd);
+    event_loop_add_fd(set, *ch->data_listen_fd);
+    event_loop_add_fd(set, *ch->conf_listen_fd);
 
     client_set_add_fds(ch->data_clients, MAX_CLIENTS, &set->readfds, &set->maxfd);
     client_set_add_fds(ch->conf_clients, MAX_CLIENTS, &set->readfds, &set->maxfd);
 }
 
-void radio_channel_accept_ready(RadioChannelIo *ch, const fd_set *ready)
+void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)
 {
-    if(event_loop_select_ready_fd(ready, *ch->data_listen_fd))
+    if(event_loop_ready_fd(ready, *ch->data_listen_fd))
         client_set_accept(*ch->data_listen_fd, ch->data_clients, MAX_CLIENTS);
 
-    if(event_loop_select_ready_fd(ready, *ch->conf_listen_fd))
+    if(event_loop_ready_fd(ready, *ch->conf_listen_fd))
         client_set_accept(*ch->conf_listen_fd, ch->conf_clients, MAX_CLIENTS);
 }
 

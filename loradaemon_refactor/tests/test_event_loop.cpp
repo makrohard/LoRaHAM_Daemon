@@ -137,6 +137,47 @@ static void test_select_ready_fd(void)
     close(fds[1]);
 }
 
+
+/* --- backend-neutral wrapper --- */
+
+static void test_backend_neutral_aliases(void)
+{
+    EventLoopSet set;
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, 5);
+
+    expect_int("generic fd present", event_loop_has_fd(&set, 5), 1);
+    expect_int("generic fd missing", event_loop_has_fd(&set, 6), 0);
+    expect_int("generic maxfd", set.maxfd, 6);
+}
+
+static void test_backend_neutral_wait_readable_pipe(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] generic pipe setup\n");
+        return;
+    }
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, fds[0]);
+    (void)write(fds[1], &ch, 1);
+
+    expect_int("generic wait returns readable",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("generic ready helper sees fd",
+               event_loop_ready_fd(&ready, fds[0]), 1);
+
+    close(fds[0]);
+    close(fds[1]);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -164,6 +205,8 @@ int main(int argc, char **argv)
     test_select_wait_readable_pipe();
     test_select_wait_timeout();
     test_select_ready_fd();
+    test_backend_neutral_aliases();
+    test_backend_neutral_wait_readable_pipe();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

@@ -754,8 +754,8 @@ int main(int argc, char *argv[]) {
     LED_init();
     lora_init();
 
-    EventLoopSelectSet event_set;
-    fd_set readfds;
+    EventLoopSet event_set;
+    EventLoopReadySet readfds;
     uint8_t buf[buf_SIZE];
     uint8_t tx_buf[buf_SIZE];  // ← NEU: nur zum Senden
     uint8_t rx_buf_433[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
@@ -803,12 +803,12 @@ int main(int argc, char *argv[]) {
 
     while (1) {
 
-        event_loop_select_reset(&event_set);
+        event_loop_reset(&event_set);
         radio_channel_add_fds(&channel_433, &event_set);
         radio_channel_add_fds(&channel_868, &event_set);
 
         // --- Select wait ---
-        int ret = event_loop_select_wait(&event_set, &readfds, DAEMON_SELECT_TIMEOUT_USEC);
+        int ret = event_loop_wait(&event_set, &readfds, DAEMON_SELECT_TIMEOUT_USEC);
         if(ret<0){perror("select"); continue;}
 
         // --- Neue Clients ---

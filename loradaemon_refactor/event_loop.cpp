@@ -51,3 +51,32 @@ int event_loop_select_wait(const EventLoopSelectSet *set,
 
     return select(set->maxfd, ready, NULL, NULL, &tv);
 }
+
+/* --- backend-neutral event-loop wrapper --- */
+
+void event_loop_reset(EventLoopSet *set)
+{
+    event_loop_select_reset(set);
+}
+
+void event_loop_add_fd(EventLoopSet *set, int fd)
+{
+    event_loop_select_add_fd(set, fd);
+}
+
+int event_loop_has_fd(const EventLoopSet *set, int fd)
+{
+    return event_loop_select_has_fd(set, fd);
+}
+
+int event_loop_ready_fd(const EventLoopReadySet *ready, int fd)
+{
+    return event_loop_select_ready_fd(ready, fd);
+}
+
+int event_loop_wait(const EventLoopSet *set,
+                    EventLoopReadySet *ready,
+                    int timeout_usec)
+{
+    return event_loop_select_wait(set, ready, timeout_usec);
+}
