@@ -20,6 +20,17 @@ event_loop_sources=(
   "$SCRIPT_DIR/event_loop_epoll.cpp"
 )
 
+daemon_support_sources=(
+  "$SCRIPT_DIR/unix_socket.cpp"
+  "$SCRIPT_DIR/client_set.cpp"
+  "$SCRIPT_DIR/config_parser.cpp"
+  "$SCRIPT_DIR/config_apply.cpp"
+  "$SCRIPT_DIR/radio_channel.cpp"
+  "$SCRIPT_DIR/daemon_timing.cpp"
+  "$SCRIPT_DIR/daemon_lifecycle.cpp"
+  "$SCRIPT_DIR/data_tx.cpp"
+)
+
 try_source_radiolib_dir() {
   local dir="$1"
 
@@ -136,15 +147,8 @@ build_daemon() {
     -O2 \
     -o "$DAEMON_OUT" \
     "$DAEMON_SRC" \
-    "$SCRIPT_DIR/unix_socket.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "$SCRIPT_DIR/config_parser.cpp" \
-    "$SCRIPT_DIR/config_apply.cpp" \
-    "$SCRIPT_DIR/radio_channel.cpp" \
-    "$SCRIPT_DIR/daemon_timing.cpp" \
-    "$SCRIPT_DIR/daemon_lifecycle.cpp" \
+    "${daemon_support_sources[@]}" \
     "${event_loop_sources[@]}" \
-    "$SCRIPT_DIR/data_tx.cpp" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
     -llgpio
