@@ -906,9 +906,7 @@ static void daemon_log_loop_start(void)
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 }
 
-static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
-                                         uint8_t (&rx_buf_433)[buf_SIZE],
-                                         uint8_t (&rx_buf_868)[buf_SIZE])
+static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
                         // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
                         if(receivedFlag433){
@@ -1016,6 +1014,10 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                             }
                         }
 
+}
+
+static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
+{
                         // --- LoRa/FSK Polling 868 (mit Callback-Flag + Non-Blocking 5ms) ---
                         if(receivedFlag868){
                             if(txBusy868 == false){
@@ -1121,6 +1123,14 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                         }
 
 
+}
+
+static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
+                                         uint8_t (&rx_buf_433)[buf_SIZE],
+                                         uint8_t (&rx_buf_868)[buf_SIZE])
+{
+    daemon_process_radio_433(rx_buf_433);
+    daemon_process_radio_868(rx_buf_868);
         // --- CAD/RSSI Überwachung ---
         daemon_process_cad_rssi(rssi_timer);
 }
