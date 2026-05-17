@@ -173,8 +173,9 @@ static void test_client_set_close_all(void)
 
 /* --- DATA TX dispatch via event loop --- */
 
-static void test_process_clients_backend(const char *name, int use_epoll)
+static void test_process_clients_epoll(void)
 {
+    const char *name = "process clients epoll wait";
     int sv[2];
     int clients[2] = {0};
     EventLoopSet set;
@@ -192,16 +193,12 @@ static void test_process_clients_backend(const char *name, int use_epoll)
 
     clients[0] = sv[1];
 
-    if (use_epoll) {
-        if (event_loop_init_epoll(&set) != 0) {
-            close(sv[0]);
-            client_set_close_slot(clients, 0);
-            g_fail++;
-            printf("[FAIL] %s epoll init\n", name);
-            return;
-        }
-    } else {
-        event_loop_init_select(&set);
+    if (event_loop_init_default(&set) != 0) {
+        close(sv[0]);
+        client_set_close_slot(clients, 0);
+        g_fail++;
+        printf("[FAIL] %s epoll init\n", name);
+        return;
     }
 
     if (write(sv[0], payload, sizeof(payload)) != (ssize_t)sizeof(payload)) {
@@ -226,16 +223,6 @@ static void test_process_clients_backend(const char *name, int use_epoll)
     close(sv[0]);
     client_set_close_slot(clients, 0);
     event_loop_close(&set);
-}
-
-static void test_process_clients_select(void)
-{
-    test_process_clients_backend("process clients select wait", 0);
-}
-
-static void test_process_clients_epoll(void)
-{
-    test_process_clients_backend("process clients epoll wait", 1);
 }
 
 /* --- CLI parsing and test sequence --- */
@@ -264,7 +251,6 @@ int main(int argc, char **argv)
     test_chunk_iterator_stop();
     test_client_set_close_all();
     test_process_clients_epoll();
-    test_process_clients_select();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

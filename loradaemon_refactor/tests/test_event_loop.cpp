@@ -8,8 +8,7 @@
 /*
  * Event-loop unit tests.
  *
- * This locks the select() fd-set wrapper before the daemon loop is moved
- * behind the event-loop boundary.
+ * The daemon now uses epoll as its only event-loop backend.
  */
 
 static int g_ok = 0;
@@ -28,120 +27,7 @@ static void expect_int(const char *name, int actual, int expected)
     }
 }
 
-/* --- select() fd-set wrapper --- */
-
-static void test_select_set_reset(void)
-{
-    EventLoopSelectSet set;
-
-    event_loop_select_reset(&set);
-
-    expect_int("reset fd limit", event_loop_select_fd_limit(&set), 0);
-    expect_int("reset missing fd", event_loop_select_has_fd(&set, 3), 0);
-}
-
-static void test_select_set_add_fd(void)
-{
-    EventLoopSelectSet set;
-
-    event_loop_select_reset(&set);
-    event_loop_select_add_fd(&set, 3);
-    event_loop_select_add_fd(&set, 7);
-
-    expect_int("fd 3 present", event_loop_select_has_fd(&set, 3), 1);
-    expect_int("fd 7 present", event_loop_select_has_fd(&set, 7), 1);
-    expect_int("fd 4 missing", event_loop_select_has_fd(&set, 4), 0);
-    expect_int("fd limit tracks highest plus one", event_loop_select_fd_limit(&set), 8);
-}
-
-static void test_select_set_ignores_negative_fd(void)
-{
-    EventLoopSelectSet set;
-
-    event_loop_select_reset(&set);
-    event_loop_select_add_fd(&set, -1);
-
-    expect_int("negative fd ignored", event_loop_select_fd_limit(&set), 0);
-    expect_int("negative fd missing", event_loop_select_has_fd(&set, -1), 0);
-}
-
-
-static void test_select_wait_readable_pipe(void)
-{
-    EventLoopSelectSet set;
-    EventLoopSelectReadySet ready;
-    int fds[2];
-    char ch = 'x';
-
-    if (pipe(fds) != 0) {
-        g_fail++;
-        printf("[FAIL] pipe setup\n");
-        return;
-    }
-
-    event_loop_select_reset(&set);
-    event_loop_select_add_fd(&set, fds[0]);
-
-    if (write(fds[1], &ch, 1) != 1) {
-        close(fds[0]);
-        close(fds[1]);
-        g_fail++;
-        printf("[FAIL] pipe write\n");
-        return;
-    }
-
-    expect_int("select wait returns readable",
-               event_loop_select_wait(&set, &ready, 100000), 1);
-    expect_int("select wait marks pipe readable",
-               event_loop_select_ready_fd(&ready, fds[0]), 1);
-
-    close(fds[0]);
-    close(fds[1]);
-}
-
-static void test_select_wait_timeout(void)
-{
-    EventLoopSelectSet set;
-    EventLoopSelectReadySet ready;
-
-    event_loop_select_reset(&set);
-
-    expect_int("select wait timeout with no fds",
-               event_loop_select_wait(&set, &ready, 1000), 0);
-}
-
-
-static void test_select_ready_fd(void)
-{
-    EventLoopSelectSet set;
-    EventLoopSelectReadySet ready;
-    int fds[2];
-    char ch = 'x';
-
-    if (pipe(fds) != 0) {
-        g_fail++;
-        printf("[FAIL] pipe setup for ready fd\n");
-        return;
-    }
-
-    event_loop_select_reset(&set);
-    event_loop_select_add_fd(&set, fds[0]);
-    (void)write(fds[1], &ch, 1);
-
-    expect_int("ready wait returns one fd",
-               event_loop_select_wait(&set, &ready, 100000), 1);
-    expect_int("ready helper sees fd",
-               event_loop_select_ready_fd(&ready, fds[0]), 1);
-    expect_int("ready helper ignores negative fd",
-               event_loop_select_ready_fd(&ready, -1), 0);
-
-    close(fds[0]);
-    close(fds[1]);
-}
-
-
-
-/* --- epoll backend scaffold --- */
+/* --- epoll backend --- */
 
 static void test_epoll_init_reset_close(void)
 {
@@ -216,17 +102,14 @@ static void test_epoll_wait_timeout(void)
     event_loop_epoll_close(&set);
 }
 
-/* --- backend-neutral wrapper --- */
-
-
+/* --- backend-neutral epoll wrapper --- */
 
 static void test_backend_names(void)
 {
-    expect_int("backend name select",
-               strcmp(event_loop_backend_name(EVENT_LOOP_BACKEND_SELECT), "select") == 0, 1);
     expect_int("backend name epoll",
                strcmp(event_loop_backend_name(EVENT_LOOP_BACKEND_EPOLL), "epoll") == 0, 1);
 }
+
 static void test_backend_default_init(void)
 {
     EventLoopSet set;
@@ -239,23 +122,11 @@ static void test_backend_default_init(void)
                event_loop_backend(&set) == EVENT_LOOP_BACKEND_EPOLL, 1);
     expect_int("default backend name epoll",
                strcmp(event_loop_backend_name(event_loop_backend(&set)), "epoll") == 0, 1);
-
     expect_int("default backend starts empty",
                event_loop_has_registered_fds(&set), 0);
+
     event_loop_close(&set);
 }
-static void test_backend_selection(void)
-{
-    EventLoopSet set;
-
-    event_loop_init_select(&set);
-
-    expect_int("generic backend select",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
-    expect_int("generic init clears registered fds",
-               event_loop_has_registered_fds(&set), 0);
-}
-
 
 static void test_backend_reset_preserves_epoll(void)
 {
@@ -268,11 +139,11 @@ static void test_backend_reset_preserves_epoll(void)
         return;
     }
 
-    if (event_loop_init_epoll(&set) != 0) {
+    if (event_loop_init_default(&set) != 0) {
         close(fds[0]);
         close(fds[1]);
         g_fail++;
-        printf("[FAIL] reset epoll init\n");
+        printf("[FAIL] reset default epoll init\n");
         return;
     }
 
@@ -292,44 +163,6 @@ static void test_backend_reset_preserves_epoll(void)
     close(fds[1]);
 }
 
-static void test_backend_reset_preserves_select(void)
-{
-    EventLoopSet set;
-
-    event_loop_init_select(&set);
-    event_loop_add_fd(&set, 5);
-    expect_int("reset select has registered fds before reset",
-               event_loop_has_registered_fds(&set), 1);
-
-    event_loop_reset(&set);
-
-    expect_int("reset preserves select backend",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
-    expect_int("reset select clears registered fds",
-               event_loop_has_registered_fds(&set), 0);
-}
-
-static void test_backend_close_select_clears_state(void)
-{
-    EventLoopSet set;
-
-    event_loop_init_select(&set);
-    event_loop_add_fd(&set, 5);
-    expect_int("close select has registered fds before close",
-               event_loop_has_registered_fds(&set), 1);
-
-    event_loop_close(&set);
-
-    expect_int("close select keeps fallback backend",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
-    expect_int("close select clears registered fds",
-               event_loop_has_registered_fds(&set), 0);
-
-    event_loop_close(&set);
-    expect_int("close select is idempotent",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
-}
-
 static void test_backend_close_epoll_clears_state(void)
 {
     EventLoopSet set;
@@ -341,11 +174,11 @@ static void test_backend_close_epoll_clears_state(void)
         return;
     }
 
-    if (event_loop_init_epoll(&set) != 0) {
+    if (event_loop_init_default(&set) != 0) {
         close(fds[0]);
         close(fds[1]);
         g_fail++;
-        printf("[FAIL] close epoll init\n");
+        printf("[FAIL] close default epoll init\n");
         return;
     }
 
@@ -355,32 +188,52 @@ static void test_backend_close_epoll_clears_state(void)
 
     event_loop_close(&set);
 
-    expect_int("close epoll switches to select fallback",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
+    expect_int("close epoll keeps epoll backend",
+               event_loop_backend(&set) == EVENT_LOOP_BACKEND_EPOLL, 1);
     expect_int("close epoll clears registered fds",
                event_loop_has_registered_fds(&set), 0);
 
     event_loop_close(&set);
     expect_int("close epoll is idempotent",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
+               event_loop_backend(&set) == EVENT_LOOP_BACKEND_EPOLL, 1);
 
     close(fds[0]);
     close(fds[1]);
 }
+
 static void test_backend_neutral_aliases(void)
 {
     EventLoopSet set;
+    int fds[2];
 
-    event_loop_reset(&set);
-    event_loop_add_fd(&set, 5);
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] generic alias pipe setup\n");
+        return;
+    }
 
-    expect_int("generic fd present", event_loop_has_fd(&set, 5), 1);
-    expect_int("generic fd missing", event_loop_has_fd(&set, 6), 0);
-    expect_int("generic has registered fds", event_loop_has_registered_fds(&set), 1);
+    if (event_loop_init_default(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] generic alias default init\n");
+        return;
+    }
+
+    expect_int("generic starts empty",
+               event_loop_has_registered_fds(&set), 0);
+
+    event_loop_add_fd(&set, fds[0]);
+    expect_int("generic has registered fds",
+               event_loop_has_registered_fds(&set), 1);
 
     event_loop_reset(&set);
     expect_int("generic reset clears registered fds",
                event_loop_has_registered_fds(&set), 0);
+
+    event_loop_close(&set);
+    close(fds[0]);
+    close(fds[1]);
 }
 
 static void test_backend_neutral_wait_readable_pipe(void)
@@ -396,7 +249,14 @@ static void test_backend_neutral_wait_readable_pipe(void)
         return;
     }
 
-    event_loop_reset(&set);
+    if (event_loop_init_default(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] generic default init\n");
+        return;
+    }
+
     event_loop_add_fd(&set, fds[0]);
     (void)write(fds[1], &ch, 1);
 
@@ -405,50 +265,7 @@ static void test_backend_neutral_wait_readable_pipe(void)
     expect_int("generic ready helper sees fd",
                event_loop_ready_fd(&ready, fds[0]), 1);
 
-    close(fds[0]);
-    close(fds[1]);
-}
-
-
-static void test_backend_neutral_epoll_wait_readable_pipe(void)
-{
-    EventLoopSet set;
-    EventLoopReadySet ready;
-    int fds[2];
-    char ch = 'x';
-
-    if (pipe(fds) != 0) {
-        g_fail++;
-        printf("[FAIL] generic epoll pipe setup\n");
-        return;
-    }
-
-    if (event_loop_init_epoll(&set) != 0) {
-        close(fds[0]);
-        close(fds[1]);
-        g_fail++;
-        printf("[FAIL] generic epoll init\n");
-        return;
-    }
-
-    expect_int("generic backend epoll",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_EPOLL, 1);
-
-    event_loop_add_fd(&set, fds[0]);
-    expect_int("generic epoll has registered fds",
-               event_loop_has_registered_fds(&set), 1);
-
-    (void)write(fds[1], &ch, 1);
-
-    expect_int("generic epoll wait returns readable",
-               event_loop_wait(&set, &ready, 100000), 1);
-    expect_int("generic epoll ready helper sees fd",
-               event_loop_ready_fd(&ready, fds[0]), 1);
-
     event_loop_close(&set);
-    expect_int("generic epoll close switches to select",
-               event_loop_backend(&set) == EVENT_LOOP_BACKEND_SELECT, 1);
-
     close(fds[0]);
     close(fds[1]);
 }
@@ -474,25 +291,15 @@ int main(int argc, char **argv)
         }
     }
 
-    test_select_set_reset();
-    test_select_set_add_fd();
-    test_select_set_ignores_negative_fd();
-    test_select_wait_readable_pipe();
-    test_select_wait_timeout();
-    test_select_ready_fd();
     test_epoll_init_reset_close();
     test_epoll_wait_readable_pipe();
     test_epoll_wait_timeout();
     test_backend_names();
     test_backend_default_init();
-    test_backend_selection();
-    test_backend_reset_preserves_select();
     test_backend_reset_preserves_epoll();
     test_backend_close_epoll_clears_state();
-    test_backend_close_select_clears_state();
     test_backend_neutral_aliases();
     test_backend_neutral_wait_readable_pipe();
-    test_backend_neutral_epoll_wait_readable_pipe();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

@@ -16,7 +16,6 @@ radiolib_libs=()
 
 event_loop_sources=(
   "$SCRIPT_DIR/event_loop.cpp"
-  "$SCRIPT_DIR/event_loop_select.cpp"
   "$SCRIPT_DIR/event_loop_epoll.cpp"
 )
 
