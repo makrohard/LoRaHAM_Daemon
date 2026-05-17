@@ -181,6 +181,24 @@ build_one_cpp_test() {
   echo "Built test:   $out"
 }
 
+build_one_lifecycle_test() {
+  local src="$1"
+  local out="$2"
+
+  "$cxx" \
+    -std=c++11 \
+    -Wall \
+    -Wextra \
+    -O2 \
+    -I"$TEST_DIR" \
+    -I"$SCRIPT_DIR" \
+    -o "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_lifecycle.cpp"
+
+  echo "Built test:   $out"
+}
+
 build_one_timing_test() {
   local src="$1"
   local out="$2"
@@ -274,6 +292,7 @@ build_tests() {
   build_one_data_tx_test "$TEST_DIR/test_data_tx.cpp" "$TEST_DIR/test_data_tx"
   build_one_event_loop_test "$TEST_DIR/test_event_loop.cpp" "$TEST_DIR/test_event_loop"
   build_one_timing_test "$TEST_DIR/test_daemon_timing.cpp" "$TEST_DIR/test_daemon_timing"
+  build_one_lifecycle_test "$TEST_DIR/test_daemon_lifecycle.cpp" "$TEST_DIR/test_daemon_lifecycle"
   build_one_test "$TEST_DIR/test_rssi_multiclient.c" "$TEST_DIR/test_rssi_multiclient"
   build_one_cpp_test "$TEST_DIR/test_config_parser.cpp" "$TEST_DIR/test_config_parser"
   build_one_config_dispatch_test "$TEST_DIR/test_config_dispatch.cpp" "$TEST_DIR/test_config_dispatch"
