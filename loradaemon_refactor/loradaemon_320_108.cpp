@@ -700,6 +700,24 @@ static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ct
     config_dispatch_context<RFM95>(config_868_ctx, MAX_CLIENTS, readfds, buf);
 }
 
+static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
+                                         ConfigDispatchContext<RFM95> *config_868_ctx,
+                                         DataTxDaemonContext *data_tx_433_ctx,
+                                         DataTxDaemonContext *data_tx_868_ctx,
+                                         const EventLoopReadySet *readfds,
+                                         uint8_t *buf)
+{
+    radio_channel_accept_ready(&channel_433, readfds);
+    radio_channel_accept_ready(&channel_868, readfds);
+
+    data_tx_process_clients("433", client_data433, MAX_CLIENTS,
+                            readfds, send_data_chunk, data_tx_433_ctx);
+    data_tx_process_clients("868", client_data868, MAX_CLIENTS,
+                            readfds, send_data_chunk, data_tx_868_ctx);
+
+    process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
+}
+
 // --- Unix socket setup moved to unix_socket.cpp ---
 
 int main(int argc, char *argv[]) {
@@ -842,19 +860,10 @@ int main(int argc, char *argv[]) {
         int ret = daemon_wait_for_events(&event_set, &readfds);
         if(ret<0){perror("event_loop_wait"); continue;}
 
-        // --- Neue Clients ---
-        radio_channel_accept_ready(&channel_433, &readfds);
-        radio_channel_accept_ready(&channel_868, &readfds);
-
-
-                        // --- DATA Clients bearbeiten ---
-                        data_tx_process_clients("433", client_data433, MAX_CLIENTS,
-                                                &readfds, send_data_chunk, &data_tx_433_ctx);
-                        data_tx_process_clients("868", client_data868, MAX_CLIENTS,
-                                                &readfds, send_data_chunk, &data_tx_868_ctx);
-
-                        // --- CONFIG Clients bearbeiten ---
-                        process_config_dispatch(&config_433_ctx, &config_868_ctx, &readfds, buf);
+        // --- Socket Clients bearbeiten ---
+        daemon_process_ready_sockets(&config_433_ctx, &config_868_ctx,
+                                    &data_tx_433_ctx, &data_tx_868_ctx,
+                                    &readfds, buf);
 
 
 
