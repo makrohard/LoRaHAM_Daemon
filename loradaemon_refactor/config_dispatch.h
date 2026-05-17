@@ -21,6 +21,18 @@ using ConfigApplyFn = void (*)(RadioT& radio,
                                volatile bool& getrssi_active);
 
 template<typename RadioT>
+struct ConfigDispatchContext {
+    int *clients;
+    RadioT *radio;
+    const char *tag;
+    const char *prefix;
+    volatile RadioMode_t *mode;
+    volatile bool *getrssi_active;
+    ConfigApplyFn<RadioT> apply_config;
+    void (*rx_callback)(void);
+};
+
+template<typename RadioT>
 static void config_dispatch_client(int *clients,
                                    int index,
                                    const fd_set *readfds,
@@ -71,6 +83,18 @@ static void config_dispatch_clients(int *clients,
                                        mode, getrssi_active,
                                        apply_config, rx_callback);
     }
+}
+
+template<typename RadioT>
+static void config_dispatch_context(ConfigDispatchContext<RadioT> *ctx,
+                                    int max_clients,
+                                    const fd_set *readfds,
+                                    uint8_t *buf)
+{
+    config_dispatch_clients<RadioT>(ctx->clients, max_clients, readfds, buf,
+                                    *ctx->radio, ctx->tag, ctx->prefix,
+                                    *ctx->mode, *ctx->getrssi_active,
+                                    ctx->apply_config, ctx->rx_callback);
 }
 
 #endif

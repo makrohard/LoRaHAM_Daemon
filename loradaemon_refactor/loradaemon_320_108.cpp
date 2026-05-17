@@ -1409,6 +1409,28 @@ int main(int argc, char *argv[]) {
     DataTxDaemonContext data_tx_433_ctx = {"433", 433, &mode_433};
     DataTxDaemonContext data_tx_868_ctx = {"868", 868, &mode_868};
 
+    // --- CONFIG dispatch ---
+    ConfigDispatchContext<SX1278> config_433_ctx = {
+        client_conf433,
+        radio_433,
+        "CONF 433",
+        "[CONF433]",
+        &mode_433,
+        &getrssi_433_active,
+        parse_and_apply_config_generic<SX1278>,
+        setFlag433
+    };
+    ConfigDispatchContext<RFM95> config_868_ctx = {
+        client_conf868,
+        radio_868,
+        "CONF 868",
+        NULL,
+        &mode_868,
+        &getrssi_868_active,
+        parse_and_apply_config_generic<RFM95>,
+        setFlag868
+    };
+
 
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 
@@ -1435,14 +1457,8 @@ int main(int argc, char *argv[]) {
                                                 &readfds, send_data_chunk, &data_tx_868_ctx);
 
                         // --- CONFIG Clients bearbeiten ---
-                        config_dispatch_clients<SX1278>(client_conf433, MAX_CLIENTS, &readfds, buf,
-                                                        *radio_433, "CONF 433", "[CONF433]",
-                                                        mode_433, getrssi_433_active,
-                                                        parse_and_apply_config_generic<SX1278>, setFlag433);
-                        config_dispatch_clients<RFM95>(client_conf868, MAX_CLIENTS, &readfds, buf,
-                                                       *radio_868, "CONF 868", NULL,
-                                                       mode_868, getrssi_868_active,
-                                                       parse_and_apply_config_generic<RFM95>, setFlag868);
+                        config_dispatch_context<SX1278>(&config_433_ctx, MAX_CLIENTS, &readfds, buf);
+                        config_dispatch_context<RFM95>(&config_868_ctx, MAX_CLIENTS, &readfds, buf);
 
 
 
