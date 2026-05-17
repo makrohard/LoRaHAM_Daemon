@@ -133,6 +133,7 @@ build_daemon() {
     "$SCRIPT_DIR/unix_socket.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
+    "$SCRIPT_DIR/config_apply.cpp" \
     "$SCRIPT_DIR/radio_channel.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
