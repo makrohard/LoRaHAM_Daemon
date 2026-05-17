@@ -29,6 +29,11 @@ int event_loop_select_has_fd(const EventLoopSelectSet *set, int fd)
     return FD_ISSET(fd, &set->readfds) ? 1 : 0;
 }
 
+int event_loop_select_fd_limit(const EventLoopSelectSet *set)
+{
+    return set->maxfd;
+}
+
 
 int event_loop_select_ready_fd(const fd_set *ready, int fd)
 {
@@ -67,6 +72,11 @@ void event_loop_add_fd(EventLoopSet *set, int fd)
 int event_loop_has_fd(const EventLoopSet *set, int fd)
 {
     return event_loop_select_has_fd(set, fd);
+}
+
+int event_loop_has_registered_fds(const EventLoopSet *set)
+{
+    return event_loop_select_fd_limit(set) > 0 ? 1 : 0;
 }
 
 int event_loop_ready_fd(const EventLoopReadySet *ready, int fd)

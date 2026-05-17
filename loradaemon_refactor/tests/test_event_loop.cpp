@@ -35,7 +35,7 @@ static void test_select_set_reset(void)
 
     event_loop_select_reset(&set);
 
-    expect_int("reset maxfd", set.maxfd, 0);
+    expect_int("reset fd limit", event_loop_select_fd_limit(&set), 0);
     expect_int("reset missing fd", event_loop_select_has_fd(&set, 3), 0);
 }
 
@@ -50,7 +50,7 @@ static void test_select_set_add_fd(void)
     expect_int("fd 3 present", event_loop_select_has_fd(&set, 3), 1);
     expect_int("fd 7 present", event_loop_select_has_fd(&set, 7), 1);
     expect_int("fd 4 missing", event_loop_select_has_fd(&set, 4), 0);
-    expect_int("maxfd tracks highest plus one", set.maxfd, 8);
+    expect_int("fd limit tracks highest plus one", event_loop_select_fd_limit(&set), 8);
 }
 
 static void test_select_set_ignores_negative_fd(void)
@@ -60,7 +60,7 @@ static void test_select_set_ignores_negative_fd(void)
     event_loop_select_reset(&set);
     event_loop_select_add_fd(&set, -1);
 
-    expect_int("negative fd ignored", set.maxfd, 0);
+    expect_int("negative fd ignored", event_loop_select_fd_limit(&set), 0);
     expect_int("negative fd missing", event_loop_select_has_fd(&set, -1), 0);
 }
 
@@ -149,7 +149,7 @@ static void test_backend_neutral_aliases(void)
 
     expect_int("generic fd present", event_loop_has_fd(&set, 5), 1);
     expect_int("generic fd missing", event_loop_has_fd(&set, 6), 0);
-    expect_int("generic maxfd", set.maxfd, 6);
+    expect_int("generic has registered fds", event_loop_has_registered_fds(&set), 1);
 }
 
 static void test_backend_neutral_wait_readable_pipe(void)
