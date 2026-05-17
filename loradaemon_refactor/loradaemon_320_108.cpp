@@ -131,9 +131,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/select.h>
 #include <arpa/inet.h>
-//#include <fcntl.h>
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
