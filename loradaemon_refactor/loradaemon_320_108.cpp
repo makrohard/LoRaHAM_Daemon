@@ -1255,30 +1255,42 @@ typedef struct {
     volatile RadioMode_t *mode;
 } DataTxDaemonContext;
 
+#define DATA_TX_CAD_MAX_WAIT_TICKS 300
+#define DATA_TX_CAD_SLEEP_USEC 10000
+
+static int data_tx_modem_status(int band)
+{
+    return (band == 433)
+        ? radio_433->getModemStatus()
+        : radio_868->getModemStatus();
+}
+
+static int data_tx_wait_channel_free(DataTxDaemonContext *tx)
+{
+    int cad_wait = 0;
+
+    if (*tx->mode != RADIO_MODE_LORA)
+        return 0;
+
+    while (cad_wait < DATA_TX_CAD_MAX_WAIT_TICKS) {
+        if ((data_tx_modem_status(tx->band) & 0x01) == 0)
+            return 0;
+
+        usleep(DATA_TX_CAD_SLEEP_USEC);
+        cad_wait++;
+    }
+
+    return 1;
+}
+
 static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
     DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
 
     // --- CAD-Guard: LoRa only ---
-    if (*tx->mode == RADIO_MODE_LORA) {
-        int cad_wait = 0;
-
-        while (cad_wait < 300) {
-            int modem_status = (tx->band == 433)
-                ? radio_433->getModemStatus()
-                : radio_868->getModemStatus();
-
-            if ((modem_status & 0x01) == 0)
-                break;
-
-            usleep(10000);
-            cad_wait++;
-        }
-
-        if (cad_wait >= 300) {
-            printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
-            return 1;
-        }
+    if (data_tx_wait_channel_free(tx)) {
+        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
+        return 1;
     }
 
     printf("  -> Sende Chunk: %zu Bytes (Offset: %zu)\n", len, offset);
