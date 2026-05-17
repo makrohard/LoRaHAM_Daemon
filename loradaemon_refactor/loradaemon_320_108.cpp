@@ -732,6 +732,55 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
     process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
 }
 
+
+static void daemon_process_cad_status(int band)
+{
+    if (band == 433) {
+        if (mode_433 != RADIO_MODE_LORA)
+            return;
+
+        uint8_t modem433 = radio_433->getModemStatus();
+        bool hardwareActive433 = (modem433 & 0x01) || (modem433 & 0x10);
+
+        if (hardwareActive433) {
+            setFlashFlag433();
+            if (!cad433_active) {
+                LED_433(1);
+                client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=1\n");
+                cad433_active = true;
+            }
+        } else {
+            if (cad433_active && !receivedFlag433) {
+                LED_433(0);
+                client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=0\n");
+                cad433_active = false;
+            }
+        }
+
+        return;
+    }
+
+    if (mode_868 != RADIO_MODE_LORA)
+        return;
+
+    uint8_t modem868 = radio_868->getModemStatus();
+    bool hardwareActive868 = (modem868 & 0x01) || (modem868 & 0x10);
+
+    if (hardwareActive868) {
+        setFlashFlag868();
+        if (!cad868_active) {
+            LED_868(1);
+            client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=1\n");
+            cad868_active = true;
+        }
+    } else {
+        if (cad868_active && !receivedFlag868) {
+            LED_868(0);
+            client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=0\n");
+            cad868_active = false;
+        }
+    }
+}
 static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 {
     radio_channel_getrssi_autostop(&channel_433, &runtime_433, "CONF 433");
@@ -1109,57 +1158,9 @@ int main(int argc, char *argv[]) {
                         }
 
 
-                        // --- 433 MHz Überwachung ---
-                        // getModemStatus() ist LoRa-spezifisch -> im FSK-Modus überspringen
-                        if (mode_433 == RADIO_MODE_LORA) {
-                            uint8_t modem433 = radio_433->getModemStatus();
-                            // Bit 0: Signal erkannt, Bit 4: Header erkannt
-                            bool hardwareActive433 = (modem433 & 0x01) || (modem433 & 0x10);
-
-                            if (hardwareActive433) {
-                                setFlashFlag433();
-                                if (!cad433_active) {
-                                    LED_433(1);
-                                    client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=1\n");
-                                    //printf("[\e[93m433\e[0m] CAD: Kanal belegt\n");
-                                    cad433_active = true;
-                                }
-                            } else {
-                                // Wenn das Modem NICHTS mehr sieht UND wir gerade kein Paket verarbeiten
-                                if (cad433_active && !receivedFlag433) {
-                                    LED_433(0);
-                                    client_set_broadcast(client_conf433, MAX_CLIENTS, "CAD=0\n");
-                                    //printf("[\e[93m433\e[0m] CAD: Kanal frei\n");
-                                    cad433_active = false;
-                                }
-                            }
-                        } // end mode_433 == RADIO_MODE_LORA
-
-                        // --- 868 MHz Überwachung ---
-                        // getModemStatus() ist LoRa-spezifisch -> im FSK-Modus überspringen
-                        if (mode_868 == RADIO_MODE_LORA) {
-                            uint8_t modem868 = radio_868->getModemStatus();
-                            // Bit 0: Signal erkannt, Bit 4: Header erkannt
-                            bool hardwareActive868 = (modem868 & 0x01) || (modem868 & 0x10);
-
-                            if (hardwareActive868) {
-                                setFlashFlag868();
-                                if (!cad868_active) {
-                                    LED_868(1);
-                                    client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=1\n");
-                                    //printf("[\e[93m868\e[0m] CAD: Kanal belegt\n");
-                                    cad868_active = true;
-                                }
-                            } else {
-                                // Wenn das Modem NICHTS mehr sieht UND wir gerade kein Paket verarbeiten
-                                if (cad868_active && !receivedFlag868) {
-                                    LED_868(0);
-                                    client_set_broadcast(client_conf868, MAX_CLIENTS, "CAD=0\n");
-                                    //printf("[\e[93m868\e[0m] CAD: Kanal frei\n");
-                                    cad868_active = false;
-                                }
-                            }
-                        } // end mode_868 == RADIO_MODE_LORA
+                        // --- CAD Überwachung ---
+                        daemon_process_cad_status(433);
+                        daemon_process_cad_status(868);
 
                         // ============================================================
                         // --- GETRSSI Streaming: 10 Hz RSSI an Conf-Clients ---
