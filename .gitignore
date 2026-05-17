@@ -20,3 +20,4 @@
 /loradaemon_refactor/tests/test_event_loop_output_flush
 /loradaemon_refactor/tests/test_client_read_disconnect_cleanup
 /loradaemon_refactor/tests/test_client_slow_output
+/loradaemon_refactor/tests/test_config_value

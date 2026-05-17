@@ -200,6 +200,7 @@ Refactored by Johannes Loose / 410733@gmail.com
 - Hardening: queued client output is now flushed from EPOLLOUT/write-ready events.
 - Cleanup: removed legacy blocking client broadcast helpers; runtime/test paths use queued output only.
 - QA: final non-blocking socket audit keeps daemon broadcast paths queued-only.
+- Hardening prep: add strict CONFIG value parser helpers and tests.
 - QA: add a static check that production paths do not call legacy blocking broadcast wrappers.
 - QA: add slow-client output tests for non-blocking queued broadcasts.
 - Hardening: read-side client disconnects now reset their queued output immediately.
