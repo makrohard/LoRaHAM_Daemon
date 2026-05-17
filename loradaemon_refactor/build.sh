@@ -262,20 +262,12 @@ build_one_config_dispatch_test() {
     fi
   fi
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
+  build_one_cpp_sources \
+    "$out" \
     "${radiolib_cflags[@]}" \
-    -o "$out" \
     "$src" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
-
-  echo "Built test:   $out"
 }
 
 build_tests() {
