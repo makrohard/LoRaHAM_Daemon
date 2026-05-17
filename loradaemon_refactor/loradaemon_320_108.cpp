@@ -804,6 +804,30 @@ static void daemon_process_cad_status(int band)
         }
     }
 }
+/*
+ * GETRSSI Streaming: 10 Hz RSSI an Conf-Clients.
+ *
+ * Sendet "RSSI=-87.50\n" auf demselben Conf-Socket, auf dem
+ * SET GETRSSI=1 empfangen wurde (loraconf433.sock bzw.
+ * loraconf868.sock - identisches Pattern wie CAD=1/CAD=0).
+ *
+ * Quelle: read_live_rssi() liest das SX127x Hardware-Register
+ * direkt per SPI (RegRssiValue 0x1B im LoRa-, 0x11 im FSK-Mode).
+ * RadioLib's getRSSI() liefert im LoRa-Mode nur den RSSI des
+ * LETZTEN Pakets, daher der Direkt-Read.
+ *
+ * Funktioniert in LoRa- UND FSK-Modus, da getRSSI() das
+ * Analog-Frontend (RegRssiValue) ausliest. Detektiert daher auch
+ * Nicht-LoRa-Signale (Funkkopfhoerer, ISM-Sender etc.).
+ *
+ * RX laeuft parallel weiter: SPI-Read von RegRssiValue unterbricht
+ * weder Demodulation noch FIFO-Befuellung. Waehrend TX (txBusy)
+ * wird KEIN RSSI gelesen, da das Register dann undefinierte Werte
+ * liefert.
+ *
+ * Auto-Stop: sobald kein Conf-Client mehr verbunden ist, wird das
+ * Flag geloescht. Reconnect erfordert erneutes SET GETRSSI=1.
+ */
 static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 {
     radio_channel_getrssi_autostop(&channel_433, &runtime_433, "CONF 433");
@@ -1134,38 +1158,10 @@ int main(int argc, char *argv[]) {
                         }
 
 
-                        // --- CAD Überwachung ---
-                        daemon_process_cad_status(433);
-                        daemon_process_cad_status(868);
-
-                        // ============================================================
-                        // --- GETRSSI Streaming: 10 Hz RSSI an Conf-Clients ---
-                        // ============================================================
-                        // Sendet "RSSI=-87.50\n" auf demselben Conf-Socket auf dem
-                        // SET GETRSSI=1 empfangen wurde (loraconf433.sock bzw.
-                        // loraconf868.sock - identisches Pattern wie CAD=1/CAD=0).
-                        //
-                        // Quelle: read_live_rssi() liest das SX127x Hardware-
-                        // Register direkt per SPI (RegRssiValue 0x1B im LoRa-,
-                        // 0x11 im FSK-Mode). RadioLib's getRSSI() liefert im
-                        // LoRa-Mode nur den RSSI des LETZTEN Pakets, daher der
-                        // Direkt-Read.
-                        //
-                        // Funktioniert in LoRa- UND FSK-Modus, da getRSSI() das
-                        // Analog-Frontend (RegRssiValue) ausliest. Detektiert daher
-                        // auch Nicht-LoRa-Signale (Funkkopfhoerer, ISM-Sender etc.).
-                        //
-                        // RX laeuft parallel weiter: SPI-Read von RegRssiValue
-                        // unterbricht weder Demodulation noch FIFO-Befuellung.
-                        // Waehrend TX (txBusy) wird KEIN RSSI gelesen, da das
-                        // Register dann undefinierte Werte liefert.
-                        //
-                        // Auto-Stop: sobald kein Conf-Client mehr verbunden ist,
-                        // wird das Flag geloescht. Reconnect erfordert erneutes
-                        // SET GETRSSI=1.
-                        // ============================================================
-
-                        daemon_process_rssi_stream(&rssi_timer);
+        // --- CAD/RSSI Überwachung ---
+        daemon_process_cad_status(433);
+        daemon_process_cad_status(868);
+        daemon_process_rssi_stream(&rssi_timer);
 
     } // while stop not requested
 
