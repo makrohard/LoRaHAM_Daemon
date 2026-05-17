@@ -1,5 +1,6 @@
 # LoRaHAM_Daemon
 
 ## Changelog
+- Refactor: CAD- und RSSI-Polling nutzen den RadioController mit Legacy-Spiegelung.
 - Refactor: DATA-TX-Kontext bezieht Band, Tag, Mode und Health aus dem RadioController.
 - Refactor: CONFIG-Dispatch-Kontext nutzt den RadioController als Hardware-/Runtime-Quelle.

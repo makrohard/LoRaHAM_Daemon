@@ -379,6 +379,24 @@ static void daemon_radio_controller_sync_config_to_legacy_state(void)
     getrssi_868_active = radio_controller_868.getrssi_active;
 }
 
+static void daemon_radio_controller_sync_rx_tx_from_legacy_state(void)
+{
+    radio_controller_433.received = receivedFlag433;
+    radio_controller_433.tx_busy = txBusy433;
+
+    radio_controller_868.received = receivedFlag868;
+    radio_controller_868.tx_busy = txBusy868;
+}
+
+static void daemon_radio_controller_sync_cad_rssi_to_legacy_state(void)
+{
+    cad433_active = radio_controller_433.cad_active;
+    getrssi_433_active = radio_controller_433.getrssi_active;
+
+    cad868_active = radio_controller_868.cad_active;
+    getrssi_868_active = radio_controller_868.getrssi_active;
+}
+
 // --- Callback für 868 ---
 void setFlag868(void) {
     receivedFlag868 = true;
@@ -995,54 +1013,35 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
 
 
 /* --- CAD status ---------------------------------------------------------- */
-static void daemon_process_cad_status(int band)
+template<typename RadioT>
+static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
+                                      RadioChannelIo *io)
 {
-    if (!daemon_radio_ready(band))
+    if (!radio_controller_ready(ctrl) || !ctrl->radio)
         return;
 
-    if (band == 433) {
-        if (mode_433 != RADIO_MODE_LORA)
-            return;
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return;
 
-        uint8_t modem433 = radio_433->getModemStatus();
-        bool hardwareActive433 = (modem433 & 0x01) || (modem433 & 0x10);
+    uint8_t modem = ctrl->radio->getModemStatus();
+    bool hardware_active = (modem & 0x01) || (modem & 0x10);
 
-        if (hardwareActive433) {
+    if (hardware_active) {
+        if (ctrl->band == RADIO_BAND_433)
             setFlashFlag433();
-            if (!cad433_active) {
-                LED_433(1);
-                client_slot_broadcast_queued(client_conf433_slots, MAX_CLIENTS, "CAD=1\n");
-                cad433_active = true;
-            }
-        } else {
-            if (cad433_active && !receivedFlag433) {
-                LED_433(0);
-                client_slot_broadcast_queued(client_conf433_slots, MAX_CLIENTS, "CAD=0\n");
-                cad433_active = false;
-            }
-        }
+        else
+            setFlashFlag868();
 
-        return;
-    }
-
-    if (mode_868 != RADIO_MODE_LORA)
-        return;
-
-    uint8_t modem868 = radio_868->getModemStatus();
-    bool hardwareActive868 = (modem868 & 0x01) || (modem868 & 0x10);
-
-    if (hardwareActive868) {
-        setFlashFlag868();
-        if (!cad868_active) {
-            LED_868(1);
-            client_slot_broadcast_queued(client_conf868_slots, MAX_CLIENTS, "CAD=1\n");
-            cad868_active = true;
+        if (!ctrl->cad_active) {
+            data_tx_led(radio_controller_band_number(ctrl), 1);
+            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
+            ctrl->cad_active = true;
         }
     } else {
-        if (cad868_active && !receivedFlag868) {
-            LED_868(0);
-            client_slot_broadcast_queued(client_conf868_slots, MAX_CLIENTS, "CAD=0\n");
-            cad868_active = false;
+        if (ctrl->cad_active && !ctrl->received) {
+            data_tx_led(radio_controller_band_number(ctrl), 0);
+            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
+            ctrl->cad_active = false;
         }
     }
 }
@@ -1071,37 +1070,60 @@ static void daemon_process_cad_status(int band)
  * Auto-Stop: sobald kein Conf-Client mehr verbunden ist, wird das
  * Flag geloescht. Reconnect erfordert erneutes SET GETRSSI=1.
  */
+template<typename RadioT>
+static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
+                                                     RadioController<RadioT> *ctrl,
+                                                     const char *tag)
+{
+    if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && ctrl->getrssi_active) {
+        ctrl->getrssi_active = false;
+        printf("[%s] kein Client mehr verbunden -> GETRSSI auto-stop\n", tag);
+        fflush(stdout);
+    }
+}
+
+template<typename RadioT>
+static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
+                                           RadioChannelIo *io)
+{
+    if (!ctrl->getrssi_active || ctrl->tx_busy ||
+        !radio_controller_ready(ctrl) || !ctrl->mod)
+        return;
+
+    float rssi = radio_channel_read_live_rssi(ctrl->mod,
+                                              ctrl->mode,
+                                              ctrl->is_hf);
+    char rssi_msg[32];
+    snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi);
+    client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, rssi_msg);
+}
+
 static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 {
-    radio_channel_getrssi_autostop(&channel_433, &runtime_433, "CONF 433");
-    radio_channel_getrssi_autostop(&channel_868, &runtime_868, "CONF 868");
+    daemon_radio_controller_getrssi_autostop(&channel_433,
+                                             &radio_controller_433,
+                                             "CONF 433");
+    daemon_radio_controller_getrssi_autostop(&channel_868,
+                                             &radio_controller_868,
+                                             "CONF 868");
 
     // RSSI-Takt ist zeitbasiert.
     if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
-        // 433: nur lesen wenn aktiv und kein TX laeuft
-        if (getrssi_433_active && !txBusy433 && daemon_radio_ready(433)) {
-            float rssi433 = radio_channel_read_live_rssi(mod_433, mode_433, false);
-            char rssi_msg[32];
-            snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi433);
-            client_slot_broadcast_queued(client_conf433_slots, MAX_CLIENTS, rssi_msg);
-        }
-
-        // 868: nur lesen wenn aktiv und kein TX laeuft
-        if (getrssi_868_active && !txBusy868 && daemon_radio_ready(868)) {
-            float rssi868 = radio_channel_read_live_rssi(mod_868, mode_868, true);
-            char rssi_msg[32];
-            snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi868);
-            client_slot_broadcast_queued(client_conf868_slots, MAX_CLIENTS, rssi_msg);
-        }
+        daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
+        daemon_process_rssi_stream_one(&radio_controller_868, &channel_868);
     }
 }
 
 /* --- CAD/RSSI polling ---------------------------------------------------- */
 static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
 {
-    daemon_process_cad_status(433);
-    daemon_process_cad_status(868);
+    daemon_radio_controller_sync_rx_tx_from_legacy_state();
+
+    daemon_process_cad_status(&radio_controller_433, &channel_433);
+    daemon_process_cad_status(&radio_controller_868, &channel_868);
     daemon_process_rssi_stream(rssi_timer);
+
+    daemon_radio_controller_sync_cad_rssi_to_legacy_state();
 }
 
 /* --- Main loop logging --------------------------------------------------- */
