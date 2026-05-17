@@ -759,7 +759,7 @@ int main(int argc, char *argv[]) {
     if (event_loop_init_default(&event_set) != 0)
         perror("epoll");
     printf("[Daemon] Event-Backend: %s\n",
-           event_loop_backend(&event_set) == EVENT_LOOP_BACKEND_EPOLL ? "epoll" : "select");
+           event_loop_backend_name(event_loop_backend(&event_set)));
     EventLoopReadySet readfds;
     uint8_t buf[buf_SIZE];
     uint8_t tx_buf[buf_SIZE];  // ← NEU: nur zum Senden

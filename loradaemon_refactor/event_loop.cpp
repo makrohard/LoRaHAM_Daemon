@@ -45,6 +45,14 @@ EventLoopBackend event_loop_backend(const EventLoopSet *set)
     return set->backend;
 }
 
+const char *event_loop_backend_name(EventLoopBackend backend)
+{
+    if (backend == EVENT_LOOP_BACKEND_EPOLL)
+        return "epoll";
+
+    return "select";
+}
+
 void event_loop_reset(EventLoopSet *set)
 {
     if (set->backend == EVENT_LOOP_BACKEND_EPOLL) {
