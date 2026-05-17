@@ -187,6 +187,20 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
 
     return event_loop_wait(event_set, readfds, DAEMON_SELECT_TIMEOUT_USEC);
 }
+
+static void daemon_runtime_init(EventLoopSet *event_set)
+{
+    // --- Event-Backend ---
+    if (event_loop_init_default(event_set) != 0)
+        perror("epoll");
+    printf("[Daemon] Event-Backend: %s\n",
+           event_loop_backend_name(event_loop_backend(event_set)));
+
+    // --- Signal-Stop ---
+    daemon_lifecycle_reset_stop();
+    if (daemon_lifecycle_install_signal_handlers() != 0)
+        perror("sigaction");
+}
 RadioChannelRuntime runtime_433;
 RadioChannelRuntime runtime_868;
 
@@ -797,16 +811,7 @@ int main(int argc, char *argv[]) {
     lora_init();
 
     EventLoopSet event_set;
-    // --- Event-Backend ---
-    if (event_loop_init_default(&event_set) != 0)
-        perror("epoll");
-    printf("[Daemon] Event-Backend: %s\n",
-           event_loop_backend_name(event_loop_backend(&event_set)));
-
-    // --- Signal-Stop ---
-    daemon_lifecycle_reset_stop();
-    if (daemon_lifecycle_install_signal_handlers() != 0)
-        perror("sigaction");
+    daemon_runtime_init(&event_set);
 
     EventLoopReadySet readfds;
     uint8_t buf[buf_SIZE];
