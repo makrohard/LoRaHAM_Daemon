@@ -1237,6 +1237,31 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
     daemon_process_cad_rssi(rssi_timer);
 }
 
+/* --- Main loop iteration: wait, sockets, radio polling ------------------- */
+static void daemon_process_loop_iteration(EventLoopSet *event_set,
+                                          EventLoopReadySet *readfds,
+                                          DaemonLoopContext *loop_ctx,
+                                          uint8_t *buf,
+                                          uint8_t (&rx_buf_433)[buf_SIZE],
+                                          uint8_t (&rx_buf_868)[buf_SIZE])
+{
+    // --- Event wait ---
+    int ret = daemon_wait_for_events(event_set, readfds);
+    if (ret < 0) {
+        perror("event_loop_wait");
+        return;
+    }
+
+    // --- Socket Clients bearbeiten ---
+    daemon_process_ready_sockets(&loop_ctx->config_433_ctx,
+                                &loop_ctx->config_868_ctx,
+                                &loop_ctx->data_tx_433_ctx,
+                                &loop_ctx->data_tx_868_ctx,
+                                readfds, buf);
+
+    daemon_process_radio_polling(&loop_ctx->rssi_timer, rx_buf_433, rx_buf_868);
+}
+
 /* --- Startup helpers: signals and command-line parsing -------------------- */
 static void daemon_ignore_sigpipe(void)
 {
@@ -1291,23 +1316,8 @@ int main(int argc, char *argv[]) {
     daemon_log_loop_start();
 
     while (!daemon_lifecycle_stop_requested()) {
-
-        // --- Event wait ---
-        int ret = daemon_wait_for_events(&event_set, &readfds);
-        if (ret < 0) {
-            perror("event_loop_wait");
-            continue;
-        }
-
-        // --- Socket Clients bearbeiten ---
-        daemon_process_ready_sockets(&loop_ctx.config_433_ctx,
-                                    &loop_ctx.config_868_ctx,
-                                    &loop_ctx.data_tx_433_ctx,
-                                    &loop_ctx.data_tx_868_ctx,
-                                    &readfds, buf);
-
-        daemon_process_radio_polling(&loop_ctx.rssi_timer, rx_buf_433, rx_buf_868);
-
+        daemon_process_loop_iteration(&event_set, &readfds, &loop_ctx,
+                                      buf, rx_buf_433, rx_buf_868);
     } // while stop not requested
 
     printf("[Daemon] Stop requested\n");
