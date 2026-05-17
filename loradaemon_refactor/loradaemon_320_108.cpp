@@ -920,6 +920,86 @@ static void daemon_discard_rx_during_tx(int band)
     printf("[868] RX während TX - verwerfe Paket\n");
 }
 
+static void daemon_print_hex_bytes(const uint8_t *buf, int len)
+{
+    for (int i = 0; i < len; i++) {
+        printf("%02X ", buf[i]);
+    }
+    printf("\n");
+}
+
+static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
+{
+    for (int i = 0; i < len; i++) {
+        if (buf[i] >= 32 && buf[i] <= 126)
+            printf("%c", buf[i]);
+        else
+            printf(".");
+    }
+}
+
+static void daemon_print_lora_packet(const char *band,
+                                     const char *color,
+                                     uint8_t *buf,
+                                     int len,
+                                     float rssi)
+{
+    uint32_t toNode      = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
+    uint32_t fromNode    = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
+    uint32_t uniqueID    = buf[8] | (buf[9] << 8) | (buf[10] << 16) | (buf[11] << 24);
+
+    uint8_t hdrFlags     = buf[12];
+    uint8_t chHash       = buf[13];
+    uint8_t nextHop      = buf[14];
+    uint8_t rlyNodes     = buf[15];
+
+    printf("[\e[%s%s\e[0m] %d Bytes HEX from Node ", color, band, len);
+    printf("\e[%s%08X\e[0m to ", color, fromNode);
+    printf("\e[%s%08X\e[0m ID:", color, toNode);
+    printf("\e[%s%08X\e[0m", color, uniqueID);
+
+    printf(" Flag:\e[%s%02X\e[0m", color, hdrFlags);
+    printf(" Hash:\e[%s%02X\e[0m", color, chHash);
+    printf(" Hop:\e[%s%02X\e[0m", color, nextHop);
+    printf(" Node:\e[%s%02X\e[0m", color, rlyNodes);
+
+    printf("\n");
+
+    daemon_print_hex_bytes(buf, len);
+
+    printf("[\e[%s%s\e[0m] %d Bytes    : ", color, band, len);
+    daemon_print_ascii_bytes(buf, len);
+    printf(" RSSI: %.2f dBm\n", rssi);
+}
+
+static void daemon_print_fsk_packet(const char *band,
+                                    const char *color,
+                                    uint8_t *buf,
+                                    int len,
+                                    float rssi)
+{
+    printf("[\e[%s%s-FSK\e[0m] %d Bytes HEX: ", color, band, len);
+    daemon_print_hex_bytes(buf, len);
+
+    printf("[\e[%s%s-FSK\e[0m] %d Bytes    : ", color, band, len);
+    daemon_print_ascii_bytes(buf, len);
+    printf(" RSSI: %.2f dBm\n", rssi);
+}
+
+static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
+{
+    if (len <= 0)
+        return;
+
+    if (band == 433) {
+        client_set_broadcast_bytes(client_data433, MAX_CLIENTS, buf, len);
+        return;
+    }
+
+    client_set_broadcast_bytes(client_data868, MAX_CLIENTS, buf, len);
+}
+
+
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
                         // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
@@ -951,70 +1031,12 @@ static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
                                     }
 
                                     if (mode_433 == RADIO_MODE_LORA) {
-                                        // --- LoRa: LoRaHAM-Binär-Header dekodieren ---
-                                        uint32_t toNode      = rx_buf_433[0] | (rx_buf_433[1] << 8) | (rx_buf_433[2] << 16) | (rx_buf_433[3] << 24);
-                                        uint32_t fromNode    = rx_buf_433[4] | (rx_buf_433[5] << 8) | (rx_buf_433[6] << 16) | (rx_buf_433[7] << 24);
-                                        uint32_t uniqueID    = rx_buf_433[8] | (rx_buf_433[9] << 8) | (rx_buf_433[10] << 16) | (rx_buf_433[11] << 24);
-
-                                        uint8_t hdrFlags     = rx_buf_433[12];
-                                        uint8_t chHash       = rx_buf_433[13];
-                                        uint8_t nextHop      = rx_buf_433[14];
-                                        uint8_t rlyNodes     = rx_buf_433[15];
-
-                                        //            printf("[\e[93m433\e[0m] %d Bytes HEX from Node ", len);
-                                        //            printf("%08X:", fromNode); // %08X für Hex mit führenden Nullen
-                                        //            printf("\e[93m%08X\e[0m:", fromNode); // %08X für Hex mit führenden Nullen
-                                        //            printf("\n");
-
-                                        printf("[\e[93m433\e[0m] %d Bytes HEX from Node ", len433);
-                                        //            printf("%08X:", fromNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[93m%08X\e[0m to ", fromNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[93m%08X\e[0m ID:", toNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[93m%08X\e[0m", uniqueID); // %08X für Hex mit führenden Nullen
-
-                                        printf(" Flag:\e[93m%02X\e[0m", hdrFlags); // %08X für Hex mit führenden Nullen
-                                        printf(" Hash:\e[93m%02X\e[0m", chHash); // %08X für Hex mit führenden Nullen
-                                        printf(" Hop:\e[93m%02X\e[0m", nextHop); // %08X für Hex mit führenden Nullen
-                                        printf(" Node:\e[93m%02X\e[0m", rlyNodes); // %08X für Hex mit führenden Nullen
-
-                                        printf("\n");
-
-                                        for (size_t i = 0; i < len433; i++) {
-                                            printf("%02X ", rx_buf_433[i]);
-                                        }
-                                        printf("\n");
-
-                                        printf("[\e[93m433\e[0m] %d Bytes    : ", len433);
-
-                                        for (int i = 0; i < len433; i++) {
-                                            if (rx_buf_433[i] >= 32 && rx_buf_433[i] <= 126)
-                                                printf("%c", rx_buf_433[i]);
-                                            else
-                                                printf(".");
-                                        }
-                                        printf(" RSSI: %.2f dBm\n", radio_433->getRSSI());
-
+                                        daemon_print_lora_packet("433", "93m", rx_buf_433, len433, radio_433->getRSSI());
                                     } else {
-                                        // --- FSK: Rohdaten-Ausgabe (kein LoRaHAM-Header!) ---
-                                        printf("[\e[93m433-FSK\e[0m] %d Bytes HEX: ", len433);
-                                        for (int i = 0; i < len433; i++) {
-                                            printf("%02X ", rx_buf_433[i]);
-                                        }
-                                        printf("\n");
-
-                                        printf("[\e[93m433-FSK\e[0m] %d Bytes    : ", len433);
-                                        for (int i = 0; i < len433; i++) {
-                                            if (rx_buf_433[i] >= 32 && rx_buf_433[i] <= 126)
-                                                printf("%c", rx_buf_433[i]);
-                                            else
-                                                printf(".");
-                                        }
-                                        printf(" RSSI: %.2f dBm\n", radio_433->getRSSI());
+                                        daemon_print_fsk_packet("433", "93m", rx_buf_433, len433, radio_433->getRSSI());
                                     }
 
-                                    if(len433 > 0){
-                                        client_set_broadcast_bytes(client_data433, MAX_CLIENTS, rx_buf_433, len433);
-                                    }
+                                    daemon_broadcast_rx_data(433, rx_buf_433, len433);
 
                                     len433=0;
                                     LED_433(0);
@@ -1058,64 +1080,12 @@ static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
                                     }
 
                                     if (mode_868 == RADIO_MODE_LORA) {
-                                        // --- LoRa: LoRaHAM-Binär-Header dekodieren ---
-                                        uint32_t toNode      = rx_buf_868[0] | (rx_buf_868[1] << 8) | (rx_buf_868[2] << 16) | (rx_buf_868[3] << 24);
-                                        uint32_t fromNode    = rx_buf_868[4] | (rx_buf_868[5] << 8) | (rx_buf_868[6] << 16) | (rx_buf_868[7] << 24);
-                                        uint32_t uniqueID    = rx_buf_868[8] | (rx_buf_868[9] << 8) | (rx_buf_868[10] << 16) | (rx_buf_868[11] << 24);
-
-                                        uint8_t hdrFlags     = rx_buf_868[12];
-                                        uint8_t chHash       = rx_buf_868[13];
-                                        uint8_t nextHop      = rx_buf_868[14];
-                                        uint8_t rlyNodes     = rx_buf_868[15];
-
-                                        printf("[\e[32m868\e[0m] %d Bytes HEX from Node ", len868);
-                                        //            printf("%08X:", fromNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[32m%08X\e[0m to ", fromNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[32m%08X\e[0m ID:", toNode); // %08X für Hex mit führenden Nullen
-                                        printf("\e[32m%08X\e[0m", uniqueID); // %08X für Hex mit führenden Nullen
-                                        printf(" Flag:\e[32m%02X\e[0m", hdrFlags); // %08X für Hex mit führenden Nullen
-                                        printf(" Hash:\e[32m%02X\e[0m", chHash); // %08X für Hex mit führenden Nullen
-                                        printf(" Hop:\e[32m%02X\e[0m", nextHop); // %08X für Hex mit führenden Nullen
-                                        printf(" Node:\e[32m%02X\e[0m", rlyNodes); // %08X für Hex mit führenden Nullen
-
-                                        printf("\n");
-
-                                        for (size_t i = 0; i < len868; i++) {
-                                            printf("%02X ", rx_buf_868[i]);
-                                        }
-                                        printf("\n");
-
-                                        printf("[\e[32m868\e[0m] %d Bytes    : ", len868);
-
-                                        for (int i = 0; i < len868; i++) {
-                                            if (rx_buf_868[i] >= 32 && rx_buf_868[i] <= 126)
-                                                printf("%c", rx_buf_868[i]);
-                                            else
-                                                printf(".");
-                                        }
-                                        printf(" RSSI: %.2f dBm\n", radio_868->getRSSI());
-
+                                        daemon_print_lora_packet("868", "32m", rx_buf_868, len868, radio_868->getRSSI());
                                     } else {
-                                        // --- FSK: Rohdaten-Ausgabe (kein LoRaHAM-Header!) ---
-                                        printf("[\e[32m868-FSK\e[0m] %d Bytes HEX: ", len868);
-                                        for (int i = 0; i < len868; i++) {
-                                            printf("%02X ", rx_buf_868[i]);
-                                        }
-                                        printf("\n");
-
-                                        printf("[\e[32m868-FSK\e[0m] %d Bytes    : ", len868);
-                                        for (int i = 0; i < len868; i++) {
-                                            if (rx_buf_868[i] >= 32 && rx_buf_868[i] <= 126)
-                                                printf("%c", rx_buf_868[i]);
-                                            else
-                                                printf(".");
-                                        }
-                                        printf(" RSSI: %.2f dBm\n", radio_868->getRSSI());
+                                        daemon_print_fsk_packet("868", "32m", rx_buf_868, len868, radio_868->getRSSI());
                                     }
 
-                                    if(len868 > 0){
-                                        client_set_broadcast_bytes(client_data868, MAX_CLIENTS, rx_buf_868, len868);
-                                    }
+                                    daemon_broadcast_rx_data(868, rx_buf_868, len868);
 
                                     len868=0;
                                     memset(rx_buf_868, 0, sizeof(rx_buf_868) );
