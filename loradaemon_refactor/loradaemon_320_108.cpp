@@ -133,6 +133,7 @@
 #include <signal.h>
 #include <getopt.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
@@ -1671,6 +1672,11 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     // Wait for socket events.
     int ret = daemon_wait_for_events(event_set, readfds);
     if (ret < 0) {
+        if (errno == EINTR && daemon_lifecycle_stop_requested()) {
+            daemon_debug_ctx("LIFE", "Event-Wait durch Stop unterbrochen");
+            return;
+        }
+
         perror("event_loop_wait");
         return;
     }
