@@ -164,9 +164,9 @@ build_one_test() {
   echo "Built test:   $out"
 }
 
-build_one_cpp_test() {
-  local src="$1"
-  local out="$2"
+build_one_cpp_sources() {
+  local out="$1"
+  shift
 
   "$cxx" \
     -std=c++11 \
@@ -176,108 +176,76 @@ build_one_cpp_test() {
     -I"$TEST_DIR" \
     -I"$SCRIPT_DIR" \
     -o "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_parser.cpp"
+    "$@"
 
   echo "Built test:   $out"
+}
+
+build_one_cpp_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/config_parser.cpp"
 }
 
 build_one_unix_socket_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
+  build_one_cpp_sources \
+    "$out" \
     "$src" \
     "$SCRIPT_DIR/unix_socket.cpp"
-
-  echo "Built test:   $out"
 }
 
 build_one_lifecycle_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
+  build_one_cpp_sources \
+    "$out" \
     "$src" \
     "$SCRIPT_DIR/daemon_lifecycle.cpp"
-
-  echo "Built test:   $out"
 }
 
 build_one_timing_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
+  build_one_cpp_sources \
+    "$out" \
     "$src" \
     "$SCRIPT_DIR/daemon_timing.cpp"
-
-  echo "Built test:   $out"
 }
 
 build_one_event_loop_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
+  build_one_cpp_sources \
+    "$out" \
     "$src" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp" \
-
-  echo "Built test:   $out"
+    "$SCRIPT_DIR/event_loop_epoll.cpp"
 }
 
 build_one_data_tx_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
+  build_one_cpp_sources \
+    "$out" \
     "$src" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/event_loop.cpp" \
     "$SCRIPT_DIR/event_loop_select.cpp" \
-    "$SCRIPT_DIR/event_loop_epoll.cpp" \
-
-  echo "Built test:   $out"
+    "$SCRIPT_DIR/event_loop_epoll.cpp"
 }
-
 build_one_config_dispatch_test() {
   local src="$1"
   local out="$2"
