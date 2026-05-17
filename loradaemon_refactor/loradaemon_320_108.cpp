@@ -906,6 +906,20 @@ static void daemon_log_loop_start(void)
     printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
 }
 
+static void daemon_discard_rx_during_tx(int band)
+{
+    if (band == 433) {
+        receivedFlag433 = false;
+        radio_433->clearIrq(0xFFFFFFFF);
+        printf("[433] RX während TX - verwerfe Paket\n");
+        return;
+    }
+
+    receivedFlag868 = false;
+    radio_868->clearIrq(0xFFFFFFFF);
+    printf("[868] RX während TX - verwerfe Paket\n");
+}
+
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
                         // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
@@ -1007,10 +1021,7 @@ static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
                                     radio_433->startReceive();
                                 }
                             } else {
-                                // TX läuft noch - Flag zurücksetzen und IRQ clearen
-                                receivedFlag433 = false;
-                                radio_433->clearIrq(0xFFFFFFFF);
-                                printf("[433] RX während TX - verwerfe Paket\n");
+                                daemon_discard_rx_during_tx(433);
                             }
                         }
 
@@ -1115,10 +1126,7 @@ static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
                                     radio_868->startReceive();
                                 }
                             } else {
-                                // TX läuft noch - Flag zurücksetzen und IRQ clearen
-                                receivedFlag868 = false;
-                                radio_868->clearIrq(0xFFFFFFFF);
-                                printf("[868] RX während TX - verwerfe Paket\n");
+                                daemon_discard_rx_during_tx(868);
                             }
                         }
 
@@ -1131,8 +1139,9 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
 {
     daemon_process_radio_433(rx_buf_433);
     daemon_process_radio_868(rx_buf_868);
-        // --- CAD/RSSI Überwachung ---
-        daemon_process_cad_rssi(rssi_timer);
+
+    // --- CAD/RSSI Überwachung ---
+    daemon_process_cad_rssi(rssi_timer);
 }
 
 static void daemon_ignore_sigpipe(void)
