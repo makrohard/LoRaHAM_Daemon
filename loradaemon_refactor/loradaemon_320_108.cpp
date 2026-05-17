@@ -139,7 +139,6 @@
 #include <sys/stat.h>
 #include <signal.h>
 
-#include <vector>
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
 #include <lgpio.h>
@@ -150,7 +149,6 @@
 #include "event_loop.h"
 #include "unix_socket.h"
 #include "client_set.h"
-#include "config_parser.h"
 #include "radio_channel.h"
 #include "config_dispatch.h"
 
