@@ -397,14 +397,25 @@ static void daemon_radio_controller_sync_cad_rssi_to_legacy_state(void)
     getrssi_868_active = radio_controller_868.getrssi_active;
 }
 
+static void daemon_radio_controller_sync_rx_to_legacy_state(void)
+{
+    receivedFlag433 = radio_controller_433.received;
+    rx_drop_433 = radio_controller_433.rx_drops;
+
+    receivedFlag868 = radio_controller_868.received;
+    rx_drop_868 = radio_controller_868.rx_drops;
+}
+
 // --- Callback für 868 ---
 void setFlag868(void) {
     receivedFlag868 = true;
+    radio_controller_868.received = true;
     LED_868(1);
     //usleep(50000);
 }
 void setFlag433(void) {
     receivedFlag433 = true;
+    radio_controller_433.received = true;
     LED_433(1);
     //usleep(50000);
 }
@@ -1133,18 +1144,13 @@ static void daemon_log_loop_start(void)
 }
 
 /* --- RX special cases ---------------------------------------------------- */
-static void daemon_discard_rx_during_tx(int band)
+template<typename RadioT>
+static void daemon_discard_rx_during_tx(RadioController<RadioT> *ctrl)
 {
-    if (band == 433) {
-        receivedFlag433 = false;
-        radio_433->clearIrq(0xFFFFFFFF);
-        printf("[433] RX während TX - verwerfe Paket\n");
-        return;
-    }
-
-    receivedFlag868 = false;
-    radio_868->clearIrq(0xFFFFFFFF);
-    printf("[868] RX während TX - verwerfe Paket\n");
+    ctrl->received = false;
+    ctrl->radio->clearIrq(0xFFFFFFFF);
+    printf("[%s] RX während TX - verwerfe Paket\n",
+           radio_controller_tag(ctrl));
 }
 
 /* --- RX output ----------------------------------------------------------- */
@@ -1167,36 +1173,13 @@ static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
 }
 
 /* --- RX presentation metadata ------------------------------------------- */
-static const char *daemon_band_tag(int band)
+template<typename RadioT>
+static const char *daemon_controller_color(RadioController<RadioT> *ctrl)
 {
-    if (band == 433)
-        return radio_controller_tag(&radio_controller_433);
-
-    return radio_controller_tag(&radio_controller_868);
-}
-
-static const char *daemon_band_color(int band)
-{
-    if (band == 433)
+    if (ctrl->band == RADIO_BAND_433)
         return "93m";
 
     return "32m";
-}
-
-static RadioMode_t daemon_band_mode(int band)
-{
-    if (band == 433)
-        return mode_433;
-
-    return mode_868;
-}
-
-static float daemon_band_rssi(int band)
-{
-    if (band == 433)
-        return radio_controller_packet_rssi(&radio_controller_433);
-
-    return radio_controller_packet_rssi(&radio_controller_868);
 }
 
 static void daemon_print_lora_packet(const char *band,
@@ -1248,204 +1231,158 @@ static void daemon_print_fsk_packet(const char *band,
 }
 
 /* --- RX forwarding ------------------------------------------------------- */
-static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
+static void daemon_broadcast_rx_data(RadioChannelIo *io, uint8_t *buf, int len)
 {
     if (len <= 0)
         return;
 
-    if (band == 433) {
-        client_slot_broadcast_bytes_queued(client_data433_slots, MAX_CLIENTS, buf, len);
-        return;
-    }
-
-    client_slot_broadcast_bytes_queued(client_data868_slots, MAX_CLIENTS, buf, len);
+    client_slot_broadcast_bytes_queued(io->data_slots, MAX_CLIENTS, buf, len);
 }
 
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */
-static void daemon_restart_receive_after_empty_rx(int band)
+template<typename RadioT>
+static void daemon_restart_receive_after_empty_rx(RadioController<RadioT> *ctrl)
 {
-    if (band == 433) {
-        radio_433->clearIrq(0xFFFFFFFF);
-        radio_433->startReceive();
-        return;
-    }
-
-    radio_868->clearIrq(0xFFFFFFFF);
-    radio_868->startReceive();
+    ctrl->radio->clearIrq(0xFFFFFFFF);
+    ctrl->radio->startReceive();
 }
 
-static void daemon_finish_rx_packet(int band, uint8_t *buf, size_t buf_len)
+template<typename RadioT>
+static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
+                                    uint8_t *buf,
+                                    size_t buf_len)
 {
-    if (band == 433) {
-        LED_433(0);
-        radio_433->startReceive();
-        return;
-    }
-
-    memset(buf, 0, buf_len);
-    LED_868(0);
-    radio_868->startReceive();
-}
-
-static void daemon_prepare_rx_packet(int band, uint8_t *buf, size_t buf_len)
-{
-    if (band == 433) {
-        receivedFlag433 = false;
+    if (ctrl->band == RADIO_BAND_868)
         memset(buf, 0, buf_len);
 
-        // WICHTIG: Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData() aufrufen!
-        // Grund: SX127x RegIrqFlags2 Bit3 = FifoOverrun -> schreibt man 0xFF rein,
-        // wird Bit3 gesetzt und der FIFO wird gelöscht (laut Datasheet).
-        // Im LoRa-Modus trifft das nicht zu (anderes Register).
-        if (mode_433 == RADIO_MODE_LORA)
-            radio_433->clearIrq(0xFFFFFFFF);
-        return;
-    }
+    data_tx_led(radio_controller_band_number(ctrl), 0);
+    ctrl->radio->startReceive();
+}
 
-    receivedFlag868 = false;
+template<typename RadioT>
+static void daemon_prepare_rx_packet(RadioController<RadioT> *ctrl,
+                                     uint8_t *buf,
+                                     size_t buf_len)
+{
+    ctrl->received = false;
     memset(buf, 0, buf_len);
 
     // WICHTIG: Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData() aufrufen!
     // Grund: SX127x RegIrqFlags2 Bit3 = FifoOverrun -> schreibt man 0xFF rein,
     // wird Bit3 gesetzt und der FIFO wird gelöscht (laut Datasheet).
     // Im LoRa-Modus trifft das nicht zu (anderes Register).
-    if (mode_868 == RADIO_MODE_LORA)
-        radio_868->clearIrq(0xFFFFFFFF);
+    if (ctrl->mode == RADIO_MODE_LORA)
+        ctrl->radio->clearIrq(0xFFFFFFFF);
 }
 
-static int daemon_rx_packet_length(int band)
+template<typename RadioT>
+static int daemon_rx_packet_length(RadioController<RadioT> *ctrl)
 {
-    if (band == 433)
-        return radio_433->getPacketLength();
-
-    return radio_868->getPacketLength();
+    return ctrl->radio->getPacketLength();
 }
 
-static void daemon_clear_irq_after_rx_read(int band)
+template<typename RadioT>
+static void daemon_clear_irq_after_rx_read(RadioController<RadioT> *ctrl)
 {
-    if (band == 433) {
-        if (mode_433 == RADIO_MODE_FSK)
-            radio_433->clearIrq(0xFFFFFFFF);
-        return;
-    }
-
-    if (mode_868 == RADIO_MODE_FSK)
-        radio_868->clearIrq(0xFFFFFFFF);
+    if (ctrl->mode == RADIO_MODE_FSK)
+        ctrl->radio->clearIrq(0xFFFFFFFF);
 }
 
-static void daemon_print_rx_packet(int band, uint8_t *buf, int len)
+template<typename RadioT>
+static void daemon_print_rx_packet(RadioController<RadioT> *ctrl,
+                                   uint8_t *buf,
+                                   int len)
 {
-    const char *tag = daemon_band_tag(band);
-    const char *color = daemon_band_color(band);
-    float rssi = daemon_band_rssi(band);
+    const char *tag = radio_controller_tag(ctrl);
+    const char *color = daemon_controller_color(ctrl);
+    float rssi = radio_controller_packet_rssi(ctrl);
 
-    if (daemon_band_mode(band) == RADIO_MODE_LORA)
+    if (ctrl->mode == RADIO_MODE_LORA)
         daemon_print_lora_packet(tag, color, buf, len, rssi);
     else
         daemon_print_fsk_packet(tag, color, buf, len, rssi);
 }
 
 /* --- RX radio accessors -------------------------------------------------- */
-static bool daemon_rx_flag_active(int band)
+template<typename RadioT>
+static int16_t daemon_read_rx_data(RadioController<RadioT> *ctrl,
+                                   uint8_t *buf,
+                                   size_t buf_len)
 {
-    if (band == 433)
-        return receivedFlag433;
-
-    return receivedFlag868;
-}
-
-static bool daemon_tx_busy(int band)
-{
-    if (band == 433)
-        return txBusy433;
-
-    return txBusy868;
-}
-
-static int16_t daemon_read_rx_data(int band, uint8_t *buf, size_t buf_len)
-{
-    if (band == 433)
-        return radio_433->readData(buf, buf_len);
-
-    return radio_868->readData(buf, buf_len);
+    return ctrl->radio->readData(buf, buf_len);
 }
 
 /* --- RX read validation -------------------------------------------------- */
-static unsigned long *daemon_rx_drop_counter(int band)
-{
-    if (band == 433)
-        return &rx_drop_433;
-
-    return &rx_drop_868;
-}
-
 static bool daemon_should_log_rx_drop(unsigned long drops)
 {
     return drops <= RX_DROP_LOG_INITIAL ||
            (RX_DROP_LOG_INTERVAL > 0 && drops % RX_DROP_LOG_INTERVAL == 0);
 }
 
-static void daemon_record_rx_drop(int band, int16_t state)
+template<typename RadioT>
+static void daemon_record_rx_drop(RadioController<RadioT> *ctrl, int16_t state)
 {
-    unsigned long *drops = daemon_rx_drop_counter(band);
+    ctrl->rx_drops++;
 
-    (*drops)++;
-
-    if (daemon_should_log_rx_drop(*drops)) {
+    if (daemon_should_log_rx_drop(ctrl->rx_drops)) {
         printf("[%d] RX read error: %d, packet dropped, drops=%lu\n",
-               band, state, *drops);
+               radio_controller_band_number(ctrl), state, ctrl->rx_drops);
         fflush(stdout);
     }
 }
 
-static bool daemon_rx_read_ok(int band, int16_t state)
+template<typename RadioT>
+static bool daemon_rx_read_ok(RadioController<RadioT> *ctrl, int16_t state)
 {
     if (state == RADIOLIB_ERR_NONE)
         return true;
 
-    daemon_record_rx_drop(band, state);
+    daemon_record_rx_drop(ctrl, state);
     return false;
 }
 
 /* --- RX band flow -------------------------------------------------------- */
-static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
+template<typename RadioT>
+static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
+                                      RadioChannelIo *io,
+                                      uint8_t (&rx_buf)[buf_SIZE])
 {
-    if (!daemon_radio_ready(band))
+    if (!radio_controller_ready(ctrl) || !ctrl->radio)
         return;
 
     // Gemeinsamer RX-Ablauf; die 433/868-Originalkommentare stehen in den Wrappern.
-    if (!daemon_rx_flag_active(band))
+    if (!ctrl->received)
         return;
 
-    if (daemon_tx_busy(band)) {
-        daemon_discard_rx_during_tx(band);
+    if (ctrl->tx_busy) {
+        daemon_discard_rx_during_tx(ctrl);
         return;
     }
 
-    daemon_prepare_rx_packet(band, rx_buf, sizeof(rx_buf));
+    daemon_prepare_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
 
-    int len = daemon_rx_packet_length(band);
+    int len = daemon_rx_packet_length(ctrl);
     // Fehlauslösung (z.B. durch CAD-IRQ): kein Paket vorhanden
     if (len <= 0) {
         // Im FSK-Modus: clearIrq erst jetzt sicher (FIFO war leer)
-        daemon_restart_receive_after_empty_rx(band);
+        daemon_restart_receive_after_empty_rx(ctrl);
         return;
     }
 
-    int16_t read_state = daemon_read_rx_data(band, rx_buf, sizeof(rx_buf)); // 5ms Timeout
+    int16_t read_state = daemon_read_rx_data(ctrl, rx_buf, sizeof(rx_buf)); // 5ms Timeout
 
     // Im FSK-Modus: clearIrq NACH readData() - FIFO ist jetzt geleert
-    daemon_clear_irq_after_rx_read(band);
+    daemon_clear_irq_after_rx_read(ctrl);
 
-    if (!daemon_rx_read_ok(band, read_state)) {
-        daemon_finish_rx_packet(band, rx_buf, sizeof(rx_buf));
+    if (!daemon_rx_read_ok(ctrl, read_state)) {
+        daemon_finish_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
         return;
     }
 
-    daemon_print_rx_packet(band, rx_buf, len);
-    daemon_broadcast_rx_data(band, rx_buf, len);
+    daemon_print_rx_packet(ctrl, rx_buf, len);
+    daemon_broadcast_rx_data(io, rx_buf, len);
 
-    daemon_finish_rx_packet(band, rx_buf, sizeof(rx_buf));
+    daemon_finish_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
 }
 
 
@@ -1453,13 +1390,13 @@ static void daemon_process_radio_band(int band, uint8_t (&rx_buf)[buf_SIZE])
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
     // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
-    daemon_process_radio_band(433, rx_buf_433);
+    daemon_process_radio_band(&radio_controller_433, &channel_433, rx_buf_433);
 }
 
 static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
 {
     // --- LoRa/FSK Polling 868 (mit Callback-Flag + Non-Blocking 5ms) ---
-    daemon_process_radio_band(868, rx_buf_868);
+    daemon_process_radio_band(&radio_controller_868, &channel_868, rx_buf_868);
 }
 
 /* --- Radio polling order ------------------------------------------------- */
@@ -1467,8 +1404,12 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
 {
+    daemon_radio_controller_sync_rx_tx_from_legacy_state();
+
     daemon_process_radio_433(rx_buf_433);
     daemon_process_radio_868(rx_buf_868);
+
+    daemon_radio_controller_sync_rx_to_legacy_state();
 
     // --- CAD/RSSI Überwachung ---
     daemon_process_cad_rssi(rssi_timer);
