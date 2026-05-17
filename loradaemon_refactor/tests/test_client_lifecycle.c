@@ -89,6 +89,70 @@ static int test_reconnect_after_client_storm(void)
     return TEST_PASS;
 }
 
+/* --- SIGTERM should stop the daemon and remove public sockets --- */
+
+static int wait_owned_daemon_exit(int timeout_ms)
+{
+    int status;
+    long deadline = now_ms() + timeout_ms;
+
+    while (now_ms() < deadline) {
+        pid_t r;
+
+        if (g_daemon_pid <= 0)
+            return TEST_PASS;
+
+        r = waitpid(g_daemon_pid, &status, WNOHANG);
+        if (r == g_daemon_pid) {
+            g_daemon_pid = -1;
+            return TEST_PASS;
+        }
+
+        usleep(100000);
+    }
+
+    return TEST_FAIL;
+}
+
+static int public_sockets_removed(void)
+{
+    const char *paths[] = {
+        SOCK_DATA_433,
+        SOCK_DATA_868,
+        SOCK_CONF_433,
+        SOCK_CONF_868
+    };
+
+    for (int i = 0; i < ARRAY_LEN(paths); i++) {
+        if (path_exists(paths[i])) {
+            fail_msg("socket still exists after shutdown: %s", paths[i]);
+            return TEST_FAIL;
+        }
+    }
+
+    return TEST_PASS;
+}
+
+static int test_sigterm_shutdown_cleans_sockets(void)
+{
+    if (!daemon_alive()) {
+        fail_msg("daemon not running before SIGTERM");
+        return TEST_FAIL;
+    }
+
+    if (kill(-g_daemon_pid, SIGTERM) != 0) {
+        fail_msg("SIGTERM failed");
+        return TEST_FAIL;
+    }
+
+    if (wait_owned_daemon_exit(4000) != TEST_PASS) {
+        fail_msg("daemon did not exit after SIGTERM");
+        return TEST_FAIL;
+    }
+
+    return public_sockets_removed();
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -132,6 +196,8 @@ int main(int argc, char **argv)
     if (!daemon_alive()) {
         fail_msg("daemon exited during test");
         g_fail++;
+    } else {
+        run_test("SIGTERM shutdown cleans sockets", test_sigterm_shutdown_cleans_sockets);
     }
 
     stop_daemon();
