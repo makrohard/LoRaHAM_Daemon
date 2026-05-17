@@ -801,10 +801,7 @@ static void daemon_radio_io_init(void)
 /* --- DATA TX structure: context, CAD guard and send callback -------------- */
 
 typedef struct {
-    const char *tag;
-    int band;
-    volatile RadioMode_t *mode;
-    volatile RadioHealth *health;
+    RadioControllerTxView radio;
 } DataTxDaemonContext;
 
 #define DATA_TX_CAD_MAX_WAIT_TICKS 300
@@ -833,11 +830,11 @@ static int data_tx_wait_channel_free(DataTxDaemonContext *tx)
 {
     int cad_wait = 0;
 
-    if (*tx->mode != RADIO_MODE_LORA)
+    if (!tx->radio.mode || *tx->radio.mode != RADIO_MODE_LORA)
         return 0;
 
     while (cad_wait < DATA_TX_CAD_MAX_WAIT_TICKS) {
-        if ((data_tx_modem_status(tx->band) & 0x01) == 0)
+        if ((data_tx_modem_status(tx->radio.band) & 0x01) == 0)
             return 0;
 
         usleep(DATA_TX_CAD_SLEEP_USEC);
@@ -852,27 +849,27 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
     DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
 
-    if (!radio_health_is_ready(*tx->health)) {
-        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tx->tag);
+    if (!tx->radio.health || !radio_health_is_ready(*tx->radio.health)) {
+        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tx->radio.tag);
         return 1;
     }
 
     // CAD guard: LoRa only.
     if (data_tx_wait_channel_free(tx)) {
-        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->tag);
-        printf("[%s] DATA-TX abgebrochen: %s\n", tx->tag,
+        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tx->radio.tag);
+        printf("[%s] DATA-TX abgebrochen: %s\n", tx->radio.tag,
                tx_result_name(TX_RESULT_CAD_TIMEOUT));
         return 1;
     }
 
     printf("  -> Sende Chunk: %zu Bytes (Offset: %zu)\n", len, offset);
 
-    data_tx_led(tx->band, 1);
-    TxResult result = lora_send(chunk, len, tx->band);
-    data_tx_led(tx->band, 0);
+    data_tx_led(tx->radio.band, 1);
+    TxResult result = lora_send(chunk, len, tx->radio.band);
+    data_tx_led(tx->radio.band, 0);
 
     if (!tx_result_is_ok(result)) {
-        printf("[%s] DATA-TX abgebrochen: %s\n", tx->tag,
+        printf("[%s] DATA-TX abgebrochen: %s\n", tx->radio.tag,
                tx_result_name(result));
         return 1;
     }
@@ -883,12 +880,12 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
 /* --- Runtime context factories ------------------------------------------- */
 
-static DataTxDaemonContext daemon_data_tx_context(const char *tag,
-                                                   int band,
-                                                   volatile RadioMode_t *mode,
-                                                   volatile RadioHealth *health)
+template<typename RadioT>
+static DataTxDaemonContext daemon_data_tx_context(RadioController<RadioT> *ctrl)
 {
-    DataTxDaemonContext ctx = {tag, band, mode, health};
+    DataTxDaemonContext ctx = {
+        radio_controller_tx_view(ctrl)
+    };
 
     return ctx;
 }
@@ -936,8 +933,8 @@ static void daemon_loop_context_init(DaemonLoopContext *ctx)
                                DAEMON_RSSI_INTERVAL_MS);
 
     // DATA TX contexts.
-    ctx->data_tx_433_ctx = daemon_data_tx_context("433", 433, &mode_433, &radio_health_433);
-    ctx->data_tx_868_ctx = daemon_data_tx_context("868", 868, &mode_868, &radio_health_868);
+    ctx->data_tx_433_ctx = daemon_data_tx_context(&radio_controller_433);
+    ctx->data_tx_868_ctx = daemon_data_tx_context(&radio_controller_868);
 
     // CONFIG client slots.
     client_slot_init_all(client_conf433_slots, MAX_CLIENTS);

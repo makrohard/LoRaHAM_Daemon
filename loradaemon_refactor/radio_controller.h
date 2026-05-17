@@ -32,6 +32,13 @@ struct RadioController {
     int led_pin;
 };
 
+typedef struct {
+    int band;
+    const char *tag;
+    volatile RadioHealth *health;
+    volatile RadioMode_t *mode;
+} RadioControllerTxView;
+
 template<typename RadioT>
 static inline void radio_controller_init(RadioController<RadioT> *ctrl,
                                          RadioBand_t band,
@@ -110,6 +117,19 @@ static inline float radio_controller_packet_rssi(RadioController<RadioT> *ctrl)
         return -200.0f;
 
     return ctrl->radio->getRSSI();
+}
+
+template<typename RadioT>
+static inline RadioControllerTxView radio_controller_tx_view(RadioController<RadioT> *ctrl)
+{
+    RadioControllerTxView view = {
+        radio_controller_band_number(ctrl),
+        radio_controller_tag(ctrl),
+        radio_controller_health_ptr(ctrl),
+        ctrl ? &ctrl->mode : nullptr
+    };
+
+    return view;
 }
 
 #endif
