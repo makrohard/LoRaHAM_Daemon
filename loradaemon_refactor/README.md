@@ -202,6 +202,7 @@ Refactored by Johannes Loose / 410733@gmail.com
 - QA: final non-blocking socket audit keeps daemon broadcast paths queued-only.
 - Hardening prep: add strict CONFIG value parser helpers and tests.
 - Hardening: CONFIG apply uses strict value parsers instead of partial atoi/atof parsing.
+- Hardening: CONFIG value policy is separated and unit-tested.
 - QA: add a static check that production paths do not call legacy blocking broadcast wrappers.
 - QA: add slow-client output tests for non-blocking queued broadcasts.
 - Hardening: read-side client disconnects now reset their queued output immediately.

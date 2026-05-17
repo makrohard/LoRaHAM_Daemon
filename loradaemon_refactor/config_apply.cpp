@@ -1,53 +1,9 @@
 #include "config_apply.h"
 
 #include "config_value.h"
+#include "config_policy.h"
 
 /* --- CONFIG value policy ------------------------------------------------- */
-
-static bool config_lora_bandwidth_valid(float bw)
-{
-    const float allowed[] = {
-        7.8f, 10.4f, 15.6f, 20.8f, 31.25f,
-        41.7f, 62.5f, 125.0f, 250.0f, 500.0f
-    };
-
-    for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
-        if (config_value_float_equal(bw, allowed[i]))
-            return true;
-    }
-
-    return false;
-}
-
-static bool config_fsk_rxbw_valid(float bw)
-{
-    const float allowed[] = {
-        2.6f, 3.1f, 3.9f, 5.2f, 6.3f, 7.8f,
-        10.4f, 12.5f, 15.6f, 20.8f, 25.0f,
-        31.25f, 31.3f, 41.7f, 50.0f, 62.5f,
-        83.3f, 100.0f, 125.0f, 166.7f,
-        200.0f, 250.0f
-    };
-
-    for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
-        if (config_value_float_equal(bw, allowed[i]))
-            return true;
-    }
-
-    return false;
-}
-
-static bool config_fsk_sync_valid(uint32_t raw)
-{
-    if (raw == 0 || raw > 0xFFFF)
-        return false;
-
-    if (raw <= 0xFF)
-        return raw != 0x00;
-
-    return ((raw >> 8) & 0xFF) != 0x00 &&
-           (raw & 0xFF) != 0x00;
-}
 
 static void config_print_rejected(const char *key, const std::string &val)
 {
@@ -137,7 +93,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "SF") {
         int sf = 0;
-        if (config_value_parse_int_exact(val, &sf) && sf >= 7 && sf <= 12) {
+        if (config_value_parse_int_exact(val, &sf) && config_policy_lora_sf_valid(sf)) {
             state = radio.setSpreadingFactor(sf);
             config_print_state_int("SF", sf, state);
         } else {
@@ -147,7 +103,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "BW") {
         float bw = 0.0f;
-        if (config_value_parse_float_exact(val, &bw) && config_lora_bandwidth_valid(bw)) {
+        if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
             state = radio.setBandwidth(bw);
             config_print_state_float("BW", bw, state);
         } else {
@@ -170,7 +126,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "CR") {
         int cr = 0;
-        if (config_value_parse_int_exact(val, &cr) && cr >= 5 && cr <= 8) {
+        if (config_value_parse_int_exact(val, &cr) && config_policy_lora_cr_valid(cr)) {
             state = radio.setCodingRate(cr);
             config_print_state_int("CR", cr, state);
         } else {
@@ -190,7 +146,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "PREAMBLE") {
         int pre = 0;
-        if (config_value_parse_int_exact(val, &pre) && pre >= 6 && pre <= 65535) {
+        if (config_value_parse_int_exact(val, &pre) && config_policy_lora_preamble_valid(pre)) {
             state = radio.setPreambleLength(pre);
             config_print_state_int("PREAMBLE", pre, state);
         } else {
@@ -200,7 +156,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "SYNC") {
         uint32_t sw = 0;
-        if (config_value_parse_hex_or_dec_u32_exact(val, &sw) && sw <= 0xFF) {
+        if (config_value_parse_hex_or_dec_u32_exact(val, &sw) && config_policy_lora_sync_valid(sw)) {
             state = radio.setSyncWord((uint8_t)sw);
             if (state == RADIOLIB_ERR_NONE)
                 printf(" SYNC=\033[92m0x%02X\033[0m", (unsigned)sw);
@@ -233,7 +189,7 @@ static void apply_lora_param_common(RadioT &radio,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && p >= 0 && p <= 20) {
+        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
             state = radio.setOutputPower(p);
             config_print_state_int("POWER", p, state);
         } else {
@@ -280,7 +236,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && p >= 0 && p <= 20) {
+        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
             state = radio.setOutputPower(p);
             config_print_state_int("POWER", p, state);
         } else {
@@ -290,7 +246,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "BR") {
         float br = 0.0f;
-        if (config_value_parse_float_exact(val, &br) && br >= 0.5f && br <= 300.0f) {
+        if (config_value_parse_float_exact(val, &br) && config_policy_fsk_bitrate_valid(br)) {
             state = radio.setBitRate(br);
             config_print_state_float("BR", br, state);
         } else {
@@ -300,7 +256,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "FREQDEV") {
         float fd = 0.0f;
-        if (config_value_parse_float_exact(val, &fd) && fd > 0.0f && fd <= 200.0f) {
+        if (config_value_parse_float_exact(val, &fd) && config_policy_fsk_freqdev_valid(fd)) {
             state = radio.setFrequencyDeviation(fd);
             config_print_state_float("FREQDEV", fd, state);
         } else {
@@ -310,7 +266,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "RXBW") {
         float bw = 0.0f;
-        if (config_value_parse_float_exact(val, &bw) && config_fsk_rxbw_valid(bw)) {
+        if (config_value_parse_float_exact(val, &bw) && config_policy_fsk_rxbw_valid(bw)) {
             state = radio.setRxBandwidth(bw);
             config_print_state_float("RXBW", bw, state);
         } else {
@@ -354,7 +310,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "PREAMBLE") {
         int pre = 0;
-        if (config_value_parse_int_exact(val, &pre) && pre >= 0) {
+        if (config_value_parse_int_exact(val, &pre) && config_policy_fsk_preamble_valid(pre)) {
             state = radio.setPreambleLength(pre);
             config_print_state_int("PREAMBLE", pre, state);
         } else {
@@ -364,7 +320,7 @@ static void apply_fsk_param_common(RadioT &radio,
 
     if (key == "SYNC") {
         uint32_t raw = 0;
-        if (config_value_parse_hex_or_dec_u32_exact(val, &raw) && config_fsk_sync_valid(raw)) {
+        if (config_value_parse_hex_or_dec_u32_exact(val, &raw) && config_policy_fsk_sync_valid(raw)) {
             if (raw <= 0xFF) {
                 uint8_t sw[1] = { (uint8_t)raw };
                 state = radio.setSyncWord(sw, 1);
