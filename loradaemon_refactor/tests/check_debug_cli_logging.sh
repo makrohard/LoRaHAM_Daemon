@@ -25,9 +25,10 @@ require() {
 require "$DAEMON" "DAEMON_LOG_VERBOSE" "verbose log level"
 require "$DAEMON" "DAEMON_LOG_DEBUG" "debug log level"
 require "$DAEMON" "static DaemonLogLevel daemon_log_level" "global log level"
-require "$DAEMON" "static void daemon_verbose(const char *fmt, ...)" "verbose helper"
-require "$DAEMON" "static void daemon_debug(const char *fmt, ...)" "debug helper"
+require "$DAEMON" "static void daemon_verbose_ctx(const char *ctx, const char *fmt, ...)" "context verbose helper"
+require "$DAEMON" "static void daemon_debug_ctx(const char *ctx, const char *fmt, ...)" "context debug helper"
 require "$DAEMON" "static void daemon_debug_band(const char *tag, const char *fmt, ...)" "band debug helper"
+require "$DAEMON" "static void daemon_vlog_ctx(const char *ctx, const char *fmt, va_list ap)" "context prefix helper"
 require "$DAEMON" "{\"verbose\", no_argument, 0, 'v'}" "long verbose option"
 require "$DAEMON" "{\"debug\",   no_argument, 0, 1000}" "long debug option"
 require "$DAEMON" "getopt_long(argc, argv, \"dvh\", long_options, NULL)" "getopt_long parser"
@@ -36,5 +37,21 @@ require "$COMMON" "test_cli_help_option" "CLI help option test helper"
 require "$IFACE" "CLI accepts -v" "short verbose interface test"
 require "$IFACE" "CLI accepts --verbose" "long verbose interface test"
 require "$IFACE" "CLI accepts --debug" "debug interface test"
+
+forbid() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+
+  if grep -Fq -- "$pattern" "$file"; then
+    echo "ERROR: obsolete debug CLI/logging pattern remains: $label" >&2
+    rc=1
+  fi
+}
+
+forbid "$DAEMON" "daemon_vlog(\"[VERBOSE]\"" "visible VERBOSE prefix"
+forbid "$DAEMON" "daemon_vlog(\"[DEBUG]\"" "visible DEBUG prefix"
+forbid "$DAEMON" "static void daemon_verbose(const char *fmt, ...)" "generic verbose helper"
+forbid "$DAEMON" "static void daemon_debug(const char *fmt, ...)" "generic debug helper"
 
 exit "$rc"

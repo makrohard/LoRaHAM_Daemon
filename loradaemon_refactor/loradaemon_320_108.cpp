@@ -205,7 +205,15 @@ static void daemon_log(const char *fmt, ...)
     va_end(ap);
 }
 
-static void daemon_verbose(const char *fmt, ...)
+static void daemon_vlog_ctx(const char *ctx, const char *fmt, va_list ap)
+{
+    char prefix[32];
+
+    snprintf(prefix, sizeof(prefix), "[%s]", ctx ? ctx : "?");
+    daemon_vlog(prefix, fmt, ap);
+}
+
+static void daemon_verbose_ctx(const char *ctx, const char *fmt, ...)
 {
     va_list ap;
 
@@ -213,11 +221,11 @@ static void daemon_verbose(const char *fmt, ...)
         return;
 
     va_start(ap, fmt);
-    daemon_vlog("[VERBOSE]", fmt, ap);
+    daemon_vlog_ctx(ctx, fmt, ap);
     va_end(ap);
 }
 
-static void daemon_debug(const char *fmt, ...)
+static void daemon_debug_ctx(const char *ctx, const char *fmt, ...)
 {
     va_list ap;
 
@@ -225,22 +233,19 @@ static void daemon_debug(const char *fmt, ...)
         return;
 
     va_start(ap, fmt);
-    daemon_vlog("[DEBUG]", fmt, ap);
+    daemon_vlog_ctx(ctx, fmt, ap);
     va_end(ap);
 }
 
 static void daemon_debug_band(const char *tag, const char *fmt, ...)
 {
     va_list ap;
-    char prefix[32];
 
     if (!daemon_debug_enabled())
         return;
 
-    snprintf(prefix, sizeof(prefix), "[DEBUG %s]", tag ? tag : "?");
-
     va_start(ap, fmt);
-    daemon_vlog(prefix, fmt, ap);
+    daemon_vlog_ctx(tag, fmt, ap);
     va_end(ap);
 }
 
@@ -248,12 +253,12 @@ static void daemon_radio_shutdown_cleanup(void);
 
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
-    daemon_debug("Stoppe Funkmodule");
+    daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
     daemon_radio_shutdown_cleanup();
 
-    daemon_debug("Schließe Event-Backend");
+    daemon_debug_ctx("LIFE", "Schließe Event-Backend");
     event_loop_close(event_set);
-    daemon_debug("Schließe Clients");
+    daemon_debug_ctx("LIFE", "Schließe Clients");
     client_slot_close_all(client_data433_slots, MAX_CLIENTS);
     client_slot_close_all(client_data868_slots, MAX_CLIENTS);
     client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
@@ -263,7 +268,7 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     close_unix_socket(&data868_fd, DATA868_SOCKET);
     close_unix_socket(&conf433_fd, CONF433_SOCKET);
     close_unix_socket(&conf868_fd, CONF868_SOCKET);
-    daemon_debug("Entferne Socket-Dateien");
+    daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
 
 }
 
@@ -312,7 +317,7 @@ static void daemon_enter_background(void)
     freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
     freopen("/tmp/lora_daemon.log", "w", stderr);
 
-    daemon_verbose("Daemon-Modus aktiv");
+    daemon_verbose_ctx("STARTUP", "Daemon-Modus aktiv");
 }
 /* --- Radio controller state ---------------------------------------------- */
 
@@ -977,10 +982,10 @@ typedef struct {
 
 static void daemon_main_context_init(DaemonMainContext *ctx)
 {
-    daemon_debug("Initialisiere Laufzeitkontext");
+    daemon_debug_ctx("LIFE", "Initialisiere Laufzeitkontext");
     daemon_runtime_init(&ctx->event_set);
     daemon_loop_context_init(&ctx->loop_ctx);
-    daemon_debug("Laufzeitkontext bereit");
+    daemon_debug_ctx("LIFE", "Laufzeitkontext bereit");
 }
 /* --- CONFIG dispatch ----------------------------------------------------- */
 static void process_config_dispatch(ConfigDispatchContext<SX1278> *config_433_ctx,
@@ -1427,7 +1432,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
 static void daemon_run_polling_loop(DaemonMainContext *ctx)
 {
     daemon_log_loop_start();
-    daemon_verbose("Polling aktiv");
+    daemon_verbose_ctx("LIFE", "Polling aktiv");
 
     while (!daemon_lifecycle_stop_requested()) {
         daemon_process_loop_iteration(&ctx->event_set,
@@ -1448,9 +1453,9 @@ static void daemon_run(void)
     daemon_run_polling_loop(&main_ctx);
 
     daemon_log("Stop angefordert");
-    daemon_verbose("Shutdown beginnt");
+    daemon_verbose_ctx("LIFE", "Shutdown beginnt");
     daemon_shutdown_cleanup(&main_ctx.event_set);
-    daemon_debug("Shutdown abgeschlossen");
+    daemon_debug_ctx("LIFE", "Shutdown abgeschlossen");
 }
 
 /* --- Startup helpers ----------------------------------------------------- */
@@ -1458,7 +1463,7 @@ static void daemon_ignore_sigpipe(void)
 {
     // SIGPIPE ignorieren: write() auf geschlossenen Socket crasht sonst den Daemon
     signal(SIGPIPE, SIG_IGN);
-    daemon_debug("SIGPIPE wird ignoriert");
+    daemon_debug_ctx("STARTUP", "SIGPIPE wird ignoriert");
 }
 
 static void daemon_print_usage(const char *argv0)
@@ -1482,16 +1487,16 @@ static bool daemon_parse_args(int argc, char *argv[])
         switch (opt) {
             case 'd':
                 is_daemon = true;
-                daemon_debug("Option -d erkannt");
+                daemon_debug_ctx("STARTUP", "Option -d erkannt");
                 break;
             case 'v':
                 if (daemon_log_level < DAEMON_LOG_VERBOSE)
                     daemon_log_level = DAEMON_LOG_VERBOSE;
-                daemon_verbose("Verbose aktiv");
+                daemon_verbose_ctx("STARTUP", "Verbose aktiv");
                 break;
             case 1000:
                 daemon_log_level = DAEMON_LOG_DEBUG;
-                daemon_debug("Debug aktiv");
+                daemon_debug_ctx("STARTUP", "Debug aktiv");
                 break;
             case 'h':
                 daemon_print_usage(argv[0]);
@@ -1511,16 +1516,16 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_ignore_sigpipe();
     bool is_daemon = daemon_parse_args(argc, argv);
 
-    daemon_verbose("Startmodus: %s", is_daemon ? "Daemon" : "Vordergrund");
-    daemon_debug("Argumente verarbeitet");
+    daemon_verbose_ctx("STARTUP", "Startmodus: %s", is_daemon ? "Daemon" : "Vordergrund");
+    daemon_debug_ctx("STARTUP", "Argumente verarbeitet");
 
     // --- Userspace-Daemon Implementation ---
     if (is_daemon)
         daemon_enter_background();
 
-    daemon_debug("Starte Radio- und Socket-Init");
+    daemon_debug_ctx("STARTUP", "Starte Radio- und Socket-Init");
     daemon_radio_io_init();
-    daemon_debug("Startup abgeschlossen");
+    daemon_debug_ctx("STARTUP", "Startup abgeschlossen");
 }
 
 /* --- Main entry ---------------------------------------------------------- */
