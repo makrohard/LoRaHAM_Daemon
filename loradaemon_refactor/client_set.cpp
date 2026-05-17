@@ -2,6 +2,7 @@
 
 #include "event_loop.h"
 
+#include <errno.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -28,7 +29,12 @@ int client_set_accept(int listen_fd, int *clients, int max_clients)
     if (fd < 0)
         return fd;
 
-    client_set_add(clients, max_clients, fd);
+    if (!client_set_add(clients, max_clients, fd)) {
+        close(fd);
+        errno = EMFILE;
+        return -1;
+    }
+
     return fd;
 }
 

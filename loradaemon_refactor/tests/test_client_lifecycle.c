@@ -60,6 +60,19 @@ static int test_many_conf_clients_433(void)
         return TEST_FAIL;
     }
 
+    for (int i = 10; i < ARRAY_LEN(fds); i++) {
+        if (fds[i] >= 0 &&
+            wait_client_closed_after_shutdown(fds[i], 1500) != TEST_PASS) {
+            for (int j = 0; j < ARRAY_LEN(fds); j++) {
+                if (fds[j] >= 0)
+                    close(fds[j]);
+            }
+
+            fail_msg("overflow client stayed open: index %d", i);
+            return TEST_FAIL;
+        }
+    }
+
     for (int i = 0; i < ARRAY_LEN(fds); i++) {
         if (fds[i] >= 0)
             close(fds[i]);
