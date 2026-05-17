@@ -12,4 +12,11 @@ using ConfigApplyFn = void (*)(RadioT& radio,
                                volatile RadioMode_t& mode,
                                volatile bool& getrssi_active);
 
+template<typename RadioT>
+void config_apply_command(RadioT& radio,
+                          const char *tag,
+                          const char *cmd,
+                          volatile RadioMode_t& mode,
+                          volatile bool& getrssi_active);
+
 #endif

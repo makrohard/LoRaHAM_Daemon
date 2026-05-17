@@ -1144,7 +1144,7 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
 /* --- CONFIG apply boundary --- */
 
 template<typename RadioT>
-static void config_apply_command(RadioT& radio,
+void config_apply_command(RadioT& radio,
                                  const char *tag,
                                  const char *cmd,
                                  volatile RadioMode_t& mode,
