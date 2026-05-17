@@ -156,13 +156,11 @@
 int data433_fd = -1, data868_fd = -1;
 int conf433_fd = -1, conf868_fd = -1;
 
-int client_data433[MAX_CLIENTS] = {0};
-int client_data868[MAX_CLIENTS] = {0};
+ClientSlot client_data433_slots[MAX_CLIENTS];
+ClientSlot client_data868_slots[MAX_CLIENTS];
 ClientSlot client_conf433_slots[MAX_CLIENTS];
 ClientSlot client_conf868_slots[MAX_CLIENTS];
 
-ClientOutputQueue output_data433[MAX_CLIENTS];
-ClientOutputQueue output_data868[MAX_CLIENTS];
 
 /* --- Channel IO state ---------------------------------------------------- */
 // Kanal-Zustand für Socket- und Clientverwaltung
@@ -172,9 +170,8 @@ RadioChannelIo channel_868;
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
     event_loop_close(event_set);
-
-    client_set_close_all_with_output(client_data433, output_data433, MAX_CLIENTS);
-    client_set_close_all_with_output(client_data868, output_data868, MAX_CLIENTS);
+    client_slot_close_all(client_data433_slots, MAX_CLIENTS);
+    client_slot_close_all(client_data868_slots, MAX_CLIENTS);
     client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
     client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
 
@@ -687,8 +684,8 @@ void lora_init() {
 
 static void daemon_radio_io_init(void)
 {
-    client_output_queue_init_all(output_data433, MAX_CLIENTS);
-    client_output_queue_init_all(output_data868, MAX_CLIENTS);
+    client_slot_init_all(client_data433_slots, MAX_CLIENTS);
+    client_slot_init_all(client_data868_slots, MAX_CLIENTS);
     client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
     client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
 
@@ -698,18 +695,16 @@ static void daemon_radio_io_init(void)
                           CONF433_SOCKET,
                           &data433_fd,
                           &conf433_fd,
-                          client_data433,
-                          client_conf433_slots,
-                          output_data433);
+                          client_data433_slots,
+                          client_conf433_slots);
     radio_channel_io_init(&channel_868,
                           RADIO_BAND_868,
                           DATA868_SOCKET,
                           CONF868_SOCKET,
                           &data868_fd,
                           &conf868_fd,
-                          client_data868,
-                          client_conf868_slots,
-                          output_data868);
+                          client_data868_slots,
+                          client_conf868_slots);
 
     radio_channel_open_sockets(&channel_433);
     radio_channel_open_sockets(&channel_868);
@@ -925,10 +920,10 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
     radio_channel_accept_ready(&channel_433, readfds);
     radio_channel_accept_ready(&channel_868, readfds);
 
-    data_tx_process_clients_with_output("433", client_data433, output_data433, MAX_CLIENTS,
-                                        readfds, send_data_chunk, data_tx_433_ctx);
-    data_tx_process_clients_with_output("868", client_data868, output_data868, MAX_CLIENTS,
-                                        readfds, send_data_chunk, data_tx_868_ctx);
+    data_tx_process_slots("433", client_data433_slots, MAX_CLIENTS,
+                          readfds, send_data_chunk, data_tx_433_ctx);
+    data_tx_process_slots("868", client_data868_slots, MAX_CLIENTS,
+                          readfds, send_data_chunk, data_tx_868_ctx);
 
     process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
 
@@ -1175,11 +1170,11 @@ static void daemon_broadcast_rx_data(int band, uint8_t *buf, int len)
         return;
 
     if (band == 433) {
-        client_set_broadcast_bytes_queued(client_data433, output_data433, MAX_CLIENTS, buf, len);
+        client_slot_broadcast_bytes_queued(client_data433_slots, MAX_CLIENTS, buf, len);
         return;
     }
 
-    client_set_broadcast_bytes_queued(client_data868, output_data868, MAX_CLIENTS, buf, len);
+    client_slot_broadcast_bytes_queued(client_data868_slots, MAX_CLIENTS, buf, len);
 }
 
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */

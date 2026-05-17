@@ -1,8 +1,12 @@
 #include "data_tx.h"
 
 #include "client_set.h"
+#include "client_slot.h"
 
+#include <errno.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /* --- DATA TX chunking ---------------------------------------------------- */
 // Rohdaten vom DATA-Socket in LoRa-Pakete zerteilen.
@@ -35,6 +39,52 @@ size_t data_tx_for_each_chunk(uint8_t *buf,
     }
 
     return bytes_sent;
+}
+
+
+void data_tx_process_slots(const char *tag,
+                           ClientSlot *slots,
+                           int max_clients,
+                           const EventLoopReadySet *readfds,
+                           DataTxChunkHandler handler,
+                           void *ctx)
+{
+    if (!slots)
+        return;
+
+    for(int i=0;i<max_clients;i++){
+        ClientSlot *slot = &slots[i];
+
+        if(client_slot_ready(slot, readfds)) {
+            uint8_t large_buf[2048];
+            ssize_t n;
+
+            do {
+                n = read(slot->fd, large_buf, sizeof(large_buf));
+            } while(n < 0 && errno == EINTR);
+
+            if(n < 0) {
+                if(errno == EAGAIN || errno == EWOULDBLOCK)
+                    continue;
+
+                client_slot_close(slot);
+                continue;
+            }
+
+            if(n == 0) {
+                client_slot_close(slot);
+                continue;
+            }
+
+            printf("[DEBUG %s] %zd Bytes vom Socket erhalten. Zerteile in LoRa-Pakete...\n", tag, n);
+
+            size_t processed = data_tx_for_each_chunk(large_buf, (size_t)n, handler, ctx);
+            if (processed < (size_t)n) {
+                printf("[DEBUG %s] DATA-TX aborted after %zu/%zd bytes\n",
+                       tag, processed, n);
+            }
+        }
+    }
 }
 
 void data_tx_process_clients_with_output(const char *tag,

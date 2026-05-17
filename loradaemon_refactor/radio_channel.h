@@ -31,9 +31,8 @@ typedef struct {
     const char *conf_socket_path;
     int *data_listen_fd;
     int *conf_listen_fd;
-    int *data_clients;
+    ClientSlot *data_slots;
     ClientSlot *conf_slots;
-    ClientOutputQueue *data_output_queues;
 } RadioChannelIo;
 
 void radio_channel_io_init(RadioChannelIo *ch,
@@ -42,9 +41,8 @@ void radio_channel_io_init(RadioChannelIo *ch,
                            const char *conf_socket_path,
                            int *data_listen_fd,
                            int *conf_listen_fd,
-                           int *data_clients,
-                           ClientSlot *conf_slots,
-                           ClientOutputQueue *data_output_queues);
+                           ClientSlot *data_slots,
+                           ClientSlot *conf_slots);
 
 void radio_channel_open_sockets(RadioChannelIo *ch);
 void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set);

@@ -264,6 +264,8 @@ build_one_data_tx_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/data_tx.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -345,6 +347,8 @@ build_one_client_read_disconnect_cleanup_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/data_tx.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }

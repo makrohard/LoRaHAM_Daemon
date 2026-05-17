@@ -18,18 +18,16 @@ void radio_channel_io_init(RadioChannelIo *ch,
                            const char *conf_socket_path,
                            int *data_listen_fd,
                            int *conf_listen_fd,
-                           int *data_clients,
-                           ClientSlot *conf_slots,
-                           ClientOutputQueue *data_output_queues)
+                           ClientSlot *data_slots,
+                           ClientSlot *conf_slots)
 {
     ch->band = band;
     ch->data_socket_path = data_socket_path;
     ch->conf_socket_path = conf_socket_path;
     ch->data_listen_fd = data_listen_fd;
     ch->conf_listen_fd = conf_listen_fd;
-    ch->data_clients = data_clients;
+    ch->data_slots = data_slots;
     ch->conf_slots = conf_slots;
-    ch->data_output_queues = data_output_queues;
 }
 
 
@@ -39,10 +37,9 @@ void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
     event_loop_add_fd(set, *ch->data_listen_fd);
     event_loop_add_fd(set, *ch->conf_listen_fd);
 
-    client_set_add_to_event_loop_with_output(ch->data_clients,
-                                             ch->data_output_queues,
-                                             MAX_CLIENTS,
-                                             set);
+    client_slot_add_to_event_loop_with_output(ch->data_slots,
+                                                  MAX_CLIENTS,
+                                                  set);
     client_slot_add_to_event_loop_with_output(ch->conf_slots,
                                                   MAX_CLIENTS,
                                                   set);
@@ -51,10 +48,9 @@ void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
 void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)
 {
     if(event_loop_ready_fd_read(ready, *ch->data_listen_fd))
-        client_set_accept_with_output(*ch->data_listen_fd,
-                                      ch->data_clients,
-                                      ch->data_output_queues,
-                                      MAX_CLIENTS);
+        client_slot_accept_with_output(*ch->data_listen_fd,
+                                       ch->data_slots,
+                                       MAX_CLIENTS);
 
     if(event_loop_ready_fd_read(ready, *ch->conf_listen_fd))
         client_slot_accept_with_output(*ch->conf_listen_fd,
@@ -70,10 +66,9 @@ void radio_channel_open_sockets(RadioChannelIo *ch)
 
 void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)
 {
-    client_set_flush_ready_outputs(ch->data_clients,
-                                   ch->data_output_queues,
-                                   MAX_CLIENTS,
-                                   ready);
+    client_slot_flush_ready_outputs(ch->data_slots,
+                                    MAX_CLIENTS,
+                                    ready);
     client_slot_flush_ready_outputs(ch->conf_slots,
                                     MAX_CLIENTS,
                                     ready);
