@@ -36,8 +36,8 @@ void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
     event_loop_add_fd(set, *ch->data_listen_fd);
     event_loop_add_fd(set, *ch->conf_listen_fd);
 
-    client_set_add_fds(ch->data_clients, MAX_CLIENTS, &set->readfds, &set->maxfd);
-    client_set_add_fds(ch->conf_clients, MAX_CLIENTS, &set->readfds, &set->maxfd);
+    client_set_add_to_event_loop(ch->data_clients, MAX_CLIENTS, set);
+    client_set_add_to_event_loop(ch->conf_clients, MAX_CLIENTS, set);
 }
 
 void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)

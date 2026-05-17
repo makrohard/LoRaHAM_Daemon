@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -110,7 +109,8 @@ static void test_dispatch_ready_client(void)
     int sv[2];
     int clients[2] = {0};
     uint8_t buf[buf_SIZE];
-    fd_set readfds;
+    EventLoopSet set;
+    EventLoopReadySet readfds;
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
@@ -128,8 +128,9 @@ static void test_dispatch_ready_client(void)
     const char *cmd = "SET GETRSSI=1";
     write(sv[0], cmd, strlen(cmd));
 
-    FD_ZERO(&readfds);
-    FD_SET(sv[1], &readfds);
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx = {
         clients,
@@ -162,7 +163,8 @@ static void test_dispatch_ignores_not_ready_client(void)
     int sv[2];
     int clients[2] = {0};
     uint8_t buf[buf_SIZE];
-    fd_set readfds;
+    EventLoopSet set;
+    EventLoopReadySet readfds;
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
@@ -177,7 +179,9 @@ static void test_dispatch_ignores_not_ready_client(void)
 
     clients[0] = sv[1];
 
-    FD_ZERO(&readfds);
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("not ready wait", event_loop_wait(&set, &readfds, 1000), 0);
 
     ConfigDispatchContext<FakeRadio> ctx = {
         clients,
@@ -206,7 +210,8 @@ static void test_dispatch_closes_eof_client(void)
     int sv[2];
     int clients[2] = {0};
     uint8_t buf[buf_SIZE];
-    fd_set readfds;
+    EventLoopSet set;
+    EventLoopReadySet readfds;
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
     volatile bool getrssi_active = false;
@@ -223,8 +228,9 @@ static void test_dispatch_closes_eof_client(void)
 
     close(sv[0]);
 
-    FD_ZERO(&readfds);
-    FD_SET(sv[1], &readfds);
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("eof wait", event_loop_wait(&set, &readfds, 100000), 1);
 
     ConfigDispatchContext<FakeRadio> ctx = {
         clients,

@@ -63,19 +63,16 @@ ssize_t client_set_read_slot(int *clients, int index, void *buf, size_t len)
     return n;
 }
 
-int client_set_slot_ready(int *clients, int index, const fd_set *ready)
+int client_set_slot_ready(int *clients, int index, const EventLoopReadySet *ready)
 {
-    return clients[index] > 0 && event_loop_select_ready_fd(ready, clients[index]);
+    return clients[index] > 0 && event_loop_ready_fd(ready, clients[index]);
 }
 
-void client_set_add_fds(int *clients, int max_clients, fd_set *readfds, int *maxfd)
+void client_set_add_to_event_loop(int *clients, int max_clients, EventLoopSet *set)
 {
     for (int i = 0; i < max_clients; i++) {
         if (clients[i] > 0)
-            FD_SET(clients[i], readfds);
-
-        if (clients[i] >= *maxfd)
-            *maxfd = clients[i] + 1;
+            event_loop_add_fd(set, clients[i]);
     }
 }
 

@@ -9,7 +9,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <sys/select.h>
 #include <sys/types.h>
 
 /* --- CONFIG client dispatch --- */
@@ -29,7 +28,7 @@ struct ConfigDispatchContext {
 template<typename RadioT>
 static void config_dispatch_client(int *clients,
                                    int index,
-                                   const fd_set *readfds,
+                                   const EventLoopReadySet *readfds,
                                    uint8_t *buf,
                                    RadioT& radio,
                                    const char *tag,
@@ -61,7 +60,7 @@ static void config_dispatch_client(int *clients,
 template<typename RadioT>
 static void config_dispatch_clients(int *clients,
                                     int max_clients,
-                                    const fd_set *readfds,
+                                    const EventLoopReadySet *readfds,
                                     uint8_t *buf,
                                     RadioT& radio,
                                     const char *tag,
@@ -82,7 +81,7 @@ static void config_dispatch_clients(int *clients,
 template<typename RadioT>
 static void config_dispatch_context(ConfigDispatchContext<RadioT> *ctx,
                                     int max_clients,
-                                    const fd_set *readfds,
+                                    const EventLoopReadySet *readfds,
                                     uint8_t *buf)
 {
     config_dispatch_clients<RadioT>(ctx->clients, max_clients, readfds, buf,
