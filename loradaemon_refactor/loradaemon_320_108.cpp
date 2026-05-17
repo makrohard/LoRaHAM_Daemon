@@ -1262,6 +1262,22 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     daemon_process_radio_polling(&loop_ctx->rssi_timer, rx_buf_433, rx_buf_868);
 }
 
+/* --- Polling loop lifecycle --------------------------------------------- */
+static void daemon_run_polling_loop(EventLoopSet *event_set,
+                                    DaemonLoopContext *loop_ctx,
+                                    EventLoopReadySet *readfds,
+                                    uint8_t *buf,
+                                    uint8_t (&rx_buf_433)[buf_SIZE],
+                                    uint8_t (&rx_buf_868)[buf_SIZE])
+{
+    daemon_log_loop_start();
+
+    while (!daemon_lifecycle_stop_requested()) {
+        daemon_process_loop_iteration(event_set, readfds, loop_ctx,
+                                      buf, rx_buf_433, rx_buf_868);
+    } // while stop not requested
+}
+
 /* --- Startup helpers: signals and command-line parsing -------------------- */
 static void daemon_ignore_sigpipe(void)
 {
@@ -1313,12 +1329,8 @@ int main(int argc, char *argv[]) {
     DaemonLoopContext loop_ctx;
     daemon_loop_context_init(&loop_ctx);
 
-    daemon_log_loop_start();
-
-    while (!daemon_lifecycle_stop_requested()) {
-        daemon_process_loop_iteration(&event_set, &readfds, &loop_ctx,
-                                      buf, rx_buf_433, rx_buf_868);
-    } // while stop not requested
+    daemon_run_polling_loop(&event_set, &loop_ctx, &readfds,
+                            buf, rx_buf_433, rx_buf_868);
 
     printf("[Daemon] Stop requested\n");
     daemon_shutdown_cleanup(&event_set);
