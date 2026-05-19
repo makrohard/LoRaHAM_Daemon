@@ -25,6 +25,13 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio channel state | `radio_channel.cpp` | Per-band socket/client state, RSSI auto-stop, live RSSI |
 | Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | RSSI timing and signal-based shutdown |
 
+## Build and test scripts
+
+- `build.sh` builds the production daemon binary only and does not build or run tests by default.
+- `run_tests.sh` builds the daemon and test binaries, then runs the test suite.
+- Normal users should use `./loradaemon_refactor/build.sh` for installation/build checks.
+- Developers should use `./loradaemon_refactor/run_tests.sh` for one-command test execution.
+
 ## Daemon command line
 
 | Option | Default | Accepted values | Meaning |
@@ -195,6 +202,7 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 
 ## Changelog
 Refactored by Johannes Loose / 410733@gmail.com
+Initial version: loradaemon_320_108
 
 - Refactor / Hardening
   - Event loop: moved polling/socket loop toward event-backend structure with test coverage.
@@ -208,6 +216,7 @@ Refactored by Johannes Loose / 410733@gmail.com
   - LED path: radio-flow LED handling now goes through `RadioController`.
   - Logging module: extracted logger implementation into `daemon_log.h/.cpp`.
   - Test hardening: expanded structural guards and integration/regression coverage in `run_tests.sh`.
+
 - Bugfix
   - Fix CONFIG stream framing: fragmented commands are buffered and newline-separated commands are processed individually.
   - Fix client broadcast errors: failed writes close broken clients instead of keeping stale slots.
@@ -215,5 +224,6 @@ Refactored by Johannes Loose / 410733@gmail.com
   - Fix FSK SHAPING parsing: BT values now map to RadioLib constants instead of truncating to 0.
   - Fix TX bounds checks: invalid or oversized packets are rejected before copy/transmit.
   - Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
+  
 - Feature
   - Debug logging
