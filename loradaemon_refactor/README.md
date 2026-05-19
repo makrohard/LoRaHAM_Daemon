@@ -2,7 +2,7 @@
 
 `loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. It initializes the 433 MHz and 868 MHz radio modules and exposes them to user programs through local UNIX sockets.
 
-The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients.
+The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. There is a KISS-bridge that allows you to connect to APRS-Clients like Xastir or YAAC.
 
 ## Purpose
 
@@ -204,7 +204,6 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 - no warranty; use at your own risk
 
 ## Changelog
-- Docs: use `loraham_daemon` as intended daemon source directory name.
 Refactored by Johannes Loose / 410733@gmail.com
 Initial version: loradaemon_320_108
 
@@ -221,7 +220,7 @@ Initial version: loradaemon_320_108
   - Logging module: extracted logger implementation into `daemon_log.h/.cpp`.
   - Test hardening: expanded structural guards and integration/regression coverage in `run_tests.sh`.
 
-- Bugfix
+- Bugfixes
   - Fix CONFIG stream framing: fragmented commands are buffered and newline-separated commands are processed individually.
   - Fix client broadcast errors: failed writes close broken clients instead of keeping stale slots.
   - Fix client slot overflow: accepted clients without a free slot are closed instead of leaked.
@@ -229,12 +228,10 @@ Initial version: loradaemon_320_108
   - Fix TX bounds checks: invalid or oversized packets are rejected before copy/transmit.
   - Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
   
-- Features
-  - Debug logging
-  - Build Script
-  - Versioning
-  - --help
+- New Features
+  - Build Script  ./build.sh
+  - Debug logging --debug
+  - Added          --help
+  - Versioning     now lives in daemon_version.h
+  
 
-- here we track our comments, one line for each commit. I may decide to clear that later.
-- Build script: made usage/help path-independent while keeping build-from-anywhere behavior.
-- Build script: made help output avoid absolute checkout paths.
