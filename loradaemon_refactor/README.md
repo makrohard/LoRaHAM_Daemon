@@ -229,13 +229,9 @@ Initial version: loradaemon_320_108
   - Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
   
 - New Features
-  - Build Script  ./build.sh
-  - Debug logging --debug
+  - Build Script   ./build.sh
+  - Testsuite      ./run_tests.sh
+  - Debug logging  --debug
   - Added          --help
-  - Versioning     now lives in daemon_version.h
+  - Versioning      Version now lives in daemon_version.h
   
-
-- Tests: trimmed structural refactor checks and kept behavior/protocol tests.
-- Tests: removed XFAIL known-issues placeholder from the regular suite.
-- Tests: removed structural ClientSlot layout test from the regular suite.
-- Tests: rewrote event-loop test to cover generic wrapper behavior only.
