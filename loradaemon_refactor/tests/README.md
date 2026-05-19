@@ -6,4 +6,4 @@ planned refactor. The original upstream daemon file is not modified directly.
 ## Build and test
 
 ```bash
-./loradaemon_refactor/run_tests.sh
+../run_tests.sh

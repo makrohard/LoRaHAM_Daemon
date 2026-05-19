@@ -7,10 +7,8 @@
 
 # Local test backups created by helper scripts
 /tests/backup-*/
-
 # Optional local daemon binaries built inside this refactor directory
 /loraham_daemon
-
 # Object files and local build leftovers
 *.o
 *.a
@@ -19,7 +17,6 @@
 *.log
 core
 core.*
-
 # Local editor/temp files
 *~
 *.swp
@@ -34,3 +31,20 @@ core.*
 /tests/test_unix_socket
 /tests/test_radio_controller_skeleton
 /tests/test_radio_controller_accessors
+
+# Built/generated binaries
+/tests/test_client_output_queue
+/tests/test_client_nonblocking
+/tests/test_client_queued_broadcast
+/tests/test_client_slow_output
+/tests/test_event_loop_output_flush
+/tests/test_client_read_disconnect_cleanup
+/tests/test_client_slot
+/tests/test_tx_result
+/tests/test_radio_health
+/tests/test_rf_packet
+/tests/test_config_stream_buffer
+/tests/test_config_value
+/tests/test_config_policy
+/tests/test_config_validate
+/tests/test_config_apply_transactional

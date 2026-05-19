@@ -41,7 +41,7 @@ daemon_support_sources=(
 
 usage() {
   cat <<EOF_HELP
-Usage: ./loradaemon_refactor/build.sh [options]
+Usage: build.sh [options]
 
 Build the production daemon binary only.
 
@@ -60,7 +60,7 @@ Environment:
   RADIOLIB_DIR        Same as --radiolib-dir
 
 Tests:
-  Use ./loradaemon_refactor/run_tests.sh to build and run tests.
+  Use run_tests.sh to build and run tests.
 EOF_HELP
 }
 

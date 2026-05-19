@@ -487,7 +487,7 @@ build_tests() {
 
 usage() {
   cat <<EOF_HELP
-Usage: ./loradaemon_refactor/run_tests.sh [--TX] [--rx-seconds N]
+Usage: run_tests.sh [--TX] [--rx-seconds N]
 
 Builds the daemon, builds test binaries, then runs each test with its own daemon.
 

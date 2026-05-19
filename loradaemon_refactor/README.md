@@ -29,8 +29,8 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 - `build.sh` builds the production daemon binary only and does not build or run tests by default.
 - `run_tests.sh` builds the daemon and test binaries, then runs the test suite.
-- Normal users should use `./loradaemon_refactor/build.sh` for installation/build checks.
-- Developers should use `./loradaemon_refactor/run_tests.sh` for one-command test execution.
+- Normal users should use `./loraham_daemon/build.sh` for installation/build checks.
+- Developers should use `./loraham_daemon/run_tests.sh` for one-command test execution.
 
 ## Daemon command line
 
@@ -204,6 +204,7 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 - no warranty; use at your own risk
 
 ## Changelog
+- Docs: use `loraham_daemon` as intended daemon source directory name.
 Refactored by Johannes Loose / 410733@gmail.com
 Initial version: loradaemon_320_108
 
