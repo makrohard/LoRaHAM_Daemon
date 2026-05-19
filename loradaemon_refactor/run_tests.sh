@@ -12,6 +12,34 @@ rx_seconds="${RX_SECONDS:-15}"
 cc="${CC:-gcc}"
 cxx="${CXX:-g++}"
 
+section() {
+  local title="$1"
+
+  echo
+  echo "================================================================"
+  echo "$title"
+  echo "================================================================"
+}
+
+require_command() {
+  local cmd="$1"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: required command not found: $cmd" >&2
+    exit 1
+  fi
+}
+
+require_positive_int() {
+  local value="$1"
+  local label="$2"
+
+  if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: $label must be a positive integer." >&2
+    exit 2
+  fi
+}
+
 radiolib_cflags=()
 radiolib_libs=()
 
@@ -472,6 +500,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+require_positive_int "$rx_seconds" "rx-seconds"
+
+section "Pre-flight"
+require_command "$cc"
+require_command "$cxx"
+require_command pgrep
+require_command pkill
+require_command sleep
+require_command grep
+require_command tail
+require_command mktemp
+require_command rm
+
 if pgrep -x loraham_daemon >/dev/null; then
   echo "ERROR: loraham_daemon is already running:"
   pgrep -af loraham_daemon
@@ -480,8 +521,15 @@ if pgrep -x loraham_daemon >/dev/null; then
   exit 1
 fi
 
+suite_start_seconds=$SECONDS
+
+section "Build daemon"
 "$SCRIPT_DIR/build.sh"
+
+section "Build tests"
 build_tests
+
+section "Run tests"
 
 tests=(
   "$TEST_DIR/test_data_tx"
@@ -511,25 +559,133 @@ tests=(
 )
 
 overall_rc=0
+total_tests=0
+passed_tests=0
+failed_tests=0
+parsed_summaries=0
+missing_summaries=0
+assert_ok_total=0
+assert_fail_total=0
+assert_skip_total=0
+assert_xfail_total=0
+assert_xpass_total=0
 results=()
+running_tests=false
 
-record_test_ok() {
-  local test_name="$1"
+summary_ok="-"
+summary_fail="-"
+summary_skip="-"
+summary_xfail="-"
+summary_xpass="-"
+summary_found=0
 
-  results+=("OK   $test_name")
+parse_test_summary() {
+  local output_file="$1"
+  local summary_line=""
+
+  summary_ok="-"
+  summary_fail="-"
+  summary_skip="-"
+  summary_xfail="-"
+  summary_xpass="-"
+  summary_found=0
+
+  summary_line="$(grep -E '^Summary:' "$output_file" | tail -1 || true)"
+
+  if [[ -z "$summary_line" ]]; then
+    return
+  fi
+
+  summary_found=1
+
+  if [[ "$summary_line" =~ ok=([0-9]+) ]]; then
+    summary_ok="${BASH_REMATCH[1]}"
+  else
+    summary_ok=0
+  fi
+
+  if [[ "$summary_line" =~ fail=([0-9]+) ]]; then
+    summary_fail="${BASH_REMATCH[1]}"
+  else
+    summary_fail=0
+  fi
+
+  if [[ "$summary_line" =~ skip=([0-9]+) ]]; then
+    summary_skip="${BASH_REMATCH[1]}"
+  else
+    summary_skip=0
+  fi
+
+  if [[ "$summary_line" =~ xfail=([0-9]+) ]]; then
+    summary_xfail="${BASH_REMATCH[1]}"
+  else
+    summary_xfail=0
+  fi
+
+  if [[ "$summary_line" =~ xpass=([0-9]+) ]]; then
+    summary_xpass="${BASH_REMATCH[1]}"
+  else
+    summary_xpass=0
+  fi
 }
 
-record_test_fail() {
-  local test_name="$1"
-  local reason="$2"
+record_test_result() {
+  local status="$1"
+  local test_name="$2"
+  local duration="$3"
+  local reason="${4:-}"
+  local status_label=""
+  local line
 
-  results+=("FAIL $test_name $reason")
-  overall_rc=1
+  case "$status" in
+    ok)
+      passed_tests=$((passed_tests + 1))
+      status_label="OK"
+      ;;
+    fail)
+      failed_tests=$((failed_tests + 1))
+      overall_rc=1
+      status_label="FAIL"
+      ;;
+    *)
+      failed_tests=$((failed_tests + 1))
+      overall_rc=1
+      status_label="FAIL"
+      reason="internal-invalid-status"
+      ;;
+  esac
+
+  if [[ "$summary_found" -eq 1 ]]; then
+    parsed_summaries=$((parsed_summaries + 1))
+    assert_ok_total=$((assert_ok_total + summary_ok))
+    assert_fail_total=$((assert_fail_total + summary_fail))
+    assert_skip_total=$((assert_skip_total + summary_skip))
+    assert_xfail_total=$((assert_xfail_total + summary_xfail))
+    assert_xpass_total=$((assert_xpass_total + summary_xpass))
+  else
+    missing_summaries=$((missing_summaries + 1))
+    if [[ -n "$reason" ]]; then
+      reason="$reason no-summary"
+    else
+      reason="no-summary"
+    fi
+  fi
+
+  printf -v line "%-5s %-36s %5s %5s %5s %5s %5s %5ss" \
+    "$status_label" \
+    "$test_name" \
+    "$summary_ok" "$summary_fail" "$summary_skip" "$summary_xfail" "$summary_xpass" \
+    "$duration"
+
+  if [[ -n "$reason" ]]; then
+    line="$line  $reason"
+  fi
+
+  results+=("$line")
 }
 
 cleanup_lingering_daemon() {
   local test_bin="$1"
-  local test_name="$2"
 
   if pgrep -x loraham_daemon >/dev/null; then
     echo "ERROR: loraham_daemon is still running after $test_bin"
@@ -537,22 +693,65 @@ cleanup_lingering_daemon() {
     pkill -TERM -x loraham_daemon 2>/dev/null || true
     sleep 1
     pkill -KILL -x loraham_daemon 2>/dev/null || true
-    record_test_fail "$test_name" "daemon-still-running"
+    return 1
   fi
+
+  return 0
 }
+
+cleanup_on_exit() {
+  local rc=$?
+
+  if [[ "$running_tests" == true ]] && pgrep -x loraham_daemon >/dev/null; then
+    echo
+    echo "ERROR: cleaning up lingering loraham_daemon before exit"
+    pgrep -af loraham_daemon || true
+    pkill -TERM -x loraham_daemon 2>/dev/null || true
+    sleep 1
+    pkill -KILL -x loraham_daemon 2>/dev/null || true
+  fi
+
+  return "$rc"
+}
+
+trap cleanup_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 run_one_test() {
   local test_bin="$1"
   local test_name
-  local rc
+  local rc=0
+  local reason=""
+  local duration
+  local test_start
   local cmd
+  local output_file
 
   test_name="$(basename "$test_bin")"
+  total_tests=$((total_tests + 1))
 
   echo
   echo "================================================================"
   echo "Running: $test_bin"
   echo "================================================================"
+
+  test_start=$SECONDS
+
+  summary_ok="-"
+  summary_fail="-"
+  summary_skip="-"
+  summary_xfail="-"
+  summary_xpass="-"
+  summary_found=0
+
+  if [[ ! -x "$test_bin" ]]; then
+    duration=$((SECONDS - test_start))
+    record_test_result fail "$test_name" "$duration" "missing-or-not-executable"
+    return
+  fi
+
+  output_file="$(mktemp "${TMPDIR:-/tmp}/loraham-test-${test_name}.XXXXXX")"
 
   cmd=("$test_bin" --bin "$DAEMON_BIN")
 
@@ -560,28 +759,70 @@ run_one_test() {
     cmd+=(--rf-tx --rx-seconds "$rx_seconds")
   fi
 
-  if "${cmd[@]}"; then
-    record_test_ok "$test_name"
+  if "${cmd[@]}" >"$output_file" 2>&1; then
+    rc=0
   else
     rc=$?
-    record_test_fail "$test_name" "rc=$rc"
+    reason="rc=$rc"
   fi
 
+  cat "$output_file"
+  parse_test_summary "$output_file"
+  rm -f "$output_file"
+
   sleep 1
-  cleanup_lingering_daemon "$test_bin" "$test_name"
+
+  if ! cleanup_lingering_daemon "$test_bin"; then
+    rc=1
+    if [[ -n "$reason" ]]; then
+      reason="$reason daemon-still-running"
+    else
+      reason="daemon-still-running"
+    fi
+  fi
+
+  duration=$((SECONDS - test_start))
+
+  if [[ "$rc" -eq 0 ]]; then
+    record_test_result ok "$test_name" "$duration"
+  else
+    record_test_result fail "$test_name" "$duration" "$reason"
+  fi
 }
+
+running_tests=true
 
 for test_bin in "${tests[@]}"; do
   run_one_test "$test_bin"
 done
 
+running_tests=false
+
+suite_elapsed=$((SECONDS - suite_start_seconds))
+
 echo
 echo "================================================================"
 echo "Final test summary"
 echo "================================================================"
+printf "%-5s %-36s %5s %5s %5s %5s %5s %5s  %s\n" \
+  "STAT" "TEST" "OK" "FAIL" "SKIP" "XFAIL" "XPASS" "TIME" "DETAIL"
 for result in "${results[@]}"; do
   echo "$result"
 done
+
+echo
+echo "Test binaries: $total_tests"
+echo "Passed:        $passed_tests"
+echo "Failed:        $failed_tests"
+echo "Summaries:     $parsed_summaries parsed, $missing_summaries missing"
+echo
+echo "Assertions:"
+echo "OK:            $assert_ok_total"
+echo "FAIL:          $assert_fail_total"
+echo "SKIP:          $assert_skip_total"
+echo "XFAIL:         $assert_xfail_total"
+echo "XPASS:         $assert_xpass_total"
+echo "Elapsed:       ${suite_elapsed}s"
 
 if [[ "$overall_rc" -eq 0 ]]; then
   echo "OVERALL OK"

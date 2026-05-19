@@ -235,3 +235,5 @@ Initial version: loradaemon_320_108
   - Added          --help
   - Versioning      Version now lives in daemon_version.h
   
+- Tests: hardened run_tests.sh with validation, cleanup traps, and parsed per-test assertion statistics.
+- Tests: made RF packet and config stream buffer tests emit parseable summaries.
