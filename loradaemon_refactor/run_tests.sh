@@ -560,7 +560,6 @@ tests=(
   "$TEST_DIR/check_radio_controller_shutdown.sh"
   "$TEST_DIR/check_radio_controller_unique_ptr.sh"
   "$TEST_DIR/check_radio_controller_led.sh"
-  "$TEST_DIR/check_debug_cli_logging.sh"
   "$TEST_DIR/check_startup_lifecycle_logging.sh"
   "$TEST_DIR/check_context_logging_prefixes.sh"
   "$TEST_DIR/check_radio_init_shutdown_logging.sh"

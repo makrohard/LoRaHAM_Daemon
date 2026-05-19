@@ -201,6 +201,8 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 - no warranty; use at your own risk
 
 ## Changelog
+- Test cleanup: remove brittle debug/verbose structural CLI check.
+- Build cleanup: remove obsolete build.sh test/test compatibility branch and verbose CLI smoke tests.
 Refactored by Johannes Loose / 410733@gmail.com
 Initial version: loradaemon_320_108
 

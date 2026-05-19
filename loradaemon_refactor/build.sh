@@ -87,11 +87,6 @@ while [[ $# -gt 0 ]]; do
     daemon|all)
       shift
       ;;
-    test|tests)
-      echo "ERROR: build.sh no longer builds tests." >&2
-      echo "Run ./loradaemon_refactor/run_tests.sh instead." >&2
-      exit 2
-      ;;
     -h|--help)
       usage
       exit 0

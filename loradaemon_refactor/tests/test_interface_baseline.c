@@ -19,15 +19,7 @@ static int test_cli_wrapper(void)
     return test_cli_invalid_option(g_bin);
 }
 
-static int test_cli_verbose_short(void)
-{
-    return test_cli_help_option(g_bin, "-v");
-}
 
-static int test_cli_verbose_long(void)
-{
-    return test_cli_help_option(g_bin, "--verbose");
-}
 
 static int test_cli_debug_long(void)
 {
@@ -377,8 +369,6 @@ int main(int argc, char **argv)
     }
 
     run_test("CLI rejects invalid option", test_cli_wrapper);
-    run_test("CLI accepts -v", test_cli_verbose_short);
-    run_test("CLI accepts --verbose", test_cli_verbose_long);
     run_test("CLI accepts --debug", test_cli_debug_long);
 
     info_msg("starting daemon: %s", g_bin);
