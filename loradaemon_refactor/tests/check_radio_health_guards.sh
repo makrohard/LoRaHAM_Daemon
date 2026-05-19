@@ -36,11 +36,8 @@ require "$CONFIG_DISPATCH" "radio_controller_ready(ctx->ctrl)" "CONFIG dispatch 
 require "$CONFIG_DISPATCH" "radio_controller_health(ctx->ctrl)" "CONFIG dispatch controller health name"
 require "$CONFIG_DISPATCH" "CONFIG ignored" "CONFIG ignored log"
 
-require "$REFACTOR_DIR/build.sh" "radio_health.cpp" "radio health linked in build"
+require "$REFACTOR_DIR/build.sh" "radio_health.cpp" "radio health linked in production build"
+require "$REFACTOR_DIR/run_tests.sh" "radio_health.cpp" "radio health linked in test build"
 
-if ! grep -Fq '"$SCRIPT_DIR/radio_health.cpp" \' "$REFACTOR_DIR/build.sh"; then
-  echo "ERROR: radio_health.cpp in build.sh must keep line continuation." >&2
-  rc=1
-fi
 
 exit "$rc"

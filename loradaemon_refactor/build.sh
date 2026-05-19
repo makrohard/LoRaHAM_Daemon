@@ -3,13 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-TEST_DIR="$SCRIPT_DIR/tests"
 
 DAEMON_SRC="$SCRIPT_DIR/loradaemon_320_108.cpp"
 DAEMON_OUT="$SCRIPT_DIR/loraham_daemon"
 
-cc="${CC:-gcc}"
 cxx="${CXX:-g++}"
+build_mode="release"
+clean_only=false
 
 radiolib_cflags=()
 radiolib_libs=()
@@ -38,6 +38,81 @@ daemon_support_sources=(
   "$SCRIPT_DIR/tx_result.cpp"
   "$SCRIPT_DIR/radio_health.cpp"
 )
+
+usage() {
+  cat <<EOF_HELP
+Usage: ./loradaemon_refactor/build.sh [options]
+
+Build the production daemon binary only.
+
+Options:
+  --output PATH        Output binary path, default: $DAEMON_OUT
+  --radiolib-dir DIR   RadioLib source tree with src/ and build/libRadioLib.a
+  --debug             Build with -O0 -g instead of release defaults
+  --clean             Remove the daemon binary and exit
+  -h, --help          Show this help
+
+Environment:
+  CXX                 C++ compiler, default: g++
+  CXXFLAGS            Full compiler flags override
+  EXTRA_CXXFLAGS      Additional compiler flags
+  LDFLAGS             Additional linker flags
+  RADIOLIB_DIR        Same as --radiolib-dir
+
+Tests:
+  Use ./loradaemon_refactor/run_tests.sh to build and run tests.
+EOF_HELP
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      [[ $# -ge 2 ]] || { echo "ERROR: --output needs a path." >&2; exit 2; }
+      DAEMON_OUT="$2"
+      shift 2
+      ;;
+    --radiolib-dir)
+      [[ $# -ge 2 ]] || { echo "ERROR: --radiolib-dir needs a directory." >&2; exit 2; }
+      RADIOLIB_DIR="$2"
+      shift 2
+      ;;
+    --debug)
+      build_mode="debug"
+      shift
+      ;;
+    --clean|clean)
+      clean_only=true
+      shift
+      ;;
+    daemon|all)
+      shift
+      ;;
+    test|tests)
+      echo "ERROR: build.sh no longer builds tests." >&2
+      echo "Run ./loradaemon_refactor/run_tests.sh instead." >&2
+      exit 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown option: $1" >&2
+      echo >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_command() {
+  local cmd="$1"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: required command not found: $cmd" >&2
+    exit 1
+  fi
+}
 
 try_source_radiolib_dir() {
   local dir="$1"
@@ -126,11 +201,52 @@ find_radiolib() {
   return 1
 }
 
+compiler_flags() {
+  if [[ -n "${CXXFLAGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    cxxflags=($CXXFLAGS)
+  elif [[ "$build_mode" == "debug" ]]; then
+    cxxflags=(-std=c++11 -O0 -g -Wall -Wextra)
+  else
+    cxxflags=(-std=c++11 -O2)
+  fi
+
+  if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    extra_cxxflags=($EXTRA_CXXFLAGS)
+  else
+    extra_cxxflags=()
+  fi
+
+  if [[ -n "${LDFLAGS:-}" ]]; then
+    # shellcheck disable=SC2206
+    extra_ldflags=($LDFLAGS)
+  else
+    extra_ldflags=()
+  fi
+}
+
+print_build_config() {
+  echo "Build target: $DAEMON_OUT"
+  echo "Build mode:   $build_mode"
+  echo "Compiler:     $cxx"
+}
+
+clean_daemon() {
+  rm -f -- "$DAEMON_OUT"
+  echo "Removed: $DAEMON_OUT"
+}
+
 build_daemon() {
+  local out_dir
+  local tmp_out
+
   if [[ ! -f "$DAEMON_SRC" ]]; then
     echo "ERROR: daemon source file not found: $DAEMON_SRC" >&2
     exit 1
   fi
+
+  require_command "$cxx"
 
   if ! find_radiolib; then
     echo "ERROR: RadioLib not found." >&2
@@ -150,390 +266,38 @@ build_daemon() {
     exit 1
   fi
 
+  compiler_flags
+  print_build_config
+
+  out_dir="$(dirname -- "$DAEMON_OUT")"
+  mkdir -p -- "$out_dir"
+  tmp_out="$(mktemp -- "$out_dir/.loraham_daemon.tmp.XXXXXX")"
+  rm -f -- "${tmp_out:-}"
+
+  trap 'rm -f -- "${tmp_out:-}"' EXIT
+
   "$cxx" \
-    -std=c++11 \
-    -O2 \
-    -o "$DAEMON_OUT" \
+    "${cxxflags[@]}" \
+    "${extra_cxxflags[@]}" \
+    -o "$tmp_out" \
     "$DAEMON_SRC" \
     "${daemon_support_sources[@]}" \
     "${event_loop_sources[@]}" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
+    "${extra_ldflags[@]}" \
     -llgpio
+
+  chmod 755 "$tmp_out"
+  mv -f -- "$tmp_out" "$DAEMON_OUT"
+  trap - EXIT
 
   echo "Built daemon: $DAEMON_OUT"
 }
 
-build_one_test() {
-  local src="$1"
-  local out="$2"
-
-  "$cc" \
-    -std=c11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -o "$out" \
-    "$src"
-
-  echo "Built test:   $out"
-}
-
-build_one_cpp_sources() {
-  local out="$1"
-  shift
-
-  "$cxx" \
-    -std=c++11 \
-    -Wall \
-    -Wextra \
-    -O2 \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
-    "$@"
-
-  echo "Built test:   $out"
-}
-
-build_one_cpp_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_parser.cpp"
-}
-
-build_one_config_stream_buffer_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_stream.cpp"
-}
-
-build_one_unix_socket_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/unix_socket.cpp"
-}
-
-build_one_lifecycle_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/daemon_lifecycle.cpp"
-}
-
-build_one_timing_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/daemon_timing.cpp"
-}
-
-build_one_event_loop_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_data_tx_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/data_tx.cpp" \
-    "$SCRIPT_DIR/client_slot.cpp" \
-    "$SCRIPT_DIR/config_stream.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-
-build_one_client_slot_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_slot.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "$SCRIPT_DIR/config_stream.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_client_output_queue_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_client_nonblocking_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_client_queued_broadcast_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_client_slow_output_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-build_one_event_loop_output_flush_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
-}
-
-
-build_one_rf_packet_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/rf_packet.cpp"
-}
-
-
-
-
-
-build_one_radio_controller_skeleton_test() {
-  local src="$1"
-  local out="$2"
-
-  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
-    if ! find_radiolib; then
-      echo "ERROR: RadioLib not found for radio controller skeleton test." >&2
-      exit 1
-    fi
-  fi
-
-  build_one_cpp_sources \
-    "$out" \
-    "${radiolib_cflags[@]}" \
-    "$src" \
-    "$SCRIPT_DIR/radio_health.cpp"
-}
-
-build_one_radio_controller_accessors_test() {
-  local src="$1"
-  local out="$2"
-
-  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
-    if ! find_radiolib; then
-      echo "ERROR: RadioLib not found for radio controller accessors test." >&2
-      exit 1
-    fi
-  fi
-
-  build_one_cpp_sources \
-    "$out" \
-    "${radiolib_cflags[@]}" \
-    "$src" \
-    "$SCRIPT_DIR/radio_health.cpp"
-}
-
-build_one_radio_health_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/radio_health.cpp"
-}
-
-build_one_tx_result_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/tx_result.cpp"
-}
-
-
-
-build_one_config_apply_transactional_test() {
-  local src="$1"
-  local out="$2"
-
-  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
-    if ! find_radiolib; then
-      echo "ERROR: RadioLib not found for config apply transactional test." >&2
-      exit 1
-    fi
-  fi
-
-  build_one_cpp_sources \
-    "$out" \
-    "${radiolib_cflags[@]}" \
-    "$src" \
-    "$SCRIPT_DIR/config_parser.cpp" \
-    "$SCRIPT_DIR/config_validate.cpp" \
-    "$SCRIPT_DIR/config_value.cpp" \
-    "$SCRIPT_DIR/config_policy.cpp"
-}
-
-build_one_config_validate_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_validate.cpp" \
-    "$SCRIPT_DIR/config_parser.cpp" \
-    "$SCRIPT_DIR/config_value.cpp" \
-    "$SCRIPT_DIR/config_policy.cpp"
-}
-
-build_one_config_policy_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_policy.cpp" \
-    "$SCRIPT_DIR/config_value.cpp"
-}
-
-build_one_config_value_test() {
-  local src="$1"
-  local out="$2"
-
-  build_one_cpp_sources \
-    "$out" \
-    "$src" \
-    "$SCRIPT_DIR/config_value.cpp"
-}
-
-build_one_config_dispatch_test() {
-  local src="$1"
-  local out="$2"
-
-  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
-    if ! find_radiolib; then
-      echo "ERROR: RadioLib not found for config dispatch test." >&2
-      exit 1
-    fi
-  fi
-
-  build_one_cpp_sources \
-    "$out" \
-    "${radiolib_cflags[@]}" \
-    "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "$SCRIPT_DIR/radio_health.cpp" \
-    "$SCRIPT_DIR/config_stream.cpp" \
-    "${event_loop_sources[@]}" \
-    "$SCRIPT_DIR/client_slot.cpp"
-}
-
-build_tests() {
-  build_one_data_tx_test "$TEST_DIR/test_data_tx.cpp" "$TEST_DIR/test_data_tx"
-  build_one_client_output_queue_test "$TEST_DIR/test_client_output_queue.cpp" "$TEST_DIR/test_client_output_queue"
-  build_one_client_slot_test "$TEST_DIR/test_client_slot.cpp" "$TEST_DIR/test_client_slot"
-  build_one_client_nonblocking_test "$TEST_DIR/test_client_nonblocking.cpp" "$TEST_DIR/test_client_nonblocking"
-  build_one_client_queued_broadcast_test "$TEST_DIR/test_client_queued_broadcast.cpp" "$TEST_DIR/test_client_queued_broadcast"
-  build_one_client_slow_output_test "$TEST_DIR/test_client_slow_output.cpp" "$TEST_DIR/test_client_slow_output"
-  build_one_event_loop_output_flush_test "$TEST_DIR/test_event_loop_output_flush.cpp" "$TEST_DIR/test_event_loop_output_flush"
-  build_one_tx_result_test "$TEST_DIR/test_tx_result.cpp" "$TEST_DIR/test_tx_result"
-  build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
-  build_one_radio_controller_skeleton_test "$TEST_DIR/test_radio_controller_skeleton.cpp" "$TEST_DIR/test_radio_controller_skeleton"
-  build_one_radio_controller_accessors_test "$TEST_DIR/test_radio_controller_accessors.cpp" "$TEST_DIR/test_radio_controller_accessors"
-  build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
-  build_one_event_loop_test "$TEST_DIR/test_event_loop.cpp" "$TEST_DIR/test_event_loop"
-  build_one_timing_test "$TEST_DIR/test_daemon_timing.cpp" "$TEST_DIR/test_daemon_timing"
-  build_one_lifecycle_test "$TEST_DIR/test_daemon_lifecycle.cpp" "$TEST_DIR/test_daemon_lifecycle"
-  build_one_unix_socket_test "$TEST_DIR/test_unix_socket.cpp" "$TEST_DIR/test_unix_socket"
-  build_one_test "$TEST_DIR/test_rssi_multiclient.c" "$TEST_DIR/test_rssi_multiclient"
-  build_one_cpp_test "$TEST_DIR/test_config_parser.cpp" "$TEST_DIR/test_config_parser"
-  build_one_config_stream_buffer_test "$TEST_DIR/test_config_stream_buffer.cpp" "$TEST_DIR/test_config_stream_buffer"
-  build_one_config_value_test "$TEST_DIR/test_config_value.cpp" "$TEST_DIR/test_config_value"
-  build_one_config_policy_test "$TEST_DIR/test_config_policy.cpp" "$TEST_DIR/test_config_policy"
-  build_one_config_validate_test "$TEST_DIR/test_config_validate.cpp" "$TEST_DIR/test_config_validate"
-  build_one_config_apply_transactional_test "$TEST_DIR/test_config_apply_transactional.cpp" "$TEST_DIR/test_config_apply_transactional"
-  build_one_config_dispatch_test "$TEST_DIR/test_config_dispatch.cpp" "$TEST_DIR/test_config_dispatch"
-  build_one_test "$TEST_DIR/test_interface_baseline.c" "$TEST_DIR/test_interface_baseline"
-  build_one_test "$TEST_DIR/test_config_stream.c" "$TEST_DIR/test_config_stream"
-  build_one_test "$TEST_DIR/test_client_lifecycle.c" "$TEST_DIR/test_client_lifecycle"
-  build_one_test "$TEST_DIR/test_known_issues.c" "$TEST_DIR/test_known_issues"
-}
-
-case "${1:-all}" in
-  all)
-    build_daemon
-    build_tests
-    ;;
-  daemon)
-    build_daemon
-    ;;
-  test|tests)
-    build_tests
-    ;;
-  *)
-    echo "Usage: $0 [all|daemon|test]" >&2
-    exit 2
-    ;;
-esac
+if [[ "$clean_only" == true ]]; then
+  clean_daemon
+  exit 0
+fi
+
+build_daemon

@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REFACTOR_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 DAEMON="$REFACTOR_DIR/loradaemon_320_108.cpp"
 HEADER="$REFACTOR_DIR/radio_controller.h"
-BUILD="$REFACTOR_DIR/build.sh"
+RUN_TESTS="$REFACTOR_DIR/run_tests.sh"
 
 rc=0
 
@@ -47,8 +47,8 @@ require "$DAEMON" "ctrl->radio.reset();" "shutdown releases radio"
 require "$DAEMON" "ctrl->mod.reset();" "shutdown releases module"
 require "$DAEMON" "ctrl->hal.reset();" "shutdown releases HAL"
 require "$DAEMON" "radio_channel_read_live_rssi(ctrl->mod.get()" "RSSI passes raw Module view"
-require "$BUILD" "RadioLib not found for radio controller skeleton test" "skeleton test has RadioLib includes"
-require "$BUILD" "RadioLib not found for radio controller accessors test" "accessor test has RadioLib includes"
+require "$RUN_TESTS" "RadioLib not found for radio controller skeleton test" "skeleton test has RadioLib includes"
+require "$RUN_TESTS" "RadioLib not found for radio controller accessors test" "accessor test has RadioLib includes"
 
 forbid "$HEADER" "PiHal *hal" "raw HAL field"
 forbid "$HEADER" "Module *mod" "raw Module field"
