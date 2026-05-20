@@ -1,4 +1,5 @@
 #include "client_slot.h"
+#include "client_set.h"
 
 #include <errno.h>
 #include <string.h>

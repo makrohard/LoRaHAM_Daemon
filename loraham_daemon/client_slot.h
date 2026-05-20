@@ -1,8 +1,9 @@
 #ifndef LORAHAM_CLIENT_SLOT_H
 #define LORAHAM_CLIENT_SLOT_H
 
-#include "client_set.h"
+#include "client_output_queue.h"
 #include "config_stream.h"
+#include "event_loop.h"
 
 /* --- Unified client slot state ------------------------------------------ */
 

@@ -259,6 +259,7 @@ build_one_data_tx_test() {
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/client_slot.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -271,8 +272,7 @@ build_one_client_output_queue_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
-    "$SCRIPT_DIR/client_set.cpp" \
-    "${event_loop_sources[@]}"
+    "$SCRIPT_DIR/client_output_queue.cpp"
 }
 
 build_one_client_nonblocking_test() {
@@ -282,6 +282,7 @@ build_one_client_nonblocking_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -293,6 +294,7 @@ build_one_client_queued_broadcast_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -304,6 +306,7 @@ build_one_client_slow_output_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -315,6 +318,7 @@ build_one_event_loop_output_flush_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -426,6 +430,7 @@ build_one_config_dispatch_test() {
     "$out" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \

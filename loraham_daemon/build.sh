@@ -23,6 +23,7 @@ event_loop_sources=(
 daemon_support_sources=(
   "$SCRIPT_DIR/daemon_log.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
+  "$SCRIPT_DIR/client_output_queue.cpp"
   "$SCRIPT_DIR/client_set.cpp"
   "$SCRIPT_DIR/client_slot.cpp"
   "$SCRIPT_DIR/config_parser.cpp"
