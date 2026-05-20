@@ -10,3 +10,4 @@
 - Add graceful SIGINT/SIGTERM shutdown handling.
 - Make bridge waits stop-aware during shutdown.
 - Add bridge source block comments.
+- Make build script stricter and path-derived.
