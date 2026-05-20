@@ -130,6 +130,25 @@ static void test_malformed_token_has_no_side_effects(void)
     expect_int("malformed fsk apply not called", radio.fsk_apply_count, 0);
 }
 
+
+static void test_failed_mode_switch_aborts_remaining_apply(void)
+{
+    FakeRadio radio;
+    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    volatile bool getrssi = false;
+
+    radio.begin_fsk_result = -123;
+
+    apply_cmd(radio, "SET MODE=FSK GETRSSI=1 BR=4.8 RXBW=12.5",
+              mode, getrssi);
+
+    expect_int("failed mode switch beginFSK called", radio.begin_fsk_count, 1);
+    expect_int("failed mode switch keeps old mode", mode, RADIO_MODE_LORA);
+    expect_int("failed mode switch leaves getrssi unchanged", getrssi, false);
+    expect_int("failed mode switch skips lora apply", radio.lora_apply_count, 0);
+    expect_int("failed mode switch skips fsk apply", radio.fsk_apply_count, 0);
+}
+
 static void test_valid_mode_and_getrssi_still_apply(void)
 {
     FakeRadio radio;
@@ -178,6 +197,7 @@ int main(int argc, char **argv)
     test_invalid_getrssi_has_no_side_effects();
     test_invalid_fsk_value_has_no_mode_or_getrssi_side_effects();
     test_malformed_token_has_no_side_effects();
+    test_failed_mode_switch_aborts_remaining_apply();
     test_valid_mode_and_getrssi_still_apply();
     test_valid_lora_parameter_still_applies();
 

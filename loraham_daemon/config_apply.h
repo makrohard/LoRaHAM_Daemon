@@ -76,27 +76,18 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
 
     bool printed = false;
 
-    // --- 1. Pass: MODE= zuerst, GETRSSI= direkt, Rest sammeln ---
+    // --- 1. Pass: MODE= zuerst, Rest sammeln ---
     std::vector<std::pair<std::string,std::string>> tokens;
+    std::vector<std::pair<std::string,std::string>> getrssi_tokens;
     std::string mode_val = parsed.mode;
 
     for(auto &kv : parsed.tokens) {
         const std::string &key = kv.first;
-        const std::string &val = kv.second;
 
-        if(key == "GETRSSI") {
-            int v = 0;
-            config_apply_print_prefix(tag, &printed);
-            if(config_value_parse_bool01_exact(val, &v)) {
-                getrssi_flag = (v != 0);
-                if(v == 1) printf(" GETRSSI=[92m1[0m");
-                else       printf(" GETRSSI=[92m0[0m");
-            } else {
-                printf(" GETRSSI=[91;5m%s[0m", val.c_str());
-            }
-        } else {
+        if(key == "GETRSSI")
+            getrssi_tokens.push_back(kv);
+        else
             tokens.push_back(kv);
-        }
     }
 
     // --- MODE= auswerten und Radio ggf. neu initialisieren ---
@@ -110,7 +101,9 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
                 mode_flag = RADIO_MODE_FSK;
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m", state);
+                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+
+                return;
             }
         } else if(mode_val == "LORA") {
             printf(" MODE=LORA -> begin()");
@@ -119,10 +112,27 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
                 mode_flag = RADIO_MODE_LORA;
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m", state);
+                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+
+                return;
             }
         } else {
             printf(" MODE=\033[91;5m%s\033[0m (unbekannt, ignoriert)", mode_val.c_str());
+        }
+    }
+
+    // --- GETRSSI= erst nach erfolgreichem MODE-Wechsel anwenden ---
+    for(auto &kv : getrssi_tokens) {
+        const std::string &val = kv.second;
+        int v = 0;
+
+        config_apply_print_prefix(tag, &printed);
+        if(config_value_parse_bool01_exact(val, &v)) {
+            getrssi_flag = (v != 0);
+            if(v == 1) printf(" GETRSSI=\033[92m1\033[0m");
+            else       printf(" GETRSSI=\033[92m0\033[0m");
+        } else {
+            printf(" GETRSSI=\033[91;5m%s\033[0m", val.c_str());
         }
     }
 
