@@ -176,6 +176,66 @@ RadioChannelIo channel_868;
 
 static void daemon_radio_shutdown_cleanup(void);
 
+/* --- Radio selection ----------------------------------------------------- */
+typedef enum {
+    DAEMON_RADIO_SELECTION_BOTH = 0,
+    DAEMON_RADIO_SELECTION_433,
+    DAEMON_RADIO_SELECTION_868
+} DaemonRadioSelection;
+
+static DaemonRadioSelection daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+
+static const char *daemon_radio_selection_name(DaemonRadioSelection selection)
+{
+    switch (selection) {
+        case DAEMON_RADIO_SELECTION_BOTH:
+            return "both";
+        case DAEMON_RADIO_SELECTION_433:
+            return "433";
+        case DAEMON_RADIO_SELECTION_868:
+            return "868";
+    }
+
+    return "unknown";
+}
+
+static bool daemon_radio_433_enabled(void)
+{
+    return daemon_radio_selection == DAEMON_RADIO_SELECTION_BOTH ||
+           daemon_radio_selection == DAEMON_RADIO_SELECTION_433;
+}
+
+static bool daemon_radio_868_enabled(void)
+{
+    return daemon_radio_selection == DAEMON_RADIO_SELECTION_BOTH ||
+           daemon_radio_selection == DAEMON_RADIO_SELECTION_868;
+}
+
+static bool daemon_parse_radio_selection(const char *arg)
+{
+    if (!arg)
+        return false;
+
+    if (strcmp(arg, "both") == 0) {
+        daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+        return true;
+    }
+
+    if (strcmp(arg, "433") == 0) {
+        daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+        return true;
+    }
+
+    if (strcmp(arg, "868") == 0) {
+        daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+        return true;
+    }
+
+    return false;
+}
+
+
+
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
     daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
@@ -184,17 +244,22 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     daemon_debug_ctx("LIFE", "Schließe Event-Backend");
     event_loop_close(event_set);
     daemon_debug_ctx("LIFE", "Schließe Clients");
-    client_slot_close_all(client_data433_slots, MAX_CLIENTS);
-    client_slot_close_all(client_data868_slots, MAX_CLIENTS);
-    client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
-    client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
 
-    close_unix_socket(&data433_fd, DATA433_SOCKET);
-    close_unix_socket(&data868_fd, DATA868_SOCKET);
-    close_unix_socket(&conf433_fd, CONF433_SOCKET);
-    close_unix_socket(&conf868_fd, CONF868_SOCKET);
+    if (daemon_radio_433_enabled()) {
+        client_slot_close_all(client_data433_slots, MAX_CLIENTS);
+        client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
+        close_unix_socket(&data433_fd, DATA433_SOCKET);
+        close_unix_socket(&conf433_fd, CONF433_SOCKET);
+    }
+
+    if (daemon_radio_868_enabled()) {
+        client_slot_close_all(client_data868_slots, MAX_CLIENTS);
+        client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
+        close_unix_socket(&data868_fd, DATA868_SOCKET);
+        close_unix_socket(&conf868_fd, CONF868_SOCKET);
+    }
+
     daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
-
 }
 
 static int daemon_wait_for_events(EventLoopSet *event_set,
@@ -203,8 +268,12 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
     int ret;
 
     event_loop_reset(event_set);
-    radio_channel_add_fds(&channel_433, event_set);
-    radio_channel_add_fds(&channel_868, event_set);
+
+    if (daemon_radio_433_enabled())
+        radio_channel_add_fds(&channel_433, event_set);
+
+    if (daemon_radio_868_enabled())
+        radio_channel_add_fds(&channel_868, event_set);
 
     ret = event_loop_wait(event_set, readfds, DAEMON_EVENT_LOOP_TIMEOUT_USEC);
     if (ret > 0)
@@ -383,10 +452,15 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
 
 static void daemon_radio_shutdown_cleanup(void)
 {
-    daemon_debug_ctx("RADIO", "Shutdown 433");
-    radio_controller_shutdown(&radio_controller_433);
-    daemon_debug_ctx("RADIO", "Shutdown 868");
-    radio_controller_shutdown(&radio_controller_868);
+    if (daemon_radio_433_enabled()) {
+        daemon_debug_ctx("RADIO", "Shutdown 433");
+        radio_controller_shutdown(&radio_controller_433);
+    }
+
+    if (daemon_radio_868_enabled()) {
+        daemon_debug_ctx("RADIO", "Shutdown 868");
+        radio_controller_shutdown(&radio_controller_868);
+    }
 }
 
 // --- Callback für 868 ---
@@ -629,7 +703,8 @@ TxResult lora_send(uint8_t *buf, size_t len, int band) {
 
 // --- Init LoRa ---
 void lora_init() {
-    printf("[Init] Starte Dualband LoRa Receiver (433 + 868)\n");
+    printf("[Init] Starte LoRa Receiver: radio=%s\n",
+           daemon_radio_selection_name(daemon_radio_selection));
     daemon_debug_ctx("RADIO", "Funk-Init beginnt");
 
     radio_controller_433.health = RADIO_HEALTH_UNINITIALIZED;
@@ -639,26 +714,24 @@ void lora_init() {
     if (h < 0) {
         printf("[GPIO] Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
         daemon_debug_ctx("GPIO", "Nicht bereit");
-        radio_controller_433.health = RADIO_HEALTH_FAILED;
-        radio_controller_868.health = RADIO_HEALTH_FAILED;
+        if (daemon_radio_433_enabled())
+            radio_controller_433.health = RADIO_HEALTH_FAILED;
+        if (daemon_radio_868_enabled())
+            radio_controller_868.health = RADIO_HEALTH_FAILED;
         return;
     }
 
-    radio_controller_led(&radio_controller_433, 1);
+    if (daemon_radio_433_enabled()) {
+        radio_controller_led(&radio_controller_433, 1);
 
-    daemon_debug_band("433", "Objekte anlegen");
-    radio_controller_433.hal.reset(new PiHal(0));
-    radio_controller_433.mod.reset(new Module(radio_controller_433.hal.get(), 8, 25, 5, 24));
-    radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
+        daemon_debug_band("433", "Objekte anlegen");
+        radio_controller_433.hal.reset(new PiHal(0));
+        radio_controller_433.mod.reset(new Module(radio_controller_433.hal.get(), 8, 25, 5, 24));
+        radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
 
-    daemon_debug_band("868", "Objekte anlegen");
-    radio_controller_868.hal.reset(new PiHal(0));
-    radio_controller_868.mod.reset(new Module(radio_controller_868.hal.get(), 7, 16, 6, 12));
-    radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
-
-    daemon_debug_band("433", "begin()");
-    int state_433 = radio_controller_433.radio->begin();
-    if (state_433 == RADIOLIB_ERR_NONE) {
+        daemon_debug_band("433", "begin()");
+        int state_433 = radio_controller_433.radio->begin();
+        if (state_433 == RADIOLIB_ERR_NONE) {
         radio_controller_433.health = RADIO_HEALTH_READY;
         printf("[433] Init OK\n");
         daemon_debug_ctx("433", "Radio bereit");
@@ -718,19 +791,28 @@ void lora_init() {
         daemon_debug_band("433", "LoRa-Default gesetzt");
         radio_controller_433.radio->setPacketReceivedAction(setFlag433); // Callback nutzen
         daemon_debug_band("433", "Callback gesetzt");
+        } else {
+            radio_controller_433.health = RADIO_HEALTH_FAILED;
+            printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
+            daemon_debug_band("433", "begin() Fehler %d", state_433);
+        }
+
+        LED_433(0);
     } else {
-        radio_controller_433.health = RADIO_HEALTH_FAILED;
-        printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
-        daemon_debug_band("433", "begin() Fehler %d", state_433);
+        daemon_debug_band("433", "Nicht ausgewählt");
     }
 
-    LED_433(0);
+    if (daemon_radio_868_enabled()) {
+        LED_868(1);
 
-    LED_868(1);
+        daemon_debug_band("868", "Objekte anlegen");
+        radio_controller_868.hal.reset(new PiHal(0));
+        radio_controller_868.mod.reset(new Module(radio_controller_868.hal.get(), 7, 16, 6, 12));
+        radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
 
-    daemon_debug_band("868", "begin()");
-    int state_868 = radio_controller_868.radio->begin();
-    if (state_868 == RADIOLIB_ERR_NONE) {
+        daemon_debug_band("868", "begin()");
+        int state_868 = radio_controller_868.radio->begin();
+        if (state_868 == RADIOLIB_ERR_NONE) {
         radio_controller_868.health = RADIO_HEALTH_READY;
         printf("[868] Init OK\n");
         daemon_debug_ctx("868", "Radio bereit");
@@ -748,15 +830,18 @@ void lora_init() {
         daemon_debug_band("868", "LoRa-Default gesetzt");
         radio_controller_868.radio->setPacketReceivedAction(setFlag868); // Callback nutzen
         daemon_debug_band("868", "Callback gesetzt");
+        } else {
+            radio_controller_868.health = RADIO_HEALTH_FAILED;
+            printf("[868] Init FEHLGESCHLAGEN: %d\n", state_868);
+            daemon_debug_band("868", "begin() Fehler %d", state_868);
+        }
+
+        LED_868(0);
     } else {
-        radio_controller_868.health = RADIO_HEALTH_FAILED;
-        printf("[868] Init FEHLGESCHLAGEN: %d\n", state_868);
-        daemon_debug_band("868", "begin() Fehler %d", state_868);
+        daemon_debug_band("868", "Nicht ausgewählt");
     }
 
-    LED_868(0);
-
-    if (radio_controller_ready(&radio_controller_433)) {
+    if (daemon_radio_433_enabled() && radio_controller_ready(&radio_controller_433)) {
         daemon_debug_band("433", "RX starten");
         radio_controller_433.radio->startReceive();
     } else {
@@ -765,7 +850,7 @@ void lora_init() {
         daemon_debug_band("433", "RX Start übersprungen");
     }
 
-    if (radio_controller_ready(&radio_controller_868)) {
+    if (daemon_radio_868_enabled() && radio_controller_ready(&radio_controller_868)) {
         daemon_debug_band("868", "RX starten");
         radio_controller_868.radio->startReceive();
     } else {
@@ -782,10 +867,15 @@ void lora_init() {
 static void daemon_radio_io_init(void)
 {
     daemon_debug_ctx("CLIENT", "Slots initialisieren");
-    client_slot_init_all(client_data433_slots, MAX_CLIENTS);
-    client_slot_init_all(client_data868_slots, MAX_CLIENTS);
-    client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
-    client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
+    if (daemon_radio_433_enabled()) {
+        client_slot_init_all(client_data433_slots, MAX_CLIENTS);
+        client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
+    }
+
+    if (daemon_radio_868_enabled()) {
+        client_slot_init_all(client_data868_slots, MAX_CLIENTS);
+        client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
+    }
 
     daemon_debug_ctx("RADIO", "Kanal-IO initialisieren");
     radio_channel_io_init(&channel_433,
@@ -806,8 +896,11 @@ static void daemon_radio_io_init(void)
                           client_conf868_slots);
 
     daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
-    radio_channel_open_sockets(&channel_433);
-    radio_channel_open_sockets(&channel_868);
+    if (daemon_radio_433_enabled())
+        radio_channel_open_sockets(&channel_433);
+
+    if (daemon_radio_868_enabled())
+        radio_channel_open_sockets(&channel_868);
 
     daemon_radio_controller_init();
 
@@ -1135,19 +1228,23 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
                                          const EventLoopReadySet *readfds,
                                          uint8_t *buf)
 {
-    daemon_accept_channel_logged(&channel_433, readfds, "CLIENT433");
-    daemon_accept_channel_logged(&channel_868, readfds, "CLIENT868");
+    if (daemon_radio_433_enabled()) {
+        daemon_accept_channel_logged(&channel_433, readfds, "CLIENT433");
+        data_tx_process_slots("433", client_data433_slots, MAX_CLIENTS,
+                              readfds, send_data_chunk<SX1278>, data_tx_433_ctx,
+                              daemon_data_tx_log("TX433"));
+        config_dispatch_context<SX1278>(config_433_ctx, MAX_CLIENTS, readfds, buf);
+        daemon_flush_channel_logged(&channel_433, readfds, "CLIENT433");
+    }
 
-    data_tx_process_slots("433", client_data433_slots, MAX_CLIENTS,
-                          readfds, send_data_chunk<SX1278>, data_tx_433_ctx,
-                          daemon_data_tx_log("TX433"));
-    data_tx_process_slots("868", client_data868_slots, MAX_CLIENTS,
-                          readfds, send_data_chunk<RFM95>, data_tx_868_ctx,
-                          daemon_data_tx_log("TX868"));
-
-    process_config_dispatch(config_433_ctx, config_868_ctx, readfds, buf);
-    daemon_flush_channel_logged(&channel_433, readfds, "CLIENT433");
-    daemon_flush_channel_logged(&channel_868, readfds, "CLIENT868");
+    if (daemon_radio_868_enabled()) {
+        daemon_accept_channel_logged(&channel_868, readfds, "CLIENT868");
+        data_tx_process_slots("868", client_data868_slots, MAX_CLIENTS,
+                              readfds, send_data_chunk<RFM95>, data_tx_868_ctx,
+                              daemon_data_tx_log("TX868"));
+        config_dispatch_context<RFM95>(config_868_ctx, MAX_CLIENTS, readfds, buf);
+        daemon_flush_channel_logged(&channel_868, readfds, "CLIENT868");
+    }
 }
 
 
@@ -1273,30 +1370,40 @@ static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
 
 static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 {
-    daemon_radio_controller_getrssi_autostop(&channel_433,
-                                             &radio_controller_433);
-    daemon_radio_controller_getrssi_autostop(&channel_868,
-                                             &radio_controller_868);
+    if (daemon_radio_433_enabled())
+        daemon_radio_controller_getrssi_autostop(&channel_433,
+                                                 &radio_controller_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_radio_controller_getrssi_autostop(&channel_868,
+                                                 &radio_controller_868);
 
     // RSSI-Takt ist zeitbasiert.
     if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
-        daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
-        daemon_process_rssi_stream_one(&radio_controller_868, &channel_868);
+        if (daemon_radio_433_enabled())
+            daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
+
+        if (daemon_radio_868_enabled())
+            daemon_process_rssi_stream_one(&radio_controller_868, &channel_868);
     }
 }
 
 /* --- CAD/RSSI polling ---------------------------------------------------- */
 static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
 {
-    daemon_process_cad_status(&radio_controller_433, &channel_433);
-    daemon_process_cad_status(&radio_controller_868, &channel_868);
+    if (daemon_radio_433_enabled())
+        daemon_process_cad_status(&radio_controller_433, &channel_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_process_cad_status(&radio_controller_868, &channel_868);
     daemon_process_rssi_stream(rssi_timer);
 }
 
 /* --- Main loop logging --------------------------------------------------- */
 static void daemon_log_loop_start(void)
 {
-    printf("[Daemon] Starte Polling-Loop für LoRa und Sockets\n");
+    printf("[Daemon] Starte Polling-Loop für LoRa und Sockets (radio=%s)\n",
+           daemon_radio_selection_name(daemon_radio_selection));
 }
 
 /* --- RX special cases ---------------------------------------------------- */
@@ -1682,8 +1789,11 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
 {
-    daemon_process_radio_433(rx_buf_433);
-    daemon_process_radio_868(rx_buf_868);
+    if (daemon_radio_433_enabled())
+        daemon_process_radio_433(rx_buf_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_process_radio_868(rx_buf_868);
 
     // --- CAD/RSSI Überwachung ---
     daemon_process_cad_rssi(rssi_timer);
@@ -1747,65 +1857,6 @@ static void daemon_run(void)
     daemon_debug_ctx("LIFE", "Shutdown beginnt");
     daemon_shutdown_cleanup(&main_ctx.event_set);
     daemon_debug_ctx("LIFE", "Shutdown abgeschlossen");
-}
-
-
-/* --- Radio selection ----------------------------------------------------- */
-typedef enum {
-    DAEMON_RADIO_SELECTION_BOTH = 0,
-    DAEMON_RADIO_SELECTION_433,
-    DAEMON_RADIO_SELECTION_868
-} DaemonRadioSelection;
-
-static DaemonRadioSelection daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-
-static const char *daemon_radio_selection_name(DaemonRadioSelection selection)
-{
-    switch (selection) {
-        case DAEMON_RADIO_SELECTION_BOTH:
-            return "both";
-        case DAEMON_RADIO_SELECTION_433:
-            return "433";
-        case DAEMON_RADIO_SELECTION_868:
-            return "868";
-    }
-
-    return "unknown";
-}
-
-static bool daemon_radio_433_enabled(void)
-{
-    return daemon_radio_selection == DAEMON_RADIO_SELECTION_BOTH ||
-           daemon_radio_selection == DAEMON_RADIO_SELECTION_433;
-}
-
-static bool daemon_radio_868_enabled(void)
-{
-    return daemon_radio_selection == DAEMON_RADIO_SELECTION_BOTH ||
-           daemon_radio_selection == DAEMON_RADIO_SELECTION_868;
-}
-
-static bool daemon_parse_radio_selection(const char *arg)
-{
-    if (!arg)
-        return false;
-
-    if (strcmp(arg, "both") == 0) {
-        daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-        return true;
-    }
-
-    if (strcmp(arg, "433") == 0) {
-        daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
-        return true;
-    }
-
-    if (strcmp(arg, "868") == 0) {
-        daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
-        return true;
-    }
-
-    return false;
 }
 
 

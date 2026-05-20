@@ -66,6 +66,91 @@ static int test_cli_radio_invalid(void)
 }
 
 
+
+static int start_daemon_radio(const char *radio)
+{
+    pid_t pid = fork();
+
+    if (pid < 0)
+        return TEST_FAIL;
+
+    if (pid == 0) {
+        setpgid(0, 0);
+        execl(g_bin, g_bin, "--radio", radio, (char *)NULL);
+        _exit(127);
+    }
+
+    g_daemon_pid = pid;
+    return TEST_PASS;
+}
+
+static int wait_radio_sockets_433(void)
+{
+    if (wait_for_socket(SOCK_DATA_433, DEFAULT_SOCKET_TIMEOUT_MS) < 0)
+        return TEST_FAIL;
+    if (wait_for_socket(SOCK_CONF_433, DEFAULT_SOCKET_TIMEOUT_MS) < 0)
+        return TEST_FAIL;
+
+    if (path_exists(SOCK_DATA_868) || path_exists(SOCK_CONF_868)) {
+        fail_msg("868 sockets unexpectedly exist in --radio 433 mode");
+        return TEST_FAIL;
+    }
+
+    return TEST_PASS;
+}
+
+static int wait_radio_sockets_868(void)
+{
+    if (wait_for_socket(SOCK_DATA_868, DEFAULT_SOCKET_TIMEOUT_MS) < 0)
+        return TEST_FAIL;
+    if (wait_for_socket(SOCK_CONF_868, DEFAULT_SOCKET_TIMEOUT_MS) < 0)
+        return TEST_FAIL;
+
+    if (path_exists(SOCK_DATA_433) || path_exists(SOCK_CONF_433)) {
+        fail_msg("433 sockets unexpectedly exist in --radio 868 mode");
+        return TEST_FAIL;
+    }
+
+    return TEST_PASS;
+}
+
+static int test_single_radio_socket_mode_433(void)
+{
+    if (start_daemon_radio("433") < 0)
+        return TEST_FAIL;
+
+    if (wait_radio_sockets_433() < 0) {
+        stop_daemon();
+        return TEST_FAIL;
+    }
+
+    stop_daemon();
+
+    if (public_sockets_removed() < 0)
+        return TEST_FAIL;
+
+    return TEST_PASS;
+}
+
+static int test_single_radio_socket_mode_868(void)
+{
+    if (start_daemon_radio("868") < 0)
+        return TEST_FAIL;
+
+    if (wait_radio_sockets_868() < 0) {
+        stop_daemon();
+        return TEST_FAIL;
+    }
+
+    stop_daemon();
+
+    if (public_sockets_removed() < 0)
+        return TEST_FAIL;
+
+    return TEST_PASS;
+}
+
+
 /* --- Socket availability --- */
 
 static int test_all_sockets(void)
@@ -412,6 +497,9 @@ int main(int argc, char **argv)
     run_test("CLI accepts --debug", test_cli_debug_long);
     run_test("CLI accepts --radio help", test_cli_radio_help);
     run_test("CLI rejects invalid --radio", test_cli_radio_invalid);
+
+    run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
+    run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);
 
     info_msg("starting daemon: %s", g_bin);
     if (start_daemon(g_bin) < 0)
