@@ -4,3 +4,4 @@
 - Add KISS decoder/encoder boundary regression tests.
 - Add AX.25/TNC2 boundary regression tests.
 - Harden TX failure handling with RX restore retry and stats.
+- Reconnect LoRaHAM DATA socket after TX write failure.

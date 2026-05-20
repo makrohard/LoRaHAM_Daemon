@@ -357,6 +357,51 @@ static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
     return ret;
 }
 
+
+static int should_reconnect_loraham_data_socket(int ret)
+{
+    return ret == LHKT_ERR_TX_SOCKET;
+}
+
+static void disconnect_loraham_data_socket(int *data_fd,
+                                           loraham_rx_state_t *rx_state,
+                                           lhkt_stats_t *stats,
+                                           const char *reason)
+{
+    if (!data_fd || *data_fd < 0) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[WARN] LoRaHAM data socket %s, reconnecting\n",
+            reason ? reason : "disconnected");
+
+    lhkt_tcp_server_close(*data_fd);
+    *data_fd = -1;
+
+    if (rx_state) {
+        loraham_rx_state_init(rx_state);
+    }
+
+    if (stats) {
+        stats->socket_reconnects++;
+    }
+}
+
+#ifdef LHKT_TEST
+int lhkt_test_bridge_should_reconnect_data_socket(int ret)
+{
+    return should_reconnect_loraham_data_socket(ret);
+}
+
+void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
+                                             loraham_rx_state_t *rx_state,
+                                             lhkt_stats_t *stats)
+{
+    disconnect_loraham_data_socket(data_fd, rx_state, stats, "test");
+}
+#endif
+
 static void print_stats_if_due(const lhkt_config_t *cfg,
                                lhkt_stats_t *stats,
                                time_t *next_stats)
@@ -502,7 +547,7 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             if (ret != LHKT_OK) {
                 printf("[LoRaHAM] TX write failed and RX restore failed\n");
             }
-            return LHKT_ERR;
+            return LHKT_ERR_TX_SOCKET;
         }
 
         bridge_sleep_ms(cfg->tx_return_ms);
@@ -964,11 +1009,17 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                         stats->kiss_rx++;
                     }
 
-                    handle_kiss_frame(&kiss_frame,
-                                      &kiss_params,
-                                      cfg,
-                                      stats,
-                                      data_fd);
+                    ret = handle_kiss_frame(&kiss_frame,
+                                            &kiss_params,
+                                            cfg,
+                                            stats,
+                                            data_fd);
+                    if (should_reconnect_loraham_data_socket(ret)) {
+                        disconnect_loraham_data_socket(&data_fd,
+                                                       &lora_rx,
+                                                       stats,
+                                                       "TX write failed");
+                    }
                 } else if (ret < 0) {
                     if (stats) {
                         stats->kiss_drop++;

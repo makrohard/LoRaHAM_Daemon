@@ -1,6 +1,7 @@
 #include "ax25.h"
 #include "kiss.h"
 #include "loraham_kiss_tnc.h"
+#include "loraham_sock.h"
 #include "tnc2.h"
 
 #include <assert.h>
@@ -31,6 +32,10 @@ double lhkt_test_bridge_config_freq_at(size_t index);
 void lhkt_test_bridge_set_write_result(ssize_t result);
 size_t lhkt_test_bridge_write_call_count(void);
 size_t lhkt_test_bridge_sleep_call_count(void);
+int lhkt_test_bridge_should_reconnect_data_socket(int ret);
+void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
+                                             loraham_rx_state_t *rx_state,
+                                             lhkt_stats_t *stats);
 
 static void test_fd_set_rejects_too_large_fd(void)
 {
@@ -183,7 +188,10 @@ static void test_tx_write_failure_restores_rx(void)
                                         sizeof(config_results) / sizeof(config_results[0]));
     lhkt_test_bridge_set_write_result(-1);
 
-    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_ERR);
+    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_ERR_TX_SOCKET);
+    assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_TX_SOCKET) == 1);
+    assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_FORMAT) == 0);
+    assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_UNSUPPORTED) == 0);
 
     assert(lhkt_test_bridge_write_call_count() == 1);
     assert(lhkt_test_bridge_config_call_count() == 2);
@@ -194,6 +202,35 @@ static void test_tx_write_failure_restores_rx(void)
     assert(stats.loraham_drop == 1);
     assert(stats.tx_restore_failures == 0);
     assert(stats.loraham_tx == 0);
+}
+
+
+static void test_tx_socket_error_invalidates_data_socket(void)
+{
+    int sv[2];
+    int data_fd;
+    lhkt_stats_t stats;
+    loraham_rx_state_t rx_state;
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    data_fd = sv[0];
+
+    lhkt_stats_init(&stats);
+    loraham_rx_state_init(&rx_state);
+    rx_state.seen_header = 1;
+    rx_state.len = 3;
+    rx_state.pending_len = 2;
+
+    lhkt_test_bridge_disconnect_data_socket(&data_fd, &rx_state, &stats);
+
+    assert(data_fd == -1);
+    assert(stats.socket_reconnects == 1);
+    assert(rx_state.seen_header == 0);
+    assert(rx_state.len == 0);
+    assert(rx_state.pending_len == 0);
+
+    close(sv[1]);
 }
 
 static void test_rx_restore_retry_success_counts_failure(void)
@@ -260,6 +297,7 @@ int main(void)
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
     test_tx_write_failure_restores_rx();
+    test_tx_socket_error_invalidates_data_socket();
     test_rx_restore_retry_success_counts_failure();
     test_rx_restore_retry_failure_is_counted();
 
