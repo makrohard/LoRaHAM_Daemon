@@ -40,6 +40,8 @@ void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
 void lhkt_test_bridge_reset_stop(void);
 void lhkt_test_bridge_request_stop(void);
 int lhkt_test_bridge_should_stop(void);
+int lhkt_test_bridge_wait_fd_writable(int fd);
+int lhkt_test_bridge_sleep_ms(int ms);
 
 static void test_fd_set_rejects_too_large_fd(void)
 {
@@ -57,6 +59,26 @@ static void test_shutdown_stop_flag(void)
 
     lhkt_test_bridge_reset_stop();
     assert(lhkt_test_bridge_should_stop() == 0);
+}
+
+
+static void test_stop_aware_wait_helpers(void)
+{
+    int sv[2];
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    lhkt_test_bridge_reset_stop();
+    assert(lhkt_test_bridge_sleep_ms(1) == LHKT_OK);
+
+    lhkt_test_bridge_request_stop();
+    assert(lhkt_test_bridge_sleep_ms(1) == LHKT_ERR);
+    assert(lhkt_test_bridge_wait_fd_writable(sv[0]) == LHKT_ERR);
+
+    lhkt_test_bridge_reset_stop();
+
+    close(sv[0]);
+    close(sv[1]);
 }
 
 
@@ -251,6 +273,39 @@ static void test_tx_write_failure_restores_rx(void)
 }
 
 
+static void test_shutdown_during_tx_settle_restores_rx(void)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    kiss_params_t params;
+    kiss_frame_t frame;
+    int config_results[] = { LHKT_OK, LHKT_OK };
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    kiss_params_init(&params);
+    make_valid_kiss_frame(&frame);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+
+    lhkt_test_bridge_request_stop();
+
+    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_ERR);
+
+    assert(lhkt_test_bridge_write_call_count() == 0);
+    assert(lhkt_test_bridge_config_call_count() == 2);
+    assert(lhkt_test_bridge_config_freq_at(0) > 433.899);
+    assert(lhkt_test_bridge_config_freq_at(0) < 433.901);
+    assert(lhkt_test_bridge_config_freq_at(1) > 433.774);
+    assert(lhkt_test_bridge_config_freq_at(1) < 433.776);
+    assert(stats.loraham_tx == 0);
+
+    lhkt_test_bridge_reset_stop();
+}
+
+
 static void test_tx_socket_error_invalidates_data_socket(void)
 {
     int sv[2];
@@ -340,11 +395,13 @@ int main(void)
 
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
+    test_stop_aware_wait_helpers();
     test_tnc2_to_kiss_output();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
     test_client_write_failure_returns_socket_error();
     test_tx_write_failure_restores_rx();
+    test_shutdown_during_tx_settle_restores_rx();
     test_tx_socket_error_invalidates_data_socket();
     test_rx_restore_retry_success_counts_failure();
     test_rx_restore_retry_failure_is_counted();

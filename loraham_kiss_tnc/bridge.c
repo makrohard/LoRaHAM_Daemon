@@ -87,6 +87,10 @@ static int wait_fd_writable(int fd)
     }
 
     for (;;) {
+        if (bridge_should_stop()) {
+            return LHKT_ERR;
+        }
+
         FD_ZERO(&wfds);
         FD_SET(fd, &wfds);
 
@@ -96,6 +100,10 @@ static int wait_fd_writable(int fd)
         ret = select(fd + 1, NULL, &wfds, NULL, &tv);
         if (ret < 0) {
             if (errno == EINTR) {
+                if (bridge_should_stop()) {
+                    return LHKT_ERR;
+                }
+
                 continue;
             }
 
@@ -110,6 +118,14 @@ static int wait_fd_writable(int fd)
         return LHKT_OK;
     }
 }
+
+
+#ifdef LHKT_TEST
+int lhkt_test_bridge_wait_fd_writable(int fd)
+{
+    return wait_fd_writable(fd);
+}
+#endif
 
 static int add_fd_to_set(int fd, fd_set *set, int *max_fd)
 {
@@ -190,21 +206,35 @@ static int set_fd_nonblocking(int fd)
 }
 
 #ifndef LHKT_TEST
-static void sleep_ms(int ms)
+static int sleep_ms(int ms)
 {
     struct timeval tv;
 
     if (ms <= 0) {
-        return;
+        return LHKT_OK;
+    }
+
+    if (bridge_should_stop()) {
+        return LHKT_ERR;
     }
 
     tv.tv_sec = ms / 1000;
     tv.tv_usec = (ms % 1000) * 1000;
 
     while (select(0, NULL, NULL, NULL, &tv) < 0 && errno == EINTR) {
+        if (bridge_should_stop()) {
+            return LHKT_ERR;
+        }
+
         tv.tv_sec = ms / 1000;
         tv.tv_usec = (ms % 1000) * 1000;
     }
+
+    if (bridge_should_stop()) {
+        return LHKT_ERR;
+    }
+
+    return LHKT_OK;
 }
 #endif
 
@@ -287,16 +317,29 @@ size_t lhkt_test_bridge_sleep_call_count(void)
 }
 #endif
 
-static void bridge_sleep_ms(int ms)
+static int bridge_sleep_ms(int ms)
 {
 #ifdef LHKT_TEST
     if (ms > 0) {
         lhkt_test_sleep_call_count++;
     }
+
+    if (bridge_should_stop()) {
+        return LHKT_ERR;
+    }
+
+    return LHKT_OK;
 #else
-    sleep_ms(ms);
+    return sleep_ms(ms);
 #endif
 }
+
+#ifdef LHKT_TEST
+int lhkt_test_bridge_sleep_ms(int ms)
+{
+    return bridge_sleep_ms(ms);
+}
+#endif
 
 static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
 {
@@ -391,7 +434,9 @@ static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
     }
 
     printf("[LoRaHAM] RX freq restore failed, retrying\n");
-    bridge_sleep_ms(LHKT_TX_RESTORE_RETRY_DELAY_MS);
+    if (bridge_sleep_ms(LHKT_TX_RESTORE_RETRY_DELAY_MS) != LHKT_OK) {
+        return ret;
+    }
 
     ret = send_loraham_config_freq(cfg, cfg->rx_freq);
     if (ret == LHKT_OK) {
@@ -594,7 +639,15 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             return ret;
         }
 
-        bridge_sleep_ms(cfg->tx_settle_ms);
+        if (bridge_sleep_ms(cfg->tx_settle_ms) != LHKT_OK) {
+            ret = restore_loraham_rx_freq(cfg, stats);
+            if (ret != LHKT_OK) {
+                printf("[LoRaHAM] Shutdown during TX settle and RX restore failed\n");
+                return ret;
+            }
+
+            return LHKT_ERR;
+        }
 
         printf("[LoRaHAM] TX packet len=%zu\n", lora_len);
 
@@ -604,7 +657,7 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             }
 
             printf("[LoRaHAM] TX write failed\n");
-            bridge_sleep_ms(cfg->tx_return_ms);
+            (void)bridge_sleep_ms(cfg->tx_return_ms);
             ret = restore_loraham_rx_freq(cfg, stats);
             if (ret != LHKT_OK) {
                 printf("[LoRaHAM] TX write failed and RX restore failed\n");
@@ -612,7 +665,7 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             return LHKT_ERR_TX_SOCKET;
         }
 
-        bridge_sleep_ms(cfg->tx_return_ms);
+        (void)bridge_sleep_ms(cfg->tx_return_ms);
 
         ret = restore_loraham_rx_freq(cfg, stats);
         if (ret != LHKT_OK) {
