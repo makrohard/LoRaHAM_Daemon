@@ -23,9 +23,44 @@ int lhkt_test_handle_kiss_frame(const kiss_frame_t *kiss_frame,
                                 lhkt_stats_t *stats,
                                 int data_fd);
 
+
+void lhkt_test_bridge_reset_tx_hooks(void);
+void lhkt_test_bridge_set_config_results(const int *results, size_t count);
+size_t lhkt_test_bridge_config_call_count(void);
+double lhkt_test_bridge_config_freq_at(size_t index);
+void lhkt_test_bridge_set_write_result(ssize_t result);
+size_t lhkt_test_bridge_write_call_count(void);
+size_t lhkt_test_bridge_sleep_call_count(void);
+
 static void test_fd_set_rejects_too_large_fd(void)
 {
     assert(lhkt_test_add_fd_to_set(FD_SETSIZE) == LHKT_ERR_LONG);
+}
+
+
+static void make_valid_kiss_frame(kiss_frame_t *frame)
+{
+    ax25_frame_t ax25;
+    uint8_t raw[LHKT_AX25_MAX_FRAME];
+    size_t raw_len = 0;
+    const char *payload = "hello";
+
+    assert(frame != NULL);
+
+    ax25_frame_init(&ax25);
+    assert(ax25_addr_parse("APRS", &ax25.dst) == LHKT_OK);
+    assert(ax25_addr_parse("DJ0CHE-10", &ax25.src) == LHKT_OK);
+
+    memcpy(ax25.payload, payload, strlen(payload));
+    ax25.payload_len = strlen(payload);
+
+    assert(ax25_encode_ui(&ax25, raw, sizeof(raw), &raw_len) == LHKT_OK);
+
+    memset(frame, 0, sizeof(*frame));
+    frame->port = 0;
+    frame->command = KISS_CMD_DATA;
+    memcpy(frame->data, raw, raw_len);
+    frame->data_len = raw_len;
 }
 
 static void test_tnc2_to_kiss_output(void)
@@ -129,6 +164,93 @@ static void test_invalid_tnc2_is_dropped(void)
     close(sv[1]);
 }
 
+
+static void test_tx_write_failure_restores_rx(void)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    kiss_params_t params;
+    kiss_frame_t frame;
+    int config_results[] = { LHKT_OK, LHKT_OK };
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    kiss_params_init(&params);
+    make_valid_kiss_frame(&frame);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+    lhkt_test_bridge_set_write_result(-1);
+
+    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_ERR);
+
+    assert(lhkt_test_bridge_write_call_count() == 1);
+    assert(lhkt_test_bridge_config_call_count() == 2);
+    assert(lhkt_test_bridge_config_freq_at(0) > 433.899);
+    assert(lhkt_test_bridge_config_freq_at(0) < 433.901);
+    assert(lhkt_test_bridge_config_freq_at(1) > 433.774);
+    assert(lhkt_test_bridge_config_freq_at(1) < 433.776);
+    assert(stats.loraham_drop == 1);
+    assert(stats.tx_restore_failures == 0);
+    assert(stats.loraham_tx == 0);
+}
+
+static void test_rx_restore_retry_success_counts_failure(void)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    kiss_params_t params;
+    kiss_frame_t frame;
+    int config_results[] = { LHKT_OK, LHKT_ERR, LHKT_OK };
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    kiss_params_init(&params);
+    make_valid_kiss_frame(&frame);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+    lhkt_test_bridge_set_write_result(1);
+
+    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_OK);
+
+    assert(lhkt_test_bridge_write_call_count() == 1);
+    assert(lhkt_test_bridge_config_call_count() == 3);
+    assert(lhkt_test_bridge_sleep_call_count() >= 3);
+    assert(stats.tx_restore_failures == 1);
+    assert(stats.loraham_drop == 0);
+    assert(stats.loraham_tx == 1);
+}
+
+static void test_rx_restore_retry_failure_is_counted(void)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    kiss_params_t params;
+    kiss_frame_t frame;
+    int config_results[] = { LHKT_OK, LHKT_ERR, LHKT_ERR };
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    kiss_params_init(&params);
+    make_valid_kiss_frame(&frame);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+    lhkt_test_bridge_set_write_result(1);
+
+    assert(lhkt_test_handle_kiss_frame(&frame, &params, &cfg, &stats, 42) == LHKT_ERR);
+
+    assert(lhkt_test_bridge_write_call_count() == 1);
+    assert(lhkt_test_bridge_config_call_count() == 3);
+    assert(stats.tx_restore_failures == 2);
+    assert(stats.loraham_drop == 0);
+    assert(stats.loraham_tx == 0);
+}
+
 int main(void)
 {
     signal(SIGPIPE, SIG_IGN);
@@ -137,6 +259,9 @@ int main(void)
     test_tnc2_to_kiss_output();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
+    test_tx_write_failure_restores_rx();
+    test_rx_restore_retry_success_counts_failure();
+    test_rx_restore_retry_failure_is_counted();
 
     puts("test_bridge: OK");
     return 0;

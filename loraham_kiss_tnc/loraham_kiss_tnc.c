@@ -64,8 +64,9 @@ void lhkt_stats_print(const lhkt_stats_t *stats)
            stats->tnc2_rx, stats->tnc2_tx, stats->tnc2_drop);
     printf("[STAT] LoRaHAM rx=%" PRIu64 " tx=%" PRIu64 " drop=%" PRIu64 "\n",
            stats->loraham_rx, stats->loraham_tx, stats->loraham_drop);
-    printf("[STAT] TX oversize=%" PRIu64 " reconnects=%" PRIu64 " client_disconnects=%" PRIu64 "\n",
+    printf("[STAT] TX oversize=%" PRIu64 " restore_failures=%" PRIu64 " reconnects=%" PRIu64 " client_disconnects=%" PRIu64 "\n",
            stats->tx_drop_oversize,
+           stats->tx_restore_failures,
            stats->socket_reconnects,
            stats->client_disconnects);
 }

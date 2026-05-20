@@ -78,6 +78,7 @@ typedef struct {
     uint64_t loraham_drop;
 
     uint64_t tx_drop_oversize;
+    uint64_t tx_restore_failures;
     uint64_t socket_reconnects;
     uint64_t client_disconnects;
 } lhkt_stats_t;

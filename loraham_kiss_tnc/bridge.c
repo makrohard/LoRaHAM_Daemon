@@ -24,6 +24,8 @@
 #define LHKT_RX_IDLE_FLUSH_USEC 250000
 #define LHKT_RECONNECT_DELAY_SEC 1
 #define LHKT_CLIENT_WRITE_TIMEOUT_SEC 2
+#define LHKT_TX_RESTORE_RETRY_DELAY_MS 100
+#define LHKT_TEST_HOOK_MAX_CALLS 16
 
 
 static int wait_fd_writable(int fd)
@@ -156,6 +158,96 @@ static void sleep_ms(int ms)
     }
 }
 
+
+#ifdef LHKT_TEST
+static int lhkt_test_config_results[LHKT_TEST_HOOK_MAX_CALLS];
+static size_t lhkt_test_config_result_count;
+static size_t lhkt_test_config_result_pos;
+static double lhkt_test_config_freqs[LHKT_TEST_HOOK_MAX_CALLS];
+static size_t lhkt_test_config_call_count;
+static int lhkt_test_write_enabled;
+static ssize_t lhkt_test_write_result;
+static size_t lhkt_test_write_call_count;
+static size_t lhkt_test_sleep_call_count;
+
+void lhkt_test_bridge_reset_tx_hooks(void)
+{
+    memset(lhkt_test_config_results, 0, sizeof(lhkt_test_config_results));
+    memset(lhkt_test_config_freqs, 0, sizeof(lhkt_test_config_freqs));
+    lhkt_test_config_result_count = 0;
+    lhkt_test_config_result_pos = 0;
+    lhkt_test_config_call_count = 0;
+    lhkt_test_write_enabled = 0;
+    lhkt_test_write_result = 0;
+    lhkt_test_write_call_count = 0;
+    lhkt_test_sleep_call_count = 0;
+}
+
+void lhkt_test_bridge_set_config_results(const int *results, size_t count)
+{
+    size_t i;
+
+    lhkt_test_config_result_count = 0;
+    lhkt_test_config_result_pos = 0;
+
+    if (!results) {
+        return;
+    }
+
+    if (count > LHKT_TEST_HOOK_MAX_CALLS) {
+        count = LHKT_TEST_HOOK_MAX_CALLS;
+    }
+
+    for (i = 0; i < count; i++) {
+        lhkt_test_config_results[i] = results[i];
+    }
+
+    lhkt_test_config_result_count = count;
+}
+
+size_t lhkt_test_bridge_config_call_count(void)
+{
+    return lhkt_test_config_call_count;
+}
+
+double lhkt_test_bridge_config_freq_at(size_t index)
+{
+    if (index >= lhkt_test_config_call_count ||
+        index >= LHKT_TEST_HOOK_MAX_CALLS) {
+        return 0.0;
+    }
+
+    return lhkt_test_config_freqs[index];
+}
+
+void lhkt_test_bridge_set_write_result(ssize_t result)
+{
+    lhkt_test_write_enabled = 1;
+    lhkt_test_write_result = result;
+}
+
+size_t lhkt_test_bridge_write_call_count(void)
+{
+    return lhkt_test_write_call_count;
+}
+
+size_t lhkt_test_bridge_sleep_call_count(void)
+{
+    return lhkt_test_sleep_call_count;
+}
+#endif
+
+static void bridge_sleep_ms(int ms)
+{
+#ifdef LHKT_TEST
+    if (ms > 0) {
+        lhkt_test_sleep_call_count++;
+    }
+#else
+    sleep_ms(ms);
+#endif
+}
+
 static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
 {
     int conf_fd;
@@ -164,6 +256,21 @@ static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
     if (!cfg || freq <= 0.0) {
         return LHKT_ERR_FORMAT;
     }
+
+#ifdef LHKT_TEST
+    if (lhkt_test_config_call_count < LHKT_TEST_HOOK_MAX_CALLS) {
+        lhkt_test_config_freqs[lhkt_test_config_call_count] = freq;
+    }
+    lhkt_test_config_call_count++;
+
+    if (lhkt_test_config_result_pos < lhkt_test_config_result_count) {
+        return lhkt_test_config_results[lhkt_test_config_result_pos++];
+    }
+
+    if (lhkt_test_config_result_count > 0) {
+        return LHKT_OK;
+    }
+#endif
 
     conf_fd = loraham_sock_connect(cfg->conf_socket);
     if (conf_fd < 0) {
@@ -198,6 +305,56 @@ static int connect_loraham_data_socket(const lhkt_config_t *cfg)
 
     printf("[LoRaHAM] Data socket connected: %s\n", cfg->data_socket);
     return fd;
+}
+
+
+static ssize_t bridge_loraham_write(int fd,
+                                    const uint8_t *buf,
+                                    size_t len)
+{
+#ifdef LHKT_TEST
+    lhkt_test_write_call_count++;
+    if (lhkt_test_write_enabled) {
+        return lhkt_test_write_result;
+    }
+#endif
+
+    return loraham_sock_write(fd, buf, len);
+}
+
+static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
+                                   lhkt_stats_t *stats)
+{
+    int ret;
+
+    if (!cfg || !cfg->have_rx_freq) {
+        return LHKT_ERR_FORMAT;
+    }
+
+    ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+    if (ret == LHKT_OK) {
+        return LHKT_OK;
+    }
+
+    if (stats) {
+        stats->tx_restore_failures++;
+    }
+
+    printf("[LoRaHAM] RX freq restore failed, retrying\n");
+    bridge_sleep_ms(LHKT_TX_RESTORE_RETRY_DELAY_MS);
+
+    ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+    if (ret == LHKT_OK) {
+        printf("[LoRaHAM] RX freq restore retry OK\n");
+        return LHKT_OK;
+    }
+
+    if (stats) {
+        stats->tx_restore_failures++;
+    }
+
+    printf("[LoRaHAM] RX freq restore retry failed\n");
+    return ret;
 }
 
 static void print_stats_if_due(const lhkt_config_t *cfg,
@@ -330,26 +487,28 @@ static int handle_kiss_data_frame(const kiss_frame_t *kiss_frame,
             return ret;
         }
 
-        sleep_ms(cfg->tx_settle_ms);
+        bridge_sleep_ms(cfg->tx_settle_ms);
 
         printf("[LoRaHAM] TX packet len=%zu\n", lora_len);
 
-        if (loraham_sock_write(data_fd, lora_pkt, lora_len) < 0) {
+        if (bridge_loraham_write(data_fd, lora_pkt, lora_len) < 0) {
             if (stats) {
                 stats->loraham_drop++;
             }
 
             printf("[LoRaHAM] TX write failed\n");
-            sleep_ms(cfg->tx_return_ms);
-            send_loraham_config_freq(cfg, cfg->rx_freq);
+            bridge_sleep_ms(cfg->tx_return_ms);
+            ret = restore_loraham_rx_freq(cfg, stats);
+            if (ret != LHKT_OK) {
+                printf("[LoRaHAM] TX write failed and RX restore failed\n");
+            }
             return LHKT_ERR;
         }
 
-        sleep_ms(cfg->tx_return_ms);
+        bridge_sleep_ms(cfg->tx_return_ms);
 
-        ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+        ret = restore_loraham_rx_freq(cfg, stats);
         if (ret != LHKT_OK) {
-            printf("[LoRaHAM] RX freq restore failed\n");
             return ret;
         }
 
