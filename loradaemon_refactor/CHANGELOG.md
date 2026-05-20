@@ -27,8 +27,15 @@ Initial version: loradaemon_320_108
   - Fix RX error forwarding: RadioLib CRC/header/read errors are dropped and counted.
   
 - New Features
-  - Build Script   ./build.sh
-  - Testsuite      ./run_tests.sh
+  - Build Script    ./build.sh
+  - Testsuite       ./run_tests.sh
   - Debug logging  --debug
   - Added          --help
   - Versioning      Version now lives in daemon_version.h
+
+- New Features  
+  - Build Script&nbsp;&nbsp;&nbsp;&nbsp;`./build.sh`  
+  - Testsuite&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`./run_tests.sh`  
+  - Debug logging&nbsp;&nbsp;`--debug`  
+  - Added&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`--help`  
+  - Versioning&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Version now lives in `daemon_version.h`
