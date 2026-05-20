@@ -1,12 +1,12 @@
 # LoRaHAM_Daemon
 
-`loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. It initializes the 433 MHz and 868 MHz radio modules and exposes them to user programs through local UNIX sockets.
+`loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. By default it initializes both the 433 MHz and 868 MHz radio modules, but it can also run either radio independently via `--radio 433` or `--radio 868`. Active radios are exposed to user programs through local UNIX sockets.
 
 The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. There is a KISS-bridge that allows you to connect to APRS-Clients like Xastir or YAAC.
 
 ## Purpose
 
-- Control the dual-band LoRaHAM hardware from user space.
+- Control the LoRaHAM radio hardware from user space, either as dual-radio daemon or as selected single-radio daemon.
 - Provide DATA sockets for raw packet TX/RX.
 - Provide CONF sockets for runtime radio configuration.
 - Keep radio access centralized so client programs do not need direct SPI/RadioLib access.
@@ -16,14 +16,14 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, main event loop, and top-level coordination of socket, CONFIG, DATA TX, CAD/RSSI, and RX flow |
+| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, selected-radio startup/shutdown, main event loop, and top-level coordination of socket, CONFIG, DATA TX, CAD/RSSI, and RX flow |
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
-| Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868` |
+| Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
-| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band DATA/CONF socket wiring, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
+| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band DATA/CONF socket wiring, selected socket setup, setup failure propagation, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
-| UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files |
+| UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Client handling | `client_output_queue.cpp`, `client_set.cpp`, `client_slot.cpp` | Client slots, nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
 | DATA TX | `data_tx.cpp` | Split DATA socket writes into RF-sized chunks before transmit |
 | CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands |
@@ -56,6 +56,18 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | `/tmp/lora868.sock` | DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive RF packets from 868 MHz |
 | `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CAD/RSSI text messages |
 | `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CAD/RSSI text messages |
+
+Socket availability depends on the selected radio mode:
+
+| Radio mode | Created sockets |
+|---|---|
+| default / `--radio both` | all four DATA/CONF sockets |
+| `--radio 433` | `/tmp/lora433.sock`, `/tmp/loraconf433.sock` |
+| `--radio 868` | `/tmp/lora868.sock`, `/tmp/loraconf868.sock` |
+
+Inactive-radio sockets are not created. This is intentional so clients can detect which radio backend is active by checking the socket path.
+
+UNIX socket setup rejects existing non-socket filesystem entries at the public socket paths. Existing stale UNIX socket files are replaced.
 
 ## Public limits and timing
 
@@ -115,6 +127,22 @@ Important behavior:
 - `MODE=LORA` calls RadioLib `begin()`.
 - `MODE=FSK` calls RadioLib `beginFSK()`.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
+
+## Startup and shutdown behavior
+
+Startup is selected-radio aware:
+
+- default / `--radio both` requests both radios
+- `--radio 433` requests only the 433 MHz radio
+- `--radio 868` requests only the 868 MHz radio
+- socket setup failure for a selected radio is fatal
+- event-loop setup failure is fatal
+- signal-handler setup failure is fatal
+- if no selected radio becomes ready, the daemon exits
+- in default / `--radio both` mode, the daemon may continue if one radio becomes ready and the other one fails
+- on shutdown, only selected/created radio sockets and client slots are cleaned up
+
+Normal logs report the active radios once during startup. Debug logs contain more detailed selected-radio decisions.
 
 ## Startup defaults
 
