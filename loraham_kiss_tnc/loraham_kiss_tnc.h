@@ -30,6 +30,7 @@
 #define LHKT_ERR_UNSUPPORTED   -5
 #define LHKT_ERR_NOSPACE       -6
 #define LHKT_ERR_TX_SOCKET     -7
+#define LHKT_ERR_CLIENT_SOCKET -8
 
 typedef struct {
     char kiss_host[LHKT_HOST_MAX];

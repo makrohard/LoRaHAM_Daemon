@@ -365,6 +365,12 @@ static int should_reconnect_loraham_data_socket(int ret)
     return ret == LHKT_ERR_TX_SOCKET;
 }
 
+
+static int should_disconnect_kiss_client(int ret)
+{
+    return ret == LHKT_ERR_CLIENT_SOCKET;
+}
+
 static void disconnect_loraham_data_socket(int *data_fd,
                                            loraham_rx_state_t *rx_state,
                                            lhkt_stats_t *stats,
@@ -394,6 +400,12 @@ static void disconnect_loraham_data_socket(int *data_fd,
 int lhkt_test_bridge_should_reconnect_data_socket(int ret)
 {
     return should_reconnect_loraham_data_socket(ret);
+}
+
+
+int lhkt_test_bridge_should_disconnect_kiss_client(int ret)
+{
+    return should_disconnect_kiss_client(ret);
 }
 
 void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
@@ -674,8 +686,12 @@ static int send_tnc2_to_kiss_client(int client_fd,
     }
 
     if (write_all_fd(client_fd, kiss_raw, kiss_len) != LHKT_OK) {
+        if (stats) {
+            stats->kiss_drop++;
+        }
+
         printf("[KISS] Client write failed\n");
-        return LHKT_ERR;
+        return LHKT_ERR_CLIENT_SOCKET;
     }
 
     if (stats) {
@@ -928,7 +944,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                           NULL,
                                           0,
                                           stats);
-            if (ret == LHKT_ERR) {
+            if (should_disconnect_kiss_client(ret)) {
                 printf("[KISS] Client write failed, disconnecting\n");
                 lhkt_tcp_server_close(client_fd);
                 client_fd = -1;
@@ -1075,7 +1091,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                               buf,
                                               (size_t)n,
                                               stats);
-                if (ret == LHKT_ERR) {
+                if (should_disconnect_kiss_client(ret)) {
                     printf("[KISS] Client write failed, disconnecting\n");
                     lhkt_tcp_server_close(client_fd);
                     client_fd = -1;

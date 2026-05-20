@@ -6,3 +6,4 @@
 - Harden TX failure handling with RX restore retry and stats.
 - Reconnect LoRaHAM DATA socket after TX write failure.
 - Centralize LoRaHAM DATA socket disconnect handling.
+- Use explicit KISS client socket error handling.

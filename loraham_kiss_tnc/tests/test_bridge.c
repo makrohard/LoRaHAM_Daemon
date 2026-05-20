@@ -33,6 +33,7 @@ void lhkt_test_bridge_set_write_result(ssize_t result);
 size_t lhkt_test_bridge_write_call_count(void);
 size_t lhkt_test_bridge_sleep_call_count(void);
 int lhkt_test_bridge_should_reconnect_data_socket(int ret);
+int lhkt_test_bridge_should_disconnect_kiss_client(int ret);
 void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
                                              loraham_rx_state_t *rx_state,
                                              lhkt_stats_t *stats);
@@ -170,6 +171,35 @@ static void test_invalid_tnc2_is_dropped(void)
 }
 
 
+static void test_client_write_failure_returns_socket_error(void)
+{
+    int sv[2];
+    lhkt_stats_t stats;
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    lhkt_stats_init(&stats);
+
+    close(sv[1]);
+
+    assert(lhkt_test_send_tnc2_to_kiss_client(sv[0],
+                                              "DJ0CHE-10>APRS:hi",
+                                              &stats) == LHKT_ERR_CLIENT_SOCKET);
+
+    assert(lhkt_test_bridge_should_disconnect_kiss_client(LHKT_ERR_CLIENT_SOCKET) == 1);
+    assert(lhkt_test_bridge_should_disconnect_kiss_client(LHKT_ERR_FORMAT) == 0);
+    assert(lhkt_test_bridge_should_disconnect_kiss_client(LHKT_ERR_UNSUPPORTED) == 0);
+    assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_CLIENT_SOCKET) == 0);
+
+    assert(stats.tnc2_rx == 1);
+    assert(stats.ax25_tx == 1);
+    assert(stats.kiss_tx == 0);
+    assert(stats.kiss_drop == 1);
+
+    close(sv[0]);
+}
+
+
 static void test_tx_write_failure_restores_rx(void)
 {
     lhkt_config_t cfg;
@@ -296,6 +326,7 @@ int main(void)
     test_tnc2_to_kiss_output();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
+    test_client_write_failure_returns_socket_error();
     test_tx_write_failure_restores_rx();
     test_tx_socket_error_invalidates_data_socket();
     test_rx_restore_retry_success_counts_failure();
