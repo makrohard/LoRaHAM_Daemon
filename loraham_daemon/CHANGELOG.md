@@ -39,3 +39,4 @@ Initial version: loradaemon_320_108
 
 
 
+- Extract radio-selection parsing and state into a dedicated module.

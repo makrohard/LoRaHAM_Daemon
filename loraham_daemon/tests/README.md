@@ -75,6 +75,7 @@ Client/socket coverage:
 
 Lifecycle/helper behavior coverage:
 
+- `test_daemon_radio_selection`
 - `test_event_loop`
 - `test_daemon_timing`
 - `test_daemon_lifecycle`

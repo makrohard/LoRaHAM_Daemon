@@ -19,6 +19,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, main event loop, and top-level coordination of socket, CONFIG, DATA TX, CAD/RSSI, and RX flow |
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
+| Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868` |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band DATA/CONF socket wiring, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
