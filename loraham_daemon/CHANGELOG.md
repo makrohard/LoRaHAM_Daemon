@@ -3,7 +3,7 @@
 ## loraham_daemon 109
 
 Refactoring by Johannes Loose
-Initial version: loradaemon_320_108
+Initial version: loradaemon_320_108 by Alexander Walter
 
 - Refactor / Hardening
   - Event loop: moved polling/socket loop toward event-backend structure with test coverage.
@@ -37,9 +37,3 @@ Initial version: loradaemon_320_108
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
 
-
-
-- Extract radio-selection parsing and state into a dedicated module.
-- Remove obsolete paired CONFIG dispatch helper after selected-radio dispatch gating.
-- Harden UNIX socket setup to reject non-socket path collisions and propagate setup failures.
-- Update README architecture and runtime documentation for selected-radio operation and socket hardening.
