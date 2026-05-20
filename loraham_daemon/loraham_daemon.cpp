@@ -1349,6 +1349,22 @@ static const char *daemon_controller_color(RadioController<RadioT> *ctrl)
     return "32m";
 }
 
+static void daemon_print_raw_rx_packet(const char *rx_ctx,
+                                       const char *band,
+                                       const char *color,
+                                       const char *suffix,
+                                       uint8_t *buf,
+                                       int len,
+                                       float rssi)
+{
+    daemon_debug_hex_bytes(rx_ctx, buf, len);
+
+    printf("[\e[%s%s%s\e[0m] %d Bytes ASCII: ",
+           color, band, suffix ? suffix : "", len);
+    daemon_print_ascii_bytes(buf, len);
+    printf(" RSSI: %.2f dBm\n", rssi);
+}
+
 static void daemon_print_lora_packet(const char *rx_ctx,
                                      const char *band,
                                      const char *color,
@@ -1356,6 +1372,15 @@ static void daemon_print_lora_packet(const char *rx_ctx,
                                      int len,
                                      float rssi)
 {
+    if (!rf_packet_lora_header_available((size_t)len)) {
+        daemon_debug_ctx(rx_ctx,
+                         "LoRa short packet %d Byte, header skipped",
+                         len);
+        daemon_print_raw_rx_packet(rx_ctx, band, color, "-SHORT",
+                                   buf, len, rssi);
+        return;
+    }
+
     uint32_t toNode      = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
     uint32_t fromNode    = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
     uint32_t uniqueID    = buf[8] | (buf[9] << 8) | (buf[10] << 16) | (buf[11] << 24);
@@ -1512,6 +1537,74 @@ static bool daemon_rx_read_ok(RadioController<RadioT> *ctrl, int16_t state)
     return false;
 }
 
+template<typename RadioT>
+static void daemon_record_rx_invalid_packet(RadioController<RadioT> *ctrl,
+                                            const char *reason,
+                                            int len)
+{
+    ctrl->rx_drops++;
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl),
+                     "Drop %lu invalid packet: %s (%d Byte)",
+                     ctrl->rx_drops,
+                     reason ? reason : "invalid",
+                     len);
+
+    if (daemon_should_log_rx_drop(ctrl->rx_drops)) {
+        printf("[%d] RX invalid packet: %s (%d bytes), packet dropped, drops=%lu\n",
+               radio_controller_band_number(ctrl),
+               reason ? reason : "invalid",
+               len,
+               ctrl->rx_drops);
+        fflush(stdout);
+    }
+}
+
+template<typename RadioT>
+static bool daemon_rx_length_ok(RadioController<RadioT> *ctrl,
+                                int len,
+                                size_t buf_len)
+{
+    if (len <= 0)
+        return false;
+
+    if ((size_t)len > buf_len || (size_t)len > RF_PACKET_MAX_PAYLOAD_LEN) {
+        daemon_record_rx_invalid_packet(ctrl, "packet too long", len);
+        return false;
+    }
+
+    return true;
+}
+
+template<typename RadioT>
+static bool daemon_rx_packet_ok(RadioController<RadioT> *ctrl,
+                                uint8_t *buf,
+                                int len)
+{
+    RfPacketValidation packet_state =
+        rf_packet_validate(buf, (size_t)len);
+
+    if (packet_state != RF_PACKET_VALID) {
+        daemon_record_rx_invalid_packet(
+            ctrl,
+            rf_packet_validation_message(packet_state),
+            len);
+        return false;
+    }
+
+    return true;
+}
+
+template<typename RadioT>
+static void daemon_drop_invalid_rx_packet(RadioController<RadioT> *ctrl)
+{
+    ctrl->received = false;
+    ctrl->radio->clearIrq(0xFFFFFFFF);
+    radio_controller_led(ctrl, 0);
+    ctrl->radio->startReceive();
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit nach Drop");
+}
+
+
 /* --- RX band flow -------------------------------------------------------- */
 template<typename RadioT>
 static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
@@ -1540,6 +1633,11 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
         return;
     }
 
+    if (!daemon_rx_length_ok(ctrl, len, sizeof(rx_buf))) {
+        daemon_drop_invalid_rx_packet(ctrl);
+        return;
+    }
+
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "readData()");
     int16_t read_state = daemon_read_rx_data(ctrl, rx_buf, sizeof(rx_buf)); // 5ms Timeout
 
@@ -1552,6 +1650,12 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
     }
 
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Read OK");
+
+    if (!daemon_rx_packet_ok(ctrl, rx_buf, len)) {
+        daemon_finish_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
+        return;
+    }
+
     daemon_print_rx_packet(ctrl, rx_buf, len);
     daemon_broadcast_rx_data(io, rx_buf, len);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Broadcast %d Byte", len);

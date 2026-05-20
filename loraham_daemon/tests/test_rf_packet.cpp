@@ -83,6 +83,21 @@ static void test_preview_len_is_bounded(void)
                 RF_PACKET_PREVIEW_LEN);
 }
 
+
+static void test_lora_header_length_contract(void)
+{
+    expect_size("lora header length", RF_PACKET_LORA_HEADER_LEN, 16);
+    expect_int("lora header rejects short",
+               rf_packet_lora_header_available(RF_PACKET_LORA_HEADER_LEN - 1),
+               0);
+    expect_int("lora header accepts exact",
+               rf_packet_lora_header_available(RF_PACKET_LORA_HEADER_LEN),
+               1);
+    expect_int("lora header accepts larger",
+               rf_packet_lora_header_available(RF_PACKET_MAX_PAYLOAD_LEN),
+               1);
+}
+
 static void test_validation_messages_are_stable(void)
 {
     expect_str("valid message",
@@ -120,6 +135,7 @@ int main(int argc, char **argv)
     test_validate_accepts_valid_payload_lengths();
     test_validate_rejects_invalid_payloads();
     test_preview_len_is_bounded();
+    test_lora_header_length_contract();
     test_validation_messages_are_stable();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

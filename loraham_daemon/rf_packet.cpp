@@ -24,6 +24,11 @@ size_t rf_packet_preview_len(size_t len)
     return len;
 }
 
+int rf_packet_lora_header_available(size_t len)
+{
+    return len >= RF_PACKET_LORA_HEADER_LEN ? 1 : 0;
+}
+
 const char *rf_packet_validation_message(RfPacketValidation state)
 {
     switch (state) {
