@@ -136,6 +136,52 @@ static void test_wait_writable_pipe(void)
     close(fds[1]);
 }
 
+
+static void test_reset_keeps_loop_reusable(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] reset reuse pipe setup\n");
+        return;
+    }
+
+    if (event_loop_init(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] init for reset reuse\n");
+        return;
+    }
+
+    event_loop_add_fd(&set, fds[0]);
+    expect_int("registered before reuse reset",
+               event_loop_has_registered_fds(&set), 1);
+
+    event_loop_reset(&set);
+    expect_int("reuse reset clears fds",
+               event_loop_has_registered_fds(&set), 0);
+
+    event_loop_add_fd(&set, fds[0]);
+    expect_int("register after reset",
+               event_loop_has_registered_fds(&set), 1);
+
+    (void)write(fds[1], &ch, 1);
+
+    expect_int("wait works after reset",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("ready helper works after reset",
+               event_loop_ready_fd_read(&ready, fds[0]), 1);
+
+    event_loop_close(&set);
+    close(fds[0]);
+    close(fds[1]);
+}
+
 static void test_reset_clears_registered_fds(void)
 {
     EventLoopSet set;
@@ -191,6 +237,7 @@ int main(int argc, char **argv)
     test_wait_timeout_without_fds();
     test_wait_readable_pipe();
     test_wait_writable_pipe();
+    test_reset_keeps_loop_reusable();
     test_reset_clears_registered_fds();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

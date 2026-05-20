@@ -169,6 +169,14 @@ static void test_dispatch_ready_client(void)
 
     client_slot_set_fd(&slots[0], sv[1]);
 
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config dispatch init\n");
+        return;
+    }
+
     const char *cmd = "SET GETRSSI=1\n";
     write(sv[0], cmd, strlen(cmd));
 
@@ -190,6 +198,7 @@ static void test_dispatch_ready_client(void)
     expect_int("startReceive called", ctrl.radio->start_receive_count, 1);
     expect_int("client still open", client_slot_has_client(&slots[0]), 1);
 
+    event_loop_close(&set);
     close(sv[0]);
     client_slot_close(&slots[0]);
 }
@@ -266,6 +275,14 @@ static void test_dispatch_ignores_not_ready_client(void)
 
     client_slot_set_fd(&slots[0], sv[1]);
 
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config dispatch not-ready init\n");
+        return;
+    }
+
     const char *cmd = "SET GETRSSI=1\n";
     write(sv[0], cmd, strlen(cmd));
 
@@ -283,6 +300,7 @@ static void test_dispatch_ignores_not_ready_client(void)
     expect_int("not ready startReceive count", ctrl.radio->start_receive_count, 0);
     expect_int("not ready client open", client_slot_has_client(&slots[0]), 1);
 
+    event_loop_close(&set);
     close(sv[0]);
     client_slot_close(&slots[0]);
 }
@@ -309,6 +327,14 @@ static void test_dispatch_closes_eof_client(void)
     client_slot_set_fd(&slots[0], sv[1]);
     client_output_queue_append(&slots[0].output, (const uint8_t *)"pending", 7);
 
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config dispatch eof init\n");
+        return;
+    }
+
     close(sv[0]);
 
     event_loop_reset(&set);
@@ -326,6 +352,8 @@ static void test_dispatch_closes_eof_client(void)
     expect_int("eof client closed", slots[0].fd, 0);
     expect_size("eof output reset", client_output_queue_pending(&slots[0].output), 0);
     expect_size("eof stream reset", slots[0].stream.len, 0);
+
+    event_loop_close(&set);
 }
 
 /* --- CLI parsing and test sequence --- */

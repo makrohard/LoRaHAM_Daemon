@@ -7,10 +7,12 @@
 /* --- epoll backend state --- */
 
 #define EVENT_LOOP_EPOLL_MAX_EVENTS 64
+#define EVENT_LOOP_EPOLL_MAX_REGISTERED_FDS 64
 
 typedef struct {
     int epoll_fd;
     int registered_fds;
+    int registered_fd_list[EVENT_LOOP_EPOLL_MAX_REGISTERED_FDS];
 } EventLoopEpollSet;
 
 typedef struct {

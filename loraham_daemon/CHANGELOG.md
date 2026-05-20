@@ -37,3 +37,4 @@ Initial version: loradaemon_320_108
   - Version now lives in `daemon_version.h`
 
 
+- Reuse epoll event-loop backend across resets while clearing registered descriptors safely.
