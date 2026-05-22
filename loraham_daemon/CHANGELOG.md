@@ -15,6 +15,7 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - CAD/RSSI: routed polling and RSSI streaming through controller state instead of legacy mirrors.
   - CONFIG path: CONFIG dispatch now uses `RadioController` as runtime/hardware source.
   - TX logging: show compact TX packet preview in normal output.
+  - TX logging: print full normal-mode ASCII packet preview.
   - LED path: radio-flow LED handling now goes through `RadioController`.
   - Logging module: extracted logger implementation into `daemon_log.h/.cpp`.
   - Test hardening: expanded structural guards and integration/regression coverage in `run_tests.sh`.

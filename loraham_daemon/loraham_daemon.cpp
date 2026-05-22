@@ -471,18 +471,14 @@ static void lora_print_tx_preview(const char *ctx,
                                   const uint8_t *buf,
                                   size_t len)
 {
-    size_t preview_len = rf_packet_preview_len(len);
     char msg[512];
     size_t pos = 0;
 
     pos += snprintf(msg + pos, sizeof(msg) - pos, "%zu Byte: ", len);
 
-    for(size_t i = 0; i < preview_len && pos < sizeof(msg); i++)
+    for(size_t i = 0; i < len && pos < sizeof(msg); i++)
         pos += snprintf(msg + pos, sizeof(msg) - pos, "%c",
                         buf[i] >= 32 && buf[i] <= 126 ? buf[i] : '.');
-
-    if (preview_len < len && pos < sizeof(msg))
-        snprintf(msg + pos, sizeof(msg) - pos, " ...");
 
     printf("[%s] %s\n", ctx, msg);
     fflush(stdout);
