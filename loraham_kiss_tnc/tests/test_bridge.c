@@ -42,6 +42,7 @@ void lhkt_test_bridge_request_stop(void);
 int lhkt_test_bridge_should_stop(void);
 int lhkt_test_bridge_wait_fd_writable(int fd);
 int lhkt_test_bridge_sleep_ms(int ms);
+int lhkt_test_bridge_send_initial_config(const lhkt_config_t *cfg);
 
 static void test_fd_set_rejects_too_large_fd(void)
 {
@@ -238,6 +239,23 @@ static void test_client_write_failure_returns_socket_error(void)
 }
 
 
+static void test_initial_config_uses_rx_frequency(void)
+{
+    lhkt_config_t cfg;
+    int config_results[] = { LHKT_OK };
+
+    lhkt_config_defaults(&cfg);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+
+    assert(lhkt_test_bridge_send_initial_config(&cfg) == LHKT_OK);
+    assert(lhkt_test_bridge_config_call_count() == 1);
+    assert(lhkt_test_bridge_config_freq_at(0) > 433.774);
+    assert(lhkt_test_bridge_config_freq_at(0) < 433.776);
+}
+
 static void test_tx_write_failure_restores_rx(void)
 {
     lhkt_config_t cfg;
@@ -400,6 +418,7 @@ int main(void)
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
     test_client_write_failure_returns_socket_error();
+    test_initial_config_uses_rx_frequency();
     test_tx_write_failure_restores_rx();
     test_shutdown_during_tx_settle_restores_rx();
     test_tx_socket_error_invalidates_data_socket();
