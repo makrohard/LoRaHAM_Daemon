@@ -467,7 +467,7 @@ static const char *lora_tx_log_ctx(int band)
     return band == 433 ? "TX433" : "TX868";
 }
 
-static void lora_debug_tx_preview(const char *ctx,
+static void lora_print_tx_preview(const char *ctx,
                                   const uint8_t *buf,
                                   size_t len)
 {
@@ -481,7 +481,22 @@ static void lora_debug_tx_preview(const char *ctx,
         pos += snprintf(msg + pos, sizeof(msg) - pos, "%c",
                         buf[i] >= 32 && buf[i] <= 126 ? buf[i] : '.');
 
-    pos += snprintf(msg + pos, sizeof(msg) - pos, " HEX:");
+    if (preview_len < len && pos < sizeof(msg))
+        snprintf(msg + pos, sizeof(msg) - pos, " ...");
+
+    printf("[%s] %s\n", ctx, msg);
+    fflush(stdout);
+}
+
+static void lora_debug_tx_preview(const char *ctx,
+                                  const uint8_t *buf,
+                                  size_t len)
+{
+    size_t preview_len = rf_packet_preview_len(len);
+    char msg[512];
+    size_t pos = 0;
+
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "HEX:");
 
     for(size_t i = 0; i < preview_len && pos < sizeof(msg); i++)
         pos += snprintf(msg + pos, sizeof(msg) - pos, " %02X", buf[i]);
@@ -567,6 +582,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
     uint8_t send_buf[RF_PACKET_MAX_PAYLOAD_LEN];
     memcpy(send_buf, buf, len);
 
+    lora_print_tx_preview(tx_ctx, send_buf, len);
     lora_debug_tx_preview(tx_ctx, send_buf, len);
 
     if(ctrl->tx_busy) {
