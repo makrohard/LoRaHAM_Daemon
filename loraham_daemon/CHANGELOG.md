@@ -38,4 +38,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Added `--help`  
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
-    - Add framed DATA sockets with packet-boundary-preserving TX/RX frames,, shared-radio behavior 
+  - Add framed DATA sockets with packet-boundary-preserving TX/RX frames, shared-radio behavior 
