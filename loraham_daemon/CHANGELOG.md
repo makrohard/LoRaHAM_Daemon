@@ -39,3 +39,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
 
+- Add framed DATA socket protocol helpers for future packet-boundary-preserving clients.
