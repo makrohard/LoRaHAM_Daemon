@@ -99,6 +99,36 @@ static void test_reject_invalid_headers(void)
                framed_data_decode_header(header, sizeof(header), &type, &len), -1);
 }
 
+
+static void test_frame_encode_builder(void)
+{
+    const uint8_t payload[] = { 0xAA, 0xBB, 0xCC };
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + sizeof(payload)];
+    uint8_t small[FRAMED_DATA_HEADER_LEN + sizeof(payload) - 1];
+
+    expect_int("encode RX frame ok",
+               framed_data_encode_frame(frame, sizeof(frame),
+                                        FRAMED_DATA_TYPE_RX_PACKET,
+                                        payload,
+                                        sizeof(payload)), 0);
+    expect_int("frame type", frame[0], FRAMED_DATA_TYPE_RX_PACKET);
+    expect_int("frame len low", frame[1], sizeof(payload));
+    expect_int("frame len high", frame[2], 0);
+    expect_int("frame payload[0]", frame[3], 0xAA);
+    expect_int("frame payload[2]", frame[5], 0xCC);
+
+    expect_int("encode frame small buffer fails",
+               framed_data_encode_frame(small, sizeof(small),
+                                        FRAMED_DATA_TYPE_RX_PACKET,
+                                        payload,
+                                        sizeof(payload)), -1);
+    expect_int("encode frame null payload fails",
+               framed_data_encode_frame(frame, sizeof(frame),
+                                        FRAMED_DATA_TYPE_RX_PACKET,
+                                        NULL,
+                                        sizeof(payload)), -1);
+}
+
 static void test_null_arguments(void)
 {
     uint8_t header[FRAMED_DATA_HEADER_LEN];
@@ -143,6 +173,7 @@ int main(int argc, char **argv)
     test_header_encode_decode_little_endian();
     test_frame_size();
     test_reject_invalid_headers();
+    test_frame_encode_builder();
     test_null_arguments();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

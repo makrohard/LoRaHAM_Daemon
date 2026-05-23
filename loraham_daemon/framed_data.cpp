@@ -1,5 +1,7 @@
 #include "framed_data.h"
 
+#include <string.h>
+
 /* --- Framed DATA socket protocol ---------------------------------------- */
 
 int framed_data_type_known(uint8_t frame_type)
@@ -72,6 +74,34 @@ int framed_data_decode_header(const uint8_t *header,
 
     *frame_type = type;
     *payload_len = len;
+
+    return 0;
+}
+
+
+int framed_data_encode_frame(uint8_t *frame,
+                             size_t frame_len,
+                             uint8_t frame_type,
+                             const uint8_t *payload,
+                             uint16_t payload_len)
+{
+    if (!frame)
+        return -1;
+
+    if (payload_len > 0 && !payload)
+        return -1;
+
+    if (frame_len < framed_data_frame_size(payload_len))
+        return -1;
+
+    if (framed_data_encode_header(frame,
+                                  frame_len,
+                                  frame_type,
+                                  payload_len) != 0)
+        return -1;
+
+    if (payload_len > 0)
+        memcpy(frame + FRAMED_DATA_HEADER_LEN, payload, payload_len);
 
     return 0;
 }

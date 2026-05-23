@@ -27,4 +27,10 @@ int framed_data_decode_header(const uint8_t *header,
                               uint8_t *frame_type,
                               uint16_t *payload_len);
 
+int framed_data_encode_frame(uint8_t *frame,
+                             size_t frame_len,
+                             uint8_t frame_type,
+                             const uint8_t *payload,
+                             uint16_t payload_len);
+
 #endif

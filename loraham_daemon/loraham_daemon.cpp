@@ -147,6 +147,7 @@
 #include "daemon_log.h"
 #include "data_tx.h"
 #include "framed_data_tx.h"
+#include "framed_data.h"
 #include "tx_result.h"
 #include "radio_health.h"
 #include "rf_packet.h"
@@ -1719,10 +1720,31 @@ static void daemon_print_fsk_packet(const char *rx_ctx,
 /* --- RX forwarding ------------------------------------------------------- */
 static void daemon_broadcast_rx_data(RadioChannelIo *io, uint8_t *buf, int len)
 {
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_MAX_RF_PAYLOAD];
+
     if (len <= 0)
         return;
 
     client_slot_broadcast_bytes_queued(io->data_slots, MAX_CLIENTS, buf, len);
+
+    if ((size_t)len > FRAMED_DATA_MAX_RF_PAYLOAD) {
+        daemon_debug_ctx("RXF", "RX frame too large: %d", len);
+        return;
+    }
+
+    if (framed_data_encode_frame(frame,
+                                 sizeof(frame),
+                                 FRAMED_DATA_TYPE_RX_PACKET,
+                                 buf,
+                                 (uint16_t)len) != 0) {
+        daemon_debug_ctx("RXF", "RX frame encode failed");
+        return;
+    }
+
+    client_slot_broadcast_bytes_queued(io->framed_data_slots,
+                                       MAX_CLIENTS,
+                                       frame,
+                                       framed_data_frame_size((uint16_t)len));
 }
 
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */
