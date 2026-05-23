@@ -47,6 +47,9 @@ void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
     client_slot_add_to_event_loop_with_output(ch->data_slots,
                                                   MAX_CLIENTS,
                                                   set);
+    client_slot_add_to_event_loop_with_output(ch->framed_data_slots,
+                                                  MAX_CLIENTS,
+                                                  set);
     client_slot_add_to_event_loop_with_output(ch->conf_slots,
                                                   MAX_CLIENTS,
                                                   set);
@@ -97,6 +100,9 @@ int radio_channel_open_sockets(RadioChannelIo *ch)
 void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)
 {
     client_slot_flush_ready_outputs(ch->data_slots,
+                                    MAX_CLIENTS,
+                                    ready);
+    client_slot_flush_ready_outputs(ch->framed_data_slots,
                                     MAX_CLIENTS,
                                     ready);
     client_slot_flush_ready_outputs(ch->conf_slots,

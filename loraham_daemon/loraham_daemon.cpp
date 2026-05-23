@@ -146,6 +146,7 @@
 #include "daemon_radio_selection.h"
 #include "daemon_log.h"
 #include "data_tx.h"
+#include "framed_data_tx.h"
 #include "tx_result.h"
 #include "radio_health.h"
 #include "rf_packet.h"
@@ -168,6 +169,8 @@ ClientSlot client_data433_slots[MAX_CLIENTS];
 ClientSlot client_data868_slots[MAX_CLIENTS];
 ClientSlot client_data433_framed_slots[MAX_CLIENTS];
 ClientSlot client_data868_framed_slots[MAX_CLIENTS];
+FramedDataTxState client_data433_framed_states[MAX_CLIENTS];
+FramedDataTxState client_data868_framed_states[MAX_CLIENTS];
 ClientSlot client_conf433_slots[MAX_CLIENTS];
 ClientSlot client_conf868_slots[MAX_CLIENTS];
 
@@ -896,12 +899,14 @@ static void daemon_radio_io_init(void)
     if (daemon_radio_433_enabled()) {
         client_slot_init_all(client_data433_slots, MAX_CLIENTS);
         client_slot_init_all(client_data433_framed_slots, MAX_CLIENTS);
+        framed_data_tx_state_init_all(client_data433_framed_states, MAX_CLIENTS);
         client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
     }
 
     if (daemon_radio_868_enabled()) {
         client_slot_init_all(client_data868_slots, MAX_CLIENTS);
         client_slot_init_all(client_data868_framed_slots, MAX_CLIENTS);
+        framed_data_tx_state_init_all(client_data868_framed_states, MAX_CLIENTS);
         client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
     }
 
@@ -1268,10 +1273,132 @@ static void daemon_flush_channel_logged(RadioChannelIo *channel,
     if (daemon_client_slots_output_ready(channel->data_slots, MAX_CLIENTS, readfds))
         daemon_debug_ctx(ctx, "DATA-Ausgabe bereit");
 
+    if (daemon_client_slots_output_ready(channel->framed_data_slots,
+                                         MAX_CLIENTS, readfds))
+        daemon_debug_ctx(ctx, "DATAF-Ausgabe bereit");
+
     if (daemon_client_slots_output_ready(channel->conf_slots, MAX_CLIENTS, readfds))
         daemon_debug_ctx(ctx, "CONF-Ausgabe bereit");
 
     radio_channel_flush_ready(channel, readfds);
+}
+
+static int daemon_queue_framed_error(ClientSlot *slot, const char *msg)
+{
+    uint8_t header[FRAMED_DATA_HEADER_LEN];
+    size_t len;
+
+    if (!slot || !msg)
+        return -1;
+
+    len = strlen(msg);
+    if (len > 255)
+        len = 255;
+
+    if (framed_data_encode_header(header, sizeof(header),
+                                  FRAMED_DATA_TYPE_ERROR,
+                                  (uint16_t)len) != 0)
+        return -1;
+
+    if (!client_output_queue_append(&slot->output, header, sizeof(header)))
+        return -1;
+
+    if (len > 0 &&
+        !client_output_queue_append(&slot->output,
+                                    (const uint8_t *)msg,
+                                    len))
+        return -1;
+
+    return 0;
+}
+
+typedef struct {
+    ClientSlot *slot;
+    const char *tag;
+} DaemonFramedErrorContext;
+
+static void daemon_framed_tx_error(const char *msg, void *ctx)
+{
+    DaemonFramedErrorContext *err = (DaemonFramedErrorContext *)ctx;
+
+    if (!err || !err->slot)
+        return;
+
+    daemon_debug_ctx(err->tag ? err->tag : "TXF",
+                     "Frame-Fehler: %s", msg ? msg : "");
+    if (daemon_queue_framed_error(err->slot, msg ? msg : "frame error") != 0)
+        client_slot_close(err->slot);
+}
+
+template<typename RadioT>
+static int send_framed_data_packet(uint8_t *payload,
+                                   size_t len,
+                                   void *ctx)
+{
+    return send_data_chunk<RadioT>(payload, len, 0, ctx);
+}
+
+static void daemon_process_framed_data_slots(const char *tag,
+                                             ClientSlot *slots,
+                                             FramedDataTxState *states,
+                                             int max_clients,
+                                             const EventLoopReadySet *readfds,
+                                             FramedDataTxPacketHandler handler,
+                                             void *ctx)
+{
+    if (!slots || !states)
+        return;
+
+    for (int i = 0; i < max_clients; i++) {
+        ClientSlot *slot = &slots[i];
+
+        if (!client_slot_has_client(slot)) {
+            framed_data_tx_state_init(&states[i]);
+            continue;
+        }
+
+        if (!client_slot_ready(slot, readfds))
+            continue;
+
+        uint8_t buf[512];
+        ssize_t n;
+
+        do {
+            n = read(slot->fd, buf, sizeof(buf));
+        } while (n < 0 && errno == EINTR);
+
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                continue;
+
+            daemon_debug_ctx(tag, "Lesefehler, Client zu");
+            framed_data_tx_state_init(&states[i]);
+            client_slot_close(slot);
+            continue;
+        }
+
+        if (n == 0) {
+            daemon_debug_ctx(tag, "EOF, Client zu");
+            framed_data_tx_state_init(&states[i]);
+            client_slot_close(slot);
+            continue;
+        }
+
+        DaemonFramedErrorContext err = { slot, tag };
+
+        daemon_debug_ctx(tag, "Framed DATA: %zd Byte empfangen", n);
+        if (framed_data_tx_feed_state(&states[i],
+                                      buf,
+                                      (size_t)n,
+                                      handler,
+                                      ctx,
+                                      daemon_framed_tx_error,
+                                      &err) != 0) {
+            daemon_debug_ctx(tag, "TX-Handler Fehler, Client zu");
+            framed_data_tx_state_init(&states[i]);
+            client_slot_close(slot);
+        }
+    }
 }
 
 static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
@@ -1286,6 +1413,13 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
         data_tx_process_slots("433", client_data433_slots, MAX_CLIENTS,
                               readfds, send_data_chunk<SX1278>, data_tx_433_ctx,
                               daemon_data_tx_log("TX433"));
+        daemon_process_framed_data_slots("TX433F",
+                                         client_data433_framed_slots,
+                                         client_data433_framed_states,
+                                         MAX_CLIENTS,
+                                         readfds,
+                                         send_framed_data_packet<SX1278>,
+                                         data_tx_433_ctx);
         config_dispatch_context<SX1278>(config_433_ctx, MAX_CLIENTS, readfds, buf);
         daemon_flush_channel_logged(&channel_433, readfds, "CLIENT433");
     }
@@ -1295,6 +1429,13 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
         data_tx_process_slots("868", client_data868_slots, MAX_CLIENTS,
                               readfds, send_data_chunk<RFM95>, data_tx_868_ctx,
                               daemon_data_tx_log("TX868"));
+        daemon_process_framed_data_slots("TX868F",
+                                         client_data868_framed_slots,
+                                         client_data868_framed_states,
+                                         MAX_CLIENTS,
+                                         readfds,
+                                         send_framed_data_packet<RFM95>,
+                                         data_tx_868_ctx);
         config_dispatch_context<RFM95>(config_868_ctx, MAX_CLIENTS, readfds, buf);
         daemon_flush_channel_logged(&channel_868, readfds, "CLIENT868");
     }
