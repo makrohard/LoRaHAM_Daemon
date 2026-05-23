@@ -2099,10 +2099,12 @@ static void daemon_print_usage(const char *argv0)
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets:\n");
-    printf("  DATA 433: /tmp/lora433.sock\n");
-    printf("  DATA 868: /tmp/lora868.sock\n");
-    printf("  CONF 433: /tmp/loraconf433.sock\n");
-    printf("  CONF 868: /tmp/loraconf868.sock\n");
+    printf("  DATA  433: /tmp/lora433.sock\n");
+    printf("  DATA  868: /tmp/lora868.sock\n");
+    printf("  DATAF 433: /tmp/lora433f.sock\n");
+    printf("  DATAF 868: /tmp/lora868f.sock\n");
+    printf("  CONF  433: /tmp/loraconf433.sock\n");
+    printf("  CONF  868: /tmp/loraconf868.sock\n");
     printf("\n");
 }
 static void daemon_print_version(void)

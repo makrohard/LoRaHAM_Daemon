@@ -45,3 +45,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
 - Add framed DATA RX delivery with one RX_PACKET frame per received RF packet.
 - Document framed DATA sockets, frame format, and related test coverage.
 - Fix test runner execution list for radio-selection and framed DATA tests.
+- Show framed DATA sockets in daemon help output.
