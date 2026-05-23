@@ -38,11 +38,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Added `--help`  
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
-
-- Add framed DATA socket protocol helpers for future packet-boundary-preserving clients.
-- Add framed DATA socket paths and accept/cleanup wiring beside raw DATA sockets.
-- Add framed DATA TX stream handling for TX_PACKET frames on framed sockets.
-- Add framed DATA RX delivery with one RX_PACKET frame per received RF packet.
-- Document framed DATA sockets, frame format, and related test coverage.
-- Fix test runner execution list for radio-selection and framed DATA tests.
-- Show framed DATA sockets in daemon help output.
+    - Add framed DATA sockets with packet-boundary-preserving TX/RX frames,, shared-radio behavior 

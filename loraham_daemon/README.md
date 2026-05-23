@@ -138,6 +138,9 @@ Rules:
 - one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
 - one received RF packet is sent to framed clients as exactly one `RX_PACKET`.
 - raw DATA clients continue to receive raw RF bytes exactly as before.
+- raw and framed DATA sockets of the same band share the same radio backend.
+- multiple clients may connect to the same band, but TX arbitration is best-effort/event-loop ordered.
+- clients that need exclusive radio use must coordinate externally.
 - the daemon does not implement MeshCore or other higher-level protocols; framed DATA is only a packet transport.
 
 Minimal Python RX frame reader:
