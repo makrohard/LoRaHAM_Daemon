@@ -40,3 +40,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Added one-radio-mode --radio 433 | 868 | both
 
 - Add framed DATA socket protocol helpers for future packet-boundary-preserving clients.
+- Add framed DATA socket paths and accept/cleanup wiring beside raw DATA sockets.

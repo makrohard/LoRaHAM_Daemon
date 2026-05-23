@@ -161,10 +161,13 @@
 /* --- Global socket/client state ----------------------------------------- */
 // Globale Socket- und Client-Zustände
 int data433_fd = -1, data868_fd = -1;
+int data433_framed_fd = -1, data868_framed_fd = -1;
 int conf433_fd = -1, conf868_fd = -1;
 
 ClientSlot client_data433_slots[MAX_CLIENTS];
 ClientSlot client_data868_slots[MAX_CLIENTS];
+ClientSlot client_data433_framed_slots[MAX_CLIENTS];
+ClientSlot client_data868_framed_slots[MAX_CLIENTS];
 ClientSlot client_conf433_slots[MAX_CLIENTS];
 ClientSlot client_conf868_slots[MAX_CLIENTS];
 
@@ -188,15 +191,19 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 
     if (daemon_radio_433_enabled()) {
         client_slot_close_all(client_data433_slots, MAX_CLIENTS);
+        client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
         client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
         close_unix_socket(&data433_fd, DATA433_SOCKET);
+        close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
         close_unix_socket(&conf433_fd, CONF433_SOCKET);
     }
 
     if (daemon_radio_868_enabled()) {
         client_slot_close_all(client_data868_slots, MAX_CLIENTS);
+        client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
         client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
         close_unix_socket(&data868_fd, DATA868_SOCKET);
+        close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
         close_unix_socket(&conf868_fd, CONF868_SOCKET);
     }
 
@@ -697,15 +704,19 @@ static void daemon_startup_io_cleanup(void)
 
     if (daemon_radio_433_enabled()) {
         client_slot_close_all(client_data433_slots, MAX_CLIENTS);
+        client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
         client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
         close_unix_socket(&data433_fd, DATA433_SOCKET);
+        close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
         close_unix_socket(&conf433_fd, CONF433_SOCKET);
     }
 
     if (daemon_radio_868_enabled()) {
         client_slot_close_all(client_data868_slots, MAX_CLIENTS);
+        client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
         client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
         close_unix_socket(&data868_fd, DATA868_SOCKET);
+        close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
         close_unix_socket(&conf868_fd, CONF868_SOCKET);
     }
 }
@@ -884,11 +895,13 @@ static void daemon_radio_io_init(void)
     daemon_debug_ctx("CLIENT", "Slots initialisieren");
     if (daemon_radio_433_enabled()) {
         client_slot_init_all(client_data433_slots, MAX_CLIENTS);
+        client_slot_init_all(client_data433_framed_slots, MAX_CLIENTS);
         client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
     }
 
     if (daemon_radio_868_enabled()) {
         client_slot_init_all(client_data868_slots, MAX_CLIENTS);
+        client_slot_init_all(client_data868_framed_slots, MAX_CLIENTS);
         client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
     }
 
@@ -896,18 +909,24 @@ static void daemon_radio_io_init(void)
     radio_channel_io_init(&channel_433,
                           RADIO_BAND_433,
                           DATA433_SOCKET,
+                          DATA433_FRAMED_SOCKET,
                           CONF433_SOCKET,
                           &data433_fd,
+                          &data433_framed_fd,
                           &conf433_fd,
                           client_data433_slots,
+                          client_data433_framed_slots,
                           client_conf433_slots);
     radio_channel_io_init(&channel_868,
                           RADIO_BAND_868,
                           DATA868_SOCKET,
+                          DATA868_FRAMED_SOCKET,
                           CONF868_SOCKET,
                           &data868_fd,
+                          &data868_framed_fd,
                           &conf868_fd,
                           client_data868_slots,
+                          client_data868_framed_slots,
                           client_conf868_slots);
 
     daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
@@ -1208,12 +1227,18 @@ static void daemon_accept_channel_logged(RadioChannelIo *channel,
                                          const char *ctx)
 {
     bool data_ready = event_loop_ready_fd_read(readfds, *channel->data_listen_fd);
+    bool framed_ready = event_loop_ready_fd_read(readfds,
+                                                 *channel->framed_data_listen_fd);
     bool conf_ready = event_loop_ready_fd_read(readfds, *channel->conf_listen_fd);
     int data_before = daemon_client_slot_count(channel->data_slots, MAX_CLIENTS);
+    int framed_before = daemon_client_slot_count(channel->framed_data_slots,
+                                                 MAX_CLIENTS);
     int conf_before = daemon_client_slot_count(channel->conf_slots, MAX_CLIENTS);
 
     if (data_ready)
         daemon_debug_ctx(ctx, "DATA-Annahme bereit");
+    if (framed_ready)
+        daemon_debug_ctx(ctx, "DATAF-Annahme bereit");
     if (conf_ready)
         daemon_debug_ctx(ctx, "CONF-Annahme bereit");
 
@@ -1222,6 +1247,12 @@ static void daemon_accept_channel_logged(RadioChannelIo *channel,
     if (data_ready) {
         int data_after = daemon_client_slot_count(channel->data_slots, MAX_CLIENTS);
         daemon_log_accept_delta(ctx, "DATA", data_before, data_after);
+    }
+
+    if (framed_ready) {
+        int framed_after = daemon_client_slot_count(channel->framed_data_slots,
+                                                    MAX_CLIENTS);
+        daemon_log_accept_delta(ctx, "DATAF", framed_before, framed_after);
     }
 
     if (conf_ready) {

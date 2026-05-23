@@ -28,20 +28,26 @@ typedef enum {
 typedef struct {
     RadioBand_t band;
     const char *data_socket_path;
+    const char *framed_data_socket_path;
     const char *conf_socket_path;
     int *data_listen_fd;
+    int *framed_data_listen_fd;
     int *conf_listen_fd;
     ClientSlot *data_slots;
+    ClientSlot *framed_data_slots;
     ClientSlot *conf_slots;
 } RadioChannelIo;
 
 void radio_channel_io_init(RadioChannelIo *ch,
                            RadioBand_t band,
                            const char *data_socket_path,
+                           const char *framed_data_socket_path,
                            const char *conf_socket_path,
                            int *data_listen_fd,
+                           int *framed_data_listen_fd,
                            int *conf_listen_fd,
                            ClientSlot *data_slots,
+                           ClientSlot *framed_data_slots,
                            ClientSlot *conf_slots);
 
 int radio_channel_open_sockets(RadioChannelIo *ch);

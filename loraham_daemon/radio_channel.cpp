@@ -15,18 +15,24 @@
 void radio_channel_io_init(RadioChannelIo *ch,
                            RadioBand_t band,
                            const char *data_socket_path,
+                           const char *framed_data_socket_path,
                            const char *conf_socket_path,
                            int *data_listen_fd,
+                           int *framed_data_listen_fd,
                            int *conf_listen_fd,
                            ClientSlot *data_slots,
+                           ClientSlot *framed_data_slots,
                            ClientSlot *conf_slots)
 {
     ch->band = band;
     ch->data_socket_path = data_socket_path;
+    ch->framed_data_socket_path = framed_data_socket_path;
     ch->conf_socket_path = conf_socket_path;
     ch->data_listen_fd = data_listen_fd;
+    ch->framed_data_listen_fd = framed_data_listen_fd;
     ch->conf_listen_fd = conf_listen_fd;
     ch->data_slots = data_slots;
+    ch->framed_data_slots = framed_data_slots;
     ch->conf_slots = conf_slots;
 }
 
@@ -35,6 +41,7 @@ void radio_channel_io_init(RadioChannelIo *ch,
 void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
 {
     event_loop_add_fd(set, *ch->data_listen_fd);
+    event_loop_add_fd(set, *ch->framed_data_listen_fd);
     event_loop_add_fd(set, *ch->conf_listen_fd);
 
     client_slot_add_to_event_loop_with_output(ch->data_slots,
@@ -52,6 +59,11 @@ void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *rea
                                        ch->data_slots,
                                        MAX_CLIENTS);
 
+    if(event_loop_ready_fd_read(ready, *ch->framed_data_listen_fd))
+        client_slot_accept_with_output(*ch->framed_data_listen_fd,
+                                       ch->framed_data_slots,
+                                       MAX_CLIENTS);
+
     if(event_loop_ready_fd_read(ready, *ch->conf_listen_fd))
         client_slot_accept_with_output(*ch->conf_listen_fd,
                                        ch->conf_slots,
@@ -64,8 +76,17 @@ int radio_channel_open_sockets(RadioChannelIo *ch)
     if (*ch->data_listen_fd < 0)
         return -1;
 
+    *ch->framed_data_listen_fd = setup_unix_socket(ch->framed_data_socket_path,
+                                                   MAX_CLIENTS);
+    if (*ch->framed_data_listen_fd < 0) {
+        close_unix_socket(ch->data_listen_fd, ch->data_socket_path);
+        return -1;
+    }
+
     *ch->conf_listen_fd = setup_unix_socket(ch->conf_socket_path, MAX_CLIENTS);
     if (*ch->conf_listen_fd < 0) {
+        close_unix_socket(ch->framed_data_listen_fd,
+                          ch->framed_data_socket_path);
         close_unix_socket(ch->data_listen_fd, ch->data_socket_path);
         return -1;
     }
