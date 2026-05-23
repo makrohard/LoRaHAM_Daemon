@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 25 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 27 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -41,7 +41,7 @@ The tests should protect externally relevant behavior:
 - public command-line behavior, including selected-radio mode
 - public UNIX socket behavior and cleanup
 - CONFIG command parsing, validation, rejection, and apply safety
-- DATA socket chunking and RF packet handling helpers
+- raw DATA socket chunking, framed DATA helpers, and RF packet handling helpers
 - client lifecycle, queued output, and slow/nonblocking client behavior
 - timing, event-loop, radio-health, and TX-result semantics that affect daemon behavior
 
@@ -64,6 +64,8 @@ DATA/RF/TX:
 - `test_data_tx`
 - `test_tx_result`
 - `test_rf_packet`
+- `test_framed_data`
+- `test_framed_data_tx`
 
 Client/socket/runtime:
 

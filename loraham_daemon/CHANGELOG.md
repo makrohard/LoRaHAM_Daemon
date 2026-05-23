@@ -43,3 +43,4 @@ Initial version: loradaemon_320_108 by Alexander Walter
 - Add framed DATA socket paths and accept/cleanup wiring beside raw DATA sockets.
 - Add framed DATA TX stream handling for TX_PACKET frames on framed sockets.
 - Add framed DATA RX delivery with one RX_PACKET frame per received RF packet.
+- Document framed DATA sockets, frame format, and related test coverage.

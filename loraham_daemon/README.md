@@ -7,7 +7,8 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 ## Purpose
 
 - Control the LoRaHAM radio hardware from user space, either as dual-radio daemon or as selected single-radio daemon.
-- Provide DATA sockets for raw packet TX/RX.
+- Provide raw DATA sockets for backward-compatible stream TX/RX.
+- Provide framed DATA sockets for packet-boundary-preserving clients.
 - Provide CONF sockets for runtime radio configuration.
 - Keep radio access centralized so client programs do not need direct SPI/RadioLib access.
 - Print live RX/TX/debug information when run in the foreground.
@@ -21,11 +22,12 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
-| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band DATA/CONF socket wiring, selected socket setup, setup failure propagation, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
+| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket wiring, selected socket setup, setup failure propagation, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Client handling | `client_output_queue.cpp`, `client_set.cpp`, `client_slot.cpp` | Client slots, nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
-| DATA TX | `data_tx.cpp` | Split DATA socket writes into RF-sized chunks before transmit |
+| Raw DATA TX | `data_tx.cpp` | Split raw DATA socket writes into RF-sized chunks before transmit |
+| Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, and RX_PACKET framing for packet-boundary-preserving clients |
 | CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands |
 | RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
@@ -52,8 +54,10 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Socket | Type | Direction | Payload | Meaning |
 |---|---|---|---|---|
-| `/tmp/lora433.sock` | DATA 433 | client ↔ daemon | raw bytes | TX raw bytes on 433 MHz; receive RF packets from 433 MHz |
-| `/tmp/lora868.sock` | DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive RF packets from 868 MHz |
+| `/tmp/lora433.sock` | raw DATA 433 | client ↔ daemon | raw bytes | TX raw bytes on 433 MHz; receive raw RF packets from 433 MHz |
+| `/tmp/lora868.sock` | raw DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive raw RF packets from 868 MHz |
+| `/tmp/lora433f.sock` | framed DATA 433 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 433 MHz |
+| `/tmp/lora868f.sock` | framed DATA 868 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 868 MHz |
 | `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CAD/RSSI text messages |
 | `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CAD/RSSI text messages |
 
@@ -61,9 +65,9 @@ Socket availability depends on the selected radio mode:
 
 | Radio mode | Created sockets |
 |---|---|
-| default / `--radio both` | all four DATA/CONF sockets |
-| `--radio 433` | `/tmp/lora433.sock`, `/tmp/loraconf433.sock` |
-| `--radio 868` | `/tmp/lora868.sock`, `/tmp/loraconf868.sock` |
+| default / `--radio both` | all six raw DATA, framed DATA, and CONF sockets |
+| `--radio 433` | `/tmp/lora433.sock`, `/tmp/lora433f.sock`, `/tmp/loraconf433.sock` |
+| `--radio 868` | `/tmp/lora868.sock`, `/tmp/lora868f.sock`, `/tmp/loraconf868.sock` |
 
 Inactive-radio sockets are not created. This is intentional so clients can detect which radio backend is active by checking the socket path.
 
@@ -75,7 +79,8 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 |---|---:|---|
 | `MAX_CLIENTS` | `10` | Client slots per socket group |
 | `buf_SIZE` | `256` bytes | Internal RX/CONFIG buffer size |
-| DATA TX chunk | `255` bytes | Maximum RF chunk generated from DATA socket input |
+| Raw DATA TX chunk | `255` bytes | Maximum RF chunk generated from raw DATA socket input |
+| Framed DATA RF payload | `255` bytes | Maximum payload accepted for `TX_PACKET` and emitted for `RX_PACKET` |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD poll interval | `30` loop ticks | CAD polling cadence constant |
@@ -101,6 +106,68 @@ printf 'Hello LoRaHAM\n' | socat - UNIX-CONNECT:/tmp/lora433.sock
 echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" \
   | perl -pe 's/([0-9A-Fa-f]{2})/chr(hex($1))/ge' \
   | socat - UNIX-CONNECT:/tmp/lora868.sock
+```
+
+## Framed DATA sockets
+
+Framed DATA sockets are opt-in binary stream sockets for clients that need stable
+RF packet boundaries. Raw DATA sockets remain unchanged and are still the
+backward-compatible default interface.
+
+Frame layout:
+
+| Offset | Size | Meaning |
+|---:|---:|---|
+| `0` | 1 byte | frame type |
+| `1` | 2 bytes | payload length, little-endian `uint16` |
+| `3` | `length` bytes | payload |
+
+Frame types:
+
+| Type | Name | Direction | Meaning |
+|---:|---|---|---|
+| `0x01` | `RX_PACKET` | daemon → client | One complete received RF packet |
+| `0x02` | `TX_PACKET` | client → daemon | One complete RF packet to transmit |
+| `0x03` | `ERROR` | daemon → client | UTF-8 error text |
+
+Rules:
+
+- `TX_PACKET` payloads must be at most `255` bytes.
+- oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
+- unsupported client frame types are rejected with an `ERROR` frame.
+- one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
+- one received RF packet is sent to framed clients as exactly one `RX_PACKET`.
+- raw DATA clients continue to receive raw RF bytes exactly as before.
+- the daemon does not implement MeshCore or other higher-level protocols; framed DATA is only a packet transport.
+
+Minimal Python RX frame reader:
+
+```python
+import socket
+import struct
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.connect("/tmp/lora868f.sock")
+
+header = sock.recv(3)
+frame_type, payload_len = struct.unpack("<BH", header)
+payload = sock.recv(payload_len)
+
+print(frame_type, payload_len, payload)
+```
+
+Minimal Python TX frame sender:
+
+```python
+import socket
+import struct
+
+payload = b"Hello LoRaHAM"
+frame = struct.pack("<BH", 0x02, len(payload)) + payload
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.connect("/tmp/lora868f.sock")
+sock.sendall(frame)
 ```
 
 ## CONF sockets
