@@ -71,6 +71,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/daemon_tx.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
+  "$SCRIPT_DIR/daemon_rx.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
