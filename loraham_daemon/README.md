@@ -253,6 +253,20 @@ Normal logs report the active radios once during startup. Debug logs contain mor
 | `SHAPING` | FSK | RadioLib/default | exact `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0` | `0.0`, `0.3`, `0.5`, `1.0` | Data shaping / Gaussian filter |
 | `ENCODING` | FSK | RadioLib/default | integer `0`, `1`, `2` | `0` NRZ, `1` Manchester, `2` Whitening | FSK encoding |
 
+### CONF queries and runtime stats
+
+CONF sockets also accept read-style query commands. Known queries return one
+newline-terminated response line. Unknown or malformed commands keep the legacy
+behavior: the daemon logs them but does not send a stable OK/ERR response.
+
+| Command | Response | Meaning |
+|---|---|---|
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0` | Current radio health and runtime flags |
+| `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0` | Counters since daemon start |
+
+The daemon also prints one compact operator stats line per selected radio every
+60 minutes by default. This terminal log uses the same fields as `GET STATS`.
+
 ## CONF output messages
 
 | Message | Socket | Meaning |

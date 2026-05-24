@@ -7,6 +7,7 @@
 #include <RadioLib.h>
 
 #include "radio_channel.h"
+#include "daemon_stats.h"
 #include "radio_health.h"
 
 /* --- Radio hardware/runtime state --------------------------------------- */
@@ -28,7 +29,7 @@ struct RadioController {
     volatile bool cad_active;
     volatile bool getrssi_active;
 
-    unsigned long rx_drops;
+    DaemonRadioStats stats;
 
     void (*rx_callback)(void);
 
@@ -61,7 +62,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_active = false;
     ctrl->getrssi_active = false;
 
-    ctrl->rx_drops = 0;
+    daemon_radio_stats_init(&ctrl->stats);
 
     ctrl->rx_callback = rx_callback;
     ctrl->led_pin = led_pin;

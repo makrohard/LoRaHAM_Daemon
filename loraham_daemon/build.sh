@@ -35,6 +35,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/config_apply.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
   "$SCRIPT_DIR/daemon_timing.cpp"
+  "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/framed_data.cpp"

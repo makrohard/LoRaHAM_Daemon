@@ -6,10 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "daemon_stats.h"
+#include "daemon_timing.h"
 #include "radio_controller.h"
 #include "radio_health.h"
 
-/* --- CONF status query --------------------------------------------------- */
+/* --- CONF status queries ------------------------------------------------- */
 
 static inline void config_status_trim_copy(char *dst,
                                            size_t dst_size,
@@ -58,14 +60,25 @@ static inline void config_status_uppercase(char *s)
         *s = (char)toupper((unsigned char)*s);
 }
 
-static inline int config_status_is_get_status(const char *line)
+static inline int config_status_command_equals(const char *line,
+                                               const char *expected)
 {
     char cmd[64];
 
     config_status_trim_copy(cmd, sizeof(cmd), line);
     config_status_uppercase(cmd);
 
-    return strcmp(cmd, "GET STATUS") == 0;
+    return strcmp(cmd, expected) == 0;
+}
+
+static inline int config_status_is_get_status(const char *line)
+{
+    return config_status_command_equals(line, "GET STATUS");
+}
+
+static inline int config_status_is_get_stats(const char *line)
+{
+    return config_status_command_equals(line, "GET STATS");
 }
 
 template<typename RadioT>
@@ -80,6 +93,20 @@ static inline void config_status_format(char *buf,
              (ctrl && ctrl->tx_busy) ? 1 : 0,
              (ctrl && ctrl->cad_active) ? 1 : 0,
              (ctrl && ctrl->getrssi_active) ? 1 : 0);
+}
+
+template<typename RadioT>
+static inline void config_status_format_stats(char *buf,
+                                             size_t buf_size,
+                                             const RadioController<RadioT> *ctrl)
+{
+    long uptime = daemon_stats_uptime_seconds(daemon_now_ms());
+
+    daemon_stats_format_response(buf,
+                                 buf_size,
+                                 uptime,
+                                 radio_controller_health(ctrl),
+                                 ctrl ? &ctrl->stats : NULL);
 }
 
 #endif

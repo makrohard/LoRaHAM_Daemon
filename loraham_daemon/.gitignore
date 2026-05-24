@@ -49,3 +49,4 @@ core.*
 
 # Old local/generated interface test binary
 /test_loradaemon_interface
+/tests/test_conf_stats

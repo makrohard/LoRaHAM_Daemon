@@ -104,6 +104,20 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    if(config_status_is_get_stats(line)) {
+        char stats[256];
+
+        config_status_format_stats(stats, sizeof(stats), ctx->ctrl);
+        if(!client_output_queue_append(&ctx->slot->output,
+                                       (const uint8_t *)stats,
+                                       strlen(stats))) {
+            client_slot_close(ctx->slot);
+            return;
+        }
+        client_slot_flush_output(ctx->slot);
+        return;
+    }
+
     if(!ctx->ctrl || !ctx->ctrl->radio ||
        !radio_controller_ready(ctx->ctrl)) {
         config_dispatch_log_message(&ctx->log, "Radio nicht bereit");

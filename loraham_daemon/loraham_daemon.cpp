@@ -142,6 +142,7 @@
 #include "daemon_protocol.h"
 #include "daemon_version.h"
 #include "daemon_timing.h"
+#include "daemon_stats.h"
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
 #include "daemon_log.h"
@@ -407,7 +408,7 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
     ctrl->tx_busy = false;
     ctrl->cad_active = false;
     ctrl->getrssi_active = false;
-    ctrl->rx_drops = 0;
+    daemon_radio_stats_init(&ctrl->stats);
     daemon_debug_band(tag, "Zustand zurückgesetzt");
 }
 
@@ -1047,6 +1048,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
 
     if (data_tx_wait_channel_free(tx)) {
+        daemon_radio_stats_record_cad_timeout(&ctrl->stats);
         daemon_debug_ctx(tx->log_ctx, "CAD Timeout");
         printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tag);
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
@@ -1058,6 +1060,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     radio_controller_led(ctrl, 1);
     TxResult result = lora_send(chunk, len, band);
+    daemon_radio_stats_record_tx_result(&ctrl->stats, result);
     radio_controller_led(ctrl, 0);
 
     if (!tx_result_is_ok(result)) {
@@ -1144,6 +1147,7 @@ static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
 /* --- Loop context --------------------------------------------------------- */
 typedef struct {
     DaemonDeadlineTimer rssi_timer;
+    DaemonDeadlineTimer stats_timer;
     DataTxDaemonContext<SX1278> data_tx_433_ctx;
     DataTxDaemonContext<RFM95> data_tx_868_ctx;
     ConfigDispatchContext<SX1278> config_433_ctx;
@@ -1152,10 +1156,18 @@ typedef struct {
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
 {
+    long now = daemon_now_ms();
+
     // RSSI timer.
     daemon_deadline_timer_init(&ctx->rssi_timer,
-                               daemon_now_ms(),
+                               now,
                                DAEMON_RSSI_INTERVAL_MS);
+
+    // Periodic operator stats.
+    daemon_stats_start(now);
+    daemon_deadline_timer_init(&ctx->stats_timer,
+                               now,
+                               DAEMON_STATS_LOG_INTERVAL_MS);
 
     // DATA TX contexts.
     ctx->data_tx_433_ctx = daemon_data_tx_context(&radio_controller_433);
@@ -1584,6 +1596,35 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
     }
 }
 
+/* --- Periodic operator stats -------------------------------------------- */
+template<typename RadioT>
+static void daemon_print_radio_stats(RadioController<RadioT> *ctrl)
+{
+    char fields[256];
+    long uptime = daemon_stats_uptime_seconds(daemon_now_ms());
+
+    daemon_stats_format_fields(fields,
+                               sizeof(fields),
+                               uptime,
+                               radio_controller_health(ctrl),
+                               &ctrl->stats);
+
+    printf("[STATS %s] %s\n", radio_controller_tag(ctrl), fields);
+    fflush(stdout);
+}
+
+static void daemon_process_periodic_stats(DaemonDeadlineTimer *stats_timer)
+{
+    if (!daemon_deadline_timer_due(stats_timer, daemon_now_ms()))
+        return;
+
+    if (daemon_radio_433_enabled())
+        daemon_print_radio_stats(&radio_controller_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_print_radio_stats(&radio_controller_868);
+}
+
 /* --- CAD/RSSI polling ---------------------------------------------------- */
 static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
 {
@@ -1840,13 +1881,13 @@ static bool daemon_should_log_rx_drop(unsigned long drops)
 template<typename RadioT>
 static void daemon_record_rx_drop(RadioController<RadioT> *ctrl, int16_t state)
 {
-    ctrl->rx_drops++;
+    daemon_radio_stats_record_rx_drop(&ctrl->stats);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Drop %lu Status %d",
-                     ctrl->rx_drops, state);
+                     ctrl->stats.rx_drops, state);
 
-    if (daemon_should_log_rx_drop(ctrl->rx_drops)) {
+    if (daemon_should_log_rx_drop(ctrl->stats.rx_drops)) {
         printf("[%d] RX read error: %d, packet dropped, drops=%lu\n",
-               radio_controller_band_number(ctrl), state, ctrl->rx_drops);
+               radio_controller_band_number(ctrl), state, ctrl->stats.rx_drops);
         fflush(stdout);
     }
 }
@@ -1866,19 +1907,19 @@ static void daemon_record_rx_invalid_packet(RadioController<RadioT> *ctrl,
                                             const char *reason,
                                             int len)
 {
-    ctrl->rx_drops++;
+    daemon_radio_stats_record_rx_drop(&ctrl->stats);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl),
                      "Drop %lu invalid packet: %s (%d Byte)",
-                     ctrl->rx_drops,
+                     ctrl->stats.rx_drops,
                      reason ? reason : "invalid",
                      len);
 
-    if (daemon_should_log_rx_drop(ctrl->rx_drops)) {
+    if (daemon_should_log_rx_drop(ctrl->stats.rx_drops)) {
         printf("[%d] RX invalid packet: %s (%d bytes), packet dropped, drops=%lu\n",
                radio_controller_band_number(ctrl),
                reason ? reason : "invalid",
                len,
-               ctrl->rx_drops);
+               ctrl->stats.rx_drops);
         fflush(stdout);
     }
 }
@@ -1980,6 +2021,7 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
         return;
     }
 
+    daemon_radio_stats_record_rx(&ctrl->stats, (size_t)len);
     daemon_print_rx_packet(ctrl, rx_buf, len);
     daemon_broadcast_rx_data(io, rx_buf, len);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Broadcast %d Byte", len);
@@ -2003,6 +2045,7 @@ static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
 
 /* --- Radio polling order ------------------------------------------------- */
 static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
+                                         DaemonDeadlineTimer *stats_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
 {
@@ -2012,8 +2055,9 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
     if (daemon_radio_868_enabled())
         daemon_process_radio_868(rx_buf_868);
 
-    // --- CAD/RSSI Überwachung ---
+    // --- CAD/RSSI monitoring ---
     daemon_process_cad_rssi(rssi_timer);
+    daemon_process_periodic_stats(stats_timer);
 }
 
 /* --- Main loop iteration ------------------------------------------------- */
@@ -2043,7 +2087,10 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
                                 &loop_ctx->data_tx_868_ctx,
                                 readfds, buf);
 
-    daemon_process_radio_polling(&loop_ctx->rssi_timer, rx_buf_433, rx_buf_868);
+    daemon_process_radio_polling(&loop_ctx->rssi_timer,
+                                 &loop_ctx->stats_timer,
+                                 rx_buf_433,
+                                 rx_buf_868);
 }
 
 /* --- Polling loop -------------------------------------------------------- */
