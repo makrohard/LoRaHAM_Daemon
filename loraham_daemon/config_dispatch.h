@@ -3,6 +3,7 @@
 
 #include "client_slot.h"
 #include "config_apply.h"
+#include "config_status.h"
 #include "daemon_protocol.h"
 #include "radio_channel.h"
 #include "radio_controller.h"
@@ -12,6 +13,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -73,6 +75,7 @@ struct ConfigDispatchContext {
 
 template<typename RadioT>
 struct ConfigLineApplyContext {
+    ClientSlot *slot;
     RadioController<RadioT> *ctrl;
     const char *tag;
     ConfigApplyFn<RadioT> apply_config;
@@ -86,6 +89,20 @@ static void config_dispatch_apply_line(const char *line, void *user)
         (ConfigLineApplyContext<RadioT> *)user;
 
     config_dispatch_log_line(&ctx->log, "Zeile", line);
+
+    if(config_status_is_get_status(line)) {
+        char status[128];
+
+        config_status_format(status, sizeof(status), ctx->ctrl);
+        if(!client_output_queue_append(&ctx->slot->output,
+                                       (const uint8_t *)status,
+                                       strlen(status))) {
+            client_slot_close(ctx->slot);
+            return;
+        }
+        client_slot_flush_output(ctx->slot);
+        return;
+    }
 
     if(!ctx->ctrl || !ctx->ctrl->radio ||
        !radio_controller_ready(ctx->ctrl)) {
@@ -125,6 +142,7 @@ static void config_dispatch_client(ClientSlot *slots,
         return;
 
     ConfigLineApplyContext<RadioT> line_ctx = {
+        slot,
         ctrl,
         tag,
         apply_config,

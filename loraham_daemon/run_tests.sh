@@ -490,6 +490,7 @@ build_tests() {
   build_one_lifecycle_test "$TEST_DIR/test_daemon_lifecycle.cpp" "$TEST_DIR/test_daemon_lifecycle"
   build_one_unix_socket_test "$TEST_DIR/test_unix_socket.cpp" "$TEST_DIR/test_unix_socket"
   build_one_test "$TEST_DIR/test_rssi_multiclient.c" "$TEST_DIR/test_rssi_multiclient"
+  build_one_test "$TEST_DIR/test_conf_status.c" "$TEST_DIR/test_conf_status"
   build_one_cpp_test "$TEST_DIR/test_config_parser.cpp" "$TEST_DIR/test_config_parser"
   build_one_config_stream_buffer_test "$TEST_DIR/test_config_stream_buffer.cpp" "$TEST_DIR/test_config_stream_buffer"
   build_one_config_value_test "$TEST_DIR/test_config_value.cpp" "$TEST_DIR/test_config_value"
@@ -600,6 +601,7 @@ tests=(
   "$TEST_DIR/test_interface_baseline"
   "$TEST_DIR/test_config_stream"
   "$TEST_DIR/test_rssi_multiclient"
+  "$TEST_DIR/test_conf_status"
   "$TEST_DIR/test_client_lifecycle"
 )
 

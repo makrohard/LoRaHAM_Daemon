@@ -58,8 +58,8 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | `/tmp/lora868.sock` | raw DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive raw RF packets from 868 MHz |
 | `/tmp/lora433f.sock` | framed DATA 433 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 433 MHz |
 | `/tmp/lora868f.sock` | framed DATA 868 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 868 MHz |
-| `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CAD/RSSI text messages |
-| `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CAD/RSSI text messages |
+| `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CONF status/events |
+| `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CONF status/events |
 
 Socket availability depends on the selected radio mode:
 
@@ -179,7 +179,17 @@ CONF sockets accept text commands:
 
 ```text
 SET KEY=VALUE KEY=VALUE ...
+GET STATUS
 ```
+
+`GET STATUS` returns one runtime snapshot on the same CONF socket:
+
+```text
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1
+```
+
+DATA and framed DATA sockets are payload-only. Status/config messages are never
+sent on DATA or framed DATA sockets.
 
 Important behavior:
 
@@ -250,6 +260,9 @@ Normal logs report the active radios once during startup. Debug logs contain mor
 | `CAD=1\n` | matching CONF socket | LoRa channel activity detected |
 | `CAD=0\n` | matching CONF socket | LoRa channel no longer active |
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
+| `TX=1\n` | matching CONF socket | Local radio transmit started |
+| `TX=0\n` | matching CONF socket | Local radio transmit finished |
+| `STATUS RADIO=... TX=... CAD=... GETRSSI=...\n` | requesting CONF socket | Reply to `GET STATUS` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.

@@ -22,6 +22,7 @@ core.*
 *.swo
 /tests/test_config_parser
 /tests/test_rssi_multiclient
+/tests/test_conf_status
 /tests/test_daemon_timing
 /tests/test_event_loop
 /tests/test_data_tx
