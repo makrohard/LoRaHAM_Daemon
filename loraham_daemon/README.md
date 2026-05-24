@@ -32,6 +32,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
 | Logging | `daemon_log.cpp`, `daemon_log.h` | Normal and debug logging helpers used by daemon/runtime modules |
+| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED blink helpers |
 | Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | Periodic timers, monotonic timing helpers, stop flag handling, and signal-based shutdown |
 
 ## Build and test scripts

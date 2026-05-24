@@ -40,7 +40,6 @@
 
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
-#include <lgpio.h>
 
 #include "daemon_protocol.h"
 #include "daemon_version.h"
@@ -49,6 +48,7 @@
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
 #include "daemon_log.h"
+#include "daemon_led.h"
 #include "data_tx.h"
 #include "framed_data_tx.h"
 #include "framed_data.h"
@@ -183,57 +183,29 @@ static void daemon_enter_background(void)
 }
 /* --- Radio controller state ---------------------------------------------- */
 
-/* --- LED pins -------------------------------------------------------------- */
-#define PIN_433 13
-#define PIN_868 19
-
 void setFlag433(void);
 void setFlag868(void);
 
 RadioController<SX1278> radio_controller_433;
 RadioController<RFM95> radio_controller_868;
 
-int h = -1;
-int chip = -1;
-
-/* --- LED setup ------------------------------------------------------------- */
-void LED_init() {
-    h = lgGpiochipOpen(0);
-    chip = h;
-
-    if (chip < 0) {
-        printf("Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
-        return;
-    }
-}
-
 /* --- LED control ----------------------------------------------------------- */
-void LED_433(int state) {
-    if (chip >= 0)
-        lgGpioWrite(chip, PIN_433, state ? 1 : 0);
-}
-
-void LED_868(int state) {
-    if (chip >= 0)
-        lgGpioWrite(chip, PIN_868, state ? 1 : 0);
-}
-
 template<typename RadioT>
 static void radio_controller_led(RadioController<RadioT> *ctrl, int state)
 {
-    if (!ctrl || chip < 0)
+    if (!ctrl)
         return;
 
-    lgGpioWrite(chip, ctrl->led_pin, state ? 1 : 0);
+    daemon_led_set_pin(ctrl->led_pin, state);
 }
 
 template<typename RadioT>
 static void radio_controller_flash_led(RadioController<RadioT> *ctrl)
 {
-    radio_controller_led(ctrl, 1);
-    usleep(15000);
-    radio_controller_led(ctrl, 0);
-    usleep(15000);
+    if (!ctrl)
+        return;
+
+    daemon_led_flash_pin(ctrl->led_pin);
 }
 
 
@@ -251,7 +223,7 @@ static void daemon_radio_controller_init(void)
                           "433",
                           false,
                           setFlag433,
-                          PIN_433);
+                          DAEMON_LED_PIN_433);
     daemon_debug_band("433", "Controller bereit");
 
     radio_controller_init(&radio_controller_868,
@@ -259,7 +231,7 @@ static void daemon_radio_controller_init(void)
                           "868",
                           true,
                           setFlag868,
-                          PIN_868);
+                          DAEMON_LED_PIN_868);
     daemon_debug_band("868", "Controller bereit");
 }
 
@@ -631,8 +603,8 @@ void lora_init() {
     radio_controller_868.health = RADIO_HEALTH_UNINITIALIZED;
     daemon_debug_ctx("RADIO", "Health zurückgesetzt");
 
-    if (h < 0) {
-        printf("[GPIO] Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
+    if (!daemon_led_ready()) {
+        printf("[GPIO] Fehler: LED/GPIO nicht bereit!\n");
         daemon_debug_ctx("GPIO", "Nicht bereit");
         if (daemon_radio_433_enabled())
             radio_controller_433.health = RADIO_HEALTH_FAILED;
@@ -717,13 +689,13 @@ void lora_init() {
             daemon_debug_band("433", "begin() Fehler %d", state_433);
         }
 
-        LED_433(0);
+        radio_controller_led(&radio_controller_433, 0);
     } else {
         daemon_debug_band("433", "Nicht ausgewählt");
     }
 
     if (daemon_radio_868_enabled()) {
-        LED_868(1);
+        radio_controller_led(&radio_controller_868, 1);
 
         daemon_debug_band("868", "Objekte anlegen");
         radio_controller_868.hal.reset(new PiHal(0));
@@ -756,7 +728,7 @@ void lora_init() {
             daemon_debug_band("868", "begin() Fehler %d", state_868);
         }
 
-        LED_868(0);
+        radio_controller_led(&radio_controller_868, 0);
     } else {
         daemon_debug_band("868", "Nicht ausgewählt");
     }
@@ -849,7 +821,7 @@ static void daemon_radio_io_init(void)
     daemon_radio_controller_init();
 
     daemon_debug_ctx("GPIO", "LED initialisieren");
-    LED_init();
+    daemon_led_init();
 
     daemon_debug_ctx("RADIO", "RadioLib initialisieren");
     lora_init();

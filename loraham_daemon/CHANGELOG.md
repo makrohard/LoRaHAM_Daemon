@@ -1,3 +1,4 @@
+  - Internal: moved LED/GPIO helpers into `daemon_led.*`.
 # Changelog
 
 ## loraham_daemon 109
