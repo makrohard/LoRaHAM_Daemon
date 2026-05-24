@@ -445,7 +445,7 @@ void setFlashFlag433(void) {
     radio_controller_flash_led(&radio_controller_433);
 }
 
-// --- LoRa senden (DEBUG + FIX) ---
+/* --- LoRa TX ------------------------------------------------------------- */
 static bool lora_send_valid_band(int band)
 {
     return band == 433 || band == 868;
@@ -476,6 +476,17 @@ static bool daemon_radio_ready(int band)
 static const char *lora_tx_log_ctx(int band)
 {
     return band == 433 ? "TX433" : "TX868";
+}
+
+/* --- TX status ----------------------------------------------------------- */
+// Broadcast local TX state on the matching CONF socket.
+static void daemon_broadcast_tx_status(RadioBand_t band, bool busy)
+{
+    RadioChannelIo *channel = (band == RADIO_BAND_433) ? &channel_433 : &channel_868;
+
+    client_slot_broadcast_queued(channel->conf_slots,
+                                 MAX_CLIENTS,
+                                 busy ? "TX=1\\n" : "TX=0\\n");
 }
 
 static void lora_print_tx_preview(const char *ctx,
@@ -539,25 +550,26 @@ template<typename RadioT>
 static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
 {
     ctrl->tx_busy = true;
+    daemon_broadcast_tx_status(ctrl->band, true);
 
-    // WICHTIG: RX-Flag clearen und Callback deaktivieren!
+    // Clear RX state before switching the radio to TX.
     ctrl->received = false;
 
-    // Im FSK-Modus keinen Callback clearen (wird anders behandelt)
+    // FSK uses a different receive path.
     if (ctrl->mode == RADIO_MODE_LORA)
         ctrl->radio->clearPacketReceivedAction();
 
-    // Radio komplett in Standby und zurücksetzen
+    // Move the radio into a clean TX state.
     ctrl->radio->standby();
     ctrl->radio->clearIrq(0xFFFFFFFF);
 
-    // TX-FIFO komplett zurücksetzen: Erst Sleep, dann Standby - löscht die FIFOs
-    // NUR 433/LoRa: In FSK würde sleep() die Modul-Konfiguration zurücksetzen.
+    // Reset the TX FIFO only for 433/LoRa.
+    // FSK sleep would reset the module configuration.
     if (ctrl->band == RADIO_BAND_433 && ctrl->mode == RADIO_MODE_LORA) {
         ctrl->radio->sleep();
-        usleep(10000); // 10ms warten
+        usleep(10000); // 10 ms
         ctrl->radio->standby();
-        usleep(10000); // nochmal 10ms
+        usleep(10000); // 10 ms
     }
 }
 
@@ -585,7 +597,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
         return TX_RESULT_INVALID_PACKET;
     }
 
-    // WICHTIG: Buffer kopieren, damit er nicht überschrieben wird!
+    // Copy the buffer before the caller can reuse it.
     uint8_t send_buf[RF_PACKET_MAX_PAYLOAD_LEN];
     memcpy(send_buf, buf, len);
 
@@ -600,27 +612,15 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
 
     lora_send_prepare_controller_tx(ctrl);
 
-    /*
-     *        // WICHTIG: LoRa-Parameter nochmal setzen (für TX!)
-     *        radio_controller_433.radio->setFrequency(433.775);
-     *        radio_controller_433.radio->setSpreadingFactor(12);
-     *        radio_controller_433.radio->setBandwidth(125.0);
-     *        radio_controller_433.radio->setCodingRate(5);
-     *        radio_controller_433.radio->setSyncWord(0x12);
-     *        radio_controller_433.radio->setPreambleLength(8);
-     *        radio_controller_433.radio->setCRC(true);
-     *        radio_controller_433.radio->explicitHeader();
-     *        radio_controller_433.radio->setOutputPower(10);
-     */
     if (ctrl->band == RADIO_BAND_433) {
-        // Nochmal IRQs clearen
+        // Clear IRQs once more before TX.
         ctrl->radio->clearIrq(0xFFFFFFFF);
 
         daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
         lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
     }
 
-    // WICHTIG: transmit() ist blockierend und wartet bis fertig!
+    // transmit() blocks until the packet is sent.
     int state = ctrl->radio->transmit(send_buf, len);
 
     if(state != RADIOLIB_ERR_NONE) {
@@ -634,15 +634,16 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
     }
 
     if (ctrl->band == RADIO_BAND_868)
-        usleep(50000); // 50ms Sicherheitspause
+        usleep(50000); // 50 ms guard delay
 
-    // Nach dem Senden: IRQ clearen und Callback wieder aktivieren
-    // Callback wird für LoRa UND FSK neu gesetzt - transmit() kann ihn löschen!
+    // Restore IRQ handling and RX callback after TX.
+    // transmit() can clear the callback.
     ctrl->radio->clearIrq(0xFFFFFFFF);
     ctrl->received = false;
     ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
 
     ctrl->tx_busy = false;
+    daemon_broadcast_tx_status(ctrl->band, false);
     ctrl->radio->startReceive();
 
     return state == RADIOLIB_ERR_NONE
