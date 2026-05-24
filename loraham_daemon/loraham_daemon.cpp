@@ -66,6 +66,7 @@
 #include "radio_channel.h"
 #include "radio_controller.h"
 #include "config_dispatch.h"
+#include "daemon_config_runtime.h"
 #include "config_stream.h"
 
 /* --- Global socket/client state ----------------------------------------- */
@@ -290,57 +291,6 @@ static void daemon_radio_io_init(void)
         daemon_startup_io_cleanup();
         exit(EXIT_FAILURE);
     }
-}
-
-/* --- CONFIG runtime context factories ----------------------------------- */
-
-static void daemon_config_trace_message(void *ctx, const char *msg)
-{
-    daemon_debug_ctx((const char *)ctx, "%s", msg);
-}
-
-static void daemon_config_trace_line(void *ctx,
-                                     const char *msg,
-                                     const char *line)
-{
-    daemon_debug_ctx((const char *)ctx, "%s: %s", msg, line ? line : "");
-}
-
-static ConfigDispatchLog daemon_config_log(const char *ctx)
-{
-    ConfigDispatchLog log = {
-        (void *)ctx,
-        daemon_config_trace_message,
-        daemon_config_trace_line
-    };
-
-    return log;
-}
-
-static ConfigDispatchContext<SX1278> daemon_config_433_context(void)
-{
-    ConfigDispatchContext<SX1278> ctx = {
-        client_conf433_slots,
-        &radio_controller_433,
-        "CONF433",
-        config_apply_command<SX1278>,
-        daemon_config_log("CONFIG433")
-    };
-
-    return ctx;
-}
-
-static ConfigDispatchContext<RFM95> daemon_config_868_context(void)
-{
-    ConfigDispatchContext<RFM95> ctx = {
-        client_conf868_slots,
-        &radio_controller_868,
-        "CONF868",
-        config_apply_command<RFM95>,
-        daemon_config_log("CONFIG868")
-    };
-
-    return ctx;
 }
 
 /* --- Loop context --------------------------------------------------------- */

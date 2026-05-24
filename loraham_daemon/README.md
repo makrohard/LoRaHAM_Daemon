@@ -33,6 +33,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | DATA TX runtime | `daemon_data_tx_runtime.cpp`, `daemon_data_tx_runtime.h` | DATA-socket TX callbacks, CAD guard before TX, TX stats updates, and DATA TX logging glue |
 | Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, and RX_PACKET framing for packet-boundary-preserving clients |
 | CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands |
+| CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Build per-band CONFIG dispatch contexts and debug logging callbacks |
 | RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
 | Logging | `daemon_log.cpp`, `daemon_log.h` | Normal and debug logging helpers used by daemon/runtime modules |

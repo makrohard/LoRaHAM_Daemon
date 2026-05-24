@@ -1,3 +1,4 @@
+  - Internal: moved CONFIG runtime helpers into `daemon_config_runtime.*`.
   - Internal: moved DATA TX runtime helpers into `daemon_data_tx_runtime.*`.
   - Internal: moved RadioLib startup/default setup into `daemon_radio_init.*`.
   - Internal: moved radio TX helpers into `daemon_tx.*`.
