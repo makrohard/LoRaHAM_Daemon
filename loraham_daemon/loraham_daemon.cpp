@@ -57,6 +57,7 @@
 #include "framed_data_tx.h"
 #include "daemon_framed_data_runtime.h"
 #include "daemon_rx.h"
+#include "daemon_monitoring.h"
 #include "framed_data.h"
 #include "tx_result.h"
 #include "radio_health.h"
@@ -381,165 +382,6 @@ static void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_4
 }
 
 
-/* --- CAD/RSSI/RX log contexts ------------------------------------------- */
-template<typename RadioT>
-static const char *daemon_cad_log_ctx(RadioController<RadioT> *ctrl)
-{
-    return (ctrl && ctrl->band == RADIO_BAND_433) ? "CAD433" : "CAD868";
-}
-
-template<typename RadioT>
-static const char *daemon_rssi_log_ctx(RadioController<RadioT> *ctrl)
-{
-    return (ctrl && ctrl->band == RADIO_BAND_433) ? "RSSI433" : "RSSI868";
-}
-
-
-
-/* --- CAD status ---------------------------------------------------------- */
-template<typename RadioT>
-static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
-                                      RadioChannelIo *io)
-{
-    if (!radio_controller_ready(ctrl) || !ctrl->radio)
-        return;
-
-    if (ctrl->mode != RADIO_MODE_LORA)
-        return;
-
-    uint8_t modem = ctrl->radio->getModemStatus();
-    bool hardware_active = (modem & 0x01) || (modem & 0x10);
-    const char *ctx = daemon_cad_log_ctx(ctrl);
-
-    if (hardware_active) {
-        if (ctrl->band == RADIO_BAND_433)
-            setFlashFlag433();
-        else
-            setFlashFlag868();
-
-        if (!ctrl->cad_active) {
-            daemon_debug_ctx(ctx, "Aktiv modem=0x%02X", modem);
-            daemon_radio_runtime_led(ctrl, 1);
-            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
-            ctrl->cad_active = true;
-        }
-    } else {
-        if (ctrl->cad_active && !ctrl->received) {
-            daemon_debug_ctx(ctx, "Inaktiv modem=0x%02X", modem);
-            daemon_radio_runtime_led(ctrl, 0);
-            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
-            ctrl->cad_active = false;
-        }
-    }
-}
-/* --- RSSI streaming ------------------------------------------------------- */
-/*
- * GETRSSI streams live RSSI on the matching CONF socket.
- * RSSI is read directly from SX127x RegRssiValue because RadioLib getRSSI()
- * reports the last packet RSSI in LoRa mode.
- *
- * Skip reads during TX. Auto-stop when no CONF client remains connected.
- */
-template<typename RadioT>
-static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
-                                                     RadioController<RadioT> *ctrl)
-{
-    if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && ctrl->getrssi_active) {
-        const char *ctx = daemon_rssi_log_ctx(ctrl);
-
-        ctrl->getrssi_active = false;
-        daemon_debug_ctx(ctx, "Auto-Stop: kein Client");
-    }
-}
-
-template<typename RadioT>
-static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
-                                           RadioChannelIo *io)
-{
-    const char *ctx = daemon_rssi_log_ctx(ctrl);
-
-    if (!ctrl->getrssi_active)
-        return;
-
-    if (ctrl->tx_busy) {
-        daemon_debug_ctx(ctx, "TX aktiv, überspringe");
-        return;
-    }
-
-    if (!radio_controller_ready(ctrl) || !ctrl->mod) {
-        daemon_debug_ctx(ctx, "Radio nicht bereit");
-        return;
-    }
-
-    float rssi = radio_channel_read_live_rssi(ctrl->mod.get(),
-                                              ctrl->mode,
-                                              ctrl->is_hf);
-    char rssi_msg[32];
-    snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi);
-    daemon_debug_ctx(ctx, "Sende %.2f dBm", rssi);
-    client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, rssi_msg);
-}
-
-static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
-{
-    if (daemon_radio_433_enabled())
-        daemon_radio_controller_getrssi_autostop(&channel_433,
-                                                 &radio_controller_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_radio_controller_getrssi_autostop(&channel_868,
-                                                 &radio_controller_868);
-
-    // RSSI streaming is time based.
-    if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
-        if (daemon_radio_433_enabled())
-            daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
-
-        if (daemon_radio_868_enabled())
-            daemon_process_rssi_stream_one(&radio_controller_868, &channel_868);
-    }
-}
-
-/* --- Periodic operator stats -------------------------------------------- */
-template<typename RadioT>
-static void daemon_print_radio_stats(RadioController<RadioT> *ctrl)
-{
-    char fields[256];
-    long uptime = daemon_stats_uptime_seconds(daemon_now_ms());
-
-    daemon_stats_format_fields(fields,
-                               sizeof(fields),
-                               uptime,
-                               radio_controller_health(ctrl),
-                               &ctrl->stats);
-
-    printf("[STATS %s] %s\n", radio_controller_tag(ctrl), fields);
-    fflush(stdout);
-}
-
-static void daemon_process_periodic_stats(DaemonDeadlineTimer *stats_timer)
-{
-    if (!daemon_deadline_timer_due(stats_timer, daemon_now_ms()))
-        return;
-
-    if (daemon_radio_433_enabled())
-        daemon_print_radio_stats(&radio_controller_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_print_radio_stats(&radio_controller_868);
-}
-
-/* --- CAD/RSSI polling ---------------------------------------------------- */
-static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
-{
-    if (daemon_radio_433_enabled())
-        daemon_process_cad_status(&radio_controller_433, &channel_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_process_cad_status(&radio_controller_868, &channel_868);
-    daemon_process_rssi_stream(rssi_timer);
-}
-
 /* --- Main loop logging --------------------------------------------------- */
 static void daemon_log_loop_start(void)
 {
@@ -559,9 +401,8 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
     if (daemon_radio_868_enabled())
         daemon_process_radio_868(rx_buf_868);
 
-    // --- CAD/RSSI monitoring ---
-    daemon_process_cad_rssi(rssi_timer);
-    daemon_process_periodic_stats(stats_timer);
+    // Monitoring: CAD/RSSI/status stats.
+    daemon_process_monitoring(rssi_timer, stats_timer);
 }
 
 /* --- Main loop iteration ------------------------------------------------- */

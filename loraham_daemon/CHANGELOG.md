@@ -1,3 +1,4 @@
+  - Internal: moved CAD/RSSI/stats monitoring into `daemon_monitoring.*`.
   - Internal: moved RX packet helpers into `daemon_rx.*`.
   - Internal: moved framed DATA runtime helpers into `daemon_framed_data_runtime.*`.
   - Internal: moved socket accept/flush helpers into `daemon_socket_runtime.*`.
