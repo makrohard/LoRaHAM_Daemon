@@ -41,6 +41,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/daemon_tx.cpp"
+  "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/framed_data.cpp"
   "$SCRIPT_DIR/framed_data_tx.cpp"
