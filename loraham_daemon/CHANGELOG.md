@@ -1,3 +1,4 @@
+  - Internal: moved RadioLib startup/default setup into `daemon_radio_init.*`.
   - Internal: moved radio TX helpers into `daemon_tx.*`.
   - Internal: moved radio runtime helpers into `daemon_radio_runtime.*`.
   - Internal: moved LED/GPIO helpers into `daemon_led.*`.
