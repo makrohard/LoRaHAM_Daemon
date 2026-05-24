@@ -163,9 +163,9 @@ static void daemon_enter_background(void)
 {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS); // Elternprozess beenden
+    if (pid > 0) exit(EXIT_SUCCESS); // Parent exits.
 
-    if (setsid() < 0) exit(EXIT_FAILURE); // Neue Session
+    if (setsid() < 0) exit(EXIT_FAILURE); // New session.
 
     pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
@@ -174,17 +174,16 @@ static void daemon_enter_background(void)
     umask(0);
     chdir("/");
 
-    // FIX: Deskriptoren nicht einfach schließen, sondern umleiten
-    // Das verhindert, dass neue Sockets die IDs 0, 1 oder 2 einnehmen.
+    // Redirect stdio so sockets cannot reuse fd 0, 1 or 2.
     freopen("/dev/null", "r", stdin);
-    freopen("/tmp/lora_daemon.log", "w", stdout); // Optional: In Datei loggen
+    freopen("/tmp/lora_daemon.log", "w", stdout);
     freopen("/tmp/lora_daemon.log", "w", stderr);
 
     daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }
 /* --- Radio controller state ---------------------------------------------- */
 
-// --- Pin-Setup für LED
+/* --- LED pins -------------------------------------------------------------- */
 #define PIN_433 13
 #define PIN_868 19
 
@@ -197,24 +196,18 @@ RadioController<RFM95> radio_controller_868;
 int h = -1;
 int chip = -1;
 
-// --- Initialisierung der LEDs ---
+/* --- LED setup ------------------------------------------------------------- */
 void LED_init() {
     h = lgGpiochipOpen(0);
-    chip = h; // chip bekommt den Wert von h
+    chip = h;
 
     if (chip < 0) {
         printf("Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
         return;
     }
-    /*
-     *    if (lgGpioClaimOutput(chip, PIN_433, 0, 0) < 0)
-     *        printf("Fehler: GPIO13 als Ausgang\n");
-     *    if (lgGpioClaimOutput(chip, PIN_868, 0, 0) < 0)
-     *        printf("Fehler: GPIO19 als Ausgang\n");
-     */
 }
 
-// --- LED Routinen ---
+/* --- LED control ----------------------------------------------------------- */
 void LED_433(int state) {
     if (chip >= 0)
         lgGpioWrite(chip, PIN_433, state ? 1 : 0);
@@ -326,18 +319,16 @@ static void daemon_radio_shutdown_cleanup(void)
     }
 }
 
-// --- Callback für 868 ---
+/* --- RX callbacks --------------------------------------------------------- */
 void setFlag868(void) {
     radio_controller_868.received = true;
     daemon_debug_ctx("RX868", "Flag gesetzt");
     radio_controller_led(&radio_controller_868, 1);
-    //usleep(50000);
 }
 void setFlag433(void) {
     radio_controller_433.received = true;
     daemon_debug_ctx("RX433", "Flag gesetzt");
     radio_controller_led(&radio_controller_433, 1);
-    //usleep(50000);
 }
 
 void setFlashFlag868(void) {
@@ -1414,28 +1405,11 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
 }
 /* --- RSSI streaming ------------------------------------------------------- */
 /*
- * GETRSSI Streaming: 10 Hz RSSI an Conf-Clients.
+ * GETRSSI streams live RSSI on the matching CONF socket.
+ * RSSI is read directly from SX127x RegRssiValue because RadioLib getRSSI()
+ * reports the last packet RSSI in LoRa mode.
  *
- * Sendet "RSSI=-87.50\n" auf demselben Conf-Socket, auf dem
- * SET GETRSSI=1 empfangen wurde (loraconf433.sock bzw.
- * loraconf868.sock - identisches Pattern wie CAD=1/CAD=0).
- *
- * Quelle: read_live_rssi() liest das SX127x Hardware-Register
- * direkt per SPI (RegRssiValue 0x1B im LoRa-, 0x11 im FSK-Mode).
- * RadioLib's getRSSI() liefert im LoRa-Mode nur den RSSI des
- * LETZTEN Pakets, daher der Direkt-Read.
- *
- * Funktioniert in LoRa- UND FSK-Modus, da getRSSI() das
- * Analog-Frontend (RegRssiValue) ausliest. Detektiert daher auch
- * Nicht-LoRa-Signale (Funkkopfhoerer, ISM-Sender etc.).
- *
- * RX laeuft parallel weiter: SPI-Read von RegRssiValue unterbricht
- * weder Demodulation noch FIFO-Befuellung. Waehrend TX (txBusy)
- * wird KEIN RSSI gelesen, da das Register dann undefinierte Werte
- * liefert.
- *
- * Auto-Stop: sobald kein Conf-Client mehr verbunden ist, wird das
- * Flag geloescht. Reconnect erfordert erneutes SET GETRSSI=1.
+ * Skip reads during TX. Auto-stop when no CONF client remains connected.
  */
 template<typename RadioT>
 static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,

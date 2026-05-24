@@ -8,7 +8,7 @@
 #include <unistd.h>
 
 /* --- DATA TX chunking ---------------------------------------------------- */
-// Rohdaten vom DATA-Socket in LoRa-Pakete zerteilen.
+// Split raw DATA socket input into RF-sized chunks.
 
 size_t data_tx_chunk_size(size_t remaining)
 {

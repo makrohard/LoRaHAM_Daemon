@@ -32,16 +32,9 @@ void apply_fsk_param(SX1278 &radio, const char *tag,
 void apply_fsk_param(RFM95 &radio, const char *tag,
                      const std::string &key, const std::string &val);
 
-// gemeinsamer Parser: Modul + Tag werden übergeben
-// mode_flag:    Referenz auf mode_433 oder mode_868   - wird bei MODE=FSK/LORA umgeschaltet
-// getrssi_flag: Referenz auf getrssi_433_active oder getrssi_868_active
-//               - wird bei GETRSSI=1/0 gesetzt (kontinuierlicher RSSI-Stream)
-// Protokoll:
-//   SET MODE=FSK    -> beginFSK() + mode_flag=FSK  (Pflicht um FSK zu aktivieren)
-//   SET MODE=LORA   -> begin()    + mode_flag=LORA  (Re-Initialisierung LoRa)
-//   SET GETRSSI=1   -> getrssi_flag=true  (10 Hz RSSI-Stream an Conf-Clients)
-//   SET GETRSSI=0   -> getrssi_flag=false (Stream aus)
-//   Kein MODE=      -> aktueller Modus bleibt, volle Rückwärtskompatibilität
+/* --- CONFIG command apply ------------------------------------------------ */
+// Apply MODE first, then GETRSSI, then mode-specific radio parameters.
+// SET without MODE keeps the current mode for backward compatibility.
 static inline void config_apply_print_prefix(const char *tag, bool *printed)
 {
     if (!*printed) {
@@ -76,7 +69,7 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
 
     bool printed = false;
 
-    // --- 1. Pass: MODE= zuerst, Rest sammeln ---
+    // First pass: collect MODE, GETRSSI and radio parameters.
     std::vector<std::pair<std::string,std::string>> tokens;
     std::vector<std::pair<std::string,std::string>> getrssi_tokens;
     std::string mode_val = parsed.mode;
@@ -90,7 +83,7 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
             tokens.push_back(kv);
     }
 
-    // --- MODE= auswerten und Radio ggf. neu initialisieren ---
+    // Apply MODE before any mode-specific parameter.
     if(!mode_val.empty()) {
         config_apply_print_prefix(tag, &printed);
 
@@ -121,7 +114,7 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
         }
     }
 
-    // --- GETRSSI= erst nach erfolgreichem MODE-Wechsel anwenden ---
+    // Apply GETRSSI after a successful MODE switch.
     for(auto &kv : getrssi_tokens) {
         const std::string &val = kv.second;
         int v = 0;
@@ -136,23 +129,20 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
         }
     }
 
-    // --- 2. Pass: Alle übrigen Parameter anwenden ---
-    // Je nach aktivem Modus werden LoRa- oder FSK-Parameter-Funktion aufgerufen.
-    // FSK-Keys (BR, FREQDEV, RXBW, OOK, SHAPING, ENCODING) im LoRa-Modus -> Warnung
-    // LoRa-Keys (SF, BW, CR, LDRO) im FSK-Modus -> Warnung
+    // Second pass: apply remaining parameters for the active mode.
     for(auto &kv : tokens) {
         const std::string &key = kv.first;
         const std::string &val = kv.second;
 
         if(mode_flag == RADIO_MODE_FSK) {
-            // Im FSK-Modus: LoRa-spezifische Keys abweisen
+            // Ignore LoRa-only keys while in FSK mode.
             if(key=="SF" || key=="BW" || key=="CR" || key=="LDRO" || key=="CRC") {
                 printf(" \033[93m%s=IGNORIERT(LoRa-Key im FSK-Modus)\033[0m", key.c_str());
             } else {
                 apply_fsk_param(radio, tag, key, val);
             }
         } else {
-            // Im LoRa-Modus (Default): FSK-spezifische Keys abweisen
+            // Ignore FSK-only keys while in LoRa mode.
             if(key=="BR" || key=="FREQDEV" || key=="RXBW" || key=="OOK" ||
                 key=="SHAPING" || key=="ENCODING") {
                 printf(" \033[93m%s=IGNORIERT(FSK-Key im LoRa-Modus, SET MODE=FSK fehlt)\033[0m", key.c_str());

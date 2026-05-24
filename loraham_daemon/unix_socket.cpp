@@ -45,7 +45,7 @@ static int unix_socket_prepare_path(const char *path)
     return 0;
 }
 
-// Unix-Socket anlegen wie im ursprünglichen In-File-Helper.
+// Create a listening Unix socket and replace stale socket files.
 int setup_unix_socket(const char *path, int backlog)
 {
     int fd;
@@ -95,7 +95,7 @@ static void unix_socket_unlink_socket_path(const char *path)
         unlink(path);
 }
 
-// Unix-Socket schließen und Socket-Datei entfernen.
+// Close the socket and remove its socket path.
 void close_unix_socket(int *fd, const char *path)
 {
     if (fd && *fd >= 0) {

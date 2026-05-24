@@ -133,7 +133,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
     ctx->apply_config(*ctx->ctrl->radio, ctx->tag, line,
                       ctx->ctrl->mode, ctx->ctrl->getrssi_active);
 
-    // beginFSK()/begin() loescht den IRQ-Callback.
+    // beginFSK()/begin() clears the IRQ callback.
     ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
     config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
     ctx->ctrl->radio->startReceive();
