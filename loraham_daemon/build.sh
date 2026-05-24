@@ -47,6 +47,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/framed_data.cpp"
   "$SCRIPT_DIR/framed_data_tx.cpp"
+  "$SCRIPT_DIR/daemon_framed_data_runtime.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
   "$SCRIPT_DIR/radio_health.cpp"
