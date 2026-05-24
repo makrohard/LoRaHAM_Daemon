@@ -66,6 +66,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_timing.cpp"
   "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
+  "$SCRIPT_DIR/daemon_tx.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
