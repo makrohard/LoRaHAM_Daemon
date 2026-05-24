@@ -6,6 +6,7 @@ Refactoring by Johannes Loose
 Initial version: loradaemon_320_108 by Alexander Walter
 
 - Refactor / Hardening
+  - Source cleanup: removed legacy usage notes from the main daemon source.
   - Event loop: moved polling/socket loop toward event-backend structure with test coverage.
   - Socket handling: hardened client slots, nonblocking I/O, queued broadcasts, and slow-client behavior.
   - RadioController/OOP: replaced radio globals and centralized 433/868 runtime state in `RadioController`.

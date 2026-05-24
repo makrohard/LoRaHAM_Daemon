@@ -36,6 +36,8 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 ## Build and test scripts
 
+Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/build tree, and pthread support.
+
 - `build.sh` builds the loraham_daemon binary
 - `run_tests.sh` builds the daemon and test binaries, then runs the test suite.
 

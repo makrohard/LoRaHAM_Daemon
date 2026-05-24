@@ -20,107 +20,10 @@
  * THE SOFTWARE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE
  * PROGRAM IS WITH THE USER.
  *****************************************************************************/
-
 /*
+ * Main runtime for the LoRaHAM radio daemon.
  *
- *  ----
- *  sudo apt update
- *  sudo apt install g++ make cmake build-essential
- *  sudo apt install liblgpio-dev
- *
- *  git clone https://github.com/jgromes/RadioLib ~/RadioLib
- *
- *  cd ~/RadioLib
- *  mkdir build/
- *  cd build
- *  cmake ..
- *  sudo make install
- *
- *  sudo apt install socat
- *
- *  g++ -std=c++11 -O2 -o loraham_daemon loradaemon_305d.cpp \
- *  -I/home/raspberry/RadioLib/src \
- *  -I/home/raspberry/RadioLib/src/hal \
- *  -I/home/raspberry/RadioLib/src/modules \
- *  -I/home/raspberry/RadioLib/src/protocols/PhysicalLayer \
- *  /home/raspberry/RadioLib/build/libRadioLib.a \
- *  -llgpio -lpthread
- *  ----
- *
-   g++ -o loraham_daemon loraham_daemon.cpp -I/home/raspberry/RadioLib/src -I/home/raspberry/RadioLib/src/modules \
-   -I/home/raspberry/RadioLib/src/protocols/PhysicalLayer /home/raspberry/RadioLib/build/libRadioLib.a -llgpio
- *
- *
- *  Test-Kommandos an den Socket (erfordert socat : sudo apt install socat) :
- *  # LoRa 433
- *
- *  #LoRa-APRS:
- *  echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  echo "SET FREQ=433.900 SF=11 BW=125 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=AUTO POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  # FSK 433 aktivieren (MODE=FSK ist Pflicht!):
- *  echo "SET MODE=FSK FREQ=433.775 BR=4.8 FREQDEV=5.0 RXBW=12.5 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  # FSK mit OOK (OOK=1 aktiviert OOK-Modus statt FSK):
- *  echo "SET MODE=FSK FREQ=433.920 BR=1.2 FREQDEV=0.0 RXBW=6.3 OOK=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  # Zurück zu LoRa (MODE=LORA re-initialisiert das Modul):
- *  echo "SET MODE=LORA FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  # FSK 868 aktivieren:
- *  echo "SET MODE=FSK FREQ=869.525 BR=9.6 FREQDEV=10.0 RXBW=25.0 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
- *
- *
- *  # nur Frequenz ändern (433)
- *  echo "SET FREQ=433.775" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *  echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" | perl -pe 's/([0-9A-Fa-f]{2})/chr(hex($1))/ge' | socat - UNIX-CONNECT:/tmp/lora868.sock
- *  echo -n "$(printf '%02X' 8)Der Text" | perl -pe 's/^([0-9A-Fa-f]{2})|./$1 ? chr(hex($1)) : $&/ge' | socat - UNIX-CONNECT:/tmp/lora433.sock
- *
- *  # LoRa 868
- *  echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
- *  # nur Power ändern (868)
- *  echo "SET POWER=5" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
- *
- *  echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" | perl -pe 's/([0-9A-Fa-f]{2})/chr(hex($1))/ge' | socat - UNIX-CONNECT:/tmp/lora868.sock
- *
- *  0: LDRO aus (Normalbetrieb)
- *  1: LDRO an (Optimierung zwingend erforderlich)
- *  BW (kHz) \ SF,SF7,SF8,SF9,SF10,SF11,SF12
- *  7.8,1,1,1,1,1,1
- *  10.4,1,1,1,1,1,1
- *  15.6,0,1,1,1,1,1
- *  20.8,0,0,1,1,1,1
- *  31.25,0,0,1,1,1,1
- *  41.7,0,0,0,1,1,1
- *  62.5,0,0,0,1,1,1
- *  125.0,0,0,0,0,1,1
- *  250.0,0,0,0,0,0,1
- *  500.0,0,0,0,0,0,0
- *
-    echo "SET MODE=FSK FREQ=439.588 BR=9.6 FREQDEV=3.0 RXBW=20.8 SHAPING=0.5 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    printf '\xFF\x01DC2WA-4>APRS,DB0ARD*:!4828.19N/00956.44E-LoRaHAM Pi Chat | loraham.de' | socat - UNIX-CONNECT:/tmp/lora433.sock
-
-    2k4
-    echo "SET MODE=FSK FREQ=433.775 BR=2.4 FREQDEV=5.0 RXBW=25.0 SHAPING=0.5 SYNC=0x2DD4 PREAMBLE=32 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    4k8
-    echo "SET MODE=FSK FREQ=431.300 BR=4.8 FREQDEV=2.2 RXBW=20.8 SHAPING=1.0 POWER=20" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    
-    
-    100k
-    echo "SET MODE=FSK FREQ=433.775 BR=100 FREQDEV=10.0 RXBW=250.0 SHAPING=0.5 SYNC=0x2DD4 PREAMBLE=32 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *
- *  RSSI-Streaming (10 Hz, kontinuierlich) aktivieren / deaktivieren:
- *  Ausgabe-Format: "RSSI=-87.50\n" auf demselben Conf-Socket parallel zu CAD=...
- *  Funktioniert in LoRa- UND FSK-Modus, erkennt auch Nicht-LoRa-Signale
- *  (Funkkopfhoerer, ISM-Sender, Stoerquellen).
- *  echo "SET GETRSSI=1" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *  echo "SET GETRSSI=0" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
- *  echo "SET GETRSSI=1" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
- *  echo "SET GETRSSI=0" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
- *  Auto-Stop: sobald kein Conf-Client mehr verbunden ist, stoppt der Stream
- *  und muss nach Reconnect mit GETRSSI=1 erneut aktiviert werden.
- *
+ * Public interface, build notes, and examples live in README.md.
  */
 
 #include <stdio.h>
@@ -162,7 +65,6 @@
 #include "config_stream.h"
 
 /* --- Global socket/client state ----------------------------------------- */
-// Globale Socket- und Client-Zustände
 int data433_fd = -1, data868_fd = -1;
 int data433_framed_fd = -1, data868_framed_fd = -1;
 int conf433_fd = -1, conf868_fd = -1;
@@ -178,7 +80,6 @@ ClientSlot client_conf868_slots[MAX_CLIENTS];
 
 
 /* --- Channel IO state ---------------------------------------------------- */
-// Kanal-Zustand für Socket- und Clientverwaltung
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
 
@@ -1187,8 +1088,8 @@ typedef struct {
     EventLoopSet event_set;
     EventLoopReadySet readfds;
     uint8_t buf[buf_SIZE];
-    uint8_t rx_buf_433[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
-    uint8_t rx_buf_868[buf_SIZE];  // ← GETRENNTE Buffer pro Band!
+    uint8_t rx_buf_433[buf_SIZE];  // Separate buffer per band.
+    uint8_t rx_buf_868[buf_SIZE];  // Separate buffer per band.
     DaemonLoopContext loop_ctx;
 } DaemonMainContext;
 
@@ -1586,7 +1487,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
         daemon_radio_controller_getrssi_autostop(&channel_868,
                                                  &radio_controller_868);
 
-    // RSSI-Takt ist zeitbasiert.
+    // RSSI streaming is time based.
     if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
         if (daemon_radio_433_enabled())
             daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
@@ -1819,10 +1720,8 @@ static void daemon_prepare_rx_packet(RadioController<RadioT> *ctrl,
     ctrl->received = false;
     memset(buf, 0, buf_len);
 
-    // WICHTIG: Im FSK-Modus clearIrq() NICHT vor getPacketLength()/readData() aufrufen!
-    // Grund: SX127x RegIrqFlags2 Bit3 = FifoOverrun -> schreibt man 0xFF rein,
-    // wird Bit3 gesetzt und der FIFO wird gelöscht (laut Datasheet).
-    // Im LoRa-Modus trifft das nicht zu (anderes Register).
+    // In FSK mode, do not clear IRQs before reading the FIFO.
+    // Writing IRQ flags here can set FifoOverrun and clear the FIFO.
     if (ctrl->mode == RADIO_MODE_LORA) {
         daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "IRQ vor Read löschen");
         ctrl->radio->clearIrq(0xFFFFFFFF);
@@ -1979,7 +1878,7 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
     if (!radio_controller_ready(ctrl) || !ctrl->radio)
         return;
 
-    // Gemeinsamer RX-Ablauf; die 433/868-Originalkommentare stehen in den Wrappern.
+    // Shared RX flow for both bands.
     if (!ctrl->received)
         return;
 
@@ -1991,9 +1890,9 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
     daemon_prepare_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
 
     int len = daemon_rx_packet_length(ctrl);
-    // Fehlauslösung (z.B. durch CAD-IRQ): kein Paket vorhanden
+    // Spurious IRQ: no packet is available.
     if (len <= 0) {
-        // Im FSK-Modus: clearIrq erst jetzt sicher (FIFO war leer)
+        // FSK IRQ clear is safe here because the FIFO is empty.
         daemon_restart_receive_after_empty_rx(ctrl);
         return;
     }
@@ -2004,9 +1903,9 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
     }
 
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "readData()");
-    int16_t read_state = daemon_read_rx_data(ctrl, rx_buf, sizeof(rx_buf)); // 5ms Timeout
+    int16_t read_state = daemon_read_rx_data(ctrl, rx_buf, sizeof(rx_buf)); // 5 ms timeout
 
-    // Im FSK-Modus: clearIrq NACH readData() - FIFO ist jetzt geleert
+    // In FSK mode, clear IRQs after readData() emptied the FIFO.
     daemon_clear_irq_after_rx_read(ctrl);
 
     if (!daemon_rx_read_ok(ctrl, read_state)) {
@@ -2033,13 +1932,13 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
 /* --- RX band entry points ------------------------------------------------ */
 static void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
 {
-    // --- LoRa/FSK Polling 433 (kurzer Timeout 5ms, Non-Blocking) ---
+    // Band-specific RX entry point.
     daemon_process_radio_band(&radio_controller_433, &channel_433, rx_buf_433);
 }
 
 static void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
 {
-    // --- LoRa/FSK Polling 868 (mit Callback-Flag + Non-Blocking 5ms) ---
+    // Band-specific RX entry point.
     daemon_process_radio_band(&radio_controller_868, &channel_868, rx_buf_868);
 }
 
@@ -2080,7 +1979,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
         return;
     }
 
-    // --- Socket Clients bearbeiten ---
+    // Process ready socket clients.
     daemon_process_ready_sockets(&loop_ctx->config_433_ctx,
                                 &loop_ctx->config_868_ctx,
                                 &loop_ctx->data_tx_433_ctx,
@@ -2127,7 +2026,7 @@ static void daemon_run(void)
 /* --- Startup helpers ----------------------------------------------------- */
 static void daemon_ignore_sigpipe(void)
 {
-    // SIGPIPE ignorieren: write() auf geschlossenen Socket crasht sonst den Daemon
+    // Ignore SIGPIPE; closed sockets are handled via write() errors.
     signal(SIGPIPE, SIG_IGN);
     daemon_debug_ctx("STARTUP", "SIGPIPE wird ignoriert");
 }
