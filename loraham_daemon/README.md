@@ -17,11 +17,12 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, selected-radio startup/shutdown, main event loop, and top-level coordination of socket, CONFIG, DATA TX, CAD/RSSI, and RX flow |
+| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, main event loop, and top-level coordination of socket, CONFIG, DATA TX, CAD/RSSI, and RX flow |
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
+| Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket wiring, selected socket setup, setup failure propagation, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |

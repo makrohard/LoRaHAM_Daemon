@@ -47,6 +47,7 @@
 #include "daemon_stats.h"
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
+#include "daemon_radio_runtime.h"
 #include "daemon_log.h"
 #include "daemon_led.h"
 #include "data_tx.h"
@@ -83,8 +84,6 @@ ClientSlot client_conf868_slots[MAX_CLIENTS];
 RadioChannelIo channel_433;
 RadioChannelIo channel_868;
 
-
-static void daemon_radio_shutdown_cleanup(void);
 
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
@@ -181,134 +180,24 @@ static void daemon_enter_background(void)
 
     daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }
-/* --- Radio controller state ---------------------------------------------- */
-
-void setFlag433(void);
-void setFlag868(void);
-
-RadioController<SX1278> radio_controller_433;
-RadioController<RFM95> radio_controller_868;
-
-/* --- LED control ----------------------------------------------------------- */
-template<typename RadioT>
-static void radio_controller_led(RadioController<RadioT> *ctrl, int state)
-{
-    if (!ctrl)
-        return;
-
-    daemon_led_set_pin(ctrl->led_pin, state);
-}
-
-template<typename RadioT>
-static void radio_controller_flash_led(RadioController<RadioT> *ctrl)
-{
-    if (!ctrl)
-        return;
-
-    daemon_led_flash_pin(ctrl->led_pin);
-}
-
-
 /* --- RX drop statistics -------------------------------------------------- */
 // Rate-limited counters for invalid RadioLib RX reads.
 #define RX_DROP_LOG_INITIAL 5
 #define RX_DROP_LOG_INTERVAL 100
 
-static void daemon_radio_controller_init(void)
-{
-    daemon_debug_ctx("RADIO", "Controller initialisieren");
 
-    radio_controller_init(&radio_controller_433,
-                          RADIO_BAND_433,
-                          "433",
-                          false,
-                          setFlag433,
-                          DAEMON_LED_PIN_433);
-    daemon_debug_band("433", "Controller bereit");
 
-    radio_controller_init(&radio_controller_868,
-                          RADIO_BAND_868,
-                          "868",
-                          true,
-                          setFlag868,
-                          DAEMON_LED_PIN_868);
-    daemon_debug_band("868", "Controller bereit");
-}
 
-template<typename RadioT>
-static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
-{
-    const char *tag;
 
-    if (!ctrl)
-        return;
 
-    tag = radio_controller_tag(ctrl);
-    daemon_debug_ctx(tag, "Radio-Shutdown");
 
-    if (ctrl->radio) {
-        if (radio_controller_ready(ctrl)) {
-            daemon_debug_band(tag, "Callback aus");
-            ctrl->radio->clearPacketReceivedAction();
-            daemon_debug_band(tag, "Standby");
-            ctrl->radio->standby();
-            daemon_debug_band(tag, "IRQ löschen");
-            ctrl->radio->clearIrq(0xFFFFFFFF);
-        } else {
-            daemon_debug_band(tag, "Radio nicht bereit");
-        }
 
-        daemon_debug_band(tag, "Radio freigeben");
-        ctrl->radio.reset();
-    } else {
-        daemon_debug_band(tag, "Kein Radio-Objekt");
-    }
 
-    daemon_debug_band(tag, "Modul freigeben");
-    ctrl->mod.reset();
-    daemon_debug_band(tag, "HAL freigeben");
-    ctrl->hal.reset();
 
-    ctrl->health = RADIO_HEALTH_UNINITIALIZED;
-    ctrl->received = false;
-    ctrl->tx_busy = false;
-    ctrl->cad_active = false;
-    ctrl->getrssi_active = false;
-    daemon_radio_stats_init(&ctrl->stats);
-    daemon_debug_band(tag, "Zustand zurückgesetzt");
-}
 
-static void daemon_radio_shutdown_cleanup(void)
-{
-    if (daemon_radio_433_enabled()) {
-        daemon_debug_ctx("RADIO", "Shutdown 433");
-        radio_controller_shutdown(&radio_controller_433);
-    }
 
-    if (daemon_radio_868_enabled()) {
-        daemon_debug_ctx("RADIO", "Shutdown 868");
-        radio_controller_shutdown(&radio_controller_868);
-    }
-}
 
-/* --- RX callbacks --------------------------------------------------------- */
-void setFlag868(void) {
-    radio_controller_868.received = true;
-    daemon_debug_ctx("RX868", "Flag gesetzt");
-    radio_controller_led(&radio_controller_868, 1);
-}
-void setFlag433(void) {
-    radio_controller_433.received = true;
-    daemon_debug_ctx("RX433", "Flag gesetzt");
-    radio_controller_led(&radio_controller_433, 1);
-}
 
-void setFlashFlag868(void) {
-    radio_controller_flash_led(&radio_controller_868);
-}
-void setFlashFlag433(void) {
-    radio_controller_flash_led(&radio_controller_433);
-}
 
 /* --- LoRa TX ------------------------------------------------------------- */
 static bool lora_send_valid_band(int band)
@@ -538,34 +427,9 @@ TxResult lora_send(uint8_t *buf, size_t len, int band) {
 
 
 
-static bool daemon_selected_radio_ready(void)
-{
-    if (daemon_radio_433_enabled() && radio_controller_ready(&radio_controller_433))
-        return true;
 
-    if (daemon_radio_868_enabled() && radio_controller_ready(&radio_controller_868))
-        return true;
 
-    return false;
-}
 
-static void daemon_log_active_radios(void)
-{
-    bool active_433 = daemon_radio_433_enabled() &&
-                      radio_controller_ready(&radio_controller_433);
-    bool active_868 = daemon_radio_868_enabled() &&
-                      radio_controller_ready(&radio_controller_868);
-
-    if (active_433 && active_868) {
-        printf("[Daemon] Aktive Radios: 433, 868\n");
-    } else if (active_433) {
-        printf("[Daemon] Aktive Radios: 433\n");
-    } else if (active_868) {
-        printf("[Daemon] Aktive Radios: 868\n");
-    } else {
-        printf("[Daemon] Aktive Radios: none\n");
-    }
-}
 
 static void daemon_startup_io_cleanup(void)
 {
@@ -614,7 +478,7 @@ void lora_init() {
     }
 
     if (daemon_radio_433_enabled()) {
-        radio_controller_led(&radio_controller_433, 1);
+        daemon_radio_runtime_led(&radio_controller_433, 1);
 
         daemon_debug_band("433", "Objekte anlegen");
         radio_controller_433.hal.reset(new PiHal(0));
@@ -689,13 +553,13 @@ void lora_init() {
             daemon_debug_band("433", "begin() Fehler %d", state_433);
         }
 
-        radio_controller_led(&radio_controller_433, 0);
+        daemon_radio_runtime_led(&radio_controller_433, 0);
     } else {
         daemon_debug_band("433", "Nicht ausgewählt");
     }
 
     if (daemon_radio_868_enabled()) {
-        radio_controller_led(&radio_controller_868, 1);
+        daemon_radio_runtime_led(&radio_controller_868, 1);
 
         daemon_debug_band("868", "Objekte anlegen");
         radio_controller_868.hal.reset(new PiHal(0));
@@ -728,7 +592,7 @@ void lora_init() {
             daemon_debug_band("868", "begin() Fehler %d", state_868);
         }
 
-        radio_controller_led(&radio_controller_868, 0);
+        daemon_radio_runtime_led(&radio_controller_868, 0);
     } else {
         daemon_debug_band("868", "Nicht ausgewählt");
     }
@@ -922,10 +786,10 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
 
-    radio_controller_led(ctrl, 1);
+    daemon_radio_runtime_led(ctrl, 1);
     TxResult result = lora_send(chunk, len, band);
     daemon_radio_stats_record_tx_result(&ctrl->stats, result);
-    radio_controller_led(ctrl, 0);
+    daemon_radio_runtime_led(ctrl, 0);
 
     if (!tx_result_is_ok(result)) {
         daemon_debug_ctx(tx->log_ctx, "Abbruch: %s", tx_result_name(result));
@@ -1362,14 +1226,14 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
 
         if (!ctrl->cad_active) {
             daemon_debug_ctx(ctx, "Aktiv modem=0x%02X", modem);
-            radio_controller_led(ctrl, 1);
+            daemon_radio_runtime_led(ctrl, 1);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
             ctrl->cad_active = true;
         }
     } else {
         if (ctrl->cad_active && !ctrl->received) {
             daemon_debug_ctx(ctx, "Inaktiv modem=0x%02X", modem);
-            radio_controller_led(ctrl, 0);
+            daemon_radio_runtime_led(ctrl, 0);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
             ctrl->cad_active = false;
         }
@@ -1653,7 +1517,7 @@ static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
     if (ctrl->band == RADIO_BAND_868)
         memset(buf, 0, buf_len);
 
-    radio_controller_led(ctrl, 0);
+    daemon_radio_runtime_led(ctrl, 0);
     ctrl->radio->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit");
 }
@@ -1809,7 +1673,7 @@ static void daemon_drop_invalid_rx_packet(RadioController<RadioT> *ctrl)
 {
     ctrl->received = false;
     ctrl->radio->clearIrq(0xFFFFFFFF);
-    radio_controller_led(ctrl, 0);
+    daemon_radio_runtime_led(ctrl, 0);
     ctrl->radio->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit nach Drop");
 }
