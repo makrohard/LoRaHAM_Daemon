@@ -1,3 +1,4 @@
+  - Internal: moved socket accept/flush helpers into `daemon_socket_runtime.*`.
   - Internal: moved CONFIG runtime helpers into `daemon_config_runtime.*`.
   - Internal: moved DATA TX runtime helpers into `daemon_data_tx_runtime.*`.
   - Internal: moved RadioLib startup/default setup into `daemon_radio_init.*`.

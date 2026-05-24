@@ -36,6 +36,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/config_validate.cpp"
   "$SCRIPT_DIR/config_stream.cpp"
   "$SCRIPT_DIR/daemon_config_runtime.cpp"
+  "$SCRIPT_DIR/daemon_socket_runtime.cpp"
   "$SCRIPT_DIR/config_apply.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
   "$SCRIPT_DIR/daemon_timing.cpp"

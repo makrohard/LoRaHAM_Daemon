@@ -64,6 +64,7 @@
 #include "client_set.h"
 #include "client_slot.h"
 #include "radio_channel.h"
+#include "daemon_socket_runtime.h"
 #include "radio_controller.h"
 #include "config_dispatch.h"
 #include "daemon_config_runtime.h"
@@ -348,104 +349,6 @@ static void daemon_main_context_init(DaemonMainContext *ctx)
     daemon_loop_context_init(&ctx->loop_ctx);
     daemon_debug_ctx("LIFE", "Laufzeitkontext bereit");
 }
-/* --- Socket dispatch ----------------------------------------------------- */
-static int daemon_client_slot_count(ClientSlot *slots, int max_clients)
-{
-    int count = 0;
-
-    if (!slots)
-        return 0;
-
-    for (int i = 0; i < max_clients; i++) {
-        if (client_slot_has_client(&slots[i]))
-            count++;
-    }
-
-    return count;
-}
-
-static bool daemon_client_slots_output_ready(ClientSlot *slots,
-                                             int max_clients,
-                                             const EventLoopReadySet *readfds)
-{
-    if (!slots)
-        return false;
-
-    for (int i = 0; i < max_clients; i++) {
-        if (client_slot_output_ready(&slots[i], readfds))
-            return true;
-    }
-
-    return false;
-}
-
-static void daemon_log_accept_delta(const char *ctx,
-                                    const char *kind,
-                                    int before,
-                                    int after)
-{
-    if (after > before)
-        daemon_debug_ctx(ctx, "%s-Client verbunden (%d)", kind, after);
-    else
-        daemon_debug_ctx(ctx, "%s-Annahme ohne neuen Client", kind);
-}
-
-static void daemon_accept_channel_logged(RadioChannelIo *channel,
-                                         const EventLoopReadySet *readfds,
-                                         const char *ctx)
-{
-    bool data_ready = event_loop_ready_fd_read(readfds, *channel->data_listen_fd);
-    bool framed_ready = event_loop_ready_fd_read(readfds,
-                                                 *channel->framed_data_listen_fd);
-    bool conf_ready = event_loop_ready_fd_read(readfds, *channel->conf_listen_fd);
-    int data_before = daemon_client_slot_count(channel->data_slots, MAX_CLIENTS);
-    int framed_before = daemon_client_slot_count(channel->framed_data_slots,
-                                                 MAX_CLIENTS);
-    int conf_before = daemon_client_slot_count(channel->conf_slots, MAX_CLIENTS);
-
-    if (data_ready)
-        daemon_debug_ctx(ctx, "DATA-Annahme bereit");
-    if (framed_ready)
-        daemon_debug_ctx(ctx, "DATAF-Annahme bereit");
-    if (conf_ready)
-        daemon_debug_ctx(ctx, "CONF-Annahme bereit");
-
-    radio_channel_accept_ready(channel, readfds);
-
-    if (data_ready) {
-        int data_after = daemon_client_slot_count(channel->data_slots, MAX_CLIENTS);
-        daemon_log_accept_delta(ctx, "DATA", data_before, data_after);
-    }
-
-    if (framed_ready) {
-        int framed_after = daemon_client_slot_count(channel->framed_data_slots,
-                                                    MAX_CLIENTS);
-        daemon_log_accept_delta(ctx, "DATAF", framed_before, framed_after);
-    }
-
-    if (conf_ready) {
-        int conf_after = daemon_client_slot_count(channel->conf_slots, MAX_CLIENTS);
-        daemon_log_accept_delta(ctx, "CONF", conf_before, conf_after);
-    }
-}
-
-static void daemon_flush_channel_logged(RadioChannelIo *channel,
-                                        const EventLoopReadySet *readfds,
-                                        const char *ctx)
-{
-    if (daemon_client_slots_output_ready(channel->data_slots, MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "DATA-Ausgabe bereit");
-
-    if (daemon_client_slots_output_ready(channel->framed_data_slots,
-                                         MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "DATAF-Ausgabe bereit");
-
-    if (daemon_client_slots_output_ready(channel->conf_slots, MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "CONF-Ausgabe bereit");
-
-    radio_channel_flush_ready(channel, readfds);
-}
-
 static int daemon_queue_framed_error(ClientSlot *slot, const char *msg)
 {
     uint8_t header[FRAMED_DATA_HEADER_LEN];

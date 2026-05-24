@@ -27,6 +27,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket wiring, selected socket setup, setup failure propagation, client accept/flush flow, live RSSI helper, and RSSI auto-stop support |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
+| Socket runtime | `daemon_socket_runtime.cpp`, `daemon_socket_runtime.h` | Logged per-channel accept/flush helpers around socket client slots |
 | Client handling | `client_output_queue.cpp`, `client_set.cpp`, `client_slot.cpp` | Client slots, nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
 | Raw DATA TX | `data_tx.cpp` | Split raw DATA socket writes into RF-sized chunks before transmit |
 | Radio TX path | `daemon_tx.cpp`, `daemon_tx.h` | Validate TX requests, broadcast TX state on CONF sockets, prepare/restore radio TX state, and map RadioLib TX results |
