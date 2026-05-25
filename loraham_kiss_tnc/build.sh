@@ -56,6 +56,7 @@ esac
 sources=(
   main.c
   bridge.c
+  bridge_conf.c
   cli.c
   tcp_server.c
   kiss.c

@@ -1,4 +1,5 @@
 #include "ax25.h"
+#include "bridge_conf.h"
 #include "kiss.h"
 #include "loraham_kiss_tnc.h"
 #include "loraham_sock.h"
