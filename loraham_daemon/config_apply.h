@@ -5,7 +5,6 @@
 #include <vector>
 #include <utility>
 #include <string>
-#include <stdlib.h>
 #include <atomic>
 #include <stdio.h>
 #include <RadioLib.h>

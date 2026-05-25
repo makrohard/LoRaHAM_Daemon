@@ -3,7 +3,6 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0

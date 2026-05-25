@@ -8,7 +8,6 @@
 #include "client_slot.h"
 #include "event_loop.h"
 
-#include <stdio.h>
 
 /* --- Channel socket state ----------------------------------------------- */
 

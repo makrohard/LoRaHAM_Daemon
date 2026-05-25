@@ -1,3 +1,4 @@
+  - Cleanup: removed unused include directives from daemon modules and tests.
   - Cleanup: kept RX callbacks minimal and moved RX flag handling into main processing.
   - Cleanup: removed unnecessary volatile qualifier from radio mode state.
   - Cleanup: removed unnecessary volatile qualifier from radio health state.
