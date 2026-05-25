@@ -3,3 +3,4 @@
 - Harden TX queue lifecycle around reconnects and restore failures.
 - Track unconfirmed TX fallback events.
 - Track framed daemon ERROR frames.
+- Use monotonic timers for TX queue timeouts.

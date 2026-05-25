@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "bridge.h"
 
 #include "bridge_conf.h"
@@ -168,13 +169,13 @@ static int sleep_ms(int ms)
 
 static long bridge_now_ms(void)
 {
-    struct timeval tv;
+    struct timespec ts;
 
-    if (gettimeofday(&tv, NULL) != 0) {
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
         return 0;
     }
 
-    return (long)tv.tv_sec * 1000L + (long)(tv.tv_usec / 1000L);
+    return (long)ts.tv_sec * 1000L + (long)(ts.tv_nsec / 1000000L);
 }
 
 /* ---- Test hooks ---- */
