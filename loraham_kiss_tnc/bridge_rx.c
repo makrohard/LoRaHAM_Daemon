@@ -317,6 +317,10 @@ int bridge_rx_handle_framed_chunk(int client_fd,
                     return ret;
                 }
             } else if (frame.type == LORAHAM_FRAME_ERROR) {
+                if (stats) {
+                    stats->loraham_framed_errors++;
+                }
+
                 printf("[LoRaHAM] Framed ERROR: %.*s\n",
                        (int)frame.payload_len,
                        (const char *)frame.payload);

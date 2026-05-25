@@ -363,6 +363,29 @@ static void test_tnc2_to_kiss_output(void)
 }
 
 
+static void test_framed_error_is_counted(void)
+{
+    loraham_framed_rx_state_t state;
+    lhkt_stats_t stats;
+    const uint8_t frame[] = {
+        LORAHAM_FRAME_ERROR,
+        4, 0,
+        'B', 'U', 'S', 'Y'
+    };
+
+    loraham_framed_rx_state_init(&state);
+    lhkt_stats_init(&stats);
+
+    assert(bridge_rx_handle_framed_chunk(-1,
+                                        &state,
+                                        frame,
+                                        sizeof(frame),
+                                        &stats) == LHKT_OK);
+    assert(stats.loraham_framed_errors == 1);
+    assert(stats.loraham_drop == 0);
+    assert(stats.kiss_tx == 0);
+}
+
 static void test_nonzero_kiss_port_is_dropped(void)
 {
     lhkt_config_t cfg;
@@ -623,6 +646,7 @@ int main(void)
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();
     test_tnc2_to_kiss_output();
+    test_framed_error_is_counted();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
     test_client_write_failure_returns_socket_error();

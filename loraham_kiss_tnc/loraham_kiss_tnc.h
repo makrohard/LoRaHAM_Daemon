@@ -84,6 +84,7 @@ typedef struct {
     uint64_t loraham_rx;
     uint64_t loraham_tx;
     uint64_t loraham_drop;
+    uint64_t loraham_framed_errors;
 
     uint64_t tx_drop_oversize;
     uint64_t tx_unconfirmed;
