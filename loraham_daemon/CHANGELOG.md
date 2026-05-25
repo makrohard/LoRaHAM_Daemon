@@ -1,3 +1,4 @@
+  - Cleanup: removed unused RadioChannelRuntime volatile flag wrapper.
   - Cleanup: removed unreachable framed DATA TX header error branch.
   - Fix: record CAD timeouts through the TX result stats path.
   - Fix: check daemon background-mode directory and stdio redirection failures.

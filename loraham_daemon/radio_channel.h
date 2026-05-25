@@ -62,25 +62,5 @@ float radio_channel_read_live_rssi(Module *mod,
                                    volatile RadioMode_t mode,
                                    bool is_hf);
 
-/* --- Radio channel runtime flags --- */
-
-typedef struct {
-    volatile RadioMode_t *mode;
-    volatile bool *received_flag;
-    volatile bool *tx_busy;
-    volatile bool *cad_active;
-    volatile bool *getrssi_active;
-} RadioChannelRuntime;
-
-void radio_channel_runtime_init(RadioChannelRuntime *rt,
-                                volatile RadioMode_t *mode,
-                                volatile bool *received_flag,
-                                volatile bool *tx_busy,
-                                volatile bool *cad_active,
-                                volatile bool *getrssi_active);
-
-void radio_channel_getrssi_autostop(RadioChannelIo *io,
-                                    RadioChannelRuntime *rt,
-                                    const char *tag);
 
 #endif

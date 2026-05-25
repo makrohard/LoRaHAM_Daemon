@@ -37,7 +37,6 @@ void radio_channel_io_init(RadioChannelIo *ch,
 }
 
 
-
 void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
 {
     event_loop_add_fd(set, *ch->data_listen_fd);
@@ -108,34 +107,6 @@ void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *read
     client_slot_flush_ready_outputs(ch->conf_slots,
                                     MAX_CLIENTS,
                                     ready);
-}
-
-
-/* --- Channel runtime state ---------------------------------------------- */
-
-void radio_channel_runtime_init(RadioChannelRuntime *rt,
-                                volatile RadioMode_t *mode,
-                                volatile bool *received_flag,
-                                volatile bool *tx_busy,
-                                volatile bool *cad_active,
-                                volatile bool *getrssi_active)
-{
-    rt->mode = mode;
-    rt->received_flag = received_flag;
-    rt->tx_busy = tx_busy;
-    rt->cad_active = cad_active;
-    rt->getrssi_active = getrssi_active;
-}
-
-void radio_channel_getrssi_autostop(RadioChannelIo *io,
-                                    RadioChannelRuntime *rt,
-                                    const char *tag)
-{
-    if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && *rt->getrssi_active) {
-        *rt->getrssi_active = false;
-        printf("[%s] kein Client mehr verbunden -> GETRSSI auto-stop\n", tag);
-        fflush(stdout);
-    }
 }
 
 /* --- Channel RSSI -------------------------------------------------------- */
