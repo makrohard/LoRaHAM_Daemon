@@ -98,15 +98,11 @@ void daemon_radio_shutdown_cleanup(void)
 void setFlag868(void)
 {
     radio_controller_868.received.store(true);
-    daemon_debug_ctx("RX868", "Flag gesetzt");
-    daemon_radio_runtime_led(&radio_controller_868, 1);
 }
 
 void setFlag433(void)
 {
     radio_controller_433.received.store(true);
-    daemon_debug_ctx("RX433", "Flag gesetzt");
-    daemon_radio_runtime_led(&radio_controller_433, 1);
 }
 
 void setFlashFlag868(void)

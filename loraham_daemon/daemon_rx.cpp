@@ -34,6 +34,13 @@ static const char *daemon_rx_log_ctx(RadioController<RadioT> *ctrl)
     return (ctrl && ctrl->band == RADIO_BAND_433) ? "RX433" : "RX868";
 }
 
+template<typename RadioT>
+static void daemon_note_rx_flag_observed(RadioController<RadioT> *ctrl)
+{
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Flag gesetzt");
+    daemon_radio_runtime_led(ctrl, 1);
+}
+
 /* --- RX special cases ---------------------------------------------------- */
 template<typename RadioT>
 static void daemon_discard_rx_during_tx(RadioController<RadioT> *ctrl)
@@ -371,6 +378,8 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
     // Shared RX flow for both bands.
     if (!ctrl->received.load())
         return;
+
+    daemon_note_rx_flag_observed(ctrl);
 
     if (ctrl->tx_busy.load()) {
         daemon_discard_rx_during_tx(ctrl);
