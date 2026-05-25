@@ -61,7 +61,7 @@ static void daemon_broadcast_tx_status(RadioBand_t band, bool busy)
 
     client_slot_broadcast_queued(channel->conf_slots,
                                  MAX_CLIENTS,
-                                 busy ? "TX=1\\n" : "TX=0\\n");
+                                 busy ? "TX=1\n" : "TX=0\n");
 }
 
 static void lora_print_tx_preview(const char *ctx,
