@@ -30,9 +30,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <signal.h>
 #include <getopt.h>
 #include <errno.h>
 
@@ -109,35 +106,6 @@ static void daemon_runtime_init(EventLoopSet *event_set)
         daemon_shutdown_cleanup(event_set);
         exit(EXIT_FAILURE);
     }
-}
-
-static void daemon_enter_background(void)
-{
-    pid_t pid = fork();
-    if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS); // Parent exits.
-
-    if (setsid() < 0) exit(EXIT_FAILURE); // New session.
-
-    pid = fork();
-    if (pid < 0) exit(EXIT_FAILURE);
-    if (pid > 0) exit(EXIT_SUCCESS);
-
-    umask(0);
-    if (chdir("/") != 0)
-        exit(EXIT_FAILURE);
-
-    // Redirect stdio so sockets cannot reuse fd 0, 1 or 2.
-    if (!freopen("/dev/null", "r", stdin))
-        exit(EXIT_FAILURE);
-
-    if (!freopen("/tmp/lora_daemon.log", "w", stdout))
-        exit(EXIT_FAILURE);
-
-    if (!freopen("/tmp/lora_daemon.log", "w", stderr))
-        exit(EXIT_FAILURE);
-
-    daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }
 
 /* --- Loop context --------------------------------------------------------- */
@@ -284,12 +252,6 @@ static void daemon_run(void)
 
 
 /* --- Startup helpers ----------------------------------------------------- */
-static void daemon_ignore_sigpipe(void)
-{
-    // Ignore SIGPIPE; closed sockets are handled via write() errors.
-    signal(SIGPIPE, SIG_IGN);
-    daemon_debug_ctx("STARTUP", "SIGPIPE wird ignoriert");
-}
 
 static void daemon_print_usage(const char *argv0)
 {
@@ -383,7 +345,8 @@ static bool daemon_parse_args(int argc, char *argv[])
 /* --- Startup sequence ---------------------------------------------------- */
 static void daemon_startup_sequence(int argc, char *argv[])
 {
-    daemon_ignore_sigpipe();
+    daemon_lifecycle_ignore_sigpipe();
+    daemon_debug_ctx("STARTUP", "SIGPIPE wird ignoriert");
     bool is_daemon = daemon_parse_args(argc, argv);
 
     daemon_debug_ctx("STARTUP", "Startmodus: %s", is_daemon ? "Daemon" : "Vordergrund");
@@ -392,8 +355,10 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_debug_ctx("STARTUP", "Argumente verarbeitet");
 
     // Enter background mode when requested.
-    if (is_daemon)
-        daemon_enter_background();
+    if (is_daemon) {
+        daemon_lifecycle_enter_background();
+        daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
+    }
 
     daemon_print_startup_version();
 

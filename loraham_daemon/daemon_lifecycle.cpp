@@ -1,7 +1,95 @@
 #include "daemon_lifecycle.h"
 
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <signal.h>
 #include <string.h>
+
+/* --- Daemon background mode --------------------------------------------- */
+
+static long daemon_lifecycle_fd_close_limit(void)
+{
+    struct rlimit limit;
+    long open_max;
+
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
+        limit.rlim_cur != RLIM_INFINITY &&
+        limit.rlim_cur <= 1048576) {
+        return (long)limit.rlim_cur;
+    }
+
+    open_max = sysconf(_SC_OPEN_MAX);
+    if (open_max > 0 && open_max <= 1048576)
+        return open_max;
+
+    return 1024;
+}
+
+static void daemon_lifecycle_close_inherited_fds(void)
+{
+    DIR *dir = opendir("/proc/self/fd");
+
+    if (dir) {
+        int keep_fd = dirfd(dir);
+        struct dirent *entry;
+
+        while ((entry = readdir(dir)) != NULL) {
+            char *end = NULL;
+            long fd;
+
+            errno = 0;
+            fd = strtol(entry->d_name, &end, 10);
+            if (errno != 0 || !end || *end != '\0')
+                continue;
+
+            if (fd > STDERR_FILENO && fd != keep_fd)
+                close((int)fd);
+        }
+
+        closedir(dir);
+        return;
+    }
+
+    long max_fd = daemon_lifecycle_fd_close_limit();
+    for (long fd = STDERR_FILENO + 1; fd < max_fd; fd++)
+        close((int)fd);
+}
+
+void daemon_lifecycle_enter_background(void)
+{
+    pid_t pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    if (setsid() < 0) exit(EXIT_FAILURE);
+
+    pid = fork();
+    if (pid < 0) exit(EXIT_FAILURE);
+    if (pid > 0) exit(EXIT_SUCCESS);
+
+    umask(0);
+    if (chdir("/") != 0)
+        exit(EXIT_FAILURE);
+
+    // Redirect stdio so sockets cannot reuse fd 0, 1 or 2.
+    if (!freopen("/dev/null", "r", stdin))
+        exit(EXIT_FAILURE);
+
+    if (!freopen("/tmp/lora_daemon.log", "w", stdout))
+        exit(EXIT_FAILURE);
+
+    if (!freopen("/tmp/lora_daemon.log", "w", stderr))
+        exit(EXIT_FAILURE);
+
+    daemon_lifecycle_close_inherited_fds();
+
+}
 
 /* --- Daemon stop handling ---------------------------------------------- */
 
@@ -21,6 +109,12 @@ void daemon_lifecycle_request_stop(int signal_number)
 int daemon_lifecycle_stop_requested(void)
 {
     return daemon_stop_requested_flag ? 1 : 0;
+}
+
+void daemon_lifecycle_ignore_sigpipe(void)
+{
+    // Ignore SIGPIPE; closed sockets are handled via write() errors.
+    signal(SIGPIPE, SIG_IGN);
 }
 
 int daemon_lifecycle_install_signal_handlers(void)

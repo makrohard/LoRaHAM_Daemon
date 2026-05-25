@@ -1,3 +1,4 @@
+  - Hardening: moved daemon background mode into lifecycle code and close inherited file descriptors.
   - Cleanup: made radio atomic flag load/store access explicit.
   - Cleanup: removed unused RadioChannelRuntime volatile flag wrapper.
   - Cleanup: removed unreachable framed DATA TX header error branch.
