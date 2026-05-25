@@ -15,6 +15,7 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - TX path intentionally blocks during tx timing
 - mode=LORA only - because FSK is not used in LoRa APRS
 - framed DATA socket only for daemon packet I/O
+- queues TX packets and uses CONF events (`TX=`, `CAD=`, `STATUS`)
 
 ## Build
 
@@ -51,7 +52,15 @@ Options:
       --tx-freq MHz        TX/config frequency
       --rx-only            Disable TX
       --tx-settle-ms MS    Wait after TX freq switch
-      --tx-return-ms MS    Wait after TX before RX restore
+      --tx-return-ms MS    Fallback wait after TX before RX restore
+      --tx-busy-timeout-ms MS
+                            Max wait for local TX busy
+      --cad-wait-ms MS     Max polite wait for busy channel
+      --cad-idle-ms MS     Required CAD idle stability
+      --cad-ignore         Ignore CAD/channel busy state
+      --tx-queue-len N     Queued TX packet limit
+      --tx-packet-ttl-ms MS
+                            Max queued packet lifetime
   -v, --verbose            Verbose output
       --version            Print version and exit
   -h, --help               Show help

@@ -6,10 +6,10 @@ kiss_port=8001
 
 
 # Expected socket from running LoRaHAM Daemon
-data_socket=/tmp/lora433.sock
+data_socket=/tmp/lora433f.sock
 conf_socket=/tmp/loraconf433.sock
 
-#data_socket=/tmp/lora868.sock
+#data_socket=/tmp/lora868f.sock
 #conf_socket=/tmp/loraconf868.sock
 
 # Set rx_only=1 for receive-only testing.
@@ -22,7 +22,15 @@ stats_interval=3600
 
 # TX timing in milliseconds.
 tx_settle_ms=100    # wait after switching to TX frequency before sending.
-tx_return_ms=1000   # wait after TX before switching back to RX frequency.
+tx_return_ms=1000   # fallback wait after TX before switching back to RX frequency.
+
+# TX queue and channel policy in milliseconds.
+tx_busy_timeout_ms=120000  # drop packet if local TX stays busy longer.
+cad_wait_ms=20000          # polite CAD wait; send anyway after timeout.
+cad_idle_ms=500            # CAD must stay idle this long after CAD=0.
+cad_ignore=0               # set 1 to ignore CAD/channel busy state.
+tx_queue_len=8             # max queued packets.
+tx_packet_ttl_ms=180000    # drop queued packets older than this.
 
 # LoRaHAM APRS 433 MHz
 rx_freq=433.775

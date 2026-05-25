@@ -6,3 +6,4 @@
 
 # 0.1.0
 - Initial Version, developed for loraham_daemon 108
+- Queue TX packets and use CONF status events.

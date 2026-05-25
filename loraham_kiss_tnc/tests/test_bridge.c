@@ -43,6 +43,39 @@ int lhkt_test_bridge_should_stop(void);
 int lhkt_test_bridge_wait_fd_writable(int fd);
 int lhkt_test_bridge_sleep_ms(int ms);
 int lhkt_test_bridge_send_initial_config(const lhkt_config_t *cfg);
+int lhkt_test_bridge_conf_feed(const char *text,
+                               int *tx_busy,
+                               int *cad_busy,
+                               int *radio_ready,
+                               int *have_status);
+
+static void test_conf_status_parser(void)
+{
+    int tx_busy = -1;
+    int cad_busy = -1;
+    int radio_ready = -1;
+    int have_status = -1;
+
+    assert(lhkt_test_bridge_conf_feed("TX=1\nCAD=1\nSTATUS RADIO=READY TX=0 CAD=0 GETRSSI=0\n",
+                                      &tx_busy,
+                                      &cad_busy,
+                                      &radio_ready,
+                                      &have_status) == LHKT_OK);
+    assert(tx_busy == 0);
+    assert(cad_busy == 0);
+    assert(radio_ready == 1);
+    assert(have_status == 1);
+
+    assert(lhkt_test_bridge_conf_feed("STATUS RADIO=FAILED TX=1 CAD=1 GETRSSI=0\n",
+                                      &tx_busy,
+                                      &cad_busy,
+                                      &radio_ready,
+                                      &have_status) == LHKT_OK);
+    assert(tx_busy == 1);
+    assert(cad_busy == 1);
+    assert(radio_ready == 0);
+    assert(have_status == 1);
+}
 
 static void test_fd_set_rejects_too_large_fd(void)
 {
@@ -411,6 +444,7 @@ int main(void)
 {
     signal(SIGPIPE, SIG_IGN);
 
+    test_conf_status_parser();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();

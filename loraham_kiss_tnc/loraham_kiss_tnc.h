@@ -44,6 +44,12 @@ typedef struct {
     int stats_interval;
     int tx_settle_ms;
     int tx_return_ms;
+    int tx_busy_timeout_ms;
+    int cad_wait_ms;
+    int cad_idle_ms;
+    int cad_ignore;
+    int tx_queue_len;
+    int tx_packet_ttl_ms;
 
 
     double rx_freq;
