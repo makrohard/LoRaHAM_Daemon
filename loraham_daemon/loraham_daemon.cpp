@@ -124,12 +124,18 @@ static void daemon_enter_background(void)
     if (pid > 0) exit(EXIT_SUCCESS);
 
     umask(0);
-    chdir("/");
+    if (chdir("/") != 0)
+        exit(EXIT_FAILURE);
 
     // Redirect stdio so sockets cannot reuse fd 0, 1 or 2.
-    freopen("/dev/null", "r", stdin);
-    freopen("/tmp/lora_daemon.log", "w", stdout);
-    freopen("/tmp/lora_daemon.log", "w", stderr);
+    if (!freopen("/dev/null", "r", stdin))
+        exit(EXIT_FAILURE);
+
+    if (!freopen("/tmp/lora_daemon.log", "w", stdout))
+        exit(EXIT_FAILURE);
+
+    if (!freopen("/tmp/lora_daemon.log", "w", stderr))
+        exit(EXIT_FAILURE);
 
     daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }

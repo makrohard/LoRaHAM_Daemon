@@ -1,3 +1,4 @@
+  - Fix: check daemon background-mode directory and stdio redirection failures.
   - Fix: acquire TX busy state atomically before copying/logging payloads.
   - Fix: completed fd `0` client handling with explicit `-1` client-set initialization.
 # Changelog
