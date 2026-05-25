@@ -58,6 +58,7 @@
 #include "daemon_framed_data_runtime.h"
 #include "daemon_rx.h"
 #include "daemon_monitoring.h"
+#include "daemon_io_runtime.h"
 #include "framed_data.h"
 #include "tx_result.h"
 #include "radio_health.h"
@@ -73,26 +74,6 @@
 #include "daemon_config_runtime.h"
 #include "config_stream.h"
 
-/* --- Global socket/client state ----------------------------------------- */
-int data433_fd = -1, data868_fd = -1;
-int data433_framed_fd = -1, data868_framed_fd = -1;
-int conf433_fd = -1, conf868_fd = -1;
-
-ClientSlot client_data433_slots[MAX_CLIENTS];
-ClientSlot client_data868_slots[MAX_CLIENTS];
-ClientSlot client_data433_framed_slots[MAX_CLIENTS];
-ClientSlot client_data868_framed_slots[MAX_CLIENTS];
-FramedDataTxState client_data433_framed_states[MAX_CLIENTS];
-FramedDataTxState client_data868_framed_states[MAX_CLIENTS];
-ClientSlot client_conf433_slots[MAX_CLIENTS];
-ClientSlot client_conf868_slots[MAX_CLIENTS];
-
-
-/* --- Channel IO state ---------------------------------------------------- */
-RadioChannelIo channel_433;
-RadioChannelIo channel_868;
-
-
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
     daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
@@ -100,25 +81,9 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 
     daemon_debug_ctx("LIFE", "Schließe Event-Backend");
     event_loop_close(event_set);
+
     daemon_debug_ctx("LIFE", "Schließe Clients");
-
-    if (daemon_radio_433_enabled()) {
-        client_slot_close_all(client_data433_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
-        close_unix_socket(&data433_fd, DATA433_SOCKET);
-        close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
-        close_unix_socket(&conf433_fd, CONF433_SOCKET);
-    }
-
-    if (daemon_radio_868_enabled()) {
-        client_slot_close_all(client_data868_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
-        close_unix_socket(&data868_fd, DATA868_SOCKET);
-        close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
-        close_unix_socket(&conf868_fd, CONF868_SOCKET);
-    }
+    daemon_io_shutdown_cleanup();
 
     daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
 }
@@ -130,11 +95,7 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
 
     event_loop_reset(event_set);
 
-    if (daemon_radio_433_enabled())
-        radio_channel_add_fds(&channel_433, event_set);
-
-    if (daemon_radio_868_enabled())
-        radio_channel_add_fds(&channel_868, event_set);
+    daemon_io_add_event_fds(event_set);
 
     ret = event_loop_wait(event_set, readfds, DAEMON_EVENT_LOOP_TIMEOUT_USEC);
     if (ret > 0)
@@ -188,103 +149,9 @@ static void daemon_enter_background(void)
 
     daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }
-static void daemon_startup_io_cleanup(void)
-{
-    daemon_debug_ctx("LIFE", "Startup-Cleanup");
-    daemon_radio_shutdown_cleanup();
 
-    if (daemon_radio_433_enabled()) {
-        client_slot_close_all(client_data433_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
-        close_unix_socket(&data433_fd, DATA433_SOCKET);
-        close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
-        close_unix_socket(&conf433_fd, CONF433_SOCKET);
-    }
 
-    if (daemon_radio_868_enabled()) {
-        client_slot_close_all(client_data868_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
-        close_unix_socket(&data868_fd, DATA868_SOCKET);
-        close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
-        close_unix_socket(&conf868_fd, CONF868_SOCKET);
-    }
-}
 
-static void daemon_radio_io_init(void)
-{
-    daemon_debug_ctx("CLIENT", "Slots initialisieren");
-    if (daemon_radio_433_enabled()) {
-        client_slot_init_all(client_data433_slots, MAX_CLIENTS);
-        client_slot_init_all(client_data433_framed_slots, MAX_CLIENTS);
-        framed_data_tx_state_init_all(client_data433_framed_states, MAX_CLIENTS);
-        client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
-    }
-
-    if (daemon_radio_868_enabled()) {
-        client_slot_init_all(client_data868_slots, MAX_CLIENTS);
-        client_slot_init_all(client_data868_framed_slots, MAX_CLIENTS);
-        framed_data_tx_state_init_all(client_data868_framed_states, MAX_CLIENTS);
-        client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
-    }
-
-    daemon_debug_ctx("RADIO", "Kanal-IO initialisieren");
-    radio_channel_io_init(&channel_433,
-                          RADIO_BAND_433,
-                          DATA433_SOCKET,
-                          DATA433_FRAMED_SOCKET,
-                          CONF433_SOCKET,
-                          &data433_fd,
-                          &data433_framed_fd,
-                          &conf433_fd,
-                          client_data433_slots,
-                          client_data433_framed_slots,
-                          client_conf433_slots);
-    radio_channel_io_init(&channel_868,
-                          RADIO_BAND_868,
-                          DATA868_SOCKET,
-                          DATA868_FRAMED_SOCKET,
-                          CONF868_SOCKET,
-                          &data868_fd,
-                          &data868_framed_fd,
-                          &conf868_fd,
-                          client_data868_slots,
-                          client_data868_framed_slots,
-                          client_conf868_slots);
-
-    daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
-    if (daemon_radio_433_enabled() &&
-        radio_channel_open_sockets(&channel_433) != 0) {
-        perror("socket 433");
-        printf("[Daemon] Socket-Setup 433 fehlgeschlagen, beende.\n");
-        daemon_startup_io_cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    if (daemon_radio_868_enabled() &&
-        radio_channel_open_sockets(&channel_868) != 0) {
-        perror("socket 868");
-        printf("[Daemon] Socket-Setup 868 fehlgeschlagen, beende.\n");
-        daemon_startup_io_cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    daemon_radio_controller_init();
-
-    daemon_debug_ctx("GPIO", "LED initialisieren");
-    daemon_led_init();
-
-    daemon_debug_ctx("RADIO", "RadioLib initialisieren");
-    lora_init();
-
-    daemon_log_active_radios();
-    if (!daemon_selected_radio_ready()) {
-        printf("[Daemon] Kein ausgewähltes Radio bereit, beende.\n");
-        daemon_startup_io_cleanup();
-        exit(EXIT_FAILURE);
-    }
-}
 
 /* --- Loop context --------------------------------------------------------- */
 typedef struct {
@@ -583,7 +450,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_print_startup_version();
 
     daemon_debug_ctx("STARTUP", "Starte Radio- und Socket-Init");
-    daemon_radio_io_init();
+    daemon_io_init();
     daemon_debug_ctx("STARTUP", "Startup abgeschlossen");
 }
 

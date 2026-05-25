@@ -1,3 +1,4 @@
+  - Internal: moved daemon I/O state and lifecycle helpers into `daemon_io_runtime.*`.
   - Internal: moved CAD/RSSI/stats monitoring into `daemon_monitoring.*`.
   - Internal: moved RX packet helpers into `daemon_rx.*`.
   - Internal: moved framed DATA runtime helpers into `daemon_framed_data_runtime.*`.
