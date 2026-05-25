@@ -12,10 +12,17 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - single KISS/TCP client
 - KISS port 0 only
 - APRS/TNC2 text payload only
-- TX path intentionally blocks during tx timing
+- TX packets are queued and sent one at a time
 - mode=LORA only - because FSK is not used in LoRa APRS
 - framed DATA socket only for daemon packet I/O
-- queues TX packets and uses CONF events (`TX=`, `CAD=`, `STATUS`)
+- uses CONF events (`TX=`, `CAD=`, `STATUS`) for TX/CAD state
+
+## TX/CAD policy
+
+- queued TX waits for fresh `STATUS` after CONF reconnect
+- `TX=1` delays TX until `TX=0`; timeout drops the packet
+- `CAD=1` delays TX briefly; timeout sends anyway
+- `--cad-ignore` ignores CAD/channel busy state
 
 ## Build
 
