@@ -60,6 +60,7 @@ sources=(
   bridge_kiss.c
   bridge_rx.c
   bridge_loraham.c
+  bridge_loop.c
   bridge_runtime.c
   bridge_tx_queue.c
   cli.c

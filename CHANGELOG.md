@@ -7,3 +7,4 @@
 - Use persistent CONF socket for SET commands.
 - Extract bridge runtime helpers.
 - Extract LoRaHAM transport helpers.
+- Extract bridge main loop implementation.
