@@ -9,3 +9,4 @@
 - Queue TX packets and use CONF status events.
 - Track CONF event transitions for TX queue tests.
 - Extract bridge CONF event helpers.
+- Extract bridge TX queue helpers.
