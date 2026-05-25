@@ -27,7 +27,7 @@ int client_set_set_nonblocking(int fd)
 static int client_set_add_with_output(int *clients, ClientOutputQueue *queues, int max_clients, int fd)
 {
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] == 0) {
+        if (clients[i] < 0) {
             clients[i] = fd;
             if (queues)
                 client_output_queue_reset(&queues[i]);
@@ -42,7 +42,7 @@ static int client_set_add_with_output(int *clients, ClientOutputQueue *queues, i
 int client_set_add(int *clients, int max_clients, int fd)
 {
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] == 0) {
+        if (clients[i] < 0) {
             clients[i] = fd;
             return 1;
         }
@@ -103,10 +103,10 @@ int client_set_accept(int listen_fd, int *clients, int max_clients)
 
 void client_set_close_slot(int *clients, int index)
 {
-    if (clients[index] > 0)
+    if (clients[index] >= 0)
         close(clients[index]);
 
-    clients[index] = 0;
+    clients[index] = -1;
 }
 
 void client_set_close_slot_with_output(int *clients, ClientOutputQueue *queues, int index)
@@ -133,7 +133,7 @@ void client_set_close_all_with_output(int *clients, ClientOutputQueue *queues, i
 int client_set_has_clients(int *clients, int max_clients)
 {
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] > 0)
+        if (clients[i] >= 0)
             return 1;
     }
 
@@ -172,7 +172,7 @@ ssize_t client_set_read_slot_with_output(int *clients,
 {
     ssize_t n = client_set_read_slot(clients, index, buf, len);
 
-    if (clients[index] <= 0 && queues)
+    if (clients[index] < 0 && queues)
         client_output_queue_reset(&queues[index]);
 
     return n;
@@ -180,7 +180,7 @@ ssize_t client_set_read_slot_with_output(int *clients,
 
 int client_set_slot_ready(int *clients, int index, const EventLoopReadySet *ready)
 {
-    return clients[index] > 0 && event_loop_ready_fd_read(ready, clients[index]);
+    return clients[index] >= 0 && event_loop_ready_fd_read(ready, clients[index]);
 }
 
 int client_set_output_ready(int *clients,
@@ -188,7 +188,7 @@ int client_set_output_ready(int *clients,
                             int index,
                             const EventLoopReadySet *ready)
 {
-    return clients[index] > 0 && queues &&
+    return clients[index] >= 0 && queues &&
            client_output_queue_pending(&queues[index]) > 0 &&
            event_loop_ready_fd_write(ready, clients[index]);
 }
@@ -196,7 +196,7 @@ int client_set_output_ready(int *clients,
 void client_set_add_to_event_loop(int *clients, int max_clients, EventLoopSet *set)
 {
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] > 0)
+        if (clients[i] >= 0)
             event_loop_add_fd(set, clients[i]);
     }
 }
@@ -207,7 +207,7 @@ void client_set_add_to_event_loop_with_output(int *clients,
                                               EventLoopSet *set)
 {
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] > 0) {
+        if (clients[i] >= 0) {
             uint32_t events = EVENT_LOOP_EVENT_READ;
 
             if (queues && client_output_queue_pending(&queues[i]) > 0)
@@ -224,7 +224,7 @@ void client_set_flush_output_slot(int *clients, ClientOutputQueue *queues, int i
     if (!queues)
         return;
 
-    if (clients[index] <= 0) {
+    if (clients[index] < 0) {
         client_output_queue_reset(&queues[index]);
         return;
     }
@@ -266,7 +266,7 @@ void client_set_broadcast_bytes_queued(int *clients, ClientOutputQueue *queues, 
         return;
 
     for (int i = 0; i < max_clients; i++) {
-        if (clients[i] <= 0) {
+        if (clients[i] < 0) {
             client_output_queue_reset(&queues[i]);
             continue;
         }

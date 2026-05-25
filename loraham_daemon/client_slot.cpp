@@ -13,7 +13,7 @@ void client_slot_init(ClientSlot *slot)
     if (!slot)
         return;
 
-    slot->fd = 0;
+    slot->fd = -1;
     client_output_queue_init(&slot->output);
     config_stream_init(&slot->stream);
 }
@@ -29,7 +29,7 @@ void client_slot_init_all(ClientSlot *slots, int count)
 
 int client_slot_has_client(const ClientSlot *slot)
 {
-    return slot && slot->fd > 0;
+    return slot && slot->fd >= 0;
 }
 
 int client_slot_fd(const ClientSlot *slot)
@@ -68,7 +68,7 @@ void client_slot_close(ClientSlot *slot)
     if (!slot)
         return;
 
-    if (slot->fd > 0)
+    if (slot->fd >= 0)
         close(slot->fd);
 
     client_slot_init(slot);
