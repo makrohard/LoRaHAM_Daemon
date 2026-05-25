@@ -47,7 +47,7 @@ static void test_config_and_cli_override(void)
         "test_cli",
         "--config", "/tmp/lhkt_cli_test.conf",
         "--kiss-port", "9005",
-        "--data-socket", "/tmp/cli_lora.sock",
+        "--data-socket", "/tmp/cli_lora_framed.sock",
         "--rx-only",
         NULL
     };
@@ -63,7 +63,7 @@ static void test_config_and_cli_override(void)
 
     assert(lhkt_cli_apply(argc_of(argv), argv, &cfg) == LHKT_OK);
     assert(cfg.kiss_port == 9005);
-    assert(strcmp(cfg.data_socket, "/tmp/cli_lora.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/cli_lora_framed.sock") == 0);
     assert(cfg.rx_only == 1);
 
     unlink(path);

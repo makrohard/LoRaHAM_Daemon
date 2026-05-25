@@ -19,7 +19,7 @@
 /* Defaults */
 #define LHKT_DEFAULT_KISS_HOST   "127.0.0.1"
 #define LHKT_DEFAULT_KISS_PORT   8001
-#define LHKT_DEFAULT_DATA_SOCKET "/tmp/lora433.sock"
+#define LHKT_DEFAULT_DATA_SOCKET "/tmp/lora433f.sock"
 #define LHKT_DEFAULT_CONF_SOCKET "/tmp/loraconf433.sock"
 /* Fehlercodes */
 #define LHKT_OK                 0

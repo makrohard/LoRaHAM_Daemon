@@ -13,7 +13,7 @@ static void test_defaults(void)
 
     assert(strcmp(cfg.kiss_host, "127.0.0.1") == 0);
     assert(cfg.kiss_port == 8001);
-    assert(strcmp(cfg.data_socket, "/tmp/lora433.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/lora433f.sock") == 0);
     assert(strcmp(cfg.conf_socket, "/tmp/loraconf433.sock") == 0);
     assert(cfg.rx_only == 0);
     assert(cfg.verbose == 0);
@@ -113,7 +113,7 @@ static void test_load_file(void)
     fprintf(fp, "# LoRaHAM KISS TNC test config\n");
     fprintf(fp, "kiss_host = 0.0.0.0\n");
     fprintf(fp, "kiss_port = 8100 # inline comment\n");
-    fprintf(fp, "data_socket = /tmp/test_lora433.sock\n");
+    fprintf(fp, "data_socket = /tmp/test_lora433f.sock\n");
     fprintf(fp, "conf_socket = /tmp/test_loraconf433.sock\n");
     fprintf(fp, "rx_only = true\n");
     fprintf(fp, "verbose = on\n");
@@ -138,7 +138,7 @@ static void test_load_file(void)
 
     assert(strcmp(cfg.kiss_host, "0.0.0.0") == 0);
     assert(cfg.kiss_port == 8100);
-    assert(strcmp(cfg.data_socket, "/tmp/test_lora433.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/test_lora433f.sock") == 0);
     assert(strcmp(cfg.conf_socket, "/tmp/test_loraconf433.sock") == 0);
     assert(cfg.rx_only == 1);
     assert(cfg.verbose == 1);

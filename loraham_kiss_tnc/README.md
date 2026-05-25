@@ -3,10 +3,10 @@ written by Johannes Loose 410733@gmail.com
 
 KISS/TCP TNC bridge for `LoRaHAM_Daemon`.
 
-It exposes a KISS/TCP port for APRS clients and talks to the LoRaHAM daemon through its Unix sockets.
+It exposes a KISS/TCP port for APRS clients and talks to the LoRaHAM daemon through its framed DATA Unix socket.
 
 ```text
-APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433.sock <-> loraham_daemon
+APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham_daemon
 ```
 ## Limitations
 - single KISS/TCP client
@@ -14,6 +14,7 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433.sock <-> loraham_
 - APRS/TNC2 text payload only
 - TX path intentionally blocks during tx timing
 - mode=LORA only - because FSK is not used in LoRa APRS
+- framed DATA socket only for daemon packet I/O
 
 ## Build
 
@@ -44,7 +45,7 @@ Options:
   -c, --config FILE        Load config file
       --kiss-host HOST     KISS/TCP bind host
       --kiss-port PORT     KISS/TCP bind port
-      --data-socket PATH   LoRaHAM data socket
+      --data-socket PATH   LoRaHAM framed data socket
       --conf-socket PATH   LoRaHAM config socket
       --rx-freq MHz        RX/config frequency
       --tx-freq MHz        TX/config frequency

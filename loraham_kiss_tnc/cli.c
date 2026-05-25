@@ -24,7 +24,7 @@ void lhkt_cli_print_usage(const char *prog)
     printf("  -c, --config FILE        Load config file\n");
     printf("      --kiss-host HOST     KISS/TCP bind host\n");
     printf("      --kiss-port PORT     KISS/TCP bind port\n");
-    printf("      --data-socket PATH   LoRaHAM data socket\n");
+    printf("      --data-socket PATH   LoRaHAM framed data socket\n");
     printf("      --conf-socket PATH   LoRaHAM config socket\n");
     printf("      --rx-freq MHz        RX frequency\n");
     printf("      --tx-freq MHz        TX frequency\n");
