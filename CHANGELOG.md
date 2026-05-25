@@ -6,3 +6,4 @@
 - Use monotonic timers for TX queue timeouts.
 - Use persistent CONF socket for SET commands.
 - Extract bridge runtime helpers.
+- Extract LoRaHAM transport helpers.

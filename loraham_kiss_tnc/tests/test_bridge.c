@@ -1,6 +1,7 @@
 #include "ax25.h"
 #include "bridge_conf.h"
 #include "bridge_kiss.h"
+#include "bridge_loraham.h"
 #include "bridge_rx.h"
 #include "bridge_runtime.h"
 #include "bridge_tx_queue.h"
