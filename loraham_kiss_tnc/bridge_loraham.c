@@ -619,6 +619,10 @@ int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
             }
         }
 
+        if (conf_fd >= 0 && conf_state && !conf_state->have_status) {
+            return LHKT_OK;
+        }
+
         now = bridge_runtime_now_ms();
         decision = bridge_tx_head_decision(cfg,
                                            conf_fd >= 0 ? conf_state : NULL,
@@ -891,6 +895,62 @@ int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
         *drops = stats.loraham_drop;
     }
 
+    return ret;
+}
+
+int lhkt_test_bridge_drain_waits_for_status(size_t *queue_depth,
+                                             size_t *write_calls,
+                                             int *have_status)
+{
+    int sv[2];
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_tx_queue_t queue;
+    bridge_conf_state_t conf_state;
+    int ret;
+    const char events[] = "CAD=0\nTX=0\n";
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return LHKT_ERR;
+    }
+
+    if (bridge_runtime_set_fd_nonblocking(sv[0]) != LHKT_OK) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    if (write(sv[1], events, sizeof(events) - 1) < 0) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    bridge_tx_queue_init(&queue);
+    bridge_conf_state_init(&conf_state);
+    lhkt_test_push_dummy_tx_packet(&queue, &cfg);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_write_result(1);
+
+    ret = bridge_loraham_tx_queue_drain(&cfg, &stats, &queue, 42, sv[0], &conf_state);
+
+    if (queue_depth) {
+        *queue_depth = queue.count;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    if (have_status) {
+        *have_status = conf_state.have_status;
+    }
+
+    close(sv[0]);
+    close(sv[1]);
     return ret;
 }
 

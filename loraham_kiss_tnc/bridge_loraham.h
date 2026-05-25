@@ -65,6 +65,9 @@ int lhkt_test_bridge_drain_waits_for_data_socket(size_t *queue_depth,
 int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
                                                  size_t *write_calls,
                                                  uint64_t *drops);
+int lhkt_test_bridge_drain_waits_for_status(size_t *queue_depth,
+                                             size_t *write_calls,
+                                             int *have_status);
 int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
                                              int *tx_busy,
                                              size_t *write_calls);
