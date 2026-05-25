@@ -1,6 +1,7 @@
 # 0.2.0
 - Updated, after refactoring loraham_daemon to 109a
 - Use framed DATA sockets in LoRaHAM KISS TNC bridge.
+- Uses TX and optional CAD Info from daemon for sending policy
 
 - *W O R K  I N  P R O G R E S S*
 
