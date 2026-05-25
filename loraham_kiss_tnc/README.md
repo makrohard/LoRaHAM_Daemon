@@ -69,7 +69,7 @@ Options:
 
 ## Serial KISS
 
-Xastir ans YAAC only support Serial KISS TNC. You can use socat to forward the byte-stream to a PTY.
+Xastir only supports Serial KISS TNC. You can use socat to forward the byte-stream to a PTY.
 This works over network, too.
 
 Start socat on the machine with the APRS-Client and point to the machine running the TNC.
