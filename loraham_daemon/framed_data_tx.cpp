@@ -103,8 +103,7 @@ int framed_data_tx_feed_state(FramedDataTxState *state,
             state->header[state->header_len++] = buf[i];
 
             if (state->header_len == FRAMED_DATA_HEADER_LEN) {
-                if (framed_data_tx_header_ready(state, on_error, error_ctx) != 0)
-                    return -1;
+                framed_data_tx_header_ready(state, on_error, error_ctx);
 
                 if (state->header_len == 0)
                     continue;
