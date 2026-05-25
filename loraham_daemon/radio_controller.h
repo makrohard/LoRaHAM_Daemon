@@ -23,7 +23,7 @@ struct RadioController {
     std::unique_ptr<Module> mod;
     std::unique_ptr<RadioT> radio;
 
-    volatile RadioHealth health;
+    RadioHealth health;
     volatile RadioMode_t mode;
     std::atomic<bool> received;
     std::atomic<bool> tx_busy;
@@ -85,7 +85,7 @@ static inline const char *radio_controller_tag(const RadioController<RadioT> *ct
 }
 
 template<typename RadioT>
-static inline volatile RadioHealth *radio_controller_health_ptr(RadioController<RadioT> *ctrl)
+static inline RadioHealth *radio_controller_health_ptr(RadioController<RadioT> *ctrl)
 {
     return ctrl ? &ctrl->health : nullptr;
 }
