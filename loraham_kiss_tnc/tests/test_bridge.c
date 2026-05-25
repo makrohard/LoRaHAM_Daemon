@@ -83,6 +83,9 @@ int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
 int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
                                                         uint64_t *restore_failures,
                                                         size_t *write_calls);
+int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
+                                                     uint64_t *unconfirmed,
+                                                     size_t *write_calls);
 
 #define TEST_TX_DECISION_WAIT 0
 #define TEST_TX_DECISION_SEND 1
@@ -223,6 +226,20 @@ static void test_tx_queue_pops_written_packet_on_restore_failure(void)
     assert(queue_depth == 0);
     assert(write_calls == 1);
     assert(restore_failures == 2);
+}
+
+static void test_tx_confirmation_missing_is_counted(void)
+{
+    uint64_t tx = 99;
+    uint64_t unconfirmed = 99;
+    size_t write_calls = 99;
+
+    assert(lhkt_test_bridge_send_packet_without_tx_confirm(&tx,
+                                                          &unconfirmed,
+                                                          &write_calls) == LHKT_OK);
+    assert(write_calls == 1);
+    assert(tx == 1);
+    assert(unconfirmed == 1);
 }
 
 static void test_fd_set_rejects_too_large_fd(void)
@@ -557,6 +574,7 @@ static void test_rx_restore_retry_success_counts_failure(void)
     assert(lhkt_test_bridge_config_call_count() == 3);
     assert(lhkt_test_bridge_sleep_call_count() >= 3);
     assert(stats.tx_restore_failures == 1);
+    assert(stats.tx_unconfirmed == 1);
     assert(stats.loraham_drop == 0);
     assert(stats.loraham_tx == 1);
 }
@@ -584,6 +602,7 @@ static void test_rx_restore_retry_failure_is_counted(void)
     assert(lhkt_test_bridge_write_call_count() == 1);
     assert(lhkt_test_bridge_config_call_count() == 3);
     assert(stats.tx_restore_failures == 2);
+    assert(stats.tx_unconfirmed == 1);
     assert(stats.loraham_drop == 0);
     assert(stats.loraham_tx == 0);
 }
@@ -599,6 +618,7 @@ int main(void)
     test_tx_queue_lifecycle_waits_for_sockets();
     test_tx_queue_drain_reads_pending_conf();
     test_tx_queue_pops_written_packet_on_restore_failure();
+    test_tx_confirmation_missing_is_counted();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();

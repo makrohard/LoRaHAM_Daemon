@@ -692,6 +692,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
                                       int *packet_written)
 {
     int ret;
+    int confirm_ret;
 
     if (packet_written) {
         *packet_written = 0;
@@ -759,7 +760,19 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         *packet_written = 1;
     }
 
-    if (bridge_wait_tx_complete(conf_fd, conf_state, cfg) != LHKT_OK) {
+    confirm_ret = bridge_wait_tx_complete(conf_fd, conf_state, cfg);
+    if (confirm_ret != LHKT_OK) {
+        if (stats) {
+            stats->tx_unconfirmed++;
+        }
+
+        if (confirm_ret == LHKT_ERR_UNSUPPORTED) {
+            printf("[CONF] TX confirmation missing, using fallback wait\n");
+        } else {
+            printf("[CONF] TX confirmation failed err=%d, using fallback wait\n",
+                   confirm_ret);
+        }
+
         (void)bridge_sleep_ms(cfg->tx_return_ms);
     }
 
@@ -924,6 +937,66 @@ int lhkt_test_handle_kiss_frame(const kiss_frame_t *kiss_frame,
                                           &packet_written);
     }
 }
+int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
+                                                     uint64_t *unconfirmed,
+                                                     size_t *write_calls)
+{
+    int sv[2];
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_conf_state_t conf_state;
+    int ret;
+    int packet_written;
+    int config_results[] = { LHKT_OK, LHKT_OK };
+    static const uint8_t packet[] = { 0x3c, 0xff, 0x01, 'T', 'E', 'S', 'T' };
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return LHKT_ERR;
+    }
+
+    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    lhkt_config_defaults(&cfg);
+    cfg.tx_busy_timeout_ms = 100;
+    lhkt_stats_init(&stats);
+    bridge_conf_state_init(&conf_state);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+    lhkt_test_bridge_set_write_result(1);
+
+    packet_written = 0;
+    ret = bridge_send_loraham_packet(&cfg,
+                                    &stats,
+                                    42,
+                                    sv[0],
+                                    &conf_state,
+                                    packet,
+                                    sizeof(packet),
+                                    &packet_written);
+
+    if (tx) {
+        *tx = stats.loraham_tx;
+    }
+
+    if (unconfirmed) {
+        *unconfirmed = stats.tx_unconfirmed;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    close(sv[0]);
+    close(sv[1]);
+    return ret;
+}
+
 static void lhkt_test_push_dummy_tx_packet(bridge_tx_queue_t *queue,
                                            const lhkt_config_t *cfg)
 {

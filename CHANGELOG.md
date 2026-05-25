@@ -1,3 +1,4 @@
 - Extract bridge KISS ingress helpers.
 - Extract bridge LoRaHAM RX helpers.
 - Harden TX queue lifecycle around reconnects and restore failures.
+- Track unconfirmed TX fallback events.
