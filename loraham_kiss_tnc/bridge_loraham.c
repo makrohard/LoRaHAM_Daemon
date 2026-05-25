@@ -1037,6 +1037,7 @@ int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
     lhkt_stats_init(&stats);
     bridge_tx_queue_init(&queue);
     bridge_conf_state_init(&conf_state);
+    conf_state.have_status = 1;
     lhkt_test_push_dummy_tx_packet(&queue, &cfg);
 
     lhkt_test_bridge_reset_tx_hooks();
