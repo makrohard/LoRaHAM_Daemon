@@ -2,7 +2,7 @@
 
 `loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. By default it initializes both the 433 MHz and 868 MHz radio modules, but it can also run either radio independently via `--radio 433` or `--radio 868`. Active radios are exposed to user programs through local UNIX sockets.
 
-The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. There is a KISS-bridge that allows you to connect to APRS-Clients like Xastir or YAAC.
+The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. External bridge/client programs can use these sockets to integrate APRS or other higher-level protocols.
 
 ## Purpose
 
@@ -50,8 +50,17 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/build tree, and pthread support.
 
-- `build.sh` builds the loraham_daemon binary
-- `run_tests.sh` builds the daemon and test binaries, then runs the test suite.
+| Command | Meaning |
+|---|---|
+| `./build.sh` | Build the production daemon binary |
+| `./build.sh --debug` | Build with debug flags |
+| `./build.sh --clean` | Remove the daemon binary |
+| `./build.sh --radiolib-dir DIR` | Use an explicit RadioLib source/build tree |
+| `./run_tests.sh` | Build daemon/tests and run the normal non-RF test suite |
+| `./run_tests.sh --TX` | Also run optional RF transmit smoke tests |
+| `./run_tests.sh --TX --rx-seconds N` | Set RF TX/RX observation time; default is `15` seconds |
+
+`--TX` requires free radio hardware, SPI/GPIO access, and a safe RF test setup. Use the default `./run_tests.sh` for normal non-RF checks.
 
 ## Daemon command line
 
@@ -155,7 +164,7 @@ Rules:
 - raw and framed DATA sockets of the same band share the same radio backend.
 - multiple clients may connect to the same band, but TX arbitration is best-effort/event-loop ordered.
 - clients that need exclusive radio use must coordinate externally.
-- the daemon does not implement MeshCore or other higher-level protocols; framed DATA is only a packet transport.
+- framed DATA is packet transport only; higher-level protocols stay in clients.
 
 Minimal Python RX frame reader:
 
@@ -194,6 +203,7 @@ CONF sockets accept text commands:
 ```text
 SET KEY=VALUE KEY=VALUE ...
 GET STATUS
+GET STATS
 ```
 
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
@@ -217,7 +227,8 @@ Important behavior:
 - `GETRSSI=` is handled directly.
 - LoRa-only keys are ignored in FSK mode.
 - FSK-only keys are ignored in LoRa mode.
-- Status/errors are printed to the daemon log; there is no stable OK/ERR response protocol on the CONF socket.
+- `GET STATUS` and `GET STATS` return stable one-line responses on the requesting CONF socket.
+- `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
 - `MODE=LORA` calls RadioLib `begin()`.
 - `MODE=FSK` calls RadioLib `beginFSK()`.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
@@ -291,6 +302,7 @@ The daemon also prints one compact operator stats line per selected radio every
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
 | `STATUS RADIO=... TX=... CAD=... GETRSSI=...\n` | requesting CONF socket | Reply to `GET STATUS` |
+| `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=...\n` | requesting CONF socket | Reply to `GET STATS` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
@@ -330,6 +342,13 @@ RSSI stream:
 ```bash
 echo "SET GETRSSI=1" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
 echo "SET GETRSSI=0" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+```
+
+CONF status and stats queries:
+
+```bash
+echo "GET STATUS" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+echo "GET STATS"  | socat - UNIX-CONNECT:/tmp/loraconf433.sock
 ```
 
 ## Warnings
