@@ -4,3 +4,4 @@
 - Track unconfirmed TX fallback events.
 - Track framed daemon ERROR frames.
 - Use monotonic timers for TX queue timeouts.
+- Use persistent CONF socket for SET commands.

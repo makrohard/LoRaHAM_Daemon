@@ -331,9 +331,10 @@ static int connect_loraham_conf_socket(const lhkt_config_t *cfg,
     return fd;
 }
 
-static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
+static int send_loraham_config_freq(const lhkt_config_t *cfg,
+                                    int conf_fd,
+                                    double freq)
 {
-    int conf_fd;
     int ret;
 
     if (!cfg || freq <= 0.0) {
@@ -355,27 +356,24 @@ static int send_loraham_config_freq(const lhkt_config_t *cfg, double freq)
     }
 #endif
 
-    conf_fd = loraham_sock_connect(cfg->conf_socket);
     if (conf_fd < 0) {
         printf("[LoRaHAM] Config socket not connected: %s\n", cfg->conf_socket);
-        return LHKT_ERR;
+        return LHKT_ERR_CONF_SOCKET;
     }
 
     ret = loraham_send_config_freq(conf_fd, cfg, freq);
-    lhkt_tcp_server_close(conf_fd);
-
     if (ret != LHKT_OK) {
         printf("[LoRaHAM] Config send failed: freq=%.6f\n", freq);
-        return ret;
+        return LHKT_ERR_CONF_SOCKET;
     }
 
     printf("[LoRaHAM] Config sent: freq=%.6f\n", freq);
     return LHKT_OK;
 }
 
-static int send_loraham_initial_config(const lhkt_config_t *cfg)
+static int send_loraham_initial_config(const lhkt_config_t *cfg,
+                                       int conf_fd)
 {
-    int conf_fd;
     int ret;
 
     if (!cfg) {
@@ -384,33 +382,29 @@ static int send_loraham_initial_config(const lhkt_config_t *cfg)
 
 #ifdef LHKT_TEST
     if (cfg->have_rx_freq) {
-        return send_loraham_config_freq(cfg, cfg->rx_freq);
+        return send_loraham_config_freq(cfg, conf_fd, cfg->rx_freq);
     }
 #endif
 
-    conf_fd = loraham_sock_connect(cfg->conf_socket);
-    if (conf_fd >= 0) {
-        if (loraham_send_config(conf_fd, cfg) == LHKT_OK) {
-            printf("[LoRaHAM] Config sent: %s\n", cfg->conf_socket);
-            ret = LHKT_OK;
-        } else {
-            printf("[LoRaHAM] Config send failed: %s\n", cfg->conf_socket);
-            ret = LHKT_ERR;
-        }
-
-        lhkt_tcp_server_close(conf_fd);
-    } else {
+    if (conf_fd < 0) {
         printf("[LoRaHAM] Config socket not connected: %s\n", cfg->conf_socket);
-        ret = LHKT_ERR;
+        return LHKT_ERR_CONF_SOCKET;
     }
 
-    return ret;
+    ret = loraham_send_config(conf_fd, cfg);
+    if (ret != LHKT_OK) {
+        printf("[LoRaHAM] Config send failed: %s\n", cfg->conf_socket);
+        return LHKT_ERR_CONF_SOCKET;
+    }
+
+    printf("[LoRaHAM] Config sent: %s\n", cfg->conf_socket);
+    return LHKT_OK;
 }
 
 #ifdef LHKT_TEST
 int lhkt_test_bridge_send_initial_config(const lhkt_config_t *cfg)
 {
-    return send_loraham_initial_config(cfg);
+    return send_loraham_initial_config(cfg, -1);
 }
 #endif
 
@@ -451,7 +445,8 @@ static ssize_t bridge_loraham_write(int fd,
 }
 
 static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
-                                   lhkt_stats_t *stats)
+                                   lhkt_stats_t *stats,
+                                   int conf_fd)
 {
     int ret;
 
@@ -459,7 +454,7 @@ static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
         return LHKT_ERR_FORMAT;
     }
 
-    ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+    ret = send_loraham_config_freq(cfg, conf_fd, cfg->rx_freq);
     if (ret == LHKT_OK) {
         return LHKT_OK;
     }
@@ -473,7 +468,7 @@ static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
         return ret;
     }
 
-    ret = send_loraham_config_freq(cfg, cfg->rx_freq);
+    ret = send_loraham_config_freq(cfg, conf_fd, cfg->rx_freq);
     if (ret == LHKT_OK) {
         printf("[LoRaHAM] RX freq restore retry OK\n");
         return LHKT_OK;
@@ -495,9 +490,39 @@ static int should_reconnect_loraham_data_socket(int ret)
 }
 
 
+static int should_reconnect_loraham_conf_socket(int ret)
+{
+    return ret == LHKT_ERR_CONF_SOCKET;
+}
+
 static int should_disconnect_kiss_client(int ret)
 {
     return ret == LHKT_ERR_CLIENT_SOCKET;
+}
+
+static void disconnect_loraham_conf_socket(int *conf_fd,
+                                           bridge_conf_state_t *conf_state,
+                                           lhkt_stats_t *stats,
+                                           const char *reason)
+{
+    if (!conf_fd || *conf_fd < 0) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[WARN] LoRaHAM CONF socket %s, reconnecting\n",
+            reason ? reason : "disconnected");
+
+    lhkt_tcp_server_close(*conf_fd);
+    *conf_fd = -1;
+
+    if (conf_state) {
+        bridge_conf_state_init(conf_state);
+    }
+
+    if (stats) {
+        stats->socket_reconnects++;
+    }
 }
 
 static void disconnect_loraham_data_socket(int *data_fd,
@@ -535,6 +560,11 @@ int lhkt_test_bridge_should_reconnect_data_socket(int ret)
 int lhkt_test_bridge_should_disconnect_kiss_client(int ret)
 {
     return should_disconnect_kiss_client(ret);
+}
+
+int lhkt_test_bridge_should_reconnect_conf_socket(int ret)
+{
+    return should_reconnect_loraham_conf_socket(ret);
 }
 
 void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
@@ -721,7 +751,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         return LHKT_ERR_FORMAT;
     }
 
-    ret = send_loraham_config_freq(cfg, cfg->tx_freq);
+    ret = send_loraham_config_freq(cfg, conf_fd, cfg->tx_freq);
     if (ret != LHKT_OK) {
         if (stats) {
             stats->loraham_drop++;
@@ -732,7 +762,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
     }
 
     if (bridge_sleep_ms(cfg->tx_settle_ms) != LHKT_OK) {
-        ret = restore_loraham_rx_freq(cfg, stats);
+        ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
         if (ret != LHKT_OK) {
             printf("[LoRaHAM] Shutdown during TX settle and RX restore failed\n");
             return ret;
@@ -750,7 +780,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
 
         printf("[LoRaHAM] TX write failed\n");
         (void)bridge_sleep_ms(cfg->tx_return_ms);
-        ret = restore_loraham_rx_freq(cfg, stats);
+        ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
         if (ret != LHKT_OK) {
             printf("[LoRaHAM] TX write failed and RX restore failed\n");
         }
@@ -777,7 +807,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         (void)bridge_sleep_ms(cfg->tx_return_ms);
     }
 
-    ret = restore_loraham_rx_freq(cfg, stats);
+    ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
     if (ret != LHKT_OK) {
         return ret;
     }
@@ -938,6 +968,49 @@ int lhkt_test_handle_kiss_frame(const kiss_frame_t *kiss_frame,
                                           &packet_written);
     }
 }
+int lhkt_test_bridge_send_packet_without_conf(uint64_t *tx,
+                                              uint64_t *drops,
+                                              size_t *write_calls)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_conf_state_t conf_state;
+    int ret;
+    int packet_written;
+    static const uint8_t packet[] = { 0x3c, 0xff, 0x01, 'T', 'E', 'S', 'T' };
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    bridge_conf_state_init(&conf_state);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_write_result(1);
+
+    packet_written = 0;
+    ret = bridge_send_loraham_packet(&cfg,
+                                    &stats,
+                                    42,
+                                    -1,
+                                    &conf_state,
+                                    packet,
+                                    sizeof(packet),
+                                    &packet_written);
+
+    if (tx) {
+        *tx = stats.loraham_tx;
+    }
+
+    if (drops) {
+        *drops = stats.loraham_drop;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    return ret;
+}
+
 int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
                                                      uint64_t *unconfirmed,
                                                      size_t *write_calls)
@@ -1245,7 +1318,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 cfg->conf_socket);
     }
 
-    if (send_loraham_initial_config(cfg) == LHKT_OK) {
+    if (send_loraham_initial_config(cfg, conf_fd) == LHKT_OK) {
         config_ok = 1;
     }
 
@@ -1266,6 +1339,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 cfg->kiss_host,
                 cfg->kiss_port);
         lhkt_tcp_server_close(data_fd);
+        lhkt_tcp_server_close(conf_fd);
         return 1;
     }
 
@@ -1287,6 +1361,12 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                            stats,
                                            "TX write failed");
             loraham_framed_rx_state_init(&lora_framed_rx);
+            config_ok = 0;
+        } else if (should_reconnect_loraham_conf_socket(ret)) {
+            disconnect_loraham_conf_socket(&conf_fd,
+                                           &conf_state,
+                                           stats,
+                                           "write failed");
             config_ok = 0;
         }
 
@@ -1383,7 +1463,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                         stats->socket_reconnects++;
                     }
 
-                    if (send_loraham_initial_config(cfg) == LHKT_OK) {
+                    if (send_loraham_initial_config(cfg, conf_fd) == LHKT_OK) {
                         config_ok = 1;
                     } else {
                         config_ok = 0;
@@ -1393,7 +1473,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
             }
 
             if (!config_ok) {
-                if (send_loraham_initial_config(cfg) == LHKT_OK) {
+                if (send_loraham_initial_config(cfg, conf_fd) == LHKT_OK) {
                     config_ok = 1;
                 }
                 continue;
@@ -1503,6 +1583,12 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                                        "TX write failed");
                         loraham_framed_rx_state_init(&lora_framed_rx);
                         config_ok = 0;
+                    } else if (should_reconnect_loraham_conf_socket(ret)) {
+                        disconnect_loraham_conf_socket(&conf_fd,
+                                                       &conf_state,
+                                                       stats,
+                                                       "write failed");
+                        config_ok = 0;
                     }
                 } else if (ret < 0) {
                     if (stats) {
@@ -1518,10 +1604,11 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
 
         if (conf_fd >= 0 && FD_ISSET(conf_fd, &rfds)) {
             if (bridge_conf_read_available(conf_fd, &conf_state) != LHKT_OK) {
-                fprintf(stderr, "[WARN] LoRaHAM CONF socket disconnected, reconnecting\n");
-                lhkt_tcp_server_close(conf_fd);
-                conf_fd = -1;
-                bridge_conf_state_init(&conf_state);
+                disconnect_loraham_conf_socket(&conf_fd,
+                                               &conf_state,
+                                               stats,
+                                               "disconnected");
+                config_ok = 0;
             }
         }
 

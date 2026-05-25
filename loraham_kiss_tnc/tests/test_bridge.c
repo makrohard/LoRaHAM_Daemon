@@ -38,6 +38,7 @@ size_t lhkt_test_bridge_write_call_count(void);
 size_t lhkt_test_bridge_sleep_call_count(void);
 int lhkt_test_bridge_should_reconnect_data_socket(int ret);
 int lhkt_test_bridge_should_disconnect_kiss_client(int ret);
+int lhkt_test_bridge_should_reconnect_conf_socket(int ret);
 void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
                                              loraham_rx_state_t *rx_state,
                                              lhkt_stats_t *stats);
@@ -86,6 +87,9 @@ int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
 int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
                                                      uint64_t *unconfirmed,
                                                      size_t *write_calls);
+int lhkt_test_bridge_send_packet_without_conf(uint64_t *tx,
+                                              uint64_t *drops,
+                                              size_t *write_calls);
 
 #define TEST_TX_DECISION_WAIT 0
 #define TEST_TX_DECISION_SEND 1
@@ -226,6 +230,20 @@ static void test_tx_queue_pops_written_packet_on_restore_failure(void)
     assert(queue_depth == 0);
     assert(write_calls == 1);
     assert(restore_failures == 2);
+}
+
+static void test_tx_requires_persistent_conf_socket(void)
+{
+    uint64_t tx = 99;
+    uint64_t drops = 99;
+    size_t write_calls = 99;
+
+    assert(lhkt_test_bridge_send_packet_without_conf(&tx,
+                                                    &drops,
+                                                    &write_calls) == LHKT_ERR_CONF_SOCKET);
+    assert(write_calls == 0);
+    assert(tx == 0);
+    assert(drops == 1);
 }
 
 static void test_tx_confirmation_missing_is_counted(void)
@@ -499,6 +517,8 @@ static void test_tx_write_failure_restores_rx(void)
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_TX_SOCKET) == 1);
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_FORMAT) == 0);
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_UNSUPPORTED) == 0);
+    assert(lhkt_test_bridge_should_reconnect_conf_socket(LHKT_ERR_CONF_SOCKET) == 1);
+    assert(lhkt_test_bridge_should_reconnect_conf_socket(LHKT_ERR_TX_SOCKET) == 0);
 
     assert(lhkt_test_bridge_write_call_count() == 1);
     assert(lhkt_test_bridge_config_call_count() == 2);
@@ -641,6 +661,7 @@ int main(void)
     test_tx_queue_lifecycle_waits_for_sockets();
     test_tx_queue_drain_reads_pending_conf();
     test_tx_queue_pops_written_packet_on_restore_failure();
+    test_tx_requires_persistent_conf_socket();
     test_tx_confirmation_missing_is_counted();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
