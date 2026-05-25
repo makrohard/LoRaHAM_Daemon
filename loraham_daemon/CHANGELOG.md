@@ -1,3 +1,4 @@
+  - Internal: cleaned main daemon orchestration comments and includes.
   - Docs: documented test script options and CONF `GET STATS` output.
   - Internal: cleaned main daemon orchestration comments, includes, and architecture docs.
   - Internal: moved socket dispatch orchestration into `daemon_socket_dispatch.*`.

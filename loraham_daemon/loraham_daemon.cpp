@@ -51,7 +51,6 @@
 #include "daemon_monitoring.h"
 #include "daemon_io_runtime.h"
 #include "event_loop.h"
-#include "client_slot.h"
 #include "daemon_socket_dispatch.h"
 #include "radio_controller.h"
 #include "config_dispatch.h"
