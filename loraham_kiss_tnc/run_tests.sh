@@ -157,7 +157,6 @@ run_test bridge \
   "$script_dir/bridge_kiss.c" \
   "$script_dir/bridge_rx.c" \
   "$script_dir/bridge_loraham.c" \
-  "$script_dir/bridge_loop.c" \
   "$script_dir/bridge_runtime.c" \
   "$script_dir/bridge_tx_queue.c" \
   "$script_dir/ax25.c" \
