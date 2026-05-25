@@ -23,7 +23,8 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
 | Logging | `daemon_log.cpp`, `daemon_log.h` | Normal and debug logging helpers used by daemon/runtime modules |
-| Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | Periodic timers, monotonic timing helpers, stop flag handling, and signal-based shutdown |
+| Timing | `daemon_timing.cpp`, `daemon_timing.h` | Monotonic timing helpers, deadline timers, RSSI cadence, and periodic stats timing |
+| Lifecycle | `daemon_lifecycle.cpp`, `daemon_lifecycle.h` | SIGPIPE handling, daemon background mode, inherited-fd cleanup, stop flag handling, and signal-based shutdown |
 
 ### Radio hardware/runtime
 

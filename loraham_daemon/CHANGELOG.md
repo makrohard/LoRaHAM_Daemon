@@ -1,15 +1,3 @@
-  - Cleanup: removed unused include directives from daemon modules and tests.
-  - Cleanup: kept RX callbacks minimal and moved RX flag handling into main processing.
-  - Cleanup: removed unnecessary volatile qualifier from radio mode state.
-  - Cleanup: removed unnecessary volatile qualifier from radio health state.
-  - Hardening: moved daemon background mode into lifecycle code and close inherited file descriptors.
-  - Cleanup: made radio atomic flag load/store access explicit.
-  - Cleanup: removed unused RadioChannelRuntime volatile flag wrapper.
-  - Cleanup: removed unreachable framed DATA TX header error branch.
-  - Fix: record CAD timeouts through the TX result stats path.
-  - Fix: check daemon background-mode directory and stdio redirection failures.
-  - Fix: acquire TX busy state atomically before copying/logging payloads.
-  - Fix: completed fd `0` client handling with explicit `-1` client-set initialization.
 # Changelog
 
 ## loraham_daemon 109
@@ -55,9 +43,15 @@ Initial version: loradaemon_320_108 by Alexander Walter
 
 ## loraham_daemon 109a
 
-- Refactor
+- Refactor / Hardening
   - Modularized loraham_daemon main module
-  - Updated README.md
+  - General code cleanup.
+
+- Bugfixes
+  - Record CAD timeouts through the TX result stats path.
+  - Check daemon background-mode directory and stdio redirection failures.
+  - Acquire TX busy state atomically before copying/logging payloads.
+  - fd `0` client handling with explicit `-1` client-set initialization.
 
 - New Features
   - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
