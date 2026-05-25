@@ -17,7 +17,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, global runtime context, main event loop, and top-level coordination of socket, CONFIG, DATA/CAD/RSSI, and RX flow |
+| Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, runtime context, main loop, and high-level coordination of I/O, socket dispatch, radio polling, monitoring, and shutdown |
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
@@ -25,7 +25,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket descriptors, socket setup/open helpers, client accept/flush flow, and live RSSI helper |
-| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, per-band channel state, I/O startup/cleanup, and event-fd registration |
+| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, framed client state, per-band channel state, I/O startup/cleanup, and event-fd registration |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Socket runtime | `daemon_socket_runtime.cpp`, `daemon_socket_runtime.h` | Logged per-channel accept/flush helpers around socket client slots |

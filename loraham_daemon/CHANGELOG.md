@@ -1,3 +1,4 @@
+  - Internal: cleaned main daemon orchestration comments, includes, and architecture docs.
   - Internal: moved socket dispatch orchestration into `daemon_socket_dispatch.*`.
   - Internal: moved daemon I/O state and lifecycle helpers into `daemon_io_runtime.*`.
   - Internal: moved CAD/RSSI/stats monitoring into `daemon_monitoring.*`.

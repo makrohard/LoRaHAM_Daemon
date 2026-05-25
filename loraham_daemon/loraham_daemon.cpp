@@ -28,17 +28,14 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
 #include <unistd.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <getopt.h>
-#include <stdarg.h>
 #include <errno.h>
 
-#include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
 
 #include "daemon_protocol.h"
@@ -48,33 +45,19 @@
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
 #include "daemon_radio_runtime.h"
-#include "daemon_radio_init.h"
-#include "daemon_tx.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
-#include "daemon_led.h"
-#include "data_tx.h"
-#include "framed_data_tx.h"
-#include "daemon_framed_data_runtime.h"
 #include "daemon_rx.h"
 #include "daemon_monitoring.h"
 #include "daemon_io_runtime.h"
-#include "framed_data.h"
-#include "tx_result.h"
-#include "radio_health.h"
-#include "rf_packet.h"
 #include "event_loop.h"
-#include "unix_socket.h"
-#include "client_set.h"
 #include "client_slot.h"
-#include "radio_channel.h"
-#include "daemon_socket_runtime.h"
 #include "daemon_socket_dispatch.h"
 #include "radio_controller.h"
 #include "config_dispatch.h"
 #include "daemon_config_runtime.h"
-#include "config_stream.h"
 
+/* --- Shutdown cleanup ---------------------------------------------------- */
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
     daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
@@ -89,6 +72,7 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
 }
 
+/* --- Event wait/runtime -------------------------------------------------- */
 static int daemon_wait_for_events(EventLoopSet *event_set,
                                   EventLoopReadySet *readfds)
 {
@@ -107,7 +91,7 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
 
 static void daemon_runtime_init(EventLoopSet *event_set)
 {
-    // Event backend.
+    // Initialize event backend.
     if (event_loop_init(event_set) != 0) {
         perror("epoll");
         printf("[Daemon] Event-Backend konnte nicht gestartet werden, beende.\n");
@@ -118,7 +102,7 @@ static void daemon_runtime_init(EventLoopSet *event_set)
     printf("[Daemon] Event-Backend: %s\n",
            event_loop_backend_name(event_loop_backend(event_set)));
 
-    // Stop signals.
+    // Install stop signal handlers.
     daemon_lifecycle_reset_stop();
     if (daemon_lifecycle_install_signal_handlers() != 0) {
         perror("sigaction");
@@ -150,9 +134,6 @@ static void daemon_enter_background(void)
 
     daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
 }
-
-
-
 
 /* --- Loop context --------------------------------------------------------- */
 typedef struct {
@@ -209,6 +190,7 @@ static void daemon_main_context_init(DaemonMainContext *ctx)
     daemon_loop_context_init(&ctx->loop_ctx);
     daemon_debug_ctx("LIFE", "Laufzeitkontext bereit");
 }
+
 /* --- Main loop logging --------------------------------------------------- */
 static void daemon_log_loop_start(void)
 {
@@ -327,6 +309,7 @@ static void daemon_print_usage(const char *argv0)
     printf("  CONF  868: /tmp/loraconf868.sock\n");
     printf("\n");
 }
+
 static void daemon_print_version(void)
 {
     printf("%s\n", LORAHAM_DAEMON_VERSION_TEXT);
@@ -350,7 +333,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {0, 0, 0, 0}
     };
 
-    // Parsen der Argumente
+    // Parse command-line options.
     while ((opt = getopt_long(argc, argv, "dvh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'd':
@@ -403,7 +386,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
                      daemon_radio_selection_name(daemon_radio_selection));
     daemon_debug_ctx("STARTUP", "Argumente verarbeitet");
 
-    // --- Userspace-Daemon Implementation ---
+    // Enter background mode when requested.
     if (is_daemon)
         daemon_enter_background();
 
@@ -415,8 +398,8 @@ static void daemon_startup_sequence(int argc, char *argv[])
 }
 
 /* --- Main entry ---------------------------------------------------------- */
-
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     daemon_startup_sequence(argc, argv);
     daemon_run();
 
