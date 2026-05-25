@@ -59,6 +59,7 @@ sources=(
   bridge_conf.c
   bridge_kiss.c
   bridge_rx.c
+  bridge_runtime.c
   bridge_tx_queue.c
   cli.c
   tcp_server.c

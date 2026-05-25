@@ -4,6 +4,7 @@
 #include "bridge_conf.h"
 #include "bridge_kiss.h"
 #include "bridge_rx.h"
+#include "bridge_runtime.h"
 #include "bridge_tx_queue.h"
 #include "ax25.h"
 #include "kiss.h"
@@ -37,147 +38,6 @@
 #define LHKT_QUEUE_POLL_USEC 100000
 #define LHKT_TEST_HOOK_MAX_CALLS 16
 
-/* ---- Shutdown ---- */
-
-static volatile sig_atomic_t lhkt_bridge_stop_requested;
-
-static void bridge_signal_handler(int signo)
-{
-    (void)signo;
-    lhkt_bridge_stop_requested = 1;
-}
-
-static void bridge_reset_stop_requested(void)
-{
-    lhkt_bridge_stop_requested = 0;
-}
-
-static int bridge_should_stop(void)
-{
-    return lhkt_bridge_stop_requested != 0;
-}
-
-static void bridge_install_signal_handlers(void)
-{
-    if (signal(SIGINT, bridge_signal_handler) == SIG_ERR) {
-        fprintf(stderr, "[WARN] Could not install SIGINT handler\n");
-    }
-
-    if (signal(SIGTERM, bridge_signal_handler) == SIG_ERR) {
-        fprintf(stderr, "[WARN] Could not install SIGTERM handler\n");
-    }
-}
-
-#ifdef LHKT_TEST
-void lhkt_test_bridge_reset_stop(void)
-{
-    bridge_reset_stop_requested();
-}
-
-void lhkt_test_bridge_request_stop(void)
-{
-    bridge_signal_handler(SIGTERM);
-}
-
-int lhkt_test_bridge_should_stop(void)
-{
-    return bridge_should_stop();
-}
-#endif
-
-/* ---- fd helpers ---- */
-
-#ifdef LHKT_TEST
-int lhkt_test_bridge_wait_fd_writable(int fd)
-{
-    bridge_rx_set_should_stop(bridge_should_stop);
-    return bridge_rx_test_wait_fd_writable(fd);
-}
-#endif
-
-static int add_fd_to_set(int fd, fd_set *set, int *max_fd)
-{
-    if (fd < 0 || !set || !max_fd) {
-        return LHKT_ERR;
-    }
-
-    if (fd >= FD_SETSIZE) {
-        return LHKT_ERR_LONG;
-    }
-
-    FD_SET(fd, set);
-
-    if (fd > *max_fd) {
-        *max_fd = fd;
-    }
-
-    return LHKT_OK;
-}
-
-static int set_fd_nonblocking(int fd)
-{
-    int flags;
-
-    if (fd < 0) {
-        return LHKT_ERR;
-    }
-
-    flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) {
-        return LHKT_ERR;
-    }
-
-    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-        return LHKT_ERR;
-    }
-
-    return LHKT_OK;
-}
-
-#ifndef LHKT_TEST
-static int sleep_ms(int ms)
-{
-    struct timeval tv;
-
-    if (ms <= 0) {
-        return LHKT_OK;
-    }
-
-    if (bridge_should_stop()) {
-        return LHKT_ERR;
-    }
-
-    tv.tv_sec = ms / 1000;
-    tv.tv_usec = (ms % 1000) * 1000;
-
-    while (select(0, NULL, NULL, NULL, &tv) < 0 && errno == EINTR) {
-        if (bridge_should_stop()) {
-            return LHKT_ERR;
-        }
-
-        tv.tv_sec = ms / 1000;
-        tv.tv_usec = (ms % 1000) * 1000;
-    }
-
-    if (bridge_should_stop()) {
-        return LHKT_ERR;
-    }
-
-    return LHKT_OK;
-}
-#endif
-
-static long bridge_now_ms(void)
-{
-    struct timespec ts;
-
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-        return 0;
-    }
-
-    return (long)ts.tv_sec * 1000L + (long)(ts.tv_nsec / 1000000L);
-}
-
 /* ---- Test hooks ---- */
 
 #ifdef LHKT_TEST
@@ -189,7 +49,6 @@ static size_t lhkt_test_config_call_count;
 static int lhkt_test_write_enabled;
 static ssize_t lhkt_test_write_result;
 static size_t lhkt_test_write_call_count;
-static size_t lhkt_test_sleep_call_count;
 
 void lhkt_test_bridge_reset_tx_hooks(void)
 {
@@ -201,7 +60,7 @@ void lhkt_test_bridge_reset_tx_hooks(void)
     lhkt_test_write_enabled = 0;
     lhkt_test_write_result = 0;
     lhkt_test_write_call_count = 0;
-    lhkt_test_sleep_call_count = 0;
+    bridge_runtime_test_reset_hooks();
 }
 
 void lhkt_test_bridge_set_config_results(const int *results, size_t count)
@@ -252,36 +111,6 @@ size_t lhkt_test_bridge_write_call_count(void)
     return lhkt_test_write_call_count;
 }
 
-size_t lhkt_test_bridge_sleep_call_count(void)
-{
-    return lhkt_test_sleep_call_count;
-}
-#endif
-
-/* ---- Timing ---- */
-
-static int bridge_sleep_ms(int ms)
-{
-#ifdef LHKT_TEST
-    if (ms > 0) {
-        lhkt_test_sleep_call_count++;
-    }
-
-    if (bridge_should_stop()) {
-        return LHKT_ERR;
-    }
-
-    return LHKT_OK;
-#else
-    return sleep_ms(ms);
-#endif
-}
-
-#ifdef LHKT_TEST
-int lhkt_test_bridge_sleep_ms(int ms)
-{
-    return bridge_sleep_ms(ms);
-}
 #endif
 
 /* ---- LoRaHAM sockets/config ---- */
@@ -315,7 +144,7 @@ static int connect_loraham_conf_socket(const lhkt_config_t *cfg,
         return LHKT_ERR;
     }
 
-    if (set_fd_nonblocking(fd) != LHKT_OK) {
+    if (bridge_runtime_set_fd_nonblocking(fd) != LHKT_OK) {
         lhkt_tcp_server_close(fd);
         return LHKT_ERR;
     }
@@ -464,7 +293,7 @@ static int restore_loraham_rx_freq(const lhkt_config_t *cfg,
     }
 
     printf("[LoRaHAM] RX freq restore failed, retrying\n");
-    if (bridge_sleep_ms(LHKT_TX_RESTORE_RETRY_DELAY_MS) != LHKT_OK) {
+    if (bridge_runtime_sleep_ms(LHKT_TX_RESTORE_RETRY_DELAY_MS) != LHKT_OK) {
         return ret;
     }
 
@@ -619,7 +448,7 @@ static int bridge_wait_tx_complete(int conf_fd,
     start_busy_seq = conf_state->tx_busy_seq;
     start_idle_seq = conf_state->tx_idle_seq;
     saw_tx = conf_state->tx_busy ? 1 : 0;
-    deadline = bridge_now_ms() + LHKT_TX_START_WAIT_MS;
+    deadline = bridge_runtime_now_ms() + LHKT_TX_START_WAIT_MS;
 
     while (!saw_tx) {
         if (conf_state->tx_busy_seq != start_busy_seq) {
@@ -627,7 +456,7 @@ static int bridge_wait_tx_complete(int conf_fd,
             break;
         }
 
-        now = bridge_now_ms();
+        now = bridge_runtime_now_ms();
         if (now >= deadline) {
             return LHKT_ERR_UNSUPPORTED;
         }
@@ -650,13 +479,13 @@ static int bridge_wait_tx_complete(int conf_fd,
         return LHKT_OK;
     }
 
-    deadline = bridge_now_ms() + cfg->tx_busy_timeout_ms;
+    deadline = bridge_runtime_now_ms() + cfg->tx_busy_timeout_ms;
     while (conf_state->tx_busy) {
-        if (bridge_should_stop()) {
+        if (bridge_runtime_should_stop()) {
             return LHKT_ERR;
         }
 
-        now = bridge_now_ms();
+        now = bridge_runtime_now_ms();
         if (now >= deadline) {
             printf("[CONF] TX wait timeout\n");
             return LHKT_ERR;
@@ -687,7 +516,7 @@ int lhkt_test_bridge_wait_tx_complete_events(const char *events)
         return LHKT_ERR;
     }
 
-    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+    if (bridge_runtime_set_fd_nonblocking(sv[0]) != LHKT_OK) {
         close(sv[0]);
         close(sv[1]);
         return LHKT_ERR;
@@ -761,7 +590,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         return ret;
     }
 
-    if (bridge_sleep_ms(cfg->tx_settle_ms) != LHKT_OK) {
+    if (bridge_runtime_sleep_ms(cfg->tx_settle_ms) != LHKT_OK) {
         ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
         if (ret != LHKT_OK) {
             printf("[LoRaHAM] Shutdown during TX settle and RX restore failed\n");
@@ -779,7 +608,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         }
 
         printf("[LoRaHAM] TX write failed\n");
-        (void)bridge_sleep_ms(cfg->tx_return_ms);
+        (void)bridge_runtime_sleep_ms(cfg->tx_return_ms);
         ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
         if (ret != LHKT_OK) {
             printf("[LoRaHAM] TX write failed and RX restore failed\n");
@@ -804,7 +633,7 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
                    confirm_ret);
         }
 
-        (void)bridge_sleep_ms(cfg->tx_return_ms);
+        (void)bridge_runtime_sleep_ms(cfg->tx_return_ms);
     }
 
     ret = restore_loraham_rx_freq(cfg, stats, conf_fd);
@@ -853,7 +682,7 @@ static int bridge_tx_queue_drain(const lhkt_config_t *cfg,
             }
         }
 
-        now = bridge_now_ms();
+        now = bridge_runtime_now_ms();
         decision = bridge_tx_head_decision(cfg,
                                            conf_fd >= 0 ? conf_state : NULL,
                                            item,
@@ -907,7 +736,7 @@ static int bridge_tx_queue_drain(const lhkt_config_t *cfg,
 /* ---- Unit-test entry points ---- */
 
 #ifdef LHKT_TEST
-int lhkt_test_add_fd_to_set(int fd)
+int lhkt_test_bridge_runtime_add_fd_to_set(int fd)
 {
     fd_set rfds;
     int max_fd;
@@ -915,14 +744,14 @@ int lhkt_test_add_fd_to_set(int fd)
     FD_ZERO(&rfds);
     max_fd = -1;
 
-    return add_fd_to_set(fd, &rfds, &max_fd);
+    return bridge_runtime_add_fd_to_set(fd, &rfds, &max_fd);
 }
 
 int lhkt_test_send_tnc2_to_kiss_client(int client_fd,
                                        const char *tnc2,
                                        lhkt_stats_t *stats)
 {
-    bridge_rx_set_should_stop(bridge_should_stop);
+    bridge_rx_set_should_stop(bridge_runtime_should_stop);
     return bridge_rx_send_tnc2_to_kiss_client(client_fd, tnc2, stats);
 }
 
@@ -1028,7 +857,7 @@ int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
         return LHKT_ERR;
     }
 
-    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+    if (bridge_runtime_set_fd_nonblocking(sv[0]) != LHKT_OK) {
         close(sv[0]);
         close(sv[1]);
         return LHKT_ERR;
@@ -1164,7 +993,7 @@ int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
         return LHKT_ERR;
     }
 
-    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+    if (bridge_runtime_set_fd_nonblocking(sv[0]) != LHKT_OK) {
         close(sv[0]);
         close(sv[1]);
         return LHKT_ERR;
@@ -1220,7 +1049,7 @@ int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
         return LHKT_ERR;
     }
 
-    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+    if (bridge_runtime_set_fd_nonblocking(sv[0]) != LHKT_OK) {
         close(sv[0]);
         close(sv[1]);
         return LHKT_ERR;
@@ -1307,9 +1136,9 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     bridge_conf_state_init(&conf_state);
     bridge_tx_queue_init(&tx_queue);
 
-    bridge_reset_stop_requested();
-    bridge_install_signal_handlers();
-    bridge_rx_set_should_stop(bridge_should_stop);
+    bridge_runtime_reset_stop_requested();
+    bridge_runtime_install_signal_handlers();
+    bridge_rx_set_should_stop(bridge_runtime_should_stop);
 
     conf_fd = connect_loraham_conf_socket(cfg, &conf_state);
     if (conf_fd < 0) {
@@ -1346,7 +1175,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     printf("[KISS] Listening on %s:%d\n", cfg->kiss_host, cfg->kiss_port);
     printf("[KISS] Waiting for client...\n");
 
-    while (!bridge_should_stop()) {
+    while (!bridge_runtime_should_stop()) {
         print_stats_if_due(cfg, stats, &next_stats);
 
         ret = bridge_tx_queue_drain(cfg,
@@ -1374,7 +1203,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
         max_fd = -1;
 
         if (data_fd >= 0) {
-            ret = add_fd_to_set(data_fd, &rfds, &max_fd);
+            ret = bridge_runtime_add_fd_to_set(data_fd, &rfds, &max_fd);
             if (ret != LHKT_OK) {
                 fprintf(stderr, "[ERR] LoRaHAM data fd too large for select\n");
                 break;
@@ -1382,7 +1211,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
         }
 
         if (conf_fd >= 0) {
-            ret = add_fd_to_set(conf_fd, &rfds, &max_fd);
+            ret = bridge_runtime_add_fd_to_set(conf_fd, &rfds, &max_fd);
             if (ret != LHKT_OK) {
                 fprintf(stderr, "[ERR] LoRaHAM CONF fd too large for select\n");
                 break;
@@ -1390,13 +1219,13 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
         }
 
         if (client_fd >= 0) {
-            ret = add_fd_to_set(client_fd, &rfds, &max_fd);
+            ret = bridge_runtime_add_fd_to_set(client_fd, &rfds, &max_fd);
             if (ret != LHKT_OK) {
                 fprintf(stderr, "[ERR] KISS/TCP client fd too large for select\n");
                 break;
             }
         } else {
-            ret = add_fd_to_set(listen_fd, &rfds, &max_fd);
+            ret = bridge_runtime_add_fd_to_set(listen_fd, &rfds, &max_fd);
             if (ret != LHKT_OK) {
                 fprintf(stderr, "[ERR] KISS/TCP listen fd too large for select\n");
                 break;
@@ -1508,7 +1337,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 continue;
             }
 
-            if (set_fd_nonblocking(client_fd) != LHKT_OK) {
+            if (bridge_runtime_set_fd_nonblocking(client_fd) != LHKT_OK) {
                 fprintf(stderr, "[ERR] KISS/TCP non-blocking setup failed\n");
                 lhkt_tcp_server_close(client_fd);
                 client_fd = -1;
@@ -1671,7 +1500,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
         }
     }
 
-    if (bridge_should_stop()) {
+    if (bridge_runtime_should_stop()) {
         printf("[Bridge] Shutdown requested\n");
     }
 
