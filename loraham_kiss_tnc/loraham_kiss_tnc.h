@@ -19,7 +19,7 @@
 /* Defaults */
 #define LHKT_DEFAULT_KISS_HOST   "127.0.0.1"
 #define LHKT_DEFAULT_KISS_PORT   8001
-#define LHKT_DEFAULT_DATA_SOCKET "/tmp/lora433.sock"
+#define LHKT_DEFAULT_DATA_SOCKET "/tmp/lora433f.sock"
 #define LHKT_DEFAULT_CONF_SOCKET "/tmp/loraconf433.sock"
 /* Fehlercodes */
 #define LHKT_OK                 0
@@ -31,6 +31,8 @@
 #define LHKT_ERR_NOSPACE       -6
 #define LHKT_ERR_TX_SOCKET     -7
 #define LHKT_ERR_CLIENT_SOCKET -8
+#define LHKT_ERR_CONF_SOCKET   -9
+#define LHKT_ERR_CONF_SOCKET   -9
 
 typedef struct {
     char kiss_host[LHKT_HOST_MAX];
@@ -44,6 +46,12 @@ typedef struct {
     int stats_interval;
     int tx_settle_ms;
     int tx_return_ms;
+    int tx_busy_timeout_ms;
+    int cad_wait_ms;
+    int cad_idle_ms;
+    int cad_ignore;
+    int tx_queue_len;
+    int tx_packet_ttl_ms;
 
 
     double rx_freq;
@@ -78,8 +86,10 @@ typedef struct {
     uint64_t loraham_rx;
     uint64_t loraham_tx;
     uint64_t loraham_drop;
+    uint64_t loraham_framed_errors;
 
     uint64_t tx_drop_oversize;
+    uint64_t tx_unconfirmed;
     uint64_t tx_restore_failures;
     uint64_t socket_reconnects;
     uint64_t client_disconnects;

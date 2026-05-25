@@ -1,0 +1,10 @@
+- Extract bridge KISS ingress helpers.
+- Extract bridge LoRaHAM RX helpers.
+- Harden TX queue lifecycle around reconnects and restore failures.
+- Track unconfirmed TX fallback events.
+- Track framed daemon ERROR frames.
+- Use monotonic timers for TX queue timeouts.
+- Use persistent CONF socket for SET commands.
+- Extract bridge runtime helpers.
+- Extract LoRaHAM transport helpers.
+- Wait for fresh CONF status before TX queue decisions.

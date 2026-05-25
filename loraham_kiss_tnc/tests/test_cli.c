@@ -47,7 +47,7 @@ static void test_config_and_cli_override(void)
         "test_cli",
         "--config", "/tmp/lhkt_cli_test.conf",
         "--kiss-port", "9005",
-        "--data-socket", "/tmp/cli_lora.sock",
+        "--data-socket", "/tmp/cli_lora_framed.sock",
         "--rx-only",
         NULL
     };
@@ -63,7 +63,7 @@ static void test_config_and_cli_override(void)
 
     assert(lhkt_cli_apply(argc_of(argv), argv, &cfg) == LHKT_OK);
     assert(cfg.kiss_port == 9005);
-    assert(strcmp(cfg.data_socket, "/tmp/cli_lora.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/cli_lora_framed.sock") == 0);
     assert(cfg.rx_only == 1);
 
     unlink(path);
@@ -85,6 +85,31 @@ static void test_timing_options(void)
     assert(lhkt_cli_apply(argc_of(argv), argv, &cfg) == LHKT_OK);
     assert(cfg.tx_settle_ms == 250);
     assert(cfg.tx_return_ms == 750);
+}
+
+static void test_queue_policy_options(void)
+{
+    lhkt_config_t cfg;
+    char *argv[] = {
+        "test_cli",
+        "--tx-busy-timeout-ms", "120500",
+        "--cad-wait-ms", "20500",
+        "--cad-idle-ms", "600",
+        "--cad-ignore",
+        "--tx-queue-len", "5",
+        "--tx-packet-ttl-ms", "181000",
+        NULL
+    };
+
+    lhkt_config_defaults(&cfg);
+
+    assert(lhkt_cli_apply(argc_of(argv), argv, &cfg) == LHKT_OK);
+    assert(cfg.tx_busy_timeout_ms == 120500);
+    assert(cfg.cad_wait_ms == 20500);
+    assert(cfg.cad_idle_ms == 600);
+    assert(cfg.cad_ignore == 1);
+    assert(cfg.tx_queue_len == 5);
+    assert(cfg.tx_packet_ttl_ms == 181000);
 }
 
 static void test_invalid_timing_option(void)
@@ -273,6 +298,7 @@ int main(void)
     test_rx_only_and_port();
     test_config_and_cli_override();
     test_timing_options();
+    test_queue_policy_options();
     test_invalid_timing_option();
     test_invalid_double_option();
     test_invalid_port();

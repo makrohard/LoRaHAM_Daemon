@@ -13,13 +13,19 @@ static void test_defaults(void)
 
     assert(strcmp(cfg.kiss_host, "127.0.0.1") == 0);
     assert(cfg.kiss_port == 8001);
-    assert(strcmp(cfg.data_socket, "/tmp/lora433.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/lora433f.sock") == 0);
     assert(strcmp(cfg.conf_socket, "/tmp/loraconf433.sock") == 0);
     assert(cfg.rx_only == 0);
     assert(cfg.verbose == 0);
     assert(cfg.stats_interval == 60);
     assert(cfg.tx_settle_ms == 100);
     assert(cfg.tx_return_ms == 1000);
+    assert(cfg.tx_busy_timeout_ms == 120000);
+    assert(cfg.cad_wait_ms == 20000);
+    assert(cfg.cad_idle_ms == 500);
+    assert(cfg.cad_ignore == 0);
+    assert(cfg.tx_queue_len == 8);
+    assert(cfg.tx_packet_ttl_ms == 180000);
     assert(cfg.have_rx_freq == 1);
     assert(cfg.have_tx_freq == 1);
     assert(cfg.rx_freq > 433.774 && cfg.rx_freq < 433.776);
@@ -48,6 +54,12 @@ static void test_parse_line(void)
     char line9[] = "ldro = AUTO";
     char line10[] = "ldro = auto";
     char line11[] = "ldro = false";
+    char line12[] = "tx_busy_timeout_ms = 120001";
+    char line13[] = "cad_wait_ms = 20001";
+    char line14[] = "cad_idle_ms = 501";
+    char line15[] = "cad_ignore = true";
+    char line16[] = "tx_queue_len = 4";
+    char line17[] = "tx_packet_ttl_ms = 180001";
 
     lhkt_config_defaults(&cfg);
 
@@ -87,6 +99,19 @@ static void test_parse_line(void)
     assert(lhkt_config_parse_line(&cfg, line11, 11) == LHKT_OK);
     assert(cfg.ldro == 0);
     assert(cfg.ldro_auto == 0);
+
+    assert(lhkt_config_parse_line(&cfg, line12, 12) == LHKT_OK);
+    assert(cfg.tx_busy_timeout_ms == 120001);
+    assert(lhkt_config_parse_line(&cfg, line13, 13) == LHKT_OK);
+    assert(cfg.cad_wait_ms == 20001);
+    assert(lhkt_config_parse_line(&cfg, line14, 14) == LHKT_OK);
+    assert(cfg.cad_idle_ms == 501);
+    assert(lhkt_config_parse_line(&cfg, line15, 15) == LHKT_OK);
+    assert(cfg.cad_ignore == 1);
+    assert(lhkt_config_parse_line(&cfg, line16, 16) == LHKT_OK);
+    assert(cfg.tx_queue_len == 4);
+    assert(lhkt_config_parse_line(&cfg, line17, 17) == LHKT_OK);
+    assert(cfg.tx_packet_ttl_ms == 180001);
 }
 
 static void test_hash_only_comments(void)
@@ -113,13 +138,19 @@ static void test_load_file(void)
     fprintf(fp, "# LoRaHAM KISS TNC test config\n");
     fprintf(fp, "kiss_host = 0.0.0.0\n");
     fprintf(fp, "kiss_port = 8100 # inline comment\n");
-    fprintf(fp, "data_socket = /tmp/test_lora433.sock\n");
+    fprintf(fp, "data_socket = /tmp/test_lora433f.sock\n");
     fprintf(fp, "conf_socket = /tmp/test_loraconf433.sock\n");
     fprintf(fp, "rx_only = true\n");
     fprintf(fp, "verbose = on\n");
     fprintf(fp, "stats_interval = 30\n");
     fprintf(fp, "tx_settle_ms = 250\n");
     fprintf(fp, "tx_return_ms = 750\n");
+    fprintf(fp, "tx_busy_timeout_ms = 120500\n");
+    fprintf(fp, "cad_wait_ms = 20500\n");
+    fprintf(fp, "cad_idle_ms = 600\n");
+    fprintf(fp, "cad_ignore = yes\n");
+    fprintf(fp, "tx_queue_len = 5\n");
+    fprintf(fp, "tx_packet_ttl_ms = 181000\n");
     fprintf(fp, "rx_freq = 433.775\n");
     fprintf(fp, "tx_freq = 433.900\n");
     fprintf(fp, "sf = 11\n");
@@ -138,13 +169,19 @@ static void test_load_file(void)
 
     assert(strcmp(cfg.kiss_host, "0.0.0.0") == 0);
     assert(cfg.kiss_port == 8100);
-    assert(strcmp(cfg.data_socket, "/tmp/test_lora433.sock") == 0);
+    assert(strcmp(cfg.data_socket, "/tmp/test_lora433f.sock") == 0);
     assert(strcmp(cfg.conf_socket, "/tmp/test_loraconf433.sock") == 0);
     assert(cfg.rx_only == 1);
     assert(cfg.verbose == 1);
     assert(cfg.stats_interval == 30);
     assert(cfg.tx_settle_ms == 250);
     assert(cfg.tx_return_ms == 750);
+    assert(cfg.tx_busy_timeout_ms == 120500);
+    assert(cfg.cad_wait_ms == 20500);
+    assert(cfg.cad_idle_ms == 600);
+    assert(cfg.cad_ignore == 1);
+    assert(cfg.tx_queue_len == 5);
+    assert(cfg.tx_packet_ttl_ms == 181000);
     assert(cfg.have_rx_freq == 1);
     assert(cfg.have_tx_freq == 1);
     assert(cfg.rx_freq > 433.774 && cfg.rx_freq < 433.776);
@@ -179,6 +216,9 @@ static void test_reject_invalid(void)
     char bad12[] = "sf = 6";
     char bad13[] = "power = -1";
     char bad14[] = "power = 21";
+    char bad15[] = "tx_queue_len = 0";
+    char bad16[] = "tx_queue_len = 17";
+    char bad17[] = "tx_packet_ttl_ms = 999";
 
     lhkt_config_defaults(&cfg);
 
@@ -196,6 +236,9 @@ static void test_reject_invalid(void)
     assert(lhkt_config_parse_line(&cfg, bad12, 12) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad13, 13) == LHKT_ERR_FORMAT);
     assert(lhkt_config_parse_line(&cfg, bad14, 14) == LHKT_ERR_FORMAT);
+    assert(lhkt_config_parse_line(&cfg, bad15, 15) == LHKT_ERR_FORMAT);
+    assert(lhkt_config_parse_line(&cfg, bad16, 16) == LHKT_ERR_FORMAT);
+    assert(lhkt_config_parse_line(&cfg, bad17, 17) == LHKT_ERR_FORMAT);
 }
 
 int main(void)

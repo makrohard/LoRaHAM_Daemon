@@ -320,6 +320,69 @@ static void test_ignore_noise_without_header(void)
     assert(out_len == 0);
 }
 
+static void test_framed_send_tx_packet_socketpair(void)
+{
+    int sv[2];
+    const uint8_t payload[] = { 'O', 'K' };
+    uint8_t buf[5];
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    assert(loraham_send_framed_tx_packet(sv[0],
+                                        payload,
+                                        sizeof(payload)) == LHKT_OK);
+    assert(read(sv[1], buf, sizeof(buf)) == (ssize_t)sizeof(buf));
+    assert(buf[0] == LORAHAM_FRAME_TX_PACKET);
+    assert(buf[1] == sizeof(payload));
+    assert(buf[2] == 0x00);
+    assert(memcmp(buf + 3, payload, sizeof(payload)) == 0);
+
+    close(sv[0]);
+    close(sv[1]);
+}
+
+static void test_framed_decode_split_rx_packet(void)
+{
+    loraham_framed_rx_state_t state;
+    loraham_frame_t frame;
+    const uint8_t data[] = {
+        LORAHAM_FRAME_RX_PACKET, 5, 0,
+        'H', 'e', 'l', 'l', 'o'
+    };
+    size_t i;
+    int ret;
+
+    loraham_framed_rx_state_init(&state);
+
+    for (i = 0; i + 1 < sizeof(data); i++) {
+        assert(loraham_framed_decode_byte(&state, data[i], &frame) == 0);
+    }
+
+    ret = loraham_framed_decode_byte(&state, data[i], &frame);
+    assert(ret == 1);
+    assert(frame.type == LORAHAM_FRAME_RX_PACKET);
+    assert(frame.payload_len == 5);
+    assert(memcmp(frame.payload, "Hello", 5) == 0);
+}
+
+static void test_framed_decode_oversize_recovers(void)
+{
+    loraham_framed_rx_state_t state;
+    loraham_frame_t frame;
+
+    loraham_framed_rx_state_init(&state);
+
+    assert(loraham_framed_decode_byte(&state, LORAHAM_FRAME_RX_PACKET, &frame) == 0);
+    assert(loraham_framed_decode_byte(&state, 0x01, &frame) == 0);
+    assert(loraham_framed_decode_byte(&state, 0x04, &frame) == LHKT_ERR_LONG);
+
+    assert(loraham_framed_decode_byte(&state, LORAHAM_FRAME_RX_PACKET, &frame) == 0);
+    assert(loraham_framed_decode_byte(&state, 0x01, &frame) == 0);
+    assert(loraham_framed_decode_byte(&state, 0x00, &frame) == 0);
+    assert(loraham_framed_decode_byte(&state, 'X', &frame) == 1);
+    assert(frame.payload_len == 1);
+    assert(frame.payload[0] == 'X');
+}
+
 int main(void)
 {
     test_sock_write_socketpair();
@@ -337,6 +400,9 @@ int main(void)
     test_extract_oversized_rx_packet();
     test_pending_drain_does_not_flush_tail();
     test_ignore_noise_without_header();
+    test_framed_send_tx_packet_socketpair();
+    test_framed_decode_split_rx_packet();
+    test_framed_decode_oversize_recovers();
 
     puts("test_loraham_sock: OK");
     return 0;

@@ -3,17 +3,26 @@ written by Johannes Loose 410733@gmail.com
 
 KISS/TCP TNC bridge for `LoRaHAM_Daemon`.
 
-It exposes a KISS/TCP port for APRS clients and talks to the LoRaHAM daemon through its Unix sockets.
+It exposes a KISS/TCP port for APRS clients and talks to the LoRaHAM daemon through its framed DATA Unix socket.
 
 ```text
-APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433.sock <-> loraham_daemon
+APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham_daemon
 ```
 ## Limitations
 - single KISS/TCP client
 - KISS port 0 only
 - APRS/TNC2 text payload only
-- TX path intentionally blocks during tx timing
+- TX packets are queued and sent one at a time
 - mode=LORA only - because FSK is not used in LoRa APRS
+- framed DATA socket only for daemon packet I/O
+- uses CONF events (`TX=`, `CAD=`, `STATUS`) for TX/CAD state
+
+## TX/CAD policy
+
+- queued TX waits for fresh `STATUS` after CONF reconnect
+- `TX=1` delays TX until `TX=0`; timeout drops the packet
+- `CAD=1` delays TX briefly; timeout sends anyway
+- `--cad-ignore` ignores CAD/channel busy state
 
 ## Build
 
@@ -44,13 +53,21 @@ Options:
   -c, --config FILE        Load config file
       --kiss-host HOST     KISS/TCP bind host
       --kiss-port PORT     KISS/TCP bind port
-      --data-socket PATH   LoRaHAM data socket
+      --data-socket PATH   LoRaHAM framed data socket
       --conf-socket PATH   LoRaHAM config socket
       --rx-freq MHz        RX/config frequency
       --tx-freq MHz        TX/config frequency
       --rx-only            Disable TX
       --tx-settle-ms MS    Wait after TX freq switch
-      --tx-return-ms MS    Wait after TX before RX restore
+      --tx-return-ms MS    Fallback wait after TX before RX restore
+      --tx-busy-timeout-ms MS
+                            Max wait for local TX busy
+      --cad-wait-ms MS     Max polite wait for busy channel
+      --cad-idle-ms MS     Required CAD idle stability
+      --cad-ignore         Ignore CAD/channel busy state
+      --tx-queue-len N     Queued TX packet limit
+      --tx-packet-ttl-ms MS
+                            Max queued packet lifetime
   -v, --verbose            Verbose output
       --version            Print version and exit
   -h, --help               Show help
@@ -59,7 +76,7 @@ Options:
 
 ## Serial KISS
 
-Xastir ans YAAC only support Serial KISS TNC. You can use socat to forward the byte-stream to a PTY.
+Xastir only supports Serial KISS TNC. You can use socat to forward the byte-stream to a PTY.
 This works over network, too.
 
 Start socat on the machine with the APRS-Client and point to the machine running the TNC.

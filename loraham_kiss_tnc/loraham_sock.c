@@ -173,6 +173,100 @@ out:
     return result;
 }
 
+void loraham_framed_rx_state_init(loraham_framed_rx_state_t *state)
+{
+    if (!state) {
+        return;
+    }
+
+    memset(state, 0, sizeof(*state));
+}
+
+static void loraham_frame_emit(loraham_framed_rx_state_t *state,
+                              loraham_frame_t *frame)
+{
+    frame->type = state->type;
+    frame->payload_len = state->payload_len;
+
+    if (state->payload_len > 0) {
+        memcpy(frame->payload, state->payload, state->payload_len);
+    }
+}
+
+int loraham_framed_decode_byte(loraham_framed_rx_state_t *state,
+                               uint8_t byte,
+                               loraham_frame_t *frame)
+{
+    if (!state || !frame) {
+        return LHKT_ERR;
+    }
+
+    if (state->header_len < sizeof(state->header)) {
+        state->header[state->header_len++] = byte;
+
+        if (state->header_len < sizeof(state->header)) {
+            return 0;
+        }
+
+        state->type = state->header[0];
+        state->payload_len = (uint16_t)state->header[1] |
+                             ((uint16_t)state->header[2] << 8);
+        state->payload_pos = 0;
+
+        if (state->payload_len > LHKT_FRAMED_MAX_PAYLOAD) {
+            loraham_framed_rx_state_init(state);
+            return LHKT_ERR_LONG;
+        }
+
+        if (state->payload_len == 0) {
+            loraham_frame_emit(state, frame);
+            loraham_framed_rx_state_init(state);
+            return 1;
+        }
+
+        return 0;
+    }
+
+    state->payload[state->payload_pos++] = byte;
+
+    if (state->payload_pos < state->payload_len) {
+        return 0;
+    }
+
+    loraham_frame_emit(state, frame);
+    loraham_framed_rx_state_init(state);
+    return 1;
+}
+
+int loraham_send_framed_tx_packet(int fd,
+                                  const uint8_t *payload,
+                                  size_t payload_len)
+{
+    uint8_t frame[3 + LHKT_LORAHAM_TX_MAX];
+
+    if (fd < 0 || (!payload && payload_len > 0)) {
+        return LHKT_ERR;
+    }
+
+    if (payload_len > LHKT_LORAHAM_TX_MAX) {
+        return LHKT_ERR_LONG;
+    }
+
+    frame[0] = LORAHAM_FRAME_TX_PACKET;
+    frame[1] = (uint8_t)(payload_len & 0xff);
+    frame[2] = (uint8_t)((payload_len >> 8) & 0xff);
+
+    if (payload_len > 0) {
+        memcpy(frame + 3, payload, payload_len);
+    }
+
+    if (loraham_sock_write(fd, frame, 3 + payload_len) < 0) {
+        return LHKT_ERR;
+    }
+
+    return LHKT_OK;
+}
+
 /*
  * Build one LoRaHAM APRS packet:
  *   0x3c 0xff 0x01 + TNC2 text

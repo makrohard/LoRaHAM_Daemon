@@ -1,4 +1,10 @@
 #include "ax25.h"
+#include "bridge_conf.h"
+#include "bridge_kiss.h"
+#include "bridge_loraham.h"
+#include "bridge_rx.h"
+#include "bridge_runtime.h"
+#include "bridge_tx_queue.h"
 #include "kiss.h"
 #include "loraham_kiss_tnc.h"
 #include "loraham_sock.h"
@@ -34,6 +40,7 @@ size_t lhkt_test_bridge_write_call_count(void);
 size_t lhkt_test_bridge_sleep_call_count(void);
 int lhkt_test_bridge_should_reconnect_data_socket(int ret);
 int lhkt_test_bridge_should_disconnect_kiss_client(int ret);
+int lhkt_test_bridge_should_reconnect_conf_socket(int ret);
 void lhkt_test_bridge_disconnect_data_socket(int *data_fd,
                                              loraham_rx_state_t *rx_state,
                                              lhkt_stats_t *stats);
@@ -43,6 +50,234 @@ int lhkt_test_bridge_should_stop(void);
 int lhkt_test_bridge_wait_fd_writable(int fd);
 int lhkt_test_bridge_sleep_ms(int ms);
 int lhkt_test_bridge_send_initial_config(const lhkt_config_t *cfg);
+int lhkt_test_bridge_conf_feed(const char *text,
+                               int *tx_busy,
+                               int *cad_busy,
+                               int *radio_ready,
+                               int *have_status);
+int lhkt_test_bridge_conf_feed_events(const char *text,
+                                      int *tx_busy,
+                                      int *cad_busy,
+                                      int *radio_ready,
+                                      int *have_status,
+                                      unsigned long *tx_seq,
+                                      unsigned long *tx_busy_seq,
+                                      unsigned long *tx_idle_seq,
+                                      unsigned long *cad_seq,
+                                      unsigned long *cad_busy_seq,
+                                      unsigned long *cad_idle_seq);
+int lhkt_test_bridge_wait_tx_complete_events(const char *events);
+int lhkt_test_bridge_tx_decision(int tx_busy,
+                                  int cad_busy,
+                                  int cad_ignore,
+                                  long queued_age_ms,
+                                  long tx_wait_age_ms,
+                                  long cad_wait_age_ms,
+                                  long cad_idle_age_ms,
+                                  int cad_was_busy);
+int lhkt_test_bridge_drain_waits_for_data_socket(size_t *queue_depth,
+                                                 uint64_t *drops);
+int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
+                                                 size_t *write_calls,
+                                                 uint64_t *drops);
+int lhkt_test_bridge_drain_waits_for_status(size_t *queue_depth,
+                                             size_t *write_calls,
+                                             int *have_status);
+int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
+                                             int *tx_busy,
+                                             size_t *write_calls);
+int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
+                                                        uint64_t *restore_failures,
+                                                        size_t *write_calls);
+int lhkt_test_bridge_send_packet_without_tx_confirm(uint64_t *tx,
+                                                     uint64_t *unconfirmed,
+                                                     size_t *write_calls);
+int lhkt_test_bridge_send_packet_without_conf(uint64_t *tx,
+                                              uint64_t *drops,
+                                              size_t *write_calls);
+
+#define TEST_TX_DECISION_WAIT 0
+#define TEST_TX_DECISION_SEND 1
+#define TEST_TX_DECISION_DROP 2
+
+static void test_conf_status_parser(void)
+{
+    int tx_busy = -1;
+    int cad_busy = -1;
+    int radio_ready = -1;
+    int have_status = -1;
+
+    assert(lhkt_test_bridge_conf_feed("TX=1\nCAD=1\nSTATUS RADIO=READY TX=0 CAD=0 GETRSSI=0\n",
+                                      &tx_busy,
+                                      &cad_busy,
+                                      &radio_ready,
+                                      &have_status) == LHKT_OK);
+    assert(tx_busy == 0);
+    assert(cad_busy == 0);
+    assert(radio_ready == 1);
+    assert(have_status == 1);
+
+    assert(lhkt_test_bridge_conf_feed("STATUS RADIO=FAILED TX=1 CAD=1 GETRSSI=0\n",
+                                      &tx_busy,
+                                      &cad_busy,
+                                      &radio_ready,
+                                      &have_status) == LHKT_OK);
+    assert(tx_busy == 1);
+    assert(cad_busy == 1);
+    assert(radio_ready == 0);
+    assert(have_status == 1);
+}
+
+static void test_conf_event_transition_counters(void)
+{
+    int tx_busy = -1;
+    int cad_busy = -1;
+    int radio_ready = -1;
+    int have_status = -1;
+    unsigned long tx_seq = 0;
+    unsigned long tx_busy_seq = 0;
+    unsigned long tx_idle_seq = 0;
+    unsigned long cad_seq = 0;
+    unsigned long cad_busy_seq = 0;
+    unsigned long cad_idle_seq = 0;
+
+    assert(lhkt_test_bridge_conf_feed_events("TX=1\nTX=0\nCAD=1\nCAD=0\nSTATUS RADIO=READY TX=1 CAD=1 GETRSSI=0\n",
+                                            &tx_busy,
+                                            &cad_busy,
+                                            &radio_ready,
+                                            &have_status,
+                                            &tx_seq,
+                                            &tx_busy_seq,
+                                            &tx_idle_seq,
+                                            &cad_seq,
+                                            &cad_busy_seq,
+                                            &cad_idle_seq) == LHKT_OK);
+
+    assert(tx_busy == 1);
+    assert(cad_busy == 1);
+    assert(radio_ready == 1);
+    assert(have_status == 1);
+    assert(tx_seq == 2);
+    assert(tx_busy_seq == 1);
+    assert(tx_idle_seq == 1);
+    assert(cad_seq == 2);
+    assert(cad_busy_seq == 1);
+    assert(cad_idle_seq == 1);
+}
+
+static void test_tx_complete_handles_combined_events(void)
+{
+    assert(lhkt_test_bridge_wait_tx_complete_events("TX=1\nTX=0\n") == LHKT_OK);
+}
+
+static void test_tx_queue_policy_decisions(void)
+{
+    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 1000, -1, -1, 0) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 120000, -1, -1, 0) ==
+           TEST_TX_DECISION_DROP);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 1000, -1, 0) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 20000, -1, 0) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 1, 0, -1, 0, -1, 0) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 100, 1) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 500, 1) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 180000, -1, -1, -1, 0) ==
+           TEST_TX_DECISION_DROP);
+}
+
+static void test_tx_queue_lifecycle_waits_for_sockets(void)
+{
+    size_t queue_depth = 0;
+    size_t write_calls = 99;
+    uint64_t drops = 99;
+
+    assert(lhkt_test_bridge_drain_waits_for_data_socket(&queue_depth,
+                                                       &drops) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(drops == 0);
+
+    assert(lhkt_test_bridge_drain_waits_for_conf_socket(&queue_depth,
+                                                       &write_calls,
+                                                       &drops) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(write_calls == 0);
+    assert(drops == 0);
+}
+
+static void test_tx_queue_waits_for_status(void)
+{
+    size_t queue_depth = 0;
+    size_t write_calls = 99;
+    int have_status = 1;
+
+    assert(lhkt_test_bridge_drain_waits_for_status(&queue_depth,
+                                                   &write_calls,
+                                                   &have_status) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(have_status == 0);
+    assert(write_calls == 0);
+}
+
+static void test_tx_queue_drain_reads_pending_conf(void)
+{
+    size_t queue_depth = 0;
+    size_t write_calls = 99;
+    int tx_busy = 0;
+
+    assert(lhkt_test_bridge_drain_reads_pending_conf(&queue_depth,
+                                                    &tx_busy,
+                                                    &write_calls) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(tx_busy == 1);
+    assert(write_calls == 0);
+}
+
+static void test_tx_queue_pops_written_packet_on_restore_failure(void)
+{
+    size_t queue_depth = 99;
+    size_t write_calls = 99;
+    uint64_t restore_failures = 0;
+
+    assert(lhkt_test_bridge_drain_pops_written_restore_failure(&queue_depth,
+                                                              &restore_failures,
+                                                              &write_calls) == LHKT_ERR);
+    assert(queue_depth == 0);
+    assert(write_calls == 1);
+    assert(restore_failures == 2);
+}
+
+static void test_tx_requires_persistent_conf_socket(void)
+{
+    uint64_t tx = 99;
+    uint64_t drops = 99;
+    size_t write_calls = 99;
+
+    assert(lhkt_test_bridge_send_packet_without_conf(&tx,
+                                                    &drops,
+                                                    &write_calls) == LHKT_ERR_CONF_SOCKET);
+    assert(write_calls == 0);
+    assert(tx == 0);
+    assert(drops == 1);
+}
+
+static void test_tx_confirmation_missing_is_counted(void)
+{
+    uint64_t tx = 99;
+    uint64_t unconfirmed = 99;
+    size_t write_calls = 99;
+
+    assert(lhkt_test_bridge_send_packet_without_tx_confirm(&tx,
+                                                          &unconfirmed,
+                                                          &write_calls) == LHKT_OK);
+    assert(write_calls == 1);
+    assert(tx == 1);
+    assert(unconfirmed == 1);
+}
 
 static void test_fd_set_rejects_too_large_fd(void)
 {
@@ -165,6 +400,29 @@ static void test_tnc2_to_kiss_output(void)
 }
 
 
+static void test_framed_error_is_counted(void)
+{
+    loraham_framed_rx_state_t state;
+    lhkt_stats_t stats;
+    const uint8_t frame[] = {
+        LORAHAM_FRAME_ERROR,
+        4, 0,
+        'B', 'U', 'S', 'Y'
+    };
+
+    loraham_framed_rx_state_init(&state);
+    lhkt_stats_init(&stats);
+
+    assert(bridge_rx_handle_framed_chunk(-1,
+                                        &state,
+                                        frame,
+                                        sizeof(frame),
+                                        &stats) == LHKT_OK);
+    assert(stats.loraham_framed_errors == 1);
+    assert(stats.loraham_drop == 0);
+    assert(stats.kiss_tx == 0);
+}
+
 static void test_nonzero_kiss_port_is_dropped(void)
 {
     lhkt_config_t cfg;
@@ -278,6 +536,8 @@ static void test_tx_write_failure_restores_rx(void)
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_TX_SOCKET) == 1);
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_FORMAT) == 0);
     assert(lhkt_test_bridge_should_reconnect_data_socket(LHKT_ERR_UNSUPPORTED) == 0);
+    assert(lhkt_test_bridge_should_reconnect_conf_socket(LHKT_ERR_CONF_SOCKET) == 1);
+    assert(lhkt_test_bridge_should_reconnect_conf_socket(LHKT_ERR_TX_SOCKET) == 0);
 
     assert(lhkt_test_bridge_write_call_count() == 1);
     assert(lhkt_test_bridge_config_call_count() == 2);
@@ -376,6 +636,7 @@ static void test_rx_restore_retry_success_counts_failure(void)
     assert(lhkt_test_bridge_config_call_count() == 3);
     assert(lhkt_test_bridge_sleep_call_count() >= 3);
     assert(stats.tx_restore_failures == 1);
+    assert(stats.tx_unconfirmed == 1);
     assert(stats.loraham_drop == 0);
     assert(stats.loraham_tx == 1);
 }
@@ -403,6 +664,7 @@ static void test_rx_restore_retry_failure_is_counted(void)
     assert(lhkt_test_bridge_write_call_count() == 1);
     assert(lhkt_test_bridge_config_call_count() == 3);
     assert(stats.tx_restore_failures == 2);
+    assert(stats.tx_unconfirmed == 1);
     assert(stats.loraham_drop == 0);
     assert(stats.loraham_tx == 0);
 }
@@ -411,10 +673,21 @@ int main(void)
 {
     signal(SIGPIPE, SIG_IGN);
 
+    test_conf_status_parser();
+    test_conf_event_transition_counters();
+    test_tx_complete_handles_combined_events();
+    test_tx_queue_policy_decisions();
+    test_tx_queue_lifecycle_waits_for_sockets();
+    test_tx_queue_waits_for_status();
+    test_tx_queue_drain_reads_pending_conf();
+    test_tx_queue_pops_written_packet_on_restore_failure();
+    test_tx_requires_persistent_conf_socket();
+    test_tx_confirmation_missing_is_counted();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();
     test_tnc2_to_kiss_output();
+    test_framed_error_is_counted();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();
     test_client_write_failure_returns_socket_error();

@@ -23,6 +23,12 @@ void lhkt_config_defaults(lhkt_config_t *cfg)
     cfg->stats_interval = 60;
     cfg->tx_settle_ms = 100;
     cfg->tx_return_ms = 1000;
+    cfg->tx_busy_timeout_ms = 120000;
+    cfg->cad_wait_ms = 20000;
+    cfg->cad_idle_ms = 500;
+    cfg->cad_ignore = 0;
+    cfg->tx_queue_len = 8;
+    cfg->tx_packet_ttl_ms = 180000;
 
 
     cfg->rx_freq = 433.775;
@@ -62,10 +68,14 @@ void lhkt_stats_print(const lhkt_stats_t *stats)
            stats->ax25_rx, stats->ax25_tx, stats->ax25_drop);
     printf("[STAT] TNC2 rx=%" PRIu64 " tx=%" PRIu64 " drop=%" PRIu64 "\n",
            stats->tnc2_rx, stats->tnc2_tx, stats->tnc2_drop);
-    printf("[STAT] LoRaHAM rx=%" PRIu64 " tx=%" PRIu64 " drop=%" PRIu64 "\n",
-           stats->loraham_rx, stats->loraham_tx, stats->loraham_drop);
-    printf("[STAT] TX oversize=%" PRIu64 " restore_failures=%" PRIu64 " reconnects=%" PRIu64 " client_disconnects=%" PRIu64 "\n",
+    printf("[STAT] LoRaHAM rx=%" PRIu64 " tx=%" PRIu64 " drop=%" PRIu64 " framed_errors=%" PRIu64 "\n",
+           stats->loraham_rx,
+           stats->loraham_tx,
+           stats->loraham_drop,
+           stats->loraham_framed_errors);
+    printf("[STAT] TX oversize=%" PRIu64 " unconfirmed=%" PRIu64 " restore_failures=%" PRIu64 " reconnects=%" PRIu64 " client_disconnects=%" PRIu64 "\n",
            stats->tx_drop_oversize,
+           stats->tx_unconfirmed,
            stats->tx_restore_failures,
            stats->socket_reconnects,
            stats->client_disconnects);

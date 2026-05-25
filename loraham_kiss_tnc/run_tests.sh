@@ -153,6 +153,12 @@ run_test bridge \
   "$script_dir/tcp_server.c" \
   "$script_dir/loraham_sock.c" \
   "$script_dir/bridge.c" \
+  "$script_dir/bridge_conf.c" \
+  "$script_dir/bridge_kiss.c" \
+  "$script_dir/bridge_rx.c" \
+  "$script_dir/bridge_loraham.c" \
+  "$script_dir/bridge_runtime.c" \
+  "$script_dir/bridge_tx_queue.c" \
   "$script_dir/ax25.c" \
   "$script_dir/tnc2.c" \
   "$script_dir/kiss.c" \
