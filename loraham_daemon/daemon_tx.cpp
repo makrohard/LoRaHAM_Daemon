@@ -64,6 +64,22 @@ static void daemon_broadcast_tx_status(RadioBand_t band, bool busy)
                                  busy ? "TX=1\n" : "TX=0\n");
 }
 
+template<typename RadioT>
+static bool lora_send_acquire_controller_tx(RadioController<RadioT> *ctrl)
+{
+    if (!ctrl)
+        return false;
+
+    return !ctrl->tx_busy.exchange(true);
+}
+
+template<typename RadioT>
+static void lora_send_release_controller_tx(RadioController<RadioT> *ctrl)
+{
+    ctrl->tx_busy = false;
+    daemon_broadcast_tx_status(ctrl->band, false);
+}
+
 static void lora_print_tx_preview(const char *ctx,
                                   const uint8_t *buf,
                                   size_t len)
@@ -124,7 +140,7 @@ static void lora_debug_tx_first_bytes(const char *ctx,
 template<typename RadioT>
 static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
 {
-    ctrl->tx_busy = true;
+    // TX ownership was acquired before payload copy/logging.
     daemon_broadcast_tx_status(ctrl->band, true);
 
     // Clear RX state before switching the radio to TX.
@@ -172,18 +188,18 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
         return TX_RESULT_INVALID_PACKET;
     }
 
-    // Copy the buffer before the caller can reuse it.
+    if (!lora_send_acquire_controller_tx(ctrl)) {
+        printf("[%s] TX BUSY - überspringen\n", tag);
+        fflush(stdout);
+        return TX_RESULT_BUSY;
+    }
+
+    // Copy the buffer after TX ownership is acquired.
     uint8_t send_buf[RF_PACKET_MAX_PAYLOAD_LEN];
     memcpy(send_buf, buf, len);
 
     lora_print_tx_preview(tx_ctx, send_buf, len);
     lora_debug_tx_preview(tx_ctx, send_buf, len);
-
-    if(ctrl->tx_busy) {
-        printf("[%s] TX BUSY - überspringen\n", tag);
-        fflush(stdout);
-        return TX_RESULT_BUSY;
-    }
 
     lora_send_prepare_controller_tx(ctrl);
 
@@ -216,9 +232,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
     ctrl->radio->clearIrq(0xFFFFFFFF);
     ctrl->received = false;
     ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
-
-    ctrl->tx_busy = false;
-    daemon_broadcast_tx_status(ctrl->band, false);
+    lora_send_release_controller_tx(ctrl);
     ctrl->radio->startReceive();
 
     return state == RADIOLIB_ERR_NONE
