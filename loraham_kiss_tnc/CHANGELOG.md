@@ -1,9 +1,8 @@
 # 0.2.0
-- Updated, after refactoring loraham_daemon to 109a. Not compatible to 108.
-- Use framed DATA sockets in LoRaHAM KISS TNC bridge. 
-- Uses TX and optional CAD information from daemon for sending policy
-
-- *W O R K  I N  P R O G R E S S*
+- Updated, after refactoring loraham_daemon to 109a. *This breaks comatibility to loraham_daemon < 109*
+- Use framed DATA sockets instead of raw Sockets
+- TX Queue and delayed sending on TX=1 or CAD=1
+- Use persistent CONF socket
 
 # 0.1.0
 - Initial Version, developed for loraham_daemon 108
