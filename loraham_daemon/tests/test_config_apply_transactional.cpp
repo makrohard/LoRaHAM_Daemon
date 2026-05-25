@@ -1,6 +1,7 @@
 #include "../config_apply.h"
 
 #include <stdio.h>
+#include <atomic>
 #include <string.h>
 
 /* --- Transactional CONFIG apply integration tests ------------------------ */
@@ -80,7 +81,7 @@ static void expect_int(const char *name, int actual, int expected)
 static void apply_cmd(FakeRadio &radio,
                       const char *cmd,
                       volatile RadioMode_t &mode,
-                      volatile bool &getrssi)
+                      std::atomic<bool> &getrssi)
 {
     parse_and_apply_config_generic<FakeRadio>(radio, "TEST", cmd, mode, getrssi);
 }
@@ -91,12 +92,12 @@ static void test_invalid_getrssi_has_no_side_effects(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET GETRSSI=2 MODE=FSK", mode, getrssi);
 
     expect_int("invalid getrssi mode unchanged", mode, RADIO_MODE_LORA);
-    expect_int("invalid getrssi flag unchanged", getrssi, false);
+    expect_int("invalid getrssi flag unchanged", getrssi.load(), false);
     expect_int("invalid getrssi beginFSK not called", radio.begin_fsk_count, 0);
     expect_int("invalid getrssi lora apply not called", radio.lora_apply_count, 0);
     expect_int("invalid getrssi fsk apply not called", radio.fsk_apply_count, 0);
@@ -106,12 +107,12 @@ static void test_invalid_fsk_value_has_no_mode_or_getrssi_side_effects(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1 BR=bad", mode, getrssi);
 
     expect_int("invalid fsk mode unchanged", mode, RADIO_MODE_LORA);
-    expect_int("invalid fsk getrssi unchanged", getrssi, false);
+    expect_int("invalid fsk getrssi unchanged", getrssi.load(), false);
     expect_int("invalid fsk beginFSK not called", radio.begin_fsk_count, 0);
     expect_int("invalid fsk fsk apply not called", radio.fsk_apply_count, 0);
 }
@@ -120,12 +121,12 @@ static void test_malformed_token_has_no_side_effects(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1 BROKEN", mode, getrssi);
 
     expect_int("malformed mode unchanged", mode, RADIO_MODE_LORA);
-    expect_int("malformed getrssi unchanged", getrssi, false);
+    expect_int("malformed getrssi unchanged", getrssi.load(), false);
     expect_int("malformed beginFSK not called", radio.begin_fsk_count, 0);
     expect_int("malformed fsk apply not called", radio.fsk_apply_count, 0);
 }
@@ -135,7 +136,7 @@ static void test_failed_mode_switch_aborts_remaining_apply(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     radio.begin_fsk_result = -123;
 
@@ -144,7 +145,7 @@ static void test_failed_mode_switch_aborts_remaining_apply(void)
 
     expect_int("failed mode switch beginFSK called", radio.begin_fsk_count, 1);
     expect_int("failed mode switch keeps old mode", mode, RADIO_MODE_LORA);
-    expect_int("failed mode switch leaves getrssi unchanged", getrssi, false);
+    expect_int("failed mode switch leaves getrssi unchanged", getrssi.load(), false);
     expect_int("failed mode switch skips lora apply", radio.lora_apply_count, 0);
     expect_int("failed mode switch skips fsk apply", radio.fsk_apply_count, 0);
 }
@@ -153,12 +154,12 @@ static void test_valid_mode_and_getrssi_still_apply(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1", mode, getrssi);
 
     expect_int("valid mode switched", mode, RADIO_MODE_FSK);
-    expect_int("valid getrssi set", getrssi, true);
+    expect_int("valid getrssi set", getrssi.load(), true);
     expect_int("valid beginFSK called", radio.begin_fsk_count, 1);
 }
 
@@ -166,13 +167,13 @@ static void test_valid_lora_parameter_still_applies(void)
 {
     FakeRadio radio;
     volatile RadioMode_t mode = RADIO_MODE_LORA;
-    volatile bool getrssi = false;
+    std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET FREQ=433.900", mode, getrssi);
 
     expect_int("valid lora param apply count", radio.lora_apply_count, 1);
     expect_int("valid lora mode unchanged", mode, RADIO_MODE_LORA);
-    expect_int("valid lora getrssi unchanged", getrssi, false);
+    expect_int("valid lora getrssi unchanged", getrssi.load(), false);
 }
 
 int main(int argc, char **argv)

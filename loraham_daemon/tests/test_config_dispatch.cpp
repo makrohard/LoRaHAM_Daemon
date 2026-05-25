@@ -1,6 +1,7 @@
 #include "../config_dispatch.h"
 
 #include <stdio.h>
+#include <atomic>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -101,7 +102,7 @@ static void record_apply_config(FakeRadio& radio,
                                 const char *tag,
                                 const char *cmd,
                                 volatile RadioMode_t& mode,
-                                volatile bool& getrssi_active)
+                                std::atomic<bool>& getrssi_active)
 {
     (void)radio;
 
@@ -110,7 +111,7 @@ static void record_apply_config(FakeRadio& radio,
     snprintf(g_apply_state.cmd, sizeof(g_apply_state.cmd), "%s", cmd);
 
     mode = RADIO_MODE_FSK;
-    getrssi_active = true;
+    getrssi_active.store(true);
 }
 
 static void init_fake_controller(RadioController<FakeRadio> *ctrl,
@@ -193,7 +194,7 @@ static void test_dispatch_ready_client(void)
     expect_str("apply tag", g_apply_state.tag, "CONF TEST");
     expect_str("apply cmd", g_apply_state.cmd, "SET GETRSSI=1");
     expect_int("mode updated by apply", ctrl.mode == RADIO_MODE_FSK, 1);
-    expect_int("getrssi updated by apply", ctrl.getrssi_active == true, 1);
+    expect_int("getrssi updated by apply", ctrl.getrssi_active.load() == true, 1);
     expect_int("callback restored", ctrl.radio->callback_count, 1);
     expect_int("startReceive called", ctrl.radio->start_receive_count, 1);
     expect_int("client still open", client_slot_has_client(&slots[0]), 1);
