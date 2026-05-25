@@ -1,4 +1,5 @@
 #include "../client_set.h"
+#include "../client_slot.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -60,7 +61,7 @@ static void test_set_nonblocking(void)
 static void test_read_slot_eagain_keeps_client(void)
 {
     int sv[2];
-    int clients[1] = {0};
+    int clients[1];
     uint8_t buf[8];
     ssize_t n;
 
@@ -70,6 +71,7 @@ static void test_read_slot_eagain_keeps_client(void)
         return;
     }
 
+    client_set_init_all(clients, 1);
     clients[0] = sv[1];
     client_set_set_nonblocking(clients[0]);
 
@@ -78,7 +80,7 @@ static void test_read_slot_eagain_keeps_client(void)
 
     expect_int("read eagain result", n < 0, 1);
     expect_int("read eagain errno", errno == EAGAIN || errno == EWOULDBLOCK, 1);
-    expect_int("read eagain keeps slot", clients[0] > 0, 1);
+    expect_int("read eagain keeps slot", clients[0] >= 0, 1);
 
     close(sv[0]);
     client_set_close_slot(clients, 0);
@@ -87,7 +89,7 @@ static void test_read_slot_eagain_keeps_client(void)
 static void test_read_slot_peer_close_closes_client(void)
 {
     int sv[2];
-    int clients[1] = {0};
+    int clients[1];
     uint8_t buf[8];
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
@@ -96,11 +98,55 @@ static void test_read_slot_peer_close_closes_client(void)
         return;
     }
 
+    client_set_init_all(clients, 1);
     clients[0] = sv[1];
     close(sv[0]);
 
     expect_int("read close returns zero", (int)client_set_read_slot(clients, 0, buf, sizeof(buf)), 0);
-    expect_int("read close clears slot", clients[0], 0);
+    expect_int("read close clears slot", clients[0], -1);
+}
+
+static void test_client_set_init_marks_empty(void)
+{
+    int clients[3] = {0, 1, 2};
+
+    client_set_init_all(clients, 3);
+
+    expect_int("client_set init empty 0", clients[0], -1);
+    expect_int("client_set init empty 1", clients[1], -1);
+    expect_int("client_set init empty 2", clients[2], -1);
+    expect_int("client_set has no clients", client_set_has_clients(clients, 3), 0);
+}
+
+static void test_client_set_accepts_fd_zero(void)
+{
+    int clients[1];
+
+    client_set_init_all(clients, 1);
+
+    expect_int("client_set add fd0", client_set_add(clients, 1, 0), 1);
+    expect_int("client_set stores fd0", clients[0], 0);
+    expect_int("client_set fd0 is client", client_set_has_clients(clients, 1), 1);
+
+    clients[0] = -1;  // Do not close stdin in the unit test.
+}
+
+static void test_client_slot_accepts_fd_zero(void)
+{
+    ClientSlot slot;
+
+    client_slot_init(&slot);
+
+    expect_int("client_slot null fd", client_slot_fd(NULL), -1);
+    expect_int("client_slot empty fd", client_slot_fd(&slot), -1);
+    expect_int("client_slot empty state", client_slot_has_client(&slot), 0);
+
+    client_slot_set_fd(&slot, 0);
+
+    expect_int("client_slot fd0 stored", client_slot_fd(&slot), 0);
+    expect_int("client_slot fd0 is client", client_slot_has_client(&slot), 1);
+
+    slot.fd = -1;  // Do not close stdin in the unit test.
 }
 
 static void test_accept_sets_nonblocking(void)
@@ -108,9 +154,11 @@ static void test_accept_sets_nonblocking(void)
     int listen_fd;
     int peer_fd;
     int accepted_fd;
-    int clients[1] = {0};
+    int clients[1];
     struct sockaddr_un addr;
     char path[sizeof(addr.sun_path)];
+
+    client_set_init_all(clients, 1);
 
     snprintf(path, sizeof(path), "/tmp/loraham-nonblock-%ld.sock", (long)getpid());
     unlink(path);
@@ -145,7 +193,7 @@ static void test_accept_sets_nonblocking(void)
 
     accepted_fd = client_set_accept(listen_fd, clients, 1);
 
-    expect_int("accept returns fd", accepted_fd > 0, 1);
+    expect_int("accept returns fd", accepted_fd >= 0, 1);
     expect_int("accept stores fd", clients[0], accepted_fd);
     expect_int("accept fd nonblocking", fd_is_nonblocking(accepted_fd), 1);
 
@@ -175,6 +223,9 @@ int main(int argc, char **argv)
     }
 
     test_set_nonblocking();
+    test_client_set_init_marks_empty();
+    test_client_set_accepts_fd_zero();
+    test_client_slot_accepts_fd_zero();
     test_read_slot_eagain_keeps_client();
     test_read_slot_peer_close_closes_client();
     test_accept_sets_nonblocking();

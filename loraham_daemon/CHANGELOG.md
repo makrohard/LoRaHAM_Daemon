@@ -1,3 +1,4 @@
+  - Fix: completed fd `0` client handling with explicit `-1` client-set initialization.
 # Changelog
 
 ## loraham_daemon 109

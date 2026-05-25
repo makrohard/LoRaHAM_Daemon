@@ -34,7 +34,7 @@ int client_slot_has_client(const ClientSlot *slot)
 
 int client_slot_fd(const ClientSlot *slot)
 {
-    return slot ? slot->fd : 0;
+    return slot ? slot->fd : -1;
 }
 
 void client_slot_set_fd(ClientSlot *slot, int fd)

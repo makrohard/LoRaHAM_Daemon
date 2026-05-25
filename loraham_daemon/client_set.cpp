@@ -10,6 +10,15 @@
 
 /* --- Client slots -------------------------------------------------------- */
 
+void client_set_init_all(int *clients, int max_clients)
+{
+    if (!clients || max_clients <= 0)
+        return;
+
+    for (int i = 0; i < max_clients; i++)
+        clients[i] = -1;
+}
+
 int client_set_set_nonblocking(int fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);

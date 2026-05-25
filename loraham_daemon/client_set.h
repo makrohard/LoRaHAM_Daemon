@@ -12,6 +12,7 @@
 
 int client_set_add(int *clients, int max_clients, int fd);
 int client_set_set_nonblocking(int fd);
+void client_set_init_all(int *clients, int max_clients);
 int client_set_accept(int listen_fd, int *clients, int max_clients);
 int client_set_accept_with_output(int listen_fd, int *clients, ClientOutputQueue *queues, int max_clients);
 void client_set_close_slot(int *clients, int index);

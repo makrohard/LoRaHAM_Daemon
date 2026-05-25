@@ -271,7 +271,7 @@ static void test_process_slots_eof_closes_and_resets_output(void)
                           null_data_tx_log());
 
     expect_int("slot eof no chunks", rec.calls, 0);
-    expect_int("slot eof client closed", slots[0].fd, 0);
+    expect_int("slot eof client closed", slots[0].fd, -1);
     expect_size("slot eof output reset", client_output_queue_pending(&slots[0].output), 0);
 
     event_loop_close(&set);

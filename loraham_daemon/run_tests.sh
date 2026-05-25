@@ -296,7 +296,9 @@ build_one_client_nonblocking_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}"
 }
 

@@ -350,7 +350,7 @@ static void test_dispatch_closes_eof_client(void)
     expect_int("eof apply count", g_apply_state.calls, 0);
     expect_int("eof callback count", ctrl.radio->callback_count, 0);
     expect_int("eof startReceive count", ctrl.radio->start_receive_count, 0);
-    expect_int("eof client closed", slots[0].fd, 0);
+    expect_int("eof client closed", slots[0].fd, -1);
     expect_size("eof output reset", client_output_queue_pending(&slots[0].output), 0);
     expect_size("eof stream reset", slots[0].stream.len, 0);
 

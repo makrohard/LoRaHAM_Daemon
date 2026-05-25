@@ -122,12 +122,13 @@ static void test_slow_client_does_not_block_fast_client(void)
 {
     int slow[2] = {-1, -1};
     int fast[2] = {-1, -1};
-    int clients[2] = {0};
+    int clients[2];
     ClientOutputQueue queues[2];
     const uint8_t msg[] = {'O', 'K'};
     uint8_t got[sizeof(msg)] = {0};
 
     client_output_queue_init_all(queues, 2);
+    client_set_init_all(clients, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, slow) != 0 ||
         socketpair(AF_UNIX, SOCK_STREAM, 0, fast) != 0) {
@@ -148,11 +149,11 @@ static void test_slow_client_does_not_block_fast_client(void)
 
     client_set_broadcast_bytes_queued(clients, queues, 2, msg, sizeof(msg));
 
-    expect_int("slow client kept", clients[0] > 0, 1);
+    expect_int("slow client kept", clients[0] >= 0, 1);
     expect_size_ge("slow client has pending output",
                    client_output_queue_pending(&queues[0]),
                    sizeof(msg));
-    expect_int("fast client kept", clients[1] > 0, 1);
+    expect_int("fast client kept", clients[1] >= 0, 1);
     expect_int("fast client received", wait_read_exact(fast[0], got, sizeof(got)), 1);
     expect_int("fast client payload", memcmp(got, msg, sizeof(msg)) == 0, 1);
 
@@ -165,7 +166,7 @@ static void test_queue_overflow_closes_only_full_client(void)
 {
     int full[2] = {-1, -1};
     int fast[2] = {-1, -1};
-    int clients[2] = {0};
+    int clients[2];
     ClientOutputQueue queues[2];
     static uint8_t full_payload[CLIENT_OUTPUT_QUEUE_CAPACITY];
     const uint8_t msg[] = {'!'};
@@ -173,6 +174,7 @@ static void test_queue_overflow_closes_only_full_client(void)
 
     memset(full_payload, 'F', sizeof(full_payload));
     client_output_queue_init_all(queues, 2);
+    client_set_init_all(clients, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, full) != 0 ||
         socketpair(AF_UNIX, SOCK_STREAM, 0, fast) != 0) {
@@ -196,9 +198,9 @@ static void test_queue_overflow_closes_only_full_client(void)
 
     client_set_broadcast_bytes_queued(clients, queues, 2, msg, sizeof(msg));
 
-    expect_int("overflow client closed", clients[0], 0);
+    expect_int("overflow client closed", clients[0], -1);
     expect_int("overflow queue reset", (int)client_output_queue_pending(&queues[0]), 0);
-    expect_int("overflow fast client kept", clients[1] > 0, 1);
+    expect_int("overflow fast client kept", clients[1] >= 0, 1);
     expect_int("overflow fast client received", wait_read_exact(fast[0], &got, sizeof(got)), 1);
     expect_int("overflow fast payload", got == msg[0], 1);
 
