@@ -1,1 +1,2 @@
 - Extract bridge KISS ingress helpers.
+- Extract bridge LoRaHAM RX helpers.
