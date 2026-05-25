@@ -19,7 +19,7 @@ template<typename RadioT>
 using ConfigApplyFn = void (*)(RadioT& radio,
                                const char *tag,
                                const char *cmd,
-                               volatile RadioMode_t& mode,
+                               RadioMode_t& mode,
                                std::atomic<bool>& getrssi_active);
 
 /* --- Low-level CONFIG parameter apply functions --- */
@@ -46,7 +46,7 @@ static inline void config_apply_print_prefix(const char *tag, bool *printed)
 
 template<typename RadioT>
 void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *cmd,
-                                    volatile RadioMode_t &mode_flag,
+                                    RadioMode_t &mode_flag,
                                     std::atomic<bool> &getrssi_flag) {
     ConfigCommand parsed = config_parse_command(cmd);
 
@@ -159,7 +159,7 @@ template<typename RadioT>
 static void config_apply_command(RadioT& radio,
                                  const char *tag,
                                  const char *cmd,
-                                 volatile RadioMode_t& mode,
+                                 RadioMode_t& mode,
                                  std::atomic<bool>& getrssi_active)
 {
     parse_and_apply_config_generic<RadioT>(radio, tag, cmd, mode, getrssi_active);

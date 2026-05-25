@@ -101,7 +101,7 @@ static int make_socket_pair(int sv[2])
 static void record_apply_config(FakeRadio& radio,
                                 const char *tag,
                                 const char *cmd,
-                                volatile RadioMode_t& mode,
+                                RadioMode_t& mode,
                                 std::atomic<bool>& getrssi_active)
 {
     (void)radio;

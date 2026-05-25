@@ -1,3 +1,4 @@
+  - Cleanup: removed unnecessary volatile qualifier from radio mode state.
   - Cleanup: removed unnecessary volatile qualifier from radio health state.
   - Hardening: moved daemon background mode into lifecycle code and close inherited file descriptors.
   - Cleanup: made radio atomic flag load/store access explicit.

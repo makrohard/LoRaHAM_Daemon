@@ -80,7 +80,7 @@ static void expect_int(const char *name, int actual, int expected)
 
 static void apply_cmd(FakeRadio &radio,
                       const char *cmd,
-                      volatile RadioMode_t &mode,
+                      RadioMode_t &mode,
                       std::atomic<bool> &getrssi)
 {
     parse_and_apply_config_generic<FakeRadio>(radio, "TEST", cmd, mode, getrssi);
@@ -91,7 +91,7 @@ static void apply_cmd(FakeRadio &radio,
 static void test_invalid_getrssi_has_no_side_effects(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET GETRSSI=2 MODE=FSK", mode, getrssi);
@@ -106,7 +106,7 @@ static void test_invalid_getrssi_has_no_side_effects(void)
 static void test_invalid_fsk_value_has_no_mode_or_getrssi_side_effects(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1 BR=bad", mode, getrssi);
@@ -120,7 +120,7 @@ static void test_invalid_fsk_value_has_no_mode_or_getrssi_side_effects(void)
 static void test_malformed_token_has_no_side_effects(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1 BROKEN", mode, getrssi);
@@ -135,7 +135,7 @@ static void test_malformed_token_has_no_side_effects(void)
 static void test_failed_mode_switch_aborts_remaining_apply(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     radio.begin_fsk_result = -123;
@@ -153,7 +153,7 @@ static void test_failed_mode_switch_aborts_remaining_apply(void)
 static void test_valid_mode_and_getrssi_still_apply(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET MODE=FSK GETRSSI=1", mode, getrssi);
@@ -166,7 +166,7 @@ static void test_valid_mode_and_getrssi_still_apply(void)
 static void test_valid_lora_parameter_still_applies(void)
 {
     FakeRadio radio;
-    volatile RadioMode_t mode = RADIO_MODE_LORA;
+    RadioMode_t mode = RADIO_MODE_LORA;
     std::atomic<bool> getrssi(false);
 
     apply_cmd(radio, "SET FREQ=433.900", mode, getrssi);

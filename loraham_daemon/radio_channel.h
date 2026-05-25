@@ -59,7 +59,7 @@ void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *read
 /* --- Radio channel RSSI --- */
 
 float radio_channel_read_live_rssi(Module *mod,
-                                   volatile RadioMode_t mode,
+                                   RadioMode_t mode,
                                    bool is_hf);
 
 

@@ -113,7 +113,7 @@ void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *read
 // Read live RSSI directly from the SX127x register.
 
 float radio_channel_read_live_rssi(Module *mod,
-                                   volatile RadioMode_t mode,
+                                   RadioMode_t mode,
                                    bool is_hf)
 {
     uint8_t reg = (mode == RADIO_MODE_LORA) ? 0x1B : 0x11;

@@ -24,7 +24,7 @@ struct RadioController {
     std::unique_ptr<RadioT> radio;
 
     RadioHealth health;
-    volatile RadioMode_t mode;
+    RadioMode_t mode;
     std::atomic<bool> received;
     std::atomic<bool> tx_busy;
     std::atomic<bool> cad_active;
