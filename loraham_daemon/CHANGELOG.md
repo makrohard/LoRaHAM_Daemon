@@ -1,3 +1,4 @@
+  - Cleanup: made radio atomic flag load/store access explicit.
   - Cleanup: removed unused RadioChannelRuntime volatile flag wrapper.
   - Cleanup: removed unreachable framed DATA TX header error branch.
   - Fix: record CAD timeouts through the TX result stats path.

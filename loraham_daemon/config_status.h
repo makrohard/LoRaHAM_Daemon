@@ -90,9 +90,9 @@ static inline void config_status_format(char *buf,
              buf_size,
              "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
-             (ctrl && ctrl->tx_busy) ? 1 : 0,
-             (ctrl && ctrl->cad_active) ? 1 : 0,
-             (ctrl && ctrl->getrssi_active) ? 1 : 0);
+             (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
+             (ctrl && ctrl->cad_active.load()) ? 1 : 0,
+             (ctrl && ctrl->getrssi_active.load()) ? 1 : 0);
 }
 
 template<typename RadioT>

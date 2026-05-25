@@ -76,7 +76,7 @@ static bool lora_send_acquire_controller_tx(RadioController<RadioT> *ctrl)
 template<typename RadioT>
 static void lora_send_release_controller_tx(RadioController<RadioT> *ctrl)
 {
-    ctrl->tx_busy = false;
+    ctrl->tx_busy.store(false);
     daemon_broadcast_tx_status(ctrl->band, false);
 }
 
@@ -144,7 +144,7 @@ static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
     daemon_broadcast_tx_status(ctrl->band, true);
 
     // Clear RX state before switching the radio to TX.
-    ctrl->received = false;
+    ctrl->received.store(false);
 
     // FSK uses a different receive path.
     if (ctrl->mode == RADIO_MODE_LORA)
@@ -230,7 +230,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
     // Restore IRQ handling and RX callback after TX.
     // transmit() can clear the callback.
     ctrl->radio->clearIrq(0xFFFFFFFF);
-    ctrl->received = false;
+    ctrl->received.store(false);
     ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
     lora_send_release_controller_tx(ctrl);
     ctrl->radio->startReceive();

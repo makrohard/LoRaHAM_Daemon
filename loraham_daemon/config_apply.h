@@ -122,7 +122,7 @@ void parse_and_apply_config_generic(RadioT &radio, const char *tag, const char *
 
         config_apply_print_prefix(tag, &printed);
         if(config_value_parse_bool01_exact(val, &v)) {
-            getrssi_flag = (v != 0);
+            getrssi_flag.store(v != 0);
             if(v == 1) printf(" GETRSSI=\033[92m1\033[0m");
             else       printf(" GETRSSI=\033[92m0\033[0m");
         } else {

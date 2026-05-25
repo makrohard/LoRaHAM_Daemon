@@ -58,10 +58,10 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->mode = RADIO_MODE_LORA;
-    ctrl->received = false;
-    ctrl->tx_busy = false;
-    ctrl->cad_active = false;
-    ctrl->getrssi_active = false;
+    ctrl->received.store(false);
+    ctrl->tx_busy.store(false);
+    ctrl->cad_active.store(false);
+    ctrl->getrssi_active.store(false);
 
     daemon_radio_stats_init(&ctrl->stats);
 

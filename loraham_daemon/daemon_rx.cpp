@@ -38,7 +38,7 @@ static const char *daemon_rx_log_ctx(RadioController<RadioT> *ctrl)
 template<typename RadioT>
 static void daemon_discard_rx_during_tx(RadioController<RadioT> *ctrl)
 {
-    ctrl->received = false;
+    ctrl->received.store(false);
     ctrl->radio->clearIrq(0xFFFFFFFF);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX während TX verworfen");
     printf("[%s] RX während TX - verwerfe Paket\n",
@@ -207,7 +207,7 @@ static void daemon_prepare_rx_packet(RadioController<RadioT> *ctrl,
                                      uint8_t *buf,
                                      size_t buf_len)
 {
-    ctrl->received = false;
+    ctrl->received.store(false);
     memset(buf, 0, buf_len);
 
     // In FSK mode, do not clear IRQs before reading the FIFO.
@@ -351,7 +351,7 @@ static bool daemon_rx_packet_ok(RadioController<RadioT> *ctrl,
 template<typename RadioT>
 static void daemon_drop_invalid_rx_packet(RadioController<RadioT> *ctrl)
 {
-    ctrl->received = false;
+    ctrl->received.store(false);
     ctrl->radio->clearIrq(0xFFFFFFFF);
     daemon_radio_runtime_led(ctrl, 0);
     ctrl->radio->startReceive();
@@ -369,10 +369,10 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
         return;
 
     // Shared RX flow for both bands.
-    if (!ctrl->received)
+    if (!ctrl->received.load())
         return;
 
-    if (ctrl->tx_busy) {
+    if (ctrl->tx_busy.load()) {
         daemon_discard_rx_during_tx(ctrl);
         return;
     }

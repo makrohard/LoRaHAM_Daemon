@@ -53,18 +53,18 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         else
             setFlashFlag868();
 
-        if (!ctrl->cad_active) {
+        if (!ctrl->cad_active.load()) {
             daemon_debug_ctx(ctx, "Aktiv modem=0x%02X", modem);
             daemon_radio_runtime_led(ctrl, 1);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
-            ctrl->cad_active = true;
+            ctrl->cad_active.store(true);
         }
     } else {
-        if (ctrl->cad_active && !ctrl->received) {
+        if (ctrl->cad_active.load() && !ctrl->received.load()) {
             daemon_debug_ctx(ctx, "Inaktiv modem=0x%02X", modem);
             daemon_radio_runtime_led(ctrl, 0);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
-            ctrl->cad_active = false;
+            ctrl->cad_active.store(false);
         }
     }
 }
@@ -80,10 +80,10 @@ template<typename RadioT>
 static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
                                                      RadioController<RadioT> *ctrl)
 {
-    if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && ctrl->getrssi_active) {
+    if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && ctrl->getrssi_active.load()) {
         const char *ctx = daemon_rssi_log_ctx(ctrl);
 
-        ctrl->getrssi_active = false;
+        ctrl->getrssi_active.store(false);
         daemon_debug_ctx(ctx, "Auto-Stop: kein Client");
     }
 }
@@ -94,10 +94,10 @@ static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
 {
     const char *ctx = daemon_rssi_log_ctx(ctrl);
 
-    if (!ctrl->getrssi_active)
+    if (!ctrl->getrssi_active.load())
         return;
 
-    if (ctrl->tx_busy) {
+    if (ctrl->tx_busy.load()) {
         daemon_debug_ctx(ctx, "TX aktiv, überspringe");
         return;
     }
