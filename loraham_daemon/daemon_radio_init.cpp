@@ -43,65 +43,65 @@ void lora_init(void) {
         daemon_debug_band("433", "begin()");
         int state_433 = radio_controller_433.radio->begin();
         if (state_433 == RADIOLIB_ERR_NONE) {
-        radio_controller_433.health = RADIO_HEALTH_READY;
-        printf("[433] Init OK\n");
-        daemon_debug_ctx("433", "Radio bereit");
+            radio_controller_433.health = RADIO_HEALTH_READY;
+            printf("[433] Init OK\n");
+            daemon_debug_ctx("433", "Radio bereit");
 
-        // LoRa-APRS:
-        radio_controller_433.radio->setFrequency(433.900);
-        radio_controller_433.radio->setSpreadingFactor(12);
-        radio_controller_433.radio->setBandwidth(125.0);
-        radio_controller_433.radio->setSyncWord(0x12);
-        radio_controller_433.radio->setPreambleLength(8);
-        radio_controller_433.radio->setCodingRate(5);
-        radio_controller_433.radio->setCRC(true);
-        radio_controller_433.radio->autoLDRO();
-        radio_controller_433.radio->forceLDRO(1);
-        radio_controller_433.radio->setOutputPower(10);
+            // LoRa-APRS:
+            radio_controller_433.radio->setFrequency(433.900);
+            radio_controller_433.radio->setSpreadingFactor(12);
+            radio_controller_433.radio->setBandwidth(125.0);
+            radio_controller_433.radio->setSyncWord(0x12);
+            radio_controller_433.radio->setPreambleLength(8);
+            radio_controller_433.radio->setCodingRate(5);
+            radio_controller_433.radio->setCRC(true);
+            radio_controller_433.radio->autoLDRO();
+            radio_controller_433.radio->forceLDRO(1);
+            radio_controller_433.radio->setOutputPower(10);
 
-        /*
-         *
-         * // LoRa DX Cluster:
-         *    radio_controller_433.radio->setFrequency(433.900);
-         *    radio_controller_433.radio->setSpreadingFactor(10);
-         *    radio_controller_433.radio->setBandwidth(125.0);
-         *    radio_controller_433.radio->setSyncWord(0x12);
-         *    radio_controller_433.radio->setPreambleLength(8);
-         *    radio_controller_433.radio->setCodingRate(5);
-         *    radio_controller_433.radio->setCRC(true);
-         *    radio_controller_433.radio->autoLDRO();
-         *    radio_controller_433.radio->setOutputPower(10);
-         *
-         *
-         *
-         * // Meshtastic 433:
-         *
-         *    radio_controller_433.radio->setFrequency(433.900); // DB0ARD
-         *    radio_controller_433.radio->setSpreadingFactor(11);
-         *    radio_controller_433.radio->setBandwidth(125.0);
-         *    radio_controller_433.radio->setSyncWord(0x2B);
-         *    radio_controller_433.radio->setPreambleLength(16);
-         *    radio_controller_433.radio->setCodingRate(5);
-         *    radio_controller_433.radio->setCRC(true);
-         *    radio_controller_433.radio->autoLDRO();
-         *    radio_controller_433.radio->setOutputPower(10);
-         *
-         *
-         * // Meshcom:
-         *
-         *    radio_controller_433.radio->setFrequency(433.175);
-         *    radio_controller_433.radio->setSpreadingFactor(11);
-         *    radio_controller_433.radio->setBandwidth(250.0);
-         *    radio_controller_433.radio->setSyncWord(0x2B);
-         *    radio_controller_433.radio->setPreambleLength(8);
-         *    radio_controller_433.radio->setCodingRate(6);
-         *    radio_controller_433.radio->setCRC(true);
-         *    //radio_controller_433.radio->autoLDRO();
-         *    radio_controller_433.radio->setOutputPower(10);
-         */
-        daemon_debug_band("433", "LoRa-Default gesetzt");
-        radio_controller_433.radio->setPacketReceivedAction(setFlag433); // Callback nutzen
-        daemon_debug_band("433", "Callback gesetzt");
+            /*
+            *
+            * // LoRa DX Cluster:
+            *    radio_controller_433.radio->setFrequency(433.900);
+            *    radio_controller_433.radio->setSpreadingFactor(10);
+            *    radio_controller_433.radio->setBandwidth(125.0);
+            *    radio_controller_433.radio->setSyncWord(0x12);
+            *    radio_controller_433.radio->setPreambleLength(8);
+            *    radio_controller_433.radio->setCodingRate(5);
+            *    radio_controller_433.radio->setCRC(true);
+            *    radio_controller_433.radio->autoLDRO();
+            *    radio_controller_433.radio->setOutputPower(10);
+            *
+            *
+            *
+            * // Meshtastic 433:
+            *
+            *    radio_controller_433.radio->setFrequency(433.900); // DB0ARD
+            *    radio_controller_433.radio->setSpreadingFactor(11);
+            *    radio_controller_433.radio->setBandwidth(125.0);
+            *    radio_controller_433.radio->setSyncWord(0x2B);
+            *    radio_controller_433.radio->setPreambleLength(16);
+            *    radio_controller_433.radio->setCodingRate(5);
+            *    radio_controller_433.radio->setCRC(true);
+            *    radio_controller_433.radio->autoLDRO();
+            *    radio_controller_433.radio->setOutputPower(10);
+            *
+            *
+            * // Meshcom:
+            *
+            *    radio_controller_433.radio->setFrequency(433.175);
+            *    radio_controller_433.radio->setSpreadingFactor(11);
+            *    radio_controller_433.radio->setBandwidth(250.0);
+            *    radio_controller_433.radio->setSyncWord(0x2B);
+            *    radio_controller_433.radio->setPreambleLength(8);
+            *    radio_controller_433.radio->setCodingRate(6);
+            *    radio_controller_433.radio->setCRC(true);
+            *    //radio_controller_433.radio->autoLDRO();
+            *    radio_controller_433.radio->setOutputPower(10);
+            */
+            daemon_debug_band("433", "LoRa-Default gesetzt");
+            radio_controller_433.radio->setPacketReceivedAction(setFlag433); // Callback nutzen
+            daemon_debug_band("433", "Callback gesetzt");
         } else {
             radio_controller_433.health = RADIO_HEALTH_FAILED;
             printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
