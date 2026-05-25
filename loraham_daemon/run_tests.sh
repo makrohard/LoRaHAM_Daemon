@@ -252,6 +252,18 @@ build_one_timing_test() {
     "$SCRIPT_DIR/daemon_timing.cpp"
 }
 
+build_one_daemon_stats_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp"
+}
+
 build_one_event_loop_test() {
   local src="$1"
   local out="$2"
@@ -503,6 +515,7 @@ build_tests() {
   build_one_framed_data_tx_test "$TEST_DIR/test_framed_data_tx.cpp" "$TEST_DIR/test_framed_data_tx"
   build_one_event_loop_test "$TEST_DIR/test_event_loop.cpp" "$TEST_DIR/test_event_loop"
   build_one_timing_test "$TEST_DIR/test_daemon_timing.cpp" "$TEST_DIR/test_daemon_timing"
+  build_one_daemon_stats_test "$TEST_DIR/test_daemon_stats.cpp" "$TEST_DIR/test_daemon_stats"
   build_one_lifecycle_test "$TEST_DIR/test_daemon_lifecycle.cpp" "$TEST_DIR/test_daemon_lifecycle"
   build_one_unix_socket_test "$TEST_DIR/test_unix_socket.cpp" "$TEST_DIR/test_unix_socket"
   build_one_test "$TEST_DIR/test_rssi_multiclient.c" "$TEST_DIR/test_rssi_multiclient"

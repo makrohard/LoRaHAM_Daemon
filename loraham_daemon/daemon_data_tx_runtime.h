@@ -78,7 +78,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
 
     if (data_tx_wait_channel_free(tx)) {
-        daemon_radio_stats_record_cad_timeout(&ctrl->stats);
+        daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_CAD_TIMEOUT);
         daemon_debug_ctx(tx->log_ctx, "CAD Timeout");
         printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tag);
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
