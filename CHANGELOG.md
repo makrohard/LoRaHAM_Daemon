@@ -1,0 +1,1 @@
+- Extract bridge KISS ingress helpers.

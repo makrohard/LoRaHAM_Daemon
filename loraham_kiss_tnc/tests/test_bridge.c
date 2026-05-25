@@ -1,5 +1,6 @@
 #include "ax25.h"
 #include "bridge_conf.h"
+#include "bridge_kiss.h"
 #include "bridge_tx_queue.h"
 #include "kiss.h"
 #include "loraham_kiss_tnc.h"
