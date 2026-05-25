@@ -72,6 +72,17 @@ int lhkt_test_bridge_tx_decision(int tx_busy,
                                   long cad_wait_age_ms,
                                   long cad_idle_age_ms,
                                   int cad_was_busy);
+int lhkt_test_bridge_drain_waits_for_data_socket(size_t *queue_depth,
+                                                 uint64_t *drops);
+int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
+                                                 size_t *write_calls,
+                                                 uint64_t *drops);
+int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
+                                             int *tx_busy,
+                                             size_t *write_calls);
+int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
+                                                        uint64_t *restore_failures,
+                                                        size_t *write_calls);
 
 #define TEST_TX_DECISION_WAIT 0
 #define TEST_TX_DECISION_SEND 1
@@ -165,6 +176,53 @@ static void test_tx_queue_policy_decisions(void)
            TEST_TX_DECISION_SEND);
     assert(lhkt_test_bridge_tx_decision(0, 0, 0, 180000, -1, -1, -1, 0) ==
            TEST_TX_DECISION_DROP);
+}
+
+static void test_tx_queue_lifecycle_waits_for_sockets(void)
+{
+    size_t queue_depth = 0;
+    size_t write_calls = 99;
+    uint64_t drops = 99;
+
+    assert(lhkt_test_bridge_drain_waits_for_data_socket(&queue_depth,
+                                                       &drops) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(drops == 0);
+
+    assert(lhkt_test_bridge_drain_waits_for_conf_socket(&queue_depth,
+                                                       &write_calls,
+                                                       &drops) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(write_calls == 0);
+    assert(drops == 0);
+}
+
+static void test_tx_queue_drain_reads_pending_conf(void)
+{
+    size_t queue_depth = 0;
+    size_t write_calls = 99;
+    int tx_busy = 0;
+
+    assert(lhkt_test_bridge_drain_reads_pending_conf(&queue_depth,
+                                                    &tx_busy,
+                                                    &write_calls) == LHKT_OK);
+    assert(queue_depth == 1);
+    assert(tx_busy == 1);
+    assert(write_calls == 0);
+}
+
+static void test_tx_queue_pops_written_packet_on_restore_failure(void)
+{
+    size_t queue_depth = 99;
+    size_t write_calls = 99;
+    uint64_t restore_failures = 0;
+
+    assert(lhkt_test_bridge_drain_pops_written_restore_failure(&queue_depth,
+                                                              &restore_failures,
+                                                              &write_calls) == LHKT_ERR);
+    assert(queue_depth == 0);
+    assert(write_calls == 1);
+    assert(restore_failures == 2);
 }
 
 static void test_fd_set_rejects_too_large_fd(void)
@@ -538,6 +596,9 @@ int main(void)
     test_conf_event_transition_counters();
     test_tx_complete_handles_combined_events();
     test_tx_queue_policy_decisions();
+    test_tx_queue_lifecycle_waits_for_sockets();
+    test_tx_queue_drain_reads_pending_conf();
+    test_tx_queue_pops_written_packet_on_restore_failure();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();

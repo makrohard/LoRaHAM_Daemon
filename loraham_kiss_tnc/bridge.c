@@ -10,6 +10,7 @@
 #include "tcp_server.h"
 #include "tnc2.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -687,9 +688,14 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
                                       int conf_fd,
                                       bridge_conf_state_t *conf_state,
                                       const uint8_t *packet,
-                                      size_t packet_len)
+                                      size_t packet_len,
+                                      int *packet_written)
 {
     int ret;
+
+    if (packet_written) {
+        *packet_written = 0;
+    }
 
     if (!cfg || !packet || packet_len == 0) {
         return LHKT_ERR;
@@ -749,6 +755,10 @@ static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
         return LHKT_ERR_TX_SOCKET;
     }
 
+    if (packet_written) {
+        *packet_written = 1;
+    }
+
     if (bridge_wait_tx_complete(conf_fd, conf_state, cfg) != LHKT_OK) {
         (void)bridge_sleep_ms(cfg->tx_return_ms);
     }
@@ -776,6 +786,7 @@ static int bridge_tx_queue_drain(const lhkt_config_t *cfg,
     long now;
     int decision;
     int ret;
+    int packet_written;
 
     if (!cfg || !queue) {
         return LHKT_ERR;
@@ -787,8 +798,22 @@ static int bridge_tx_queue_drain(const lhkt_config_t *cfg,
             return LHKT_OK;
         }
 
+        if (conf_fd >= 0 && conf_state) {
+            ret = bridge_conf_read_available(conf_fd, conf_state);
+            if (ret != LHKT_OK) {
+                /*
+                 * The main select loop owns CONF reconnect handling. Keep the
+                 * queued packet and let the loop observe/close the socket.
+                 */
+                return LHKT_OK;
+            }
+        }
+
         now = bridge_now_ms();
-        decision = bridge_tx_head_decision(cfg, conf_state, item, now);
+        decision = bridge_tx_head_decision(cfg,
+                                           conf_fd >= 0 ? conf_state : NULL,
+                                           item,
+                                           now);
         if (decision == BRIDGE_TX_DECISION_WAIT) {
             return LHKT_OK;
         }
@@ -802,18 +827,35 @@ static int bridge_tx_queue_drain(const lhkt_config_t *cfg,
             continue;
         }
 
+        if (data_fd < 0) {
+            return LHKT_OK;
+        }
+
+        if (conf_fd < 0 || !conf_state) {
+            return LHKT_OK;
+        }
+
+        packet_written = 0;
         ret = bridge_send_loraham_packet(cfg,
                                         stats,
                                         data_fd,
                                         conf_fd,
                                         conf_state,
                                         item->packet,
-                                        item->packet_len);
+                                        item->packet_len,
+                                        &packet_written);
+        if (packet_written || ret == LHKT_OK) {
+            /*
+             * Once the framed DATA TX packet was accepted by the daemon
+             * socket, never retransmit it because later RX restore failed.
+             */
+            bridge_tx_queue_pop(queue);
+        }
+
         if (ret != LHKT_OK) {
             return ret;
         }
 
-        bridge_tx_queue_pop(queue);
         return LHKT_OK;
     }
 }
@@ -862,13 +904,212 @@ int lhkt_test_handle_kiss_frame(const kiss_frame_t *kiss_frame,
         return ret;
     }
 
-    return bridge_tx_queue_drain(cfg,
-                                stats,
-                                &queue,
-                                data_fd,
-                                -1,
-                                &conf_state);
+    {
+        bridge_tx_item_t *item;
+        int packet_written;
+
+        item = bridge_tx_queue_head(&queue);
+        if (!item) {
+            return LHKT_OK;
+        }
+
+        packet_written = 0;
+        return bridge_send_loraham_packet(cfg,
+                                          stats,
+                                          data_fd,
+                                          -1,
+                                          &conf_state,
+                                          item->packet,
+                                          item->packet_len,
+                                          &packet_written);
+    }
 }
+static void lhkt_test_push_dummy_tx_packet(bridge_tx_queue_t *queue,
+                                           const lhkt_config_t *cfg)
+{
+    static const uint8_t packet[] = { 0x3c, 0xff, 0x01, 'T', 'E', 'S', 'T' };
+
+    assert(queue != NULL);
+    assert(cfg != NULL);
+    assert(bridge_tx_queue_push(queue,
+                                cfg,
+                                packet,
+                                sizeof(packet)) == LHKT_OK);
+}
+
+int lhkt_test_bridge_drain_waits_for_data_socket(size_t *queue_depth,
+                                                 uint64_t *drops)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_tx_queue_t queue;
+    bridge_conf_state_t conf_state;
+    int ret;
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    bridge_tx_queue_init(&queue);
+    bridge_conf_state_init(&conf_state);
+    lhkt_test_push_dummy_tx_packet(&queue, &cfg);
+
+    ret = bridge_tx_queue_drain(&cfg, &stats, &queue, -1, -1, &conf_state);
+
+    if (queue_depth) {
+        *queue_depth = queue.count;
+    }
+
+    if (drops) {
+        *drops = stats.loraham_drop;
+    }
+
+    return ret;
+}
+
+int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
+                                                 size_t *write_calls,
+                                                 uint64_t *drops)
+{
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_tx_queue_t queue;
+    bridge_conf_state_t conf_state;
+    int ret;
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    bridge_tx_queue_init(&queue);
+    bridge_conf_state_init(&conf_state);
+    lhkt_test_push_dummy_tx_packet(&queue, &cfg);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_write_result(1);
+
+    ret = bridge_tx_queue_drain(&cfg, &stats, &queue, 42, -1, &conf_state);
+
+    if (queue_depth) {
+        *queue_depth = queue.count;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    if (drops) {
+        *drops = stats.loraham_drop;
+    }
+
+    return ret;
+}
+
+int lhkt_test_bridge_drain_reads_pending_conf(size_t *queue_depth,
+                                             int *tx_busy,
+                                             size_t *write_calls)
+{
+    int sv[2];
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_tx_queue_t queue;
+    bridge_conf_state_t conf_state;
+    int ret;
+    const char events[] = "TX=1\n";
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return LHKT_ERR;
+    }
+
+    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    if (write(sv[1], events, sizeof(events) - 1) < 0) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    lhkt_config_defaults(&cfg);
+    lhkt_stats_init(&stats);
+    bridge_tx_queue_init(&queue);
+    bridge_conf_state_init(&conf_state);
+    lhkt_test_push_dummy_tx_packet(&queue, &cfg);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_write_result(1);
+
+    ret = bridge_tx_queue_drain(&cfg, &stats, &queue, 42, sv[0], &conf_state);
+
+    if (queue_depth) {
+        *queue_depth = queue.count;
+    }
+
+    if (tx_busy) {
+        *tx_busy = conf_state.tx_busy;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    close(sv[0]);
+    close(sv[1]);
+    return ret;
+}
+
+int lhkt_test_bridge_drain_pops_written_restore_failure(size_t *queue_depth,
+                                                        uint64_t *restore_failures,
+                                                        size_t *write_calls)
+{
+    int sv[2];
+    lhkt_config_t cfg;
+    lhkt_stats_t stats;
+    bridge_tx_queue_t queue;
+    bridge_conf_state_t conf_state;
+    int ret;
+    int config_results[] = { LHKT_OK, LHKT_ERR, LHKT_ERR };
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return LHKT_ERR;
+    }
+
+    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    lhkt_config_defaults(&cfg);
+    cfg.tx_busy_timeout_ms = 100;
+    lhkt_stats_init(&stats);
+    bridge_tx_queue_init(&queue);
+    bridge_conf_state_init(&conf_state);
+    lhkt_test_push_dummy_tx_packet(&queue, &cfg);
+
+    lhkt_test_bridge_reset_tx_hooks();
+    lhkt_test_bridge_set_config_results(config_results,
+                                        sizeof(config_results) / sizeof(config_results[0]));
+    lhkt_test_bridge_set_write_result(1);
+
+    ret = bridge_tx_queue_drain(&cfg, &stats, &queue, 42, sv[0], &conf_state);
+
+    if (queue_depth) {
+        *queue_depth = queue.count;
+    }
+
+    if (restore_failures) {
+        *restore_failures = stats.tx_restore_failures;
+    }
+
+    if (write_calls) {
+        *write_calls = lhkt_test_bridge_write_call_count();
+    }
+
+    close(sv[0]);
+    close(sv[1]);
+    return ret;
+}
+
 #endif
 
 /* ---- Main loop ---- */
