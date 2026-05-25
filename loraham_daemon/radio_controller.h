@@ -2,6 +2,7 @@
 #define LORAHAM_RADIO_CONTROLLER_H
 
 #include <memory>
+#include <atomic>
 
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
@@ -24,10 +25,10 @@ struct RadioController {
 
     volatile RadioHealth health;
     volatile RadioMode_t mode;
-    volatile bool received;
-    volatile bool tx_busy;
-    volatile bool cad_active;
-    volatile bool getrssi_active;
+    std::atomic<bool> received;
+    std::atomic<bool> tx_busy;
+    std::atomic<bool> cad_active;
+    std::atomic<bool> getrssi_active;
 
     DaemonRadioStats stats;
 
