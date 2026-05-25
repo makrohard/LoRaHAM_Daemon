@@ -1,18 +1,3 @@
-  - Internal: cleaned main daemon orchestration comments and includes.
-  - Docs: documented test script options and CONF `GET STATS` output.
-  - Internal: cleaned main daemon orchestration comments, includes, and architecture docs.
-  - Internal: moved socket dispatch orchestration into `daemon_socket_dispatch.*`.
-  - Internal: moved daemon I/O state and lifecycle helpers into `daemon_io_runtime.*`.
-  - Internal: moved CAD/RSSI/stats monitoring into `daemon_monitoring.*`.
-  - Internal: moved RX packet helpers into `daemon_rx.*`.
-  - Internal: moved framed DATA runtime helpers into `daemon_framed_data_runtime.*`.
-  - Internal: moved socket accept/flush helpers into `daemon_socket_runtime.*`.
-  - Internal: moved CONFIG runtime helpers into `daemon_config_runtime.*`.
-  - Internal: moved DATA TX runtime helpers into `daemon_data_tx_runtime.*`.
-  - Internal: moved RadioLib startup/default setup into `daemon_radio_init.*`.
-  - Internal: moved radio TX helpers into `daemon_tx.*`.
-  - Internal: moved radio runtime helpers into `daemon_radio_runtime.*`.
-  - Internal: moved LED/GPIO helpers into `daemon_led.*`.
 # Changelog
 
 ## loraham_daemon 109
@@ -53,7 +38,16 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Added `--help`  
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
-  - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
-  - Runtime stats: add hourly operator stats and `GET STATS` on CONF sockets.
-  - CONF status: add `GET STATUS` runtime snapshot reply.
   - Add framed DATA sockets with packet-boundary-preserving TX/RX frames, shared-radio behavior 
+
+
+## loraham_daemon 109a
+
+- Refactor
+  - Modularized loraham_daemon main module
+  - Updated README.md
+
+- New Features
+  - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
+  - CONF status: add `GET STATUS` runtime snapshot reply.
+  - Runtime stats: add hourly operator stats and `GET STATS` on CONF sockets.

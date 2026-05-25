@@ -15,36 +15,58 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 ## Current architecture
 
+### Process and lifecycle
+
 | Area | File/module | Role |
 |---|---|---|
 | Main daemon / orchestration | `loraham_daemon.cpp` | Process entry point, CLI/startup, runtime context, main loop, and high-level coordination of I/O, socket dispatch, radio polling, monitoring, and shutdown |
 | Public daemon constants | `daemon_protocol.h` | Public socket paths, buffer size, client limit, and CAD timing constants |
 | Version | `daemon_version.h` | Single source for the daemon version printed by `--version` and at startup |
+| Logging | `daemon_log.cpp`, `daemon_log.h` | Normal and debug logging helpers used by daemon/runtime modules |
+| Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | Periodic timers, monotonic timing helpers, stop flag handling, and signal-based shutdown |
+
+### Radio hardware/runtime
+
+| Area | File/module | Role |
+|---|---|---|
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
-| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket descriptors, socket setup/open helpers, client accept/flush flow, and live RSSI helper |
+| Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
+| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED blink helpers |
+
+### I/O, sockets, and clients
+
+| Area | File/module | Role |
+|---|---|---|
 | Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, framed client state, per-band channel state, I/O startup/cleanup, and event-fd registration |
+| Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket descriptors, socket setup/open helpers, client accept/flush flow, and live RSSI helper |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Socket runtime | `daemon_socket_runtime.cpp`, `daemon_socket_runtime.h` | Logged per-channel accept/flush helpers around socket client slots |
 | Socket dispatch | `daemon_socket_dispatch.cpp`, `daemon_socket_dispatch.h` | Per-band ready-socket orchestration for raw DATA, framed DATA, CONFIG, accept, and flush flow |
 | Client handling | `client_output_queue.cpp`, `client_set.cpp`, `client_slot.cpp` | Client slots, nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
+
+### DATA/RX/TX runtime
+
+| Area | File/module | Role |
+|---|---|---|
 | Raw DATA TX | `data_tx.cpp` | Split raw DATA socket writes into RF-sized chunks before transmit |
 | Radio TX path | `daemon_tx.cpp`, `daemon_tx.h` | Validate TX requests, broadcast TX state on CONF sockets, prepare/restore radio TX state, and map RadioLib TX results |
 | DATA TX runtime | `daemon_data_tx_runtime.cpp`, `daemon_data_tx_runtime.h` | DATA-socket TX callbacks, CAD guard before TX, TX stats updates, and DATA TX logging glue |
 | Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, and RX_PACKET framing for packet-boundary-preserving clients |
 | Framed DATA runtime | `daemon_framed_data_runtime.cpp`, `daemon_framed_data_runtime.h` | Framed DATA socket read loop, TX_PACKET forwarding, and ERROR frame handling |
 | RX runtime | `daemon_rx.cpp`, `daemon_rx.h` | Per-band RX packet read/validate/print/forward flow for raw and framed clients |
-| Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats |
+| RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
+
+### CONFIG and monitoring
+
+| Area | File/module | Role |
+|---|---|---|
 | CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands |
 | CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Build per-band CONFIG dispatch contexts and debug logging callbacks |
-| RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
-| Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
-| Logging | `daemon_log.cpp`, `daemon_log.h` | Normal and debug logging helpers used by daemon/runtime modules |
-| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED blink helpers |
-| Timing/lifecycle | `daemon_timing.cpp`, `daemon_lifecycle.cpp` | Periodic timers, monotonic timing helpers, stop flag handling, and signal-based shutdown |
+| Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats |
 
 ## Build and test scripts
 
