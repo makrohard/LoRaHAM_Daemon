@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
 #include <time.h>
@@ -368,6 +369,12 @@ typedef struct {
     int cad_busy;
     int radio_ready;
     int have_status;
+    unsigned long tx_seq;
+    unsigned long tx_busy_seq;
+    unsigned long tx_idle_seq;
+    unsigned long cad_seq;
+    unsigned long cad_busy_seq;
+    unsigned long cad_idle_seq;
     char line[LHKT_CONF_LINE_MAX];
     size_t line_len;
 } bridge_conf_state_t;
@@ -450,11 +457,25 @@ static void bridge_conf_handle_line(bridge_conf_state_t *state,
 
     if (bridge_parse_flag_line(line, "TX=", &value)) {
         state->tx_busy = value;
+        state->tx_seq++;
+        if (value) {
+            state->tx_busy_seq++;
+        } else {
+            state->tx_idle_seq++;
+        }
+        printf("[CONF] TX=%d\n", value);
         return;
     }
 
     if (bridge_parse_flag_line(line, "CAD=", &value)) {
         state->cad_busy = value;
+        state->cad_seq++;
+        if (value) {
+            state->cad_busy_seq++;
+        } else {
+            state->cad_idle_seq++;
+        }
+        printf("[CONF] CAD=%d\n", value);
         return;
     }
 
@@ -591,11 +612,17 @@ static int bridge_conf_wait_read(int conf_fd,
 }
 
 #ifdef LHKT_TEST
-int lhkt_test_bridge_conf_feed(const char *text,
-                               int *tx_busy,
-                               int *cad_busy,
-                               int *radio_ready,
-                               int *have_status)
+int lhkt_test_bridge_conf_feed_events(const char *text,
+                                      int *tx_busy,
+                                      int *cad_busy,
+                                      int *radio_ready,
+                                      int *have_status,
+                                      unsigned long *tx_seq,
+                                      unsigned long *tx_busy_seq,
+                                      unsigned long *tx_idle_seq,
+                                      unsigned long *cad_seq,
+                                      unsigned long *cad_busy_seq,
+                                      unsigned long *cad_idle_seq)
 {
     bridge_conf_state_t state;
 
@@ -620,7 +647,50 @@ int lhkt_test_bridge_conf_feed(const char *text,
         *have_status = state.have_status;
     }
 
+    if (tx_seq) {
+        *tx_seq = state.tx_seq;
+    }
+
+    if (tx_busy_seq) {
+        *tx_busy_seq = state.tx_busy_seq;
+    }
+
+    if (tx_idle_seq) {
+        *tx_idle_seq = state.tx_idle_seq;
+    }
+
+    if (cad_seq) {
+        *cad_seq = state.cad_seq;
+    }
+
+    if (cad_busy_seq) {
+        *cad_busy_seq = state.cad_busy_seq;
+    }
+
+    if (cad_idle_seq) {
+        *cad_idle_seq = state.cad_idle_seq;
+    }
+
     return LHKT_OK;
+}
+
+int lhkt_test_bridge_conf_feed(const char *text,
+                               int *tx_busy,
+                               int *cad_busy,
+                               int *radio_ready,
+                               int *have_status)
+{
+    return lhkt_test_bridge_conf_feed_events(text,
+                                             tx_busy,
+                                             cad_busy,
+                                             radio_ready,
+                                             have_status,
+                                             NULL,
+                                             NULL,
+                                             NULL,
+                                             NULL,
+                                             NULL,
+                                             NULL);
 }
 #endif
 
@@ -1017,15 +1087,24 @@ static int bridge_wait_tx_complete(int conf_fd,
     long now;
     int saw_tx;
     int ret;
+    unsigned long start_busy_seq;
+    unsigned long start_idle_seq;
 
     if (conf_fd < 0 || !conf_state || !cfg) {
         return LHKT_ERR_UNSUPPORTED;
     }
 
+    start_busy_seq = conf_state->tx_busy_seq;
+    start_idle_seq = conf_state->tx_idle_seq;
     saw_tx = conf_state->tx_busy ? 1 : 0;
     deadline = bridge_now_ms() + LHKT_TX_START_WAIT_MS;
 
     while (!saw_tx) {
+        if (conf_state->tx_busy_seq != start_busy_seq) {
+            saw_tx = 1;
+            break;
+        }
+
         now = bridge_now_ms();
         if (now >= deadline) {
             return LHKT_ERR_UNSUPPORTED;
@@ -1035,10 +1114,18 @@ static int bridge_wait_tx_complete(int conf_fd,
         if (ret < 0) {
             return LHKT_ERR;
         }
+    }
 
-        if (conf_state->tx_busy) {
-            saw_tx = 1;
-        }
+    /*
+     * TX=1 and TX=0 may arrive in one read buffer for short packets.
+     * The sequence counters preserve that transition even if tx_busy is
+     * already back to 0 after parsing the buffer.
+     */
+    if (!conf_state->tx_busy &&
+        conf_state->tx_busy_seq != start_busy_seq &&
+        conf_state->tx_idle_seq != start_idle_seq) {
+        printf("[CONF] TX complete by event transition\n");
+        return LHKT_OK;
     }
 
     deadline = bridge_now_ms() + cfg->tx_busy_timeout_ms;
@@ -1059,8 +1146,50 @@ static int bridge_wait_tx_complete(int conf_fd,
         }
     }
 
+    if (conf_state->tx_idle_seq != start_idle_seq) {
+        printf("[CONF] TX complete by idle event\n");
+    }
+
     return LHKT_OK;
 }
+
+#ifdef LHKT_TEST
+int lhkt_test_bridge_wait_tx_complete_events(const char *events)
+{
+    int sv[2];
+    int ret;
+    lhkt_config_t cfg;
+    bridge_conf_state_t state;
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        return LHKT_ERR;
+    }
+
+    if (set_fd_nonblocking(sv[0]) != LHKT_OK) {
+        close(sv[0]);
+        close(sv[1]);
+        return LHKT_ERR;
+    }
+
+    if (events && events[0] != '\0') {
+        if (write(sv[1], events, strlen(events)) < 0) {
+            close(sv[0]);
+            close(sv[1]);
+            return LHKT_ERR;
+        }
+    }
+
+    lhkt_config_defaults(&cfg);
+    cfg.tx_busy_timeout_ms = 100;
+    bridge_conf_state_init(&state);
+
+    ret = bridge_wait_tx_complete(sv[0], &state, &cfg);
+
+    close(sv[0]);
+    close(sv[1]);
+    return ret;
+}
+#endif
 
 static int bridge_tx_head_decision(const lhkt_config_t *cfg,
                                    bridge_conf_state_t *conf_state,
@@ -1125,6 +1254,50 @@ static int bridge_tx_head_decision(const lhkt_config_t *cfg,
 
     return BRIDGE_TX_DECISION_SEND;
 }
+
+#ifdef LHKT_TEST
+int lhkt_test_bridge_tx_decision(int tx_busy,
+                                  int cad_busy,
+                                  int cad_ignore,
+                                  long queued_age_ms,
+                                  long tx_wait_age_ms,
+                                  long cad_wait_age_ms,
+                                  long cad_idle_age_ms,
+                                  int cad_was_busy)
+{
+    lhkt_config_t cfg;
+    bridge_conf_state_t conf_state;
+    bridge_tx_item_t item;
+    long now;
+
+    lhkt_config_defaults(&cfg);
+    cfg.cad_ignore = cad_ignore;
+    bridge_conf_state_init(&conf_state);
+    memset(&item, 0, sizeof(item));
+
+    conf_state.tx_busy = tx_busy;
+    conf_state.cad_busy = cad_busy;
+    item.packet_len = 10;
+    item.cad_was_busy = cad_was_busy;
+
+    now = bridge_now_ms();
+    item.queued_ms = now - (queued_age_ms >= 0 ? queued_age_ms : 0);
+
+    if (tx_wait_age_ms >= 0) {
+        item.tx_wait_start_ms = now - tx_wait_age_ms;
+    }
+
+    if (cad_wait_age_ms >= 0) {
+        item.cad_wait_start_ms = now - cad_wait_age_ms;
+    }
+
+    if (cad_idle_age_ms >= 0) {
+        item.cad_idle_since_ms = now - cad_idle_age_ms;
+    }
+
+    return bridge_tx_head_decision(&cfg, &conf_state, &item, now);
+}
+#endif
 
 static int bridge_send_loraham_packet(const lhkt_config_t *cfg,
                                       lhkt_stats_t *stats,

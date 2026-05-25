@@ -48,6 +48,30 @@ int lhkt_test_bridge_conf_feed(const char *text,
                                int *cad_busy,
                                int *radio_ready,
                                int *have_status);
+int lhkt_test_bridge_conf_feed_events(const char *text,
+                                      int *tx_busy,
+                                      int *cad_busy,
+                                      int *radio_ready,
+                                      int *have_status,
+                                      unsigned long *tx_seq,
+                                      unsigned long *tx_busy_seq,
+                                      unsigned long *tx_idle_seq,
+                                      unsigned long *cad_seq,
+                                      unsigned long *cad_busy_seq,
+                                      unsigned long *cad_idle_seq);
+int lhkt_test_bridge_wait_tx_complete_events(const char *events);
+int lhkt_test_bridge_tx_decision(int tx_busy,
+                                  int cad_busy,
+                                  int cad_ignore,
+                                  long queued_age_ms,
+                                  long tx_wait_age_ms,
+                                  long cad_wait_age_ms,
+                                  long cad_idle_age_ms,
+                                  int cad_was_busy);
+
+#define TEST_TX_DECISION_WAIT 0
+#define TEST_TX_DECISION_SEND 1
+#define TEST_TX_DECISION_DROP 2
 
 static void test_conf_status_parser(void)
 {
@@ -75,6 +99,68 @@ static void test_conf_status_parser(void)
     assert(cad_busy == 1);
     assert(radio_ready == 0);
     assert(have_status == 1);
+}
+
+static void test_conf_event_transition_counters(void)
+{
+    int tx_busy = -1;
+    int cad_busy = -1;
+    int radio_ready = -1;
+    int have_status = -1;
+    unsigned long tx_seq = 0;
+    unsigned long tx_busy_seq = 0;
+    unsigned long tx_idle_seq = 0;
+    unsigned long cad_seq = 0;
+    unsigned long cad_busy_seq = 0;
+    unsigned long cad_idle_seq = 0;
+
+    assert(lhkt_test_bridge_conf_feed_events("TX=1\nTX=0\nCAD=1\nCAD=0\nSTATUS RADIO=READY TX=1 CAD=1 GETRSSI=0\n",
+                                            &tx_busy,
+                                            &cad_busy,
+                                            &radio_ready,
+                                            &have_status,
+                                            &tx_seq,
+                                            &tx_busy_seq,
+                                            &tx_idle_seq,
+                                            &cad_seq,
+                                            &cad_busy_seq,
+                                            &cad_idle_seq) == LHKT_OK);
+
+    assert(tx_busy == 1);
+    assert(cad_busy == 1);
+    assert(radio_ready == 1);
+    assert(have_status == 1);
+    assert(tx_seq == 2);
+    assert(tx_busy_seq == 1);
+    assert(tx_idle_seq == 1);
+    assert(cad_seq == 2);
+    assert(cad_busy_seq == 1);
+    assert(cad_idle_seq == 1);
+}
+
+static void test_tx_complete_handles_combined_events(void)
+{
+    assert(lhkt_test_bridge_wait_tx_complete_events("TX=1\nTX=0\n") == LHKT_OK);
+}
+
+static void test_tx_queue_policy_decisions(void)
+{
+    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 1000, -1, -1, 0) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 120000, -1, -1, 0) ==
+           TEST_TX_DECISION_DROP);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 1000, -1, 0) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 20000, -1, 0) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 1, 1, 0, -1, 0, -1, 0) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 100, 1) ==
+           TEST_TX_DECISION_WAIT);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 500, 1) ==
+           TEST_TX_DECISION_SEND);
+    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 180000, -1, -1, -1, 0) ==
+           TEST_TX_DECISION_DROP);
 }
 
 static void test_fd_set_rejects_too_large_fd(void)
@@ -445,6 +531,9 @@ int main(void)
     signal(SIGPIPE, SIG_IGN);
 
     test_conf_status_parser();
+    test_conf_event_transition_counters();
+    test_tx_complete_handles_combined_events();
+    test_tx_queue_policy_decisions();
     test_fd_set_rejects_too_large_fd();
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();
