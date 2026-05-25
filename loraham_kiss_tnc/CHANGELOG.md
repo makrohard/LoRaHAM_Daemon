@@ -6,3 +6,11 @@
 
 # 0.1.0
 - Initial Version, developed for loraham_daemon 108
+- KISS/TCP server for APRS clients
+- AX.25 / TNC2 / KISS frame handling
+- LoRaHAM daemon socket integration
+- CLI and config file support
+- example configuration
+- build and test helper scripts
+- serial KISS forwarding  `start-serial-kiss.sh`
+- README with usage notes
