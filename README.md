@@ -108,6 +108,22 @@ loraham_daemon opens 4 IPC (inter process communication) UNIX-Sockets:
     - CONF868_SOCKET "/tmp/loraconf868.sock"
     - CONF433_SOCKET "/tmp/loraconf433.sock"
     
+The API for configuration on loraconf433.sock and loraconf868.sock
+
+    - "SET FREQ= SF= BW= CR= CRC= PREAMBLE= SYNC= LDRO= POWER="
+    
+Allowed variables:
+    
+    FREQ= depends on 433 or 868 Band. MMM.kkkk
+    SF= from 7 to 12
+    BW= 7.8 | 10.4 | 15.6 | 20.8 | 31.25 | 41.7 | 62.5 | 125.0 | 250.0 | 500.0
+    CR= 5 | 6 | 7 | 8
+    CRC= 0 | 1
+    PREAMBLE= 6 - 65536
+    SNYC= here comes the SyncWord in 0x12 (attention! 0x12 and 0x2B are welcome! Other SyncWords can collide withe the Registers in teh LoRa-Chip!)
+    LDRO= 0 | 1 | AUTO
+    POWER= 0 - 20 dBm (attention: 433 MHz Module with 1 Watt gets 30 dBm at 20 dBm setting, because it have a 10 dB PowerAmplifier. So you have to add 10 dB at 433 MHz)
+
 On the config sockets, you can send a simple text string to configurate the LoRa-Module from your programm:
 
     - "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17"
@@ -270,6 +286,22 @@ loraham_daemon öffnet 4 IPC (Inter-Process Communication) UNIX-Sockets:
     - DATA433_SOCKET "/tmp/lora433.sock"
     - CONF868_SOCKET "/tmp/loraconf868.sock"
     - CONF433_SOCKET "/tmp/loraconf433.sock"
+
+Die API zur Konfiguration von loraconf433.sock und loraconf868.sock
+
+    - "SET FREQ= SF= BW= CR= CRC= PREAMBLE= SYNC= LDRO= POWER="
+    
+Zulässige Variablen:
+    
+    FREQ= hängt vom 433- oder 868-MHz-Band ab. MMM.kkkk
+    SF= from 7 to 12
+    BW= 7.8 | 10.4 | 15.6 | 20.8 | 31.25 | 41.7 | 62.5 | 125.0 | 250.0 | 500.0
+    CR= 5 | 6 | 7 | 8
+    CRC= 0 | 1
+    PREAMBLE= 6 - 65536
+    SNYC= hier kommt das SyncWord in 0x12 (Achtung! 0x12 und 0x2B sind zulässig! Andere SyncWords können mit den Registern im LoRa-Chip kollidieren!)
+    LDRO= 0 | 1 | AUTO
+    POWER= 0 - 20 dBm (Achtung: Ein 433-MHz-Modul mit 1 Watt erreicht bei einer Einstellung von 20 dBm 30 dBm, da es über eine 10 dB PA verfügt. Daher müssen Sie bei 433 MHz 10 dB addieren)
     
 Über die Konfigurations-Sockets können Sie eine einfache Textzeichenfolge senden, um das LoRa-Modul aus Ihrem Programm heraus zu konfigurieren:
 
