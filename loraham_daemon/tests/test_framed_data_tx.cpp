@@ -126,7 +126,7 @@ static void test_unsupported_client_frame_reports_error(void)
 
     framed_data_tx_state_init(&state);
     framed_data_encode_header(frame, FRAMED_DATA_HEADER_LEN,
-                              FRAMED_DATA_TYPE_RX_PACKET, 1);
+                              FRAMED_DATA_TYPE_ERROR, 1);
     frame[FRAMED_DATA_HEADER_LEN] = 0x99;
 
     expect_int("unsupported frame feed ok",
