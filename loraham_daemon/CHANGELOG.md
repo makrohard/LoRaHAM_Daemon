@@ -1,5 +1,26 @@
 # Changelog
 
+## loraham_daemon 110
+
+- Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.
+
+## loraham_daemon 109a
+
+- Refactor / Hardening
+  - Modularized loraham_daemon main module
+  - General code cleanup.
+
+- Bugfixes
+  - Record CAD timeouts through the TX result stats path.
+  - Check daemon background-mode directory and stdio redirection failures.
+  - Acquire TX busy state atomically before copying/logging payloads.
+  - fd `0` client handling with explicit `-1` client-set initialization.
+
+- New Features
+  - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
+  - CONF status: add `GET STATUS` runtime snapshot reply.
+  - Runtime stats: add hourly operator stats and `GET STATS` on CONF sockets.
+
 ## loraham_daemon 109
 
 Refactoring by Johannes Loose
@@ -39,25 +60,3 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - Version now lives in `daemon_version.h`
   - Added one-radio-mode --radio 433 | 868 | both
   - Add framed DATA sockets with packet-boundary-preserving TX/RX frames, shared-radio behavior 
-
-
-## loraham_daemon 109a
-
-- Refactor / Hardening
-  - Modularized loraham_daemon main module
-  - General code cleanup.
-
-- Bugfixes
-  - Record CAD timeouts through the TX result stats path.
-  - Check daemon background-mode directory and stdio redirection failures.
-  - Acquire TX busy state atomically before copying/logging payloads.
-  - fd `0` client handling with explicit `-1` client-set initialization.
-
-- New Features
-  - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
-  - CONF status: add `GET STATUS` runtime snapshot reply.
-  - Runtime stats: add hourly operator stats and `GET STATS` on CONF sockets.
-
-## loraham_daemon 110
-
-- Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.
