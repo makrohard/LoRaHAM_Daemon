@@ -1,4 +1,5 @@
 # 0.3.0
+- Rely on daemon 110 CAD gate; bridge-side CAD wait options are no-ops
 - Require loraham_daemon 110 framed RX metadata layout
 - Strip daemon RX RSSI/SNR metadata before KISS output
 - Add functional tests for daemon 110 framed RX packets

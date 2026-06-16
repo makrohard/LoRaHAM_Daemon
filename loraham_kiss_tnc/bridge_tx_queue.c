@@ -6,7 +6,8 @@
 #include <time.h>
 
 /*
- * Outgoing LoRaHAM TX queue and TX/CAD policy decisions.
+ * Outgoing LoRaHAM TX queue and TX-busy policy decisions.
+ * Daemon 110 owns the final CAD gate before RF transmit.
  * Actual socket writes and RX restore are kept in bridge.c.
  */
 
@@ -128,36 +129,12 @@ int bridge_tx_head_decision(const lhkt_config_t *cfg,
 
     item->tx_wait_start_ms = 0;
 
-    if (!cfg->cad_ignore && conf_state) {
-        if (conf_state->cad_busy) {
-            item->cad_was_busy = 1;
-            item->cad_idle_since_ms = 0;
-
-            if (item->cad_wait_start_ms == 0) {
-                item->cad_wait_start_ms = now;
-            }
-
-            if (now - item->cad_wait_start_ms < cfg->cad_wait_ms) {
-                return BRIDGE_TX_DECISION_WAIT;
-            }
-
-            printf("[TXQ] CAD busy timeout, sending anyway len=%zu\n",
-                   item->packet_len);
-            return BRIDGE_TX_DECISION_SEND;
-        }
-
-        if (item->cad_was_busy) {
-            if (item->cad_idle_since_ms == 0) {
-                item->cad_idle_since_ms = now;
-                return BRIDGE_TX_DECISION_WAIT;
-            }
-
-            if (now - item->cad_idle_since_ms < cfg->cad_idle_ms) {
-                return BRIDGE_TX_DECISION_WAIT;
-            }
-        }
-    }
-
+    /*
+     * Do not do bridge-side CAD politeness here.  Daemon 110 performs
+     * the final CAD gate immediately before RF TX and can return an
+     * asynchronous framed ERROR.  Without TX/error correlation in the
+     * framed protocol, guessing/requeueing here would be unsafe.
+     */
     return BRIDGE_TX_DECISION_SEND;
 }
 

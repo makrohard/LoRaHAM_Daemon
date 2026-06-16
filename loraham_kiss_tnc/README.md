@@ -24,14 +24,16 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - framed DATA socket only for daemon packet I/O
 - requires `loraham_daemon` 110+ framed RX metadata layout
 - RX RSSI/SNR metadata is ignored and not forwarded to KISS clients
-- uses CONF events (`TX=`, `CAD=`, `STATUS`) for TX/CAD state
+- uses CONF events (`TX=`, `STATUS`) for TX lifecycle state
 
-## TX/CAD policy
+## TX policy
 
 - queued TX waits for fresh `STATUS` after CONF reconnect
 - `TX=1` delays TX until `TX=0`; timeout drops the packet
-- `CAD=1` delays TX briefly; timeout sends anyway
-- `--cad-ignore` ignores CAD/channel busy state
+- daemon 110 performs the final CAD gate before RF transmit
+- bridge CAD wait options are accepted for compatibility but are no-ops
+
+The bridge intentionally does not requeue daemon `CAD_TIMEOUT` framed errors. The framed DATA protocol has no TX/error correlation, so requeueing could duplicate or misassign APRS packets.
 
 ## Build
 

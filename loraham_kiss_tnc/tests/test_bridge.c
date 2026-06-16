@@ -176,16 +176,19 @@ static void test_tx_queue_policy_decisions(void)
            TEST_TX_DECISION_WAIT);
     assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 120000, -1, -1, 0) ==
            TEST_TX_DECISION_DROP);
-    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 1000, -1, 0) ==
-           TEST_TX_DECISION_WAIT);
+
+    /* Daemon 110 owns the final CAD gate; bridge CAD state is ignored. */
+    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 0, -1, 0) ==
+           TEST_TX_DECISION_SEND);
     assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 20000, -1, 0) ==
            TEST_TX_DECISION_SEND);
     assert(lhkt_test_bridge_tx_decision(0, 1, 1, 0, -1, 0, -1, 0) ==
            TEST_TX_DECISION_SEND);
     assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 100, 1) ==
-           TEST_TX_DECISION_WAIT);
+           TEST_TX_DECISION_SEND);
     assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 500, 1) ==
            TEST_TX_DECISION_SEND);
+
     assert(lhkt_test_bridge_tx_decision(0, 0, 0, 180000, -1, -1, -1, 0) ==
            TEST_TX_DECISION_DROP);
 }

@@ -33,9 +33,9 @@ void lhkt_cli_print_usage(const char *prog)
     printf("      --tx-return-ms MS    Fallback wait after TX\n");
     printf("      --tx-busy-timeout-ms MS\n");
     printf("                            Max wait for local TX busy\n");
-    printf("      --cad-wait-ms MS     Max polite wait for busy channel\n");
-    printf("      --cad-idle-ms MS     Required CAD idle stability\n");
-    printf("      --cad-ignore         Ignore CAD/channel busy state\n");
+    printf("      --cad-wait-ms MS     Deprecated no-op; daemon gates CAD\n");
+    printf("      --cad-idle-ms MS     Deprecated no-op; daemon gates CAD\n");
+    printf("      --cad-ignore         Deprecated no-op; daemon gates CAD\n");
     printf("      --tx-queue-len N     Queued TX packet limit\n");
     printf("      --tx-packet-ttl-ms MS\n");
     printf("                            Max queued packet lifetime\n");
