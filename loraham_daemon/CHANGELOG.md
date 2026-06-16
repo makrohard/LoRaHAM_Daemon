@@ -57,3 +57,7 @@ Initial version: loradaemon_320_108 by Alexander Walter
   - CONF status: broadcast local TX state as `TX=1` / `TX=0`.
   - CONF status: add `GET STATUS` runtime snapshot reply.
   - Runtime stats: add hourly operator stats and `GET STATS` on CONF sockets.
+
+## loraham_daemon 110
+
+- Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.

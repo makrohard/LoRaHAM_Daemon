@@ -126,7 +126,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | `MAX_CLIENTS` | `10` | Client slots per socket group |
 | `buf_SIZE` | `256` bytes | Internal RX/CONFIG buffer size |
 | Raw DATA TX chunk | `255` bytes | Maximum RF chunk generated from raw DATA socket input |
-| Framed DATA RF payload | `255` bytes | Maximum payload accepted for `TX_PACKET` and emitted for `RX_PACKET` |
+| Framed DATA RF payload | `255` bytes | Maximum RF payload accepted for `TX_PACKET` and carried inside `RX_PACKET` |
+| Framed RX metadata | `4` bytes | `int16` RSSI c-dBm + `int16` SNR c-dB before RF bytes |
+| Framed RX frame | `262` bytes | Maximum complete `RX_PACKET`: 3-byte header + 4-byte metadata + 255 RF bytes |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD poll interval | `30` loop ticks | CAD polling cadence constant |
@@ -172,17 +174,26 @@ Frame types:
 
 | Type | Name | Direction | Meaning |
 |---:|---|---|---|
-| `0x01` | `RX_PACKET` | daemon → client | One complete received RF packet |
+| `0x01` | `RX_PACKET` | daemon → client | One complete received RF packet with RSSI/SNR metadata |
 | `0x02` | `TX_PACKET` | client → daemon | One complete RF packet to transmit |
 | `0x03` | `ERROR` | daemon → client | UTF-8 error text |
 
+`RX_PACKET` payload layout:
+
+| Payload offset | Size | Type | Meaning |
+|---:|---:|---|---|
+| `0` | 2 bytes | little-endian `int16` | RSSI in centi-dBm, or `-32768` if unavailable |
+| `2` | 2 bytes | little-endian `int16` | SNR in centi-dB, or `-32768` if unavailable; FSK uses unavailable |
+| `4` | `rf_len` bytes | bytes | received RF payload, maximum `255` bytes |
+
 Rules:
 
-- `TX_PACKET` payloads must be at most `255` bytes.
+- `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
 - one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
 - one received RF packet is sent to framed clients as exactly one `RX_PACKET`.
+- `RX_PACKET` payload length is `4 + rf_len`; maximum complete RX frame size is `262` bytes.
 - raw DATA clients continue to receive raw RF bytes exactly as before.
 - raw and framed DATA sockets of the same band share the same radio backend.
 - multiple clients may connect to the same band, but TX arbitration is best-effort/event-loop ordered.
@@ -195,14 +206,30 @@ Minimal Python RX frame reader:
 import socket
 import struct
 
+SIGNAL_UNAVAILABLE = -32768
+
+def recv_exact(sock, n):
+    data = bytearray()
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise EOFError("socket closed")
+        data += chunk
+    return bytes(data)
+
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.connect("/tmp/lora868f.sock")
 
-header = sock.recv(3)
+header = recv_exact(sock, 3)
 frame_type, payload_len = struct.unpack("<BH", header)
-payload = sock.recv(payload_len)
+payload = recv_exact(sock, payload_len)
 
-print(frame_type, payload_len, payload)
+if frame_type == 0x01:
+    rssi_cdbm, snr_cdb = struct.unpack("<hh", payload[:4])
+    rf_payload = payload[4:]
+    rssi = None if rssi_cdbm == SIGNAL_UNAVAILABLE else rssi_cdbm / 100.0
+    snr = None if snr_cdb == SIGNAL_UNAVAILABLE else snr_cdb / 100.0
+    print(rssi, snr, rf_payload)
 ```
 
 Minimal Python TX frame sender:
