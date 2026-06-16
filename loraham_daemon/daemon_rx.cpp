@@ -157,10 +157,66 @@ static void daemon_print_fsk_packet(const char *rx_ctx,
     printf(" RSSI: %.2f dBm\n", rssi);
 }
 
-/* --- RX forwarding ------------------------------------------------------- */
-static void daemon_broadcast_rx_data(RadioChannelIo *io, uint8_t *buf, int len)
+
+/* --- RX signal metadata -------------------------------------------------- */
+typedef struct {
+    float rssi_dbm;
+    int16_t rssi_cdbm;
+    int16_t snr_cdb;
+} DaemonRxSignal;
+
+static int16_t daemon_signal_to_centi(float value)
 {
-    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_MAX_RF_PAYLOAD];
+    double scaled;
+    long rounded;
+
+    if (!(value >= -10000.0f && value <= 10000.0f))
+        return FRAMED_DATA_SIGNAL_UNAVAILABLE;
+
+    scaled = (double)value * 100.0;
+    if (scaled >= 0.0)
+        rounded = (long)(scaled + 0.5);
+    else
+        rounded = (long)(scaled - 0.5);
+
+    if (rounded > 32767L)
+        return 32767;
+    if (rounded < -32768L)
+        return FRAMED_DATA_SIGNAL_UNAVAILABLE;
+
+    return (int16_t)rounded;
+}
+
+template<typename RadioT>
+static DaemonRxSignal daemon_capture_rx_signal(RadioController<RadioT> *ctrl)
+{
+    DaemonRxSignal signal;
+
+    signal.rssi_dbm = -200.0f;
+    signal.rssi_cdbm = FRAMED_DATA_SIGNAL_UNAVAILABLE;
+    signal.snr_cdb = FRAMED_DATA_SIGNAL_UNAVAILABLE;
+
+    if (!ctrl || !ctrl->radio)
+        return signal;
+
+    signal.rssi_dbm = ctrl->radio->getRSSI();
+    signal.rssi_cdbm = daemon_signal_to_centi(signal.rssi_dbm);
+
+    if (ctrl->mode == RADIO_MODE_LORA)
+        signal.snr_cdb = daemon_signal_to_centi(ctrl->radio->getSNR());
+
+    return signal;
+}
+
+/* --- RX forwarding ------------------------------------------------------- */
+static void daemon_broadcast_rx_data(RadioChannelIo *io,
+                                     uint8_t *buf,
+                                     int len,
+                                     int16_t rssi_cdbm,
+                                     int16_t snr_cdb)
+{
+    uint8_t frame[FRAMED_DATA_RX_FRAME_MAX];
+    uint16_t payload_len;
 
     if (len <= 0)
         return;
@@ -172,19 +228,21 @@ static void daemon_broadcast_rx_data(RadioChannelIo *io, uint8_t *buf, int len)
         return;
     }
 
-    if (framed_data_encode_frame(frame,
-                                 sizeof(frame),
-                                 FRAMED_DATA_TYPE_RX_PACKET,
-                                 buf,
-                                 (uint16_t)len) != 0) {
+    if (framed_data_encode_rx_packet(frame,
+                                     sizeof(frame),
+                                     rssi_cdbm,
+                                     snr_cdb,
+                                     buf,
+                                     (uint16_t)len) != 0) {
         daemon_debug_ctx("RXF", "RX frame encode failed");
         return;
     }
 
+    payload_len = (uint16_t)(FRAMED_DATA_RX_META_LEN + len);
     client_slot_broadcast_bytes_queued(io->framed_data_slots,
                                        MAX_CLIENTS,
                                        frame,
-                                       framed_data_frame_size((uint16_t)len));
+                                       framed_data_frame_size(payload_len));
 }
 
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */
@@ -246,11 +304,11 @@ static void daemon_clear_irq_after_rx_read(RadioController<RadioT> *ctrl)
 template<typename RadioT>
 static void daemon_print_rx_packet(RadioController<RadioT> *ctrl,
                                    uint8_t *buf,
-                                   int len)
+                                   int len,
+                                   float rssi)
 {
     const char *tag = radio_controller_tag(ctrl);
     const char *color = daemon_controller_color(ctrl);
-    float rssi = radio_controller_packet_rssi(ctrl);
 
     if (ctrl->mode == RADIO_MODE_LORA)
         daemon_print_lora_packet(daemon_rx_log_ctx(ctrl), tag, color, buf, len, rssi);
@@ -419,9 +477,15 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
         return;
     }
 
+    DaemonRxSignal signal = daemon_capture_rx_signal(ctrl);
+
     daemon_radio_stats_record_rx(&ctrl->stats, (size_t)len);
-    daemon_print_rx_packet(ctrl, rx_buf, len);
-    daemon_broadcast_rx_data(io, rx_buf, len);
+    daemon_print_rx_packet(ctrl, rx_buf, len, signal.rssi_dbm);
+    daemon_broadcast_rx_data(io,
+                             rx_buf,
+                             len,
+                             signal.rssi_cdbm,
+                             signal.snr_cdb);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Broadcast %d Byte", len);
 
     daemon_finish_rx_packet(ctrl, rx_buf, sizeof(rx_buf));
