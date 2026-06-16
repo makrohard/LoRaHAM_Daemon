@@ -400,6 +400,121 @@ static void test_tnc2_to_kiss_output(void)
 }
 
 
+static void test_framed_rx_v110_metadata_is_stripped(void)
+{
+    int sv[2];
+    ssize_t n;
+    uint8_t out_buf[LHKT_KISS_MAX_FRAME];
+    kiss_decoder_t dec;
+    kiss_frame_t kiss_frame;
+    ax25_frame_t ax25;
+    char out[LHKT_TNC2_MAX_LINE];
+    size_t out_len = 0;
+    loraham_framed_rx_state_t state;
+    lhkt_stats_t stats;
+    const char *tnc2 = "DJ0CHE-10>APRS:hi\n";
+    const char *expected = "DJ0CHE-10>APRS:hi";
+    uint8_t frame[3 + 4 + LHKT_LORAHAM_HDR_LEN + 64];
+    size_t payload_len;
+    size_t pos;
+    int ret;
+    int got_frame = 0;
+    size_t i;
+
+    assert(strlen(tnc2) < 64);
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+
+    payload_len = 4 + LHKT_LORAHAM_HDR_LEN + strlen(tnc2);
+    pos = 0;
+    frame[pos++] = LORAHAM_FRAME_RX_PACKET;
+    frame[pos++] = (uint8_t)(payload_len & 0xff);
+    frame[pos++] = (uint8_t)((payload_len >> 8) & 0xff);
+
+    /* RSSI/SNR metadata from daemon 110. It must not reach KISS. */
+    frame[pos++] = 0x22;
+    frame[pos++] = 0xd0;
+    frame[pos++] = 0xef;
+    frame[pos++] = 0x03;
+
+    frame[pos++] = LORAHAM_APRS_HDR0;
+    frame[pos++] = LORAHAM_APRS_HDR1;
+    frame[pos++] = LORAHAM_APRS_HDR2;
+    memcpy(frame + pos, tnc2, strlen(tnc2));
+    pos += strlen(tnc2);
+    assert(pos == 3 + payload_len);
+
+    loraham_framed_rx_state_init(&state);
+    lhkt_stats_init(&stats);
+
+    assert(bridge_rx_handle_framed_chunk(sv[0],
+                                         &state,
+                                         frame,
+                                         pos,
+                                         &stats) == LHKT_OK);
+
+    n = read(sv[1], out_buf, sizeof(out_buf));
+    assert(n > 0);
+
+    kiss_decoder_init(&dec);
+    for (i = 0; i < (size_t)n; i++) {
+        ret = kiss_decode_byte(&dec, out_buf[i], &kiss_frame);
+        if (ret == 1) {
+            got_frame++;
+        } else {
+            assert(ret == 0);
+        }
+    }
+
+    assert(got_frame == 1);
+    assert(kiss_frame.command == KISS_CMD_DATA);
+    assert(kiss_frame.port == 0);
+    assert(ax25_decode_ui(kiss_frame.data, kiss_frame.data_len, &ax25) == LHKT_OK);
+    assert(tnc2_format_line(&ax25, out, sizeof(out), &out_len) == LHKT_OK);
+    assert(strcmp(out, expected) == 0);
+
+    assert(stats.loraham_rx == 1);
+    assert(stats.loraham_drop == 0);
+    assert(stats.kiss_tx == 1);
+    assert(stats.kiss_drop == 0);
+
+    close(sv[0]);
+    close(sv[1]);
+}
+
+static void test_framed_rx_short_metadata_is_dropped(void)
+{
+    size_t meta_len;
+
+    for (meta_len = 0; meta_len < 4; meta_len++) {
+        loraham_framed_rx_state_t state;
+        lhkt_stats_t stats;
+        uint8_t frame[3 + 3];
+        size_t pos;
+        size_t i;
+
+        pos = 0;
+        frame[pos++] = LORAHAM_FRAME_RX_PACKET;
+        frame[pos++] = (uint8_t)(meta_len & 0xff);
+        frame[pos++] = 0;
+
+        for (i = 0; i < meta_len; i++) {
+            frame[pos++] = (uint8_t)(0xa0 + i);
+        }
+
+        loraham_framed_rx_state_init(&state);
+        lhkt_stats_init(&stats);
+
+        assert(bridge_rx_handle_framed_chunk(-1,
+                                             &state,
+                                             frame,
+                                             pos,
+                                             &stats) == LHKT_OK);
+        assert(stats.loraham_drop == 1);
+        assert(stats.kiss_tx == 0);
+    }
+}
+
+
 static void test_framed_error_is_counted(void)
 {
     loraham_framed_rx_state_t state;
@@ -687,6 +802,8 @@ int main(void)
     test_shutdown_stop_flag();
     test_stop_aware_wait_helpers();
     test_tnc2_to_kiss_output();
+    test_framed_rx_v110_metadata_is_stripped();
+    test_framed_rx_short_metadata_is_dropped();
     test_framed_error_is_counted();
     test_nonzero_kiss_port_is_dropped();
     test_invalid_tnc2_is_dropped();

@@ -1,3 +1,8 @@
+# 0.3.0
+- Require loraham_daemon 110 framed RX metadata layout
+- Strip daemon RX RSSI/SNR metadata before KISS output
+- Add functional tests for daemon 110 framed RX packets
+
 # 0.2.0
 - Updated, after refactoring loraham_daemon to 109a. *This breaks comatibility to loraham_daemon < 109*
 - Use framed DATA sockets

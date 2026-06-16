@@ -15,6 +15,7 @@
  */
 
 #define BRIDGE_RX_CLIENT_WRITE_TIMEOUT_SEC 2
+#define BRIDGE_RX_LORAHAM_META_LEN 4
 
 static bridge_rx_should_stop_fn bridge_rx_should_stop_cb;
 
@@ -309,10 +310,21 @@ int bridge_rx_handle_framed_chunk(int client_fd,
 
         if (ret == 1) {
             if (frame.type == LORAHAM_FRAME_RX_PACKET) {
-                ret = bridge_rx_send_loraham_packet_to_kiss_client(client_fd,
-                                                                   frame.payload,
-                                                                   frame.payload_len,
-                                                                   stats);
+                if (frame.payload_len < BRIDGE_RX_LORAHAM_META_LEN) {
+                    if (stats) {
+                        stats->loraham_drop++;
+                    }
+
+                    printf("[LoRaHAM] Framed RX drop: short metadata len=%zu\n",
+                           frame.payload_len);
+                    continue;
+                }
+
+                ret = bridge_rx_send_loraham_packet_to_kiss_client(
+                    client_fd,
+                    frame.payload + BRIDGE_RX_LORAHAM_META_LEN,
+                    frame.payload_len - BRIDGE_RX_LORAHAM_META_LEN,
+                    stats);
                 if (ret != LHKT_OK) {
                     return ret;
                 }
