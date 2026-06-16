@@ -153,6 +153,88 @@ static void test_nonzero_port_decode(void)
     assert(frame.data[0] == 'X');
 }
 
+
+static void test_bad_escape_discards_until_fend(void)
+{
+    const uint8_t valid[] = {
+        KISS_FEND,
+        0x00,
+        'O',
+        'K',
+        KISS_FEND
+    };
+
+    kiss_decoder_t dec;
+    kiss_frame_t frame;
+    int ret;
+    size_t i;
+
+    kiss_decoder_init(&dec);
+    memset(&frame, 0, sizeof(frame));
+
+    assert(kiss_decode_byte(&dec, KISS_FEND, &frame) == 0);
+    assert(kiss_decode_byte(&dec, 0x00, &frame) == 0);
+    assert(kiss_decode_byte(&dec, KISS_FESC, &frame) == 0);
+    assert(kiss_decode_byte(&dec, 0x11, &frame) == LHKT_ERR_FORMAT);
+
+    assert(kiss_decode_byte(&dec, 'X', &frame) == 0);
+    assert(kiss_decode_byte(&dec, 'Y', &frame) == 0);
+    assert(kiss_decode_byte(&dec, KISS_FEND, &frame) == 0);
+
+    ret = 0;
+    for (i = 0; i < sizeof(valid); i++) {
+        ret = kiss_decode_byte(&dec, valid[i], &frame);
+    }
+
+    assert(ret == 1);
+    assert(frame.port == 0);
+    assert(frame.command == KISS_CMD_DATA);
+    assert(frame.data_len == 2);
+    assert(frame.data[0] == 'O');
+    assert(frame.data[1] == 'K');
+}
+
+static void test_oversized_frame_discards_until_fend(void)
+{
+    const uint8_t valid[] = {
+        KISS_FEND,
+        0x00,
+        'R',
+        KISS_FEND
+    };
+
+    kiss_decoder_t dec;
+    kiss_frame_t frame;
+    int ret;
+    size_t i;
+
+    kiss_decoder_init(&dec);
+    memset(&frame, 0, sizeof(frame));
+
+    assert(kiss_decode_byte(&dec, KISS_FEND, &frame) == 0);
+
+    for (i = 0; i < LHKT_KISS_MAX_FRAME; i++) {
+        uint8_t b = (i == 0) ? 0x00 : 'A';
+        assert(kiss_decode_byte(&dec, b, &frame) == 0);
+    }
+
+    assert(kiss_decode_byte(&dec, 'B', &frame) == LHKT_ERR_LONG);
+    assert(kiss_decode_byte(&dec, 'X', &frame) == 0);
+    assert(kiss_decode_byte(&dec, 'Y', &frame) == 0);
+    assert(kiss_decode_byte(&dec, KISS_FEND, &frame) == 0);
+
+    ret = 0;
+    for (i = 0; i < sizeof(valid); i++) {
+        ret = kiss_decode_byte(&dec, valid[i], &frame);
+    }
+
+    assert(ret == 1);
+    assert(frame.port == 0);
+    assert(frame.command == KISS_CMD_DATA);
+    assert(frame.data_len == 1);
+    assert(frame.data[0] == 'R');
+}
+
 static void test_bad_escape_recovers_next_frame(void)
 {
     const uint8_t valid[] = {
@@ -254,8 +336,10 @@ int main(void)
     test_command_params();
     test_bad_escape_drops_frame();
     test_nonzero_port_decode();
+    test_bad_escape_discards_until_fend();
     test_bad_escape_recovers_next_frame();
     test_oversized_frame_drops_and_recovers();
+    test_oversized_frame_discards_until_fend();
     test_encode_rejects_small_output_for_escaped_payload();
     test_encode_rejects_invalid_args();
 

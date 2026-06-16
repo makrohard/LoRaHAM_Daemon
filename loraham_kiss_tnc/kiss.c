@@ -36,6 +36,16 @@ static void kiss_decoder_reset_frame(kiss_decoder_t *dec)
 }
 
 /*
+ * Drop a malformed frame and wait for the next frame delimiter.
+ */
+static void kiss_decoder_drop_frame(kiss_decoder_t *dec)
+{
+    dec->in_frame = 0;
+    dec->escaped = 0;
+    dec->len = 0;
+}
+
+/*
  * Convert one completed raw KISS frame into kiss_frame_t.
  * dec->buf[0] is the KISS command byte.
  */
@@ -105,7 +115,7 @@ int kiss_decode_byte(kiss_decoder_t *dec,
         } else if (byte == KISS_TFESC) {
             byte = KISS_FESC;
         } else {
-            kiss_decoder_reset_frame(dec);
+            kiss_decoder_drop_frame(dec);
             return LHKT_ERR_FORMAT;
         }
 
@@ -116,7 +126,7 @@ int kiss_decode_byte(kiss_decoder_t *dec,
     }
 
     if (dec->len >= sizeof(dec->buf)) {
-        kiss_decoder_reset_frame(dec);
+        kiss_decoder_drop_frame(dec);
         return LHKT_ERR_LONG;
     }
 
