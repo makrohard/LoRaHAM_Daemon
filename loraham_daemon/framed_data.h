@@ -8,6 +8,10 @@
 
 #define FRAMED_DATA_HEADER_LEN 3
 #define FRAMED_DATA_MAX_RF_PAYLOAD 255
+#define FRAMED_DATA_RX_META_LEN 4
+#define FRAMED_DATA_RX_PAYLOAD_MAX (FRAMED_DATA_RX_META_LEN + FRAMED_DATA_MAX_RF_PAYLOAD)
+#define FRAMED_DATA_RX_FRAME_MAX (FRAMED_DATA_HEADER_LEN + FRAMED_DATA_RX_PAYLOAD_MAX)
+#define FRAMED_DATA_SIGNAL_UNAVAILABLE ((int16_t)(-32767 - 1))
 
 #define FRAMED_DATA_TYPE_RX_PACKET 0x01
 #define FRAMED_DATA_TYPE_TX_PACKET 0x02
@@ -32,5 +36,12 @@ int framed_data_encode_frame(uint8_t *frame,
                              uint8_t frame_type,
                              const uint8_t *payload,
                              uint16_t payload_len);
+
+int framed_data_encode_rx_packet(uint8_t *frame,
+                                 size_t frame_len,
+                                 int16_t rssi_cdbm,
+                                 int16_t snr_cdb,
+                                 const uint8_t *rf_payload,
+                                 uint16_t rf_len);
 
 #endif
