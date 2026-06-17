@@ -449,6 +449,18 @@ build_one_tx_result_test() {
 }
 
 
+build_one_tx_async_worker_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    -pthread \
+    "$src" \
+    "$SCRIPT_DIR/tx_result.cpp"
+}
+
+
 build_one_daemon_radio_selection_test() {
   local src="$1"
   local out="$2"
@@ -555,6 +567,7 @@ build_tests() {
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_executor.cpp" "$TEST_DIR/test_daemon_tx_executor"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_queue.cpp" "$TEST_DIR/test_daemon_tx_queue"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_worker.cpp" "$TEST_DIR/test_daemon_tx_worker"
+  build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker.cpp" "$TEST_DIR/test_daemon_tx_async_worker"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_controller_tx_worker.cpp" "$TEST_DIR/test_radio_controller_tx_worker"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
@@ -669,6 +682,7 @@ tests=(
   "$TEST_DIR/test_daemon_tx_executor"
   "$TEST_DIR/test_daemon_tx_queue"
   "$TEST_DIR/test_daemon_tx_worker"
+  "$TEST_DIR/test_daemon_tx_async_worker"
   "$TEST_DIR/test_radio_controller_tx_worker"
   "$TEST_DIR/test_daemon_radio_selection"
   "$TEST_DIR/test_radio_health"
