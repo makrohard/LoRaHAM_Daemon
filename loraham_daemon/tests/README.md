@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 40 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 41 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -70,6 +70,7 @@ DATA/RF/TX:
 - `test_daemon_tx_queue`
 - `test_daemon_tx_worker`
 - `test_daemon_tx_async_worker`
+- `test_daemon_tx_async_runtime`
 - `test_radio_controller_tx_worker`
 - `test_rf_packet`
 - `test_framed_data` (including `TX_RESULT` layout)
@@ -123,3 +124,5 @@ Public integration baseline:
 - `test_radio_controller_tx_worker` verifies that each radio controller owns initialized TX worker state.
 
 - `test_daemon_tx_async_worker` verifies the standalone async TX worker skeleton without wiring it into daemon runtime.
+
+- `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.

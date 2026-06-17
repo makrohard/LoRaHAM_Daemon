@@ -5,6 +5,7 @@
 #include "daemon_log.h"
 #include "daemon_radio_selection.h"
 #include "daemon_stats.h"
+#include "daemon_tx_async_runtime.h"
 #include "radio_health.h"
 
 /* --- Radio controller state --------------------------------------------- */
@@ -17,6 +18,8 @@ RadioController<RFM95> radio_controller_868;
 void daemon_radio_controller_init(void)
 {
     daemon_debug_ctx("RADIO", "Controller initialisieren");
+
+    daemon_tx_async_runtime_init();
 
     radio_controller_init(&radio_controller_433,
                           RADIO_BAND_433,
@@ -83,6 +86,8 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
 
 void daemon_radio_shutdown_cleanup(void)
 {
+    daemon_tx_async_runtime_shutdown();
+
     if (daemon_radio_433_enabled()) {
         daemon_debug_ctx("RADIO", "Shutdown 433");
         radio_controller_shutdown(&radio_controller_433);

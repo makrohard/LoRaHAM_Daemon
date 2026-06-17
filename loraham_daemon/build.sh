@@ -45,6 +45,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/daemon_tx.cpp"
+  "$SCRIPT_DIR/daemon_tx_async_runtime.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/framed_data.cpp"
@@ -219,9 +220,9 @@ compiler_flags() {
     # shellcheck disable=SC2206
     cxxflags=($CXXFLAGS)
   elif [[ "$build_mode" == "debug" ]]; then
-    cxxflags=(-std=c++11 -O0 -g -Wall -Wextra)
+    cxxflags=(-std=c++11 -O0 -g -Wall -Wextra -pthread)
   else
-    cxxflags=(-std=c++11 -O2)
+    cxxflags=(-std=c++11 -O2 -pthread)
   fi
 
   if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then

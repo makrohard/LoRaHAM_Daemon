@@ -2,6 +2,7 @@
 #define LORAHAM_DAEMON_RADIO_RUNTIME_H
 
 #include "daemon_led.h"
+#include "daemon_tx_async_runtime.h"
 #include "radio_controller.h"
 
 /* --- Radio runtime helpers ---------------------------------------------- */

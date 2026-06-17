@@ -72,6 +72,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/daemon_tx.cpp"
+  "$SCRIPT_DIR/daemon_tx_async_runtime.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx.cpp"
   "$SCRIPT_DIR/daemon_monitoring.cpp"
@@ -191,6 +192,7 @@ build_one_cpp_sources() {
 
   "$cxx" \
     -std=c++11 \
+    -pthread \
     -Wall \
     -Wextra \
     -O2 \
@@ -461,6 +463,18 @@ build_one_tx_async_worker_test() {
 }
 
 
+build_one_tx_async_runtime_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp"
+}
+
+
 build_one_daemon_radio_selection_test() {
   local src="$1"
   local out="$2"
@@ -568,6 +582,7 @@ build_tests() {
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_queue.cpp" "$TEST_DIR/test_daemon_tx_queue"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_worker.cpp" "$TEST_DIR/test_daemon_tx_worker"
   build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker.cpp" "$TEST_DIR/test_daemon_tx_async_worker"
+  build_one_tx_async_runtime_test "$TEST_DIR/test_daemon_tx_async_runtime.cpp" "$TEST_DIR/test_daemon_tx_async_runtime"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_controller_tx_worker.cpp" "$TEST_DIR/test_radio_controller_tx_worker"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
@@ -683,6 +698,7 @@ tests=(
   "$TEST_DIR/test_daemon_tx_queue"
   "$TEST_DIR/test_daemon_tx_worker"
   "$TEST_DIR/test_daemon_tx_async_worker"
+  "$TEST_DIR/test_daemon_tx_async_runtime"
   "$TEST_DIR/test_radio_controller_tx_worker"
   "$TEST_DIR/test_daemon_radio_selection"
   "$TEST_DIR/test_radio_health"
