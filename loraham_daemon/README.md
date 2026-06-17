@@ -136,10 +136,10 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M3b
-adds a shared real-CAD probe helper using RadioLib `scanChannel()`. TX
-behavior is unchanged until the next milestone. Raw DATA sockets and framed
-`RX_PACKET` RSSI/SNR layout remain unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M3c
+wires the shared real-CAD probe into the TX guard. `MANAGED` keeps a
+bounded wait; `RAW` performs one CAD probe before transmit. Raw DATA
+sockets and framed `RX_PACKET` RSSI/SNR layout remain unchanged.
 
 ## DATA sockets
 
@@ -210,7 +210,7 @@ Rules:
 - `SET TXRESULT=1` and `SET TXRESULT=0` on a CONF socket enable or disable per-band `TX_RESULT` emission.
 - `SET TXMODE=MANAGED` and `SET TXMODE=RAW` on a CONF socket select per-band TX mode state; default is `MANAGED`.
 - `GET STATUS` includes `TXRESULT=0|1` and `TXMODE=MANAGED|RAW`.
-- M2b maps framed TX success to `OK` and generic send failure to `RADIO_ERROR`; richer busy/CAD statuses are introduced later.
+- M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
 - one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.

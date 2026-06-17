@@ -98,4 +98,4 @@ Public integration baseline:
 `test_tx_failure_keeps_client` verifies the M1 behavior: recoverable RF/TX execution failures are reported through the existing ERROR path without closing the framed client connection.
 
 - `test_conf_status` covers `TXRESULT` and `TXMODE` CONF state reporting.
-- `test_radio_cad_probe` verifies the M3b real-CAD helper mapping without changing TX behavior.
+- `test_radio_cad_probe` verifies the real-CAD helper and the M3c RAW-mode one-probe TX guard behavior.

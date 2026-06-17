@@ -11,6 +11,8 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_stats.h"
 #include "daemon_tx.h"
+#include "framed_data.h"
+#include "radio_cad.h"
 #include "radio_controller.h"
 #include "tx_result.h"
 
@@ -29,27 +31,32 @@ void daemon_data_tx_trace_message(void *ctx, const char *msg);
 DataTxLog daemon_data_tx_log(const char *ctx);
 
 template<typename RadioT>
-static int data_tx_modem_status(DataTxDaemonContext<RadioT> *tx)
+static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
 {
-    RadioController<RadioT> *ctrl = tx->ctrl;
+    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    RadioCadProbeResult probe;
 
-    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
+    if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return 0;
 
-    return ctrl->radio->getModemStatus();
+    probe = radio_cad_probe(ctrl);
+    return probe.status == RADIO_CAD_PROBE_BUSY;
 }
 
 template<typename RadioT>
 static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 {
-    RadioController<RadioT> *ctrl = tx->ctrl;
+    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
     int cad_wait = 0;
 
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return 0;
 
+    if (ctrl->tx_mode == RADIO_TX_MODE_RAW)
+        return data_tx_probe_channel_busy(tx);
+
     while (cad_wait < DATA_TX_CAD_MAX_WAIT_TICKS) {
-        if ((data_tx_modem_status(tx) & 0x01) == 0)
+        if (!data_tx_probe_channel_busy(tx))
             return 0;
 
         usleep(DATA_TX_CAD_SLEEP_USEC);
@@ -57,6 +64,28 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
     }
 
     return 1;
+}
+
+template<typename RadioT>
+static int daemon_data_tx_status_from_result(TxResult result)
+{
+    switch (result) {
+        case TX_RESULT_OK:
+            return FRAMED_DATA_TX_STATUS_OK;
+        case TX_RESULT_BUSY:
+            return FRAMED_DATA_TX_STATUS_BUSY;
+        case TX_RESULT_CAD_TIMEOUT:
+            return FRAMED_DATA_TX_STATUS_CHANNEL_BUSY;
+        case TX_RESULT_RADIO_NOT_READY:
+            return FRAMED_DATA_TX_STATUS_RADIO_NOT_READY;
+        case TX_RESULT_INVALID_PACKET:
+            return FRAMED_DATA_TX_STATUS_INVALID_PACKET;
+        case TX_RESULT_INVALID_BAND:
+            return FRAMED_DATA_TX_STATUS_INVALID_BAND;
+        case TX_RESULT_RADIO_ERROR:
+        default:
+            return FRAMED_DATA_TX_STATUS_RADIO_ERROR;
+    }
 }
 
 template<typename RadioT>
@@ -92,7 +121,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     if (!radio_controller_ready(ctrl)) {
         daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
         printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
-        return 1;
+        return FRAMED_DATA_TX_STATUS_RADIO_NOT_READY;
     }
 
     // CAD guard: LoRa only.
@@ -100,12 +129,14 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
 
     if (data_tx_wait_channel_free(tx)) {
-        daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_CAD_TIMEOUT);
-        daemon_debug_ctx(tx->log_ctx, "CAD Timeout");
-        printf("[%s] CAD-Timeout: Kanal dauerhaft belegt, Paket verworfen\n", tag);
+        TxResult busy_result = ctrl->tx_mode == RADIO_TX_MODE_RAW ?
+                               TX_RESULT_BUSY : TX_RESULT_CAD_TIMEOUT;
+        daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
+        daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
+        printf("[%s] Kanal belegt, Paket verworfen\n", tag);
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
-               tx_result_name(TX_RESULT_CAD_TIMEOUT));
-        return 1;
+               tx_result_name(busy_result));
+        return FRAMED_DATA_TX_STATUS_CHANNEL_BUSY;
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
@@ -119,7 +150,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "Abbruch: %s", tx_result_name(result));
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
                tx_result_name(result));
-        return 1;
+        return daemon_data_tx_status_from_result<RadioT>(result);
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk gesendet");

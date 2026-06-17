@@ -64,6 +64,18 @@ static int daemon_queue_framed_error(ClientSlot *slot, const char *msg)
     return 0;
 }
 
+static uint8_t daemon_framed_tx_status_from_handler_result(int result)
+{
+    if (result == 0)
+        return FRAMED_DATA_TX_STATUS_OK;
+
+    if (result >= 0 && result <= 255 &&
+        framed_data_tx_result_status_valid((uint8_t)result))
+        return (uint8_t)result;
+
+    return FRAMED_DATA_TX_STATUS_RADIO_ERROR;
+}
+
 typedef struct {
     ClientSlot *slot;
     const char *tag;
@@ -97,8 +109,7 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
         result = tx->handler(payload, len, tx->handler_ctx);
 
     if (result_active) {
-        uint8_t status = result == 0 ? FRAMED_DATA_TX_STATUS_OK :
-                                      FRAMED_DATA_TX_STATUS_RADIO_ERROR;
+        uint8_t status = daemon_framed_tx_status_from_handler_result(result);
 
         if (daemon_queue_framed_tx_result(tx->slot,
                                           status,

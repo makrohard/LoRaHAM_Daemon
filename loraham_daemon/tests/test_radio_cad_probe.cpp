@@ -1,4 +1,5 @@
 #include "../radio_cad.h"
+#include "../daemon_data_tx_runtime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -161,6 +162,40 @@ static void test_probe_lora_free_busy_error(void)
     expect_int("lora error raw state", result.scan_state, -2);
 }
 
+
+static void test_tx_wait_raw_mode_uses_single_cad_probe(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> tx;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.tx_mode = RADIO_TX_MODE_RAW;
+    tx.ctrl = &ctrl;
+    tx.log_ctx = "TEST";
+
+    ctrl.radio->scan_result = 1;
+    expect_int("raw tx busy wait result", data_tx_wait_channel_free(&tx), 1);
+    expect_int("raw tx busy one scan", ctrl.radio->scan_count, 1);
+
+    ctrl.radio->scan_result = 0;
+    expect_int("raw tx free wait result", data_tx_wait_channel_free(&tx), 0);
+    expect_int("raw tx free second scan", ctrl.radio->scan_count, 2);
+}
+
+static void test_tx_wait_fsk_skips_cad(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> tx;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    tx.ctrl = &ctrl;
+    tx.log_ctx = "TEST";
+
+    ctrl.radio->scan_result = 1;
+    expect_int("fsk tx wait free", data_tx_wait_channel_free(&tx), 0);
+    expect_int("fsk tx wait no scan", ctrl.radio->scan_count, 0);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -185,6 +220,8 @@ int main(int argc, char **argv)
     test_probe_null_and_not_ready();
     test_probe_fsk_has_rssi_no_cad();
     test_probe_lora_free_busy_error();
+    test_tx_wait_raw_mode_uses_single_cad_probe();
+    test_tx_wait_fsk_skips_cad();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
