@@ -99,7 +99,7 @@ static void test_push_pop_order(void)
     DaemonTxQueue queue;
     DaemonTxJob a = make_job(433, 1, 0x11);
     DaemonTxJob b = make_job(868, 2, 0x22);
-    DaemonTxJob out;
+    DaemonTxJob out = {0};
 
     daemon_tx_queue_init(&queue);
 
@@ -120,7 +120,7 @@ static void test_push_pop_order(void)
 static void test_full_rejects_newest(void)
 {
     DaemonTxQueue queue;
-    DaemonTxJob out;
+    DaemonTxJob out = {0};
 
     daemon_tx_queue_init(&queue);
 
@@ -200,7 +200,7 @@ static void test_drain_limited(void)
     expect_int("drain one sender calls", sender.calls, 1);
     expect_size("drain one leaves one", daemon_tx_queue_count(&queue), 1);
 
-    DaemonTxJob out;
+    DaemonTxJob out = {0};
     expect_int("remaining pop", daemon_tx_queue_pop(&queue, &out), 0);
     expect_int("remaining seq", out.seq, 21);
 }

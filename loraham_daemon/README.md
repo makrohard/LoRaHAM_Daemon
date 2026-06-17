@@ -136,9 +136,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M5f
-adds a TX worker state facade around the bounded queue and synchronous
-drain seam. TX behavior is unchanged in this milestone. Raw DATA sockets
+The CAD/TX signaling rework is being introduced in small milestones. M5g
+adds per-radio TX worker state ownership and passive queue counters in
+`GET STATUS`. TX behavior is unchanged in this milestone. Raw DATA sockets
 and framed `RX_PACKET` RSSI/SNR layout remain unchanged.
 
 ## DATA sockets
@@ -217,6 +217,7 @@ Rules:
 - M5d routes the current synchronous DATA TX path through the TX executor seam; no worker thread or queue is introduced.
 - M5e adds a bounded TX queue contract with reject-newest-on-full behavior and a synchronous drain seam; daemon runtime is not wired to it yet.
 - M5f adds a TX worker state facade around the bounded queue and synchronous drain seam; daemon runtime is not wired to it yet.
+- M5g adds per-radio TX worker state ownership and passive `GET STATUS` queue counters; daemon runtime still sends synchronously.
 - M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.

@@ -140,13 +140,16 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQ=%zu TXQDROP=%zu TXQDONE=%zu\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
              (ctrl && ctrl->getrssi_active.load()) ? 1 : 0,
              (ctrl && ctrl->tx_result_active.load()) ? 1 : 0,
-             radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
+             radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED),
+             ctrl ? daemon_tx_worker_pending(&ctrl->tx_worker) : 0,
+             ctrl ? daemon_tx_worker_dropped(&ctrl->tx_worker) : 0,
+             ctrl ? daemon_tx_worker_processed(&ctrl->tx_worker) : 0);
 }
 
 template<typename RadioT>

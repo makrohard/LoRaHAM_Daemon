@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Per-radio TX worker state and passive GET STATUS queue counters added.
 - TX worker state facade added around the bounded queue for future threaded TX.
 - Bounded TX queue contract and synchronous drain seam added for future worker-thread TX.
 - Synchronous DATA TX path now routes through the TX executor seam.

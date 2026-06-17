@@ -91,7 +91,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
     if(config_status_is_get_status(line)) {
-        char status[128];
+        char status[192];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,

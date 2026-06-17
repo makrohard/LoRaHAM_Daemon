@@ -29,7 +29,7 @@ static int start_daemon_433(const char *bin)
 static int test_get_status_433(void)
 {
     int fd;
-    char line[160];
+    char line[256];
 
     fd = connect_unix_retry(SOCK_CONF_433, 2000);
     if (fd < 0)
@@ -41,7 +41,7 @@ static int test_get_status_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW)$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -59,7 +59,7 @@ static int test_get_status_433(void)
 static int test_set_txresult_433(void)
 {
     int fd;
-    char line[160];
+    char line[256];
 
     fd = connect_unix_retry(SOCK_CONF_433, 2000);
     if (fd < 0)
@@ -72,7 +72,7 @@ static int test_set_txresult_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|RAW)$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|RAW) TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -90,7 +90,7 @@ static int test_set_txresult_433(void)
 static int test_set_txmode_433(void)
 {
     int fd;
-    char line[160];
+    char line[256];
 
     fd = connect_unix_retry(SOCK_CONF_433, 2000);
     if (fd < 0)
@@ -103,7 +103,7 @@ static int test_set_txmode_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=RAW$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=RAW TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
