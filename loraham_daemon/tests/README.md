@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 36 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 37 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -67,6 +67,7 @@ DATA/RF/TX:
 - `test_daemon_tx_job`
 - `test_daemon_tx_executor`
 - `test_daemon_tx_queue`
+- `test_daemon_tx_worker`
 - `test_rf_packet`
 - `test_framed_data` (including `TX_RESULT` layout)
 - `test_framed_data_tx`
@@ -111,3 +112,5 @@ Public integration baseline:
 - `test_daemon_tx_executor` verifies the synchronous TX executor seam and raw `TxResult` preservation without changing daemon TX behavior.
 
 - `test_daemon_tx_queue` verifies the bounded TX queue contract and synchronous drain seam without changing daemon TX behavior.
+
+- `test_daemon_tx_worker` verifies the future TX worker state facade without changing daemon TX behavior.
