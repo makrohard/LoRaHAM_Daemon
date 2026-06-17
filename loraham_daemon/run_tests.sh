@@ -529,6 +529,7 @@ build_tests() {
   build_one_tx_result_test "$TEST_DIR/test_tx_result.cpp" "$TEST_DIR/test_tx_result"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_outcome.cpp" "$TEST_DIR/test_daemon_tx_outcome"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_job.cpp" "$TEST_DIR/test_daemon_tx_job"
+  build_one_cpp_test "$TEST_DIR/test_daemon_tx_executor.cpp" "$TEST_DIR/test_daemon_tx_executor"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"

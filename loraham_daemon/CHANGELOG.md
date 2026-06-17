@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Synchronous TX executor seam added for future worker-thread integration.
 - TX job/result structs added as preparation for future async TX worker.
 - Fix TX outcome test string literals so the M5a test builds.
 - Internal TX outcomes now map separately to framed TX_RESULT wire statuses.
