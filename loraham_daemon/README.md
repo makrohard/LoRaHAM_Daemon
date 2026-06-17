@@ -133,6 +133,14 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD poll interval | `30` loop ticks | CAD polling cadence constant |
 
+
+## CAD/TX rework status
+
+The CAD/TX signaling rework is being introduced in small milestones. M0 adds
+characterization tests only: raw DATA sockets remain byte-transparent, framed
+`RX_PACKET` RSSI/SNR layout remains unchanged, and the desired future behavior
+for recoverable framed TX failures is recorded as an expected-failing test.
+
 ## DATA sockets
 
 DATA sockets are raw byte streams. They have no line protocol and no length prefix.
@@ -417,3 +425,10 @@ The original project is licensed under GNU GPL v3 with additional conditions sta
 - modifications should be reported to the author, preferably via pull request
 - binaries may only be redistributed with the full source code
 - no warranty; use at your own risk
+
+## CAD/TX rework in progress
+
+The current branch is preparing a staged CAD/TX signaling rework. M0 adds
+characterization guardrails only: raw DATA remains byte-transparent, framed
+`RX_PACKET` RSSI/SNR metadata remains unchanged, and the current framed TX
+failure behavior is recorded as an expected-failing test before M1 changes it.

@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 27 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 28 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -66,6 +66,7 @@ DATA/RF/TX:
 - `test_rf_packet`
 - `test_framed_data`
 - `test_framed_data_tx`
+- `test_tx_failure_keeps_client` (expected failure until M1)
 
 Client/socket/runtime:
 
@@ -90,3 +91,7 @@ Public integration baseline:
 
 - `test_interface_baseline`
 
+
+## CAD/TX rework guardrail
+
+`test_tx_failure_keeps_client` is an expected failure in M0. It records the M1 target behavior: recoverable RF/TX execution failures must be reported without closing the framed client connection.
