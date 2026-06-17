@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Framed DATA protocol defines TX_RESULT frame layout and encoder.
 - Framed DATA TX execution failures now emit ERROR and keep the parser/client alive.
 - CAD/TX rework guardrail: add expected-failing framed TX failure characterization.
 

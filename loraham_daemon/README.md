@@ -136,11 +136,10 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M1 keeps
-framed DATA clients connected when a recoverable RF/TX execution failure occurs.
-Until `TX_RESULT` exists, the failure is reported through the existing `ERROR`
-frame path. Raw DATA sockets and framed `RX_PACKET` RSSI/SNR layout remain
-unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M2a
+defines the `TX_RESULT` frame layout and encoder only; runtime opt-in and
+emission are wired in a later milestone. Raw DATA sockets and framed
+`RX_PACKET` RSSI/SNR layout remain unchanged.
 
 ## DATA sockets
 
@@ -186,6 +185,7 @@ Frame types:
 | `0x01` | `RX_PACKET` | daemon → client | One complete received RF packet with RSSI/SNR metadata |
 | `0x02` | `TX_PACKET` | client → daemon | One complete RF packet to transmit |
 | `0x03` | `ERROR` | daemon → client | UTF-8 error text |
+| `0x04` | `TX_RESULT` | daemon → client | Per-TX result payload; runtime emission is wired in a later milestone |
 
 `RX_PACKET` payload layout:
 
@@ -195,9 +195,18 @@ Frame types:
 | `2` | 2 bytes | little-endian `int16` | SNR in centi-dB, or `-32768` if unavailable; FSK uses unavailable |
 | `4` | `rf_len` bytes | bytes | received RF payload, maximum `255` bytes |
 
+`TX_RESULT` payload layout:
+
+| Payload offset | Size | Type | Meaning |
+|---:|---:|---|---|
+| `0` | 1 byte | `uint8` | status: `0` OK, `1` BUSY, `2` CHANNEL_BUSY, `3` RADIO_NOT_READY, `4` RADIO_ERROR, `5` INVALID_PACKET, `6` INVALID_BAND |
+| `1` | 1 byte | bit mask | flags: bit `0` managed-mode attempt, bit `1` deferred/retried |
+| `2` | 2 bytes | little-endian `uint16` | sequence number |
+
 Rules:
 
 - `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
+- `TX_RESULT` payload length is exactly `4` bytes; this commit defines the protocol helper only.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
 - one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.

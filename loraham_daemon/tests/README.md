@@ -64,7 +64,7 @@ DATA/RF/TX:
 - `test_data_tx`
 - `test_tx_result`
 - `test_rf_packet`
-- `test_framed_data`
+- `test_framed_data` (including `TX_RESULT` layout)
 - `test_framed_data_tx`
 - `test_tx_failure_keeps_client`
 

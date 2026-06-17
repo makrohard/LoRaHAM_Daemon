@@ -8,12 +8,18 @@ int framed_data_type_known(uint8_t frame_type)
 {
     return frame_type == FRAMED_DATA_TYPE_RX_PACKET ||
            frame_type == FRAMED_DATA_TYPE_TX_PACKET ||
-           frame_type == FRAMED_DATA_TYPE_ERROR;
+           frame_type == FRAMED_DATA_TYPE_ERROR ||
+           frame_type == FRAMED_DATA_TYPE_TX_RESULT;
 }
 
 int framed_data_rf_payload_len_valid(size_t payload_len)
 {
     return payload_len <= FRAMED_DATA_MAX_RF_PAYLOAD;
+}
+
+int framed_data_tx_result_status_valid(uint8_t status)
+{
+    return status <= FRAMED_DATA_TX_STATUS_INVALID_BAND;
 }
 
 size_t framed_data_frame_size(uint16_t payload_len)
@@ -37,6 +43,9 @@ static int framed_data_type_payload_len_valid(uint8_t frame_type,
         return framed_data_rf_payload_len_valid(
             (size_t)payload_len - FRAMED_DATA_RX_META_LEN);
     }
+
+    if (frame_type == FRAMED_DATA_TYPE_TX_RESULT)
+        return payload_len == FRAMED_DATA_TX_RESULT_PAYLOAD_LEN;
 
     return 1;
 }
@@ -155,6 +164,35 @@ int framed_data_encode_rx_packet(uint8_t *frame,
         memcpy(frame + FRAMED_DATA_HEADER_LEN + FRAMED_DATA_RX_META_LEN,
                rf_payload,
                rf_len);
+
+    return 0;
+}
+
+int framed_data_encode_tx_result(uint8_t *frame,
+                                 size_t frame_len,
+                                 uint8_t status,
+                                 uint8_t flags,
+                                 uint16_t seq)
+{
+    if (!frame)
+        return -1;
+
+    if (!framed_data_tx_result_status_valid(status))
+        return -1;
+
+    if (frame_len < framed_data_frame_size(FRAMED_DATA_TX_RESULT_PAYLOAD_LEN))
+        return -1;
+
+    if (framed_data_encode_header(frame,
+                                  frame_len,
+                                  FRAMED_DATA_TYPE_TX_RESULT,
+                                  FRAMED_DATA_TX_RESULT_PAYLOAD_LEN) != 0)
+        return -1;
+
+    frame[FRAMED_DATA_HEADER_LEN + 0] = status;
+    frame[FRAMED_DATA_HEADER_LEN + 1] = flags;
+    frame[FRAMED_DATA_HEADER_LEN + 2] = (uint8_t)(seq & 0xFF);
+    frame[FRAMED_DATA_HEADER_LEN + 3] = (uint8_t)((seq >> 8) & 0xFF);
 
     return 0;
 }

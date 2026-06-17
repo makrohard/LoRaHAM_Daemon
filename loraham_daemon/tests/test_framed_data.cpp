@@ -65,6 +65,7 @@ static void test_frame_type_contract(void)
     expect_int("RX type known", framed_data_type_known(FRAMED_DATA_TYPE_RX_PACKET), 1);
     expect_int("TX type known", framed_data_type_known(FRAMED_DATA_TYPE_TX_PACKET), 1);
     expect_int("ERROR type known", framed_data_type_known(FRAMED_DATA_TYPE_ERROR), 1);
+    expect_int("TX_RESULT type known", framed_data_type_known(FRAMED_DATA_TYPE_TX_RESULT), 1);
     expect_int("unknown type rejected", framed_data_type_known(0x7F), 0);
 }
 
@@ -100,6 +101,10 @@ static void test_frame_size(void)
     expect_size("max TX frame size", framed_data_frame_size(255),
                 FRAMED_DATA_HEADER_LEN + 255);
     expect_size("RX meta length", FRAMED_DATA_RX_META_LEN, 4);
+    expect_size("TX_RESULT payload length", FRAMED_DATA_TX_RESULT_PAYLOAD_LEN, 4);
+    expect_size("TX_RESULT frame size",
+                framed_data_frame_size(FRAMED_DATA_TX_RESULT_PAYLOAD_LEN),
+                FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN);
     expect_size("max RX payload size", FRAMED_DATA_RX_PAYLOAD_MAX,
                 FRAMED_DATA_RX_META_LEN + 255);
     expect_size("max RX frame size", FRAMED_DATA_RX_FRAME_MAX,
@@ -132,6 +137,14 @@ static void test_reject_invalid_headers(void)
     expect_int("encode ERROR larger text ok",
                framed_data_encode_header(header, sizeof(header),
                                          FRAMED_DATA_TYPE_ERROR, 512), 0);
+    expect_int("encode TX_RESULT len ok",
+               framed_data_encode_header(header, sizeof(header),
+                                         FRAMED_DATA_TYPE_TX_RESULT,
+                                         FRAMED_DATA_TX_RESULT_PAYLOAD_LEN), 0);
+    expect_int("encode TX_RESULT short fails",
+               framed_data_encode_header(header, sizeof(header),
+                                         FRAMED_DATA_TYPE_TX_RESULT,
+                                         FRAMED_DATA_TX_RESULT_PAYLOAD_LEN - 1), -1);
     expect_int("decode short header fails",
                framed_data_decode_header(header, FRAMED_DATA_HEADER_LEN - 1,
                                          &type, &len), -1);
@@ -146,6 +159,12 @@ static void test_reject_invalid_headers(void)
     header[1] = (uint8_t)((FRAMED_DATA_RX_META_LEN - 1) & 0xFF);
     header[2] = 0;
     expect_int("decode RX missing metadata fails",
+               framed_data_decode_header(header, sizeof(header), &type, &len), -1);
+
+    header[0] = FRAMED_DATA_TYPE_TX_RESULT;
+    header[1] = 0;
+    header[2] = 0;
+    expect_int("decode TX_RESULT wrong len fails",
                framed_data_decode_header(header, sizeof(header), &type, &len), -1);
 }
 
@@ -176,6 +195,62 @@ static void test_frame_encode_builder(void)
                                         FRAMED_DATA_TYPE_TX_PACKET,
                                         NULL,
                                         (uint16_t)sizeof(payload)), -1);
+}
+
+static void test_tx_result_encode(void)
+{
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+    uint8_t small[sizeof(frame) - 1];
+    uint8_t type = 0;
+    uint16_t len = 0;
+
+    expect_int("TX_RESULT OK status valid",
+               framed_data_tx_result_status_valid(FRAMED_DATA_TX_STATUS_OK), 1);
+    expect_int("TX_RESULT invalid band status valid",
+               framed_data_tx_result_status_valid(FRAMED_DATA_TX_STATUS_INVALID_BAND), 1);
+    expect_int("TX_RESULT status 7 invalid",
+               framed_data_tx_result_status_valid(7), 0);
+
+    expect_int("encode TX_RESULT ok",
+               framed_data_encode_tx_result(frame,
+                                            sizeof(frame),
+                                            FRAMED_DATA_TX_STATUS_CHANNEL_BUSY,
+                                            FRAMED_DATA_TX_RESULT_FLAG_MANAGED |
+                                            FRAMED_DATA_TX_RESULT_FLAG_DEFERRED,
+                                            0x1234), 0);
+    expect_int("TX_RESULT frame type", frame[0], FRAMED_DATA_TYPE_TX_RESULT);
+    expect_int("TX_RESULT len low", frame[1], FRAMED_DATA_TX_RESULT_PAYLOAD_LEN);
+    expect_int("TX_RESULT len high", frame[2], 0);
+    expect_int("TX_RESULT status", frame[3], FRAMED_DATA_TX_STATUS_CHANNEL_BUSY);
+    expect_int("TX_RESULT flags", frame[4],
+               FRAMED_DATA_TX_RESULT_FLAG_MANAGED |
+               FRAMED_DATA_TX_RESULT_FLAG_DEFERRED);
+    expect_int("TX_RESULT seq low", frame[5], 0x34);
+    expect_int("TX_RESULT seq high", frame[6], 0x12);
+
+    expect_int("decode TX_RESULT header",
+               framed_data_decode_header(frame, sizeof(frame), &type, &len), 0);
+    expect_int("decoded TX_RESULT type", type, FRAMED_DATA_TYPE_TX_RESULT);
+    expect_int("decoded TX_RESULT len", len, FRAMED_DATA_TX_RESULT_PAYLOAD_LEN);
+
+    expect_int("encode TX_RESULT small buffer fails",
+               framed_data_encode_tx_result(small,
+                                            sizeof(small),
+                                            FRAMED_DATA_TX_STATUS_OK,
+                                            0,
+                                            1), -1);
+    expect_int("encode TX_RESULT invalid status fails",
+               framed_data_encode_tx_result(frame,
+                                            sizeof(frame),
+                                            7,
+                                            0,
+                                            1), -1);
+    expect_int("encode TX_RESULT null frame fails",
+               framed_data_encode_tx_result(NULL,
+                                            sizeof(frame),
+                                            FRAMED_DATA_TX_STATUS_OK,
+                                            0,
+                                            1), -1);
 }
 
 static void test_rx_packet_encode_metadata_and_payload(void)
@@ -314,6 +389,7 @@ int main(int argc, char **argv)
     test_frame_size();
     test_reject_invalid_headers();
     test_frame_encode_builder();
+    test_tx_result_encode();
     test_rx_packet_encode_metadata_and_payload();
     test_rx_packet_boundaries();
     test_null_arguments();
