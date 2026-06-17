@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CONF TXMODE state can be set per band and is reported in GET STATUS.
 - Framed DATA TX_RESULT can be enabled per band and emitted after TX_PACKET attempts.
 - Framed DATA protocol defines TX_RESULT frame layout and encoder.
 - Framed DATA TX execution failures now emit ERROR and keep the parser/client alive.

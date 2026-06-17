@@ -13,6 +13,16 @@
 
 /* --- Radio hardware/runtime state --------------------------------------- */
 
+typedef enum {
+    RADIO_TX_MODE_MANAGED = 0,
+    RADIO_TX_MODE_RAW = 1
+} RadioTxMode_t;
+
+static inline const char *radio_tx_mode_name(RadioTxMode_t mode)
+{
+    return mode == RADIO_TX_MODE_RAW ? "RAW" : "MANAGED";
+}
+
 template<typename RadioT>
 struct RadioController {
     RadioBand_t band;
@@ -30,6 +40,7 @@ struct RadioController {
     std::atomic<bool> cad_active;
     std::atomic<bool> getrssi_active;
     std::atomic<bool> tx_result_active;
+    RadioTxMode_t tx_mode;
     uint16_t tx_result_seq;
 
     DaemonRadioStats stats;
@@ -65,6 +76,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_active.store(false);
     ctrl->getrssi_active.store(false);
     ctrl->tx_result_active.store(false);
+    ctrl->tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl->tx_result_seq = 0;
 
     daemon_radio_stats_init(&ctrl->stats);

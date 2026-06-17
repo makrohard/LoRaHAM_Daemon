@@ -104,6 +104,29 @@ static inline int config_status_is_set_txresult(const char *line,
     return 0;
 }
 
+static inline int config_status_is_set_txmode(const char *line,
+                                             RadioTxMode_t *mode)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+
+    if (strcmp(cmd, "SET TXMODE=MANAGED") == 0) {
+        if (mode)
+            *mode = RADIO_TX_MODE_MANAGED;
+        return 1;
+    }
+
+    if (strcmp(cmd, "SET TXMODE=RAW") == 0) {
+        if (mode)
+            *mode = RADIO_TX_MODE_RAW;
+        return 1;
+    }
+
+    return 0;
+}
+
 template<typename RadioT>
 static inline void config_status_format(char *buf,
                                         size_t buf_size,
@@ -111,12 +134,13 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
              (ctrl && ctrl->getrssi_active.load()) ? 1 : 0,
-             (ctrl && ctrl->tx_result_active.load()) ? 1 : 0);
+             (ctrl && ctrl->tx_result_active.load()) ? 1 : 0,
+             radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
 }
 
 template<typename RadioT>

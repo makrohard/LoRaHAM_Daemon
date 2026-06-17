@@ -127,6 +127,15 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    RadioTxMode_t txmode = RADIO_TX_MODE_MANAGED;
+    if(config_status_is_set_txmode(line, &txmode)) {
+        if(ctx->ctrl)
+            ctx->ctrl->tx_mode = txmode;
+        printf("[%s] TXMODE=%s\n", ctx->tag, radio_tx_mode_name(txmode));
+        fflush(stdout);
+        return;
+    }
+
     if(!ctx->ctrl || !ctx->ctrl->radio ||
        !radio_controller_ready(ctx->ctrl)) {
         config_dispatch_log_message(&ctx->log, "Radio nicht bereit");

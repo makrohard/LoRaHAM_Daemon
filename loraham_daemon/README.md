@@ -136,10 +136,10 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M2b
-adds per-band `SET TXRESULT=1/0` opt-in and emits `TX_RESULT` after framed
-`TX_PACKET` attempts. Raw DATA sockets and framed `RX_PACKET` RSSI/SNR
-layout remain unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M3a
+adds per-band `SET TXMODE=MANAGED|RAW` state and exposes it through
+`GET STATUS`; TX behavior is unchanged until the real CAD milestone. Raw
+DATA sockets and framed `RX_PACKET` RSSI/SNR layout remain unchanged.
 
 ## DATA sockets
 
@@ -208,7 +208,8 @@ Rules:
 - `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
 - `TX_RESULT` payload length is exactly `4` bytes.
 - `SET TXRESULT=1` and `SET TXRESULT=0` on a CONF socket enable or disable per-band `TX_RESULT` emission.
-- `GET STATUS` includes `TXRESULT=0|1`.
+- `SET TXMODE=MANAGED` and `SET TXMODE=RAW` on a CONF socket select per-band TX mode state; default is `MANAGED`.
+- `GET STATUS` includes `TXRESULT=0|1` and `TXMODE=MANAGED|RAW`.
 - M2b maps framed TX success to `OK` and generic send failure to `RADIO_ERROR`; richer busy/CAD statuses are introduced later.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
