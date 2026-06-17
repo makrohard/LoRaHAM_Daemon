@@ -11,7 +11,7 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_stats.h"
 #include "daemon_tx.h"
-#include "framed_data.h"
+#include "daemon_tx_outcome.h"
 #include "radio_cad.h"
 #include "radio_controller.h"
 #include "tx_result.h"
@@ -67,28 +67,6 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 }
 
 template<typename RadioT>
-static int daemon_data_tx_status_from_result(TxResult result)
-{
-    switch (result) {
-        case TX_RESULT_OK:
-            return FRAMED_DATA_TX_STATUS_OK;
-        case TX_RESULT_BUSY:
-            return FRAMED_DATA_TX_STATUS_BUSY;
-        case TX_RESULT_CAD_TIMEOUT:
-            return FRAMED_DATA_TX_STATUS_CHANNEL_BUSY;
-        case TX_RESULT_RADIO_NOT_READY:
-            return FRAMED_DATA_TX_STATUS_RADIO_NOT_READY;
-        case TX_RESULT_INVALID_PACKET:
-            return FRAMED_DATA_TX_STATUS_INVALID_PACKET;
-        case TX_RESULT_INVALID_BAND:
-            return FRAMED_DATA_TX_STATUS_INVALID_BAND;
-        case TX_RESULT_RADIO_ERROR:
-        default:
-            return FRAMED_DATA_TX_STATUS_RADIO_ERROR;
-    }
-}
-
-template<typename RadioT>
 static int daemon_data_tx_result_enabled(void *ctx)
 {
     DataTxDaemonContext<RadioT> *tx =
@@ -121,7 +99,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     if (!radio_controller_ready(ctrl)) {
         daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
         printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
-        return FRAMED_DATA_TX_STATUS_RADIO_NOT_READY;
+        return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
     }
 
     // CAD guard: LoRa only.
@@ -136,7 +114,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         printf("[%s] Kanal belegt, Paket verworfen\n", tag);
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
                tx_result_name(busy_result));
-        return FRAMED_DATA_TX_STATUS_CHANNEL_BUSY;
+        return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
@@ -150,7 +128,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "Abbruch: %s", tx_result_name(result));
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
                tx_result_name(result));
-        return daemon_data_tx_status_from_result<RadioT>(result);
+        return daemon_tx_outcome_from_tx_result(result);
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk gesendet");

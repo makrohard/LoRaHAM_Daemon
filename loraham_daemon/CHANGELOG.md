@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Internal TX outcomes now map separately to framed TX_RESULT wire statuses.
 - GET CHANNEL reports per-band radio, CAD, RSSI, mode, and TX mode snapshots.
 - TX guard now uses the real CAD probe and reports CAD-blocked framed TX as CHANNEL_BUSY.
 - Real CAD probe helper added for later TXMODE and GET CHANNEL wiring.

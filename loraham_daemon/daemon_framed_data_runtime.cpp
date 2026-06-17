@@ -7,6 +7,7 @@
 
 #include "client_output_queue.h"
 #include "daemon_log.h"
+#include "daemon_tx_outcome.h"
 #include "framed_data.h"
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
@@ -66,14 +67,7 @@ static int daemon_queue_framed_error(ClientSlot *slot, const char *msg)
 
 static uint8_t daemon_framed_tx_status_from_handler_result(int result)
 {
-    if (result == 0)
-        return FRAMED_DATA_TX_STATUS_OK;
-
-    if (result >= 0 && result <= 255 &&
-        framed_data_tx_result_status_valid((uint8_t)result))
-        return (uint8_t)result;
-
-    return FRAMED_DATA_TX_STATUS_RADIO_ERROR;
+    return daemon_tx_outcome_to_framed_status(result);
 }
 
 typedef struct {

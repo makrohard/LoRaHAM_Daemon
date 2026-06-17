@@ -136,10 +136,11 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M4a
-adds `GET CHANNEL` snapshots using the shared real-CAD probe. TX behavior
-is unchanged in this milestone. Raw DATA sockets and framed `RX_PACKET`
-RSSI/SNR layout remain unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M5a
+adds an internal TX outcome abstraction and keeps the external framed
+`TX_RESULT` wire format unchanged. TX behavior is unchanged in this
+milestone. Raw DATA sockets and framed `RX_PACKET` RSSI/SNR layout remain
+unchanged.
 
 ## DATA sockets
 
@@ -211,6 +212,7 @@ Rules:
 - `SET TXMODE=MANAGED` and `SET TXMODE=RAW` on a CONF socket select per-band TX mode state; default is `MANAGED`.
 - `GET STATUS` includes `TXRESULT=0|1` and `TXMODE=MANAGED|RAW`.
 - `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE` fields.
+- M5a keeps external `TX_RESULT` payloads unchanged while mapping internal TX outcomes at the framed DATA boundary.
 - M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
