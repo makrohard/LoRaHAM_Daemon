@@ -60,6 +60,28 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 }
 
 template<typename RadioT>
+static int daemon_data_tx_result_enabled(void *ctx)
+{
+    DataTxDaemonContext<RadioT> *tx =
+        (DataTxDaemonContext<RadioT> *)ctx;
+
+    return tx && tx->ctrl && tx->ctrl->tx_result_active.load();
+}
+
+template<typename RadioT>
+static uint16_t daemon_data_tx_next_result_seq(void *ctx)
+{
+    DataTxDaemonContext<RadioT> *tx =
+        (DataTxDaemonContext<RadioT> *)ctx;
+
+    if (!tx || !tx->ctrl)
+        return 0;
+
+    tx->ctrl->tx_result_seq++;
+    return tx->ctrl->tx_result_seq;
+}
+
+template<typename RadioT>
 static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
     DataTxDaemonContext<RadioT> *tx = (DataTxDaemonContext<RadioT> *)ctx;

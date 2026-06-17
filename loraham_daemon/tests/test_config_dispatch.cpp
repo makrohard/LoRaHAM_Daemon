@@ -306,6 +306,59 @@ static void test_dispatch_ignores_not_ready_client(void)
     client_slot_close(&slots[0]);
 }
 
+
+static void test_dispatch_set_txresult(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config TXRESULT init\n");
+        return;
+    }
+
+    const char *cmd = "SET TXRESULT=1\n";
+    write(sv[0], cmd, strlen(cmd));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("txresult wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx =
+        make_context(slots, &ctrl);
+
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("txresult apply not called", g_apply_state.calls, 0);
+    expect_int("txresult enabled", ctrl.tx_result_active.load() == true, 1);
+    expect_int("txresult callback not restored", ctrl.radio->callback_count, 0);
+    expect_int("txresult startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("txresult client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 static void test_dispatch_closes_eof_client(void)
 {
     int sv[2];
@@ -381,6 +434,7 @@ int main(int argc, char **argv)
     test_dispatch_ready_client();
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
+    test_dispatch_set_txresult();
     test_dispatch_closes_eof_client();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

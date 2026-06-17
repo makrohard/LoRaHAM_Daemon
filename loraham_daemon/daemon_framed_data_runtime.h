@@ -11,6 +11,9 @@
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
 
+typedef int (*DaemonFramedTxResultEnabledFn)(void *ctx);
+typedef uint16_t (*DaemonFramedTxNextSeqFn)(void *ctx);
+
 template<typename RadioT>
 static int send_framed_data_packet(uint8_t *payload,
                                    size_t len,
@@ -25,6 +28,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       int max_clients,
                                       const EventLoopReadySet *readfds,
                                       FramedDataTxPacketHandler handler,
-                                      void *ctx);
+                                      void *ctx,
+                                      DaemonFramedTxResultEnabledFn result_enabled,
+                                      DaemonFramedTxNextSeqFn next_seq);
 
 #endif

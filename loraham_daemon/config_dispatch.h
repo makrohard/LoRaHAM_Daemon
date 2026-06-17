@@ -118,6 +118,15 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    int txresult_enabled = 0;
+    if(config_status_is_set_txresult(line, &txresult_enabled)) {
+        if(ctx->ctrl)
+            ctx->ctrl->tx_result_active.store(txresult_enabled != 0);
+        printf("[%s] TXRESULT=%d\n", ctx->tag, txresult_enabled ? 1 : 0);
+        fflush(stdout);
+        return;
+    }
+
     if(!ctx->ctrl || !ctx->ctrl->radio ||
        !radio_controller_ready(ctx->ctrl)) {
         config_dispatch_log_message(&ctx->log, "Radio nicht bereit");

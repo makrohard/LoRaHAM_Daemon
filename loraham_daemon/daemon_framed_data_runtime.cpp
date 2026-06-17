@@ -11,6 +11,30 @@
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
 
+
+static int daemon_queue_framed_tx_result(ClientSlot *slot,
+                                         uint8_t status,
+                                         uint8_t flags,
+                                         uint16_t seq)
+{
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+
+    if (!slot)
+        return -1;
+
+    if (framed_data_encode_tx_result(frame,
+                                     sizeof(frame),
+                                     status,
+                                     flags,
+                                     seq) != 0)
+        return -1;
+
+    if (!client_output_queue_append(&slot->output, frame, sizeof(frame)))
+        return -1;
+
+    return 0;
+}
+
 static int daemon_queue_framed_error(ClientSlot *slot, const char *msg)
 {
     uint8_t header[FRAMED_DATA_HEADER_LEN];
@@ -45,6 +69,53 @@ typedef struct {
     const char *tag;
 } DaemonFramedErrorContext;
 
+typedef struct {
+    ClientSlot *slot;
+    const char *tag;
+    FramedDataTxPacketHandler handler;
+    void *handler_ctx;
+    DaemonFramedTxResultEnabledFn result_enabled;
+    DaemonFramedTxNextSeqFn next_seq;
+} DaemonFramedTxContext;
+
+static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
+{
+    DaemonFramedTxContext *tx = (DaemonFramedTxContext *)ctx;
+    int result_active;
+    uint16_t seq = 0;
+    int result = -1;
+
+    if (!tx)
+        return -1;
+
+    result_active = tx->result_enabled &&
+                    tx->result_enabled(tx->handler_ctx);
+    if (result_active && tx->next_seq)
+        seq = tx->next_seq(tx->handler_ctx);
+
+    if (tx->handler)
+        result = tx->handler(payload, len, tx->handler_ctx);
+
+    if (result_active) {
+        uint8_t status = result == 0 ? FRAMED_DATA_TX_STATUS_OK :
+                                      FRAMED_DATA_TX_STATUS_RADIO_ERROR;
+
+        if (daemon_queue_framed_tx_result(tx->slot,
+                                          status,
+                                          FRAMED_DATA_TX_RESULT_FLAG_MANAGED,
+                                          seq) != 0) {
+            daemon_debug_ctx(tx->tag ? tx->tag : "TXF",
+                             "TX_RESULT queue failed, Client zu");
+            if (tx->slot)
+                client_slot_close(tx->slot);
+        }
+
+        return 0;
+    }
+
+    return result;
+}
+
 static void daemon_framed_tx_error(const char *msg, void *ctx)
 {
     DaemonFramedErrorContext *err = (DaemonFramedErrorContext *)ctx;
@@ -64,7 +135,9 @@ void daemon_process_framed_data_slots(const char *tag,
                                       int max_clients,
                                       const EventLoopReadySet *readfds,
                                       FramedDataTxPacketHandler handler,
-                                      void *ctx)
+                                      void *ctx,
+                                      DaemonFramedTxResultEnabledFn result_enabled,
+                                      DaemonFramedTxNextSeqFn next_seq)
 {
     if (!slots || !states)
         return;
@@ -105,13 +178,21 @@ void daemon_process_framed_data_slots(const char *tag,
         }
 
         DaemonFramedErrorContext err = { slot, tag };
+        DaemonFramedTxContext tx = {
+            slot,
+            tag,
+            handler,
+            ctx,
+            result_enabled,
+            next_seq
+        };
 
         daemon_debug_ctx(tag, "Framed DATA: %zd Byte empfangen", n);
         if (framed_data_tx_feed_state(&states[i],
                                       buf,
                                       (size_t)n,
-                                      handler,
-                                      ctx,
+                                      daemon_framed_tx_packet,
+                                      &tx,
                                       daemon_framed_tx_error,
                                       &err) != 0) {
             daemon_debug_ctx(tag, "TX-Handler Fehler, Client zu");

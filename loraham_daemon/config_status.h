@@ -81,6 +81,29 @@ static inline int config_status_is_get_stats(const char *line)
     return config_status_command_equals(line, "GET STATS");
 }
 
+static inline int config_status_is_set_txresult(const char *line,
+                                               int *enabled)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+
+    if (strcmp(cmd, "SET TXRESULT=1") == 0) {
+        if (enabled)
+            *enabled = 1;
+        return 1;
+    }
+
+    if (strcmp(cmd, "SET TXRESULT=0") == 0) {
+        if (enabled)
+            *enabled = 0;
+        return 1;
+    }
+
+    return 0;
+}
+
 template<typename RadioT>
 static inline void config_status_format(char *buf,
                                         size_t buf_size,
@@ -88,11 +111,12 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
-             (ctrl && ctrl->getrssi_active.load()) ? 1 : 0);
+             (ctrl && ctrl->getrssi_active.load()) ? 1 : 0,
+             (ctrl && ctrl->tx_result_active.load()) ? 1 : 0);
 }
 
 template<typename RadioT>

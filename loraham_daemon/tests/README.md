@@ -95,3 +95,5 @@ Public integration baseline:
 ## CAD/TX rework guardrail
 
 `test_tx_failure_keeps_client` verifies the M1 behavior: recoverable RF/TX execution failures are reported through the existing ERROR path without closing the framed client connection.
+
+- `test_conf_status` covers `TXRESULT` status reporting and CONF opt-in.

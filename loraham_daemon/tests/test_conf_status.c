@@ -41,7 +41,7 @@ static int test_get_status_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01]$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01]$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -50,6 +50,37 @@ static int test_get_status_433(void)
     }
 
     printf("       433 status line: %s\n", line);
+
+    close(fd);
+    return TEST_PASS;
+}
+
+
+static int test_set_txresult_433(void)
+{
+    int fd;
+    char line[160];
+
+    fd = connect_unix_retry(SOCK_CONF_433, 2000);
+    if (fd < 0)
+        return TEST_FAIL;
+
+    if (write_all(fd, "SET TXRESULT=1\nGET STATUS\n",
+                  strlen("SET TXRESULT=1\nGET STATUS\n")) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    if (wait_for_matching_line(fd,
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1$",
+                               2000,
+                               line,
+                               sizeof(line)) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    printf("       433 txresult status line: %s\n", line);
 
     close(fd);
     return TEST_PASS;
@@ -89,6 +120,7 @@ int main(int argc, char **argv)
     }
 
     run_test("GET STATUS on CONF 433", test_get_status_433);
+    run_test("SET TXRESULT on CONF 433", test_set_txresult_433);
 
     if (!daemon_alive()) {
         fail_msg("daemon exited during test");

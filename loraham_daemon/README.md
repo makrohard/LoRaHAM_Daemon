@@ -136,10 +136,10 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M2a
-defines the `TX_RESULT` frame layout and encoder only; runtime opt-in and
-emission are wired in a later milestone. Raw DATA sockets and framed
-`RX_PACKET` RSSI/SNR layout remain unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M2b
+adds per-band `SET TXRESULT=1/0` opt-in and emits `TX_RESULT` after framed
+`TX_PACKET` attempts. Raw DATA sockets and framed `RX_PACKET` RSSI/SNR
+layout remain unchanged.
 
 ## DATA sockets
 
@@ -185,7 +185,7 @@ Frame types:
 | `0x01` | `RX_PACKET` | daemon → client | One complete received RF packet with RSSI/SNR metadata |
 | `0x02` | `TX_PACKET` | client → daemon | One complete RF packet to transmit |
 | `0x03` | `ERROR` | daemon → client | UTF-8 error text |
-| `0x04` | `TX_RESULT` | daemon → client | Per-TX result payload; runtime emission is wired in a later milestone |
+| `0x04` | `TX_RESULT` | daemon → client | Per-TX result payload when enabled with `SET TXRESULT=1` on the matching CONF socket |
 
 `RX_PACKET` payload layout:
 
@@ -206,7 +206,10 @@ Frame types:
 Rules:
 
 - `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
-- `TX_RESULT` payload length is exactly `4` bytes; this commit defines the protocol helper only.
+- `TX_RESULT` payload length is exactly `4` bytes.
+- `SET TXRESULT=1` and `SET TXRESULT=0` on a CONF socket enable or disable per-band `TX_RESULT` emission.
+- `GET STATUS` includes `TXRESULT=0|1`.
+- M2b maps framed TX success to `OK` and generic send failure to `RADIO_ERROR`; richer busy/CAD statuses are introduced later.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
 - one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
