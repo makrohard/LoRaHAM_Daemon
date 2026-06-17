@@ -41,7 +41,7 @@ static int test_get_status_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -72,7 +72,7 @@ static int test_set_txresult_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|RAW) TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|RAW) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -86,6 +86,37 @@ static int test_set_txresult_433(void)
     return TEST_PASS;
 }
 
+
+
+static int test_set_txqueue_433(void)
+{
+    int fd;
+    char line[256];
+
+    fd = connect_unix_retry(SOCK_CONF_433, 2000);
+    if (fd < 0)
+        return TEST_FAIL;
+
+    if (write_all(fd, "SET TXQUEUE=1\nGET STATUS\n",
+                  strlen("SET TXQUEUE=1\nGET STATUS\n")) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    if (wait_for_matching_line(fd,
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQUEUE=1 TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
+                               2000,
+                               line,
+                               sizeof(line)) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    printf("       433 txqueue status line: %s\n", line);
+
+    close(fd);
+    return TEST_PASS;
+}
 
 static int test_set_txmode_433(void)
 {
@@ -103,7 +134,7 @@ static int test_set_txmode_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=RAW TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=RAW TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQDONE=[0-9]+$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -182,6 +213,7 @@ int main(int argc, char **argv)
     run_test("GET STATUS on CONF 433", test_get_status_433);
     run_test("SET TXRESULT on CONF 433", test_set_txresult_433);
     run_test("SET TXMODE on CONF 433", test_set_txmode_433);
+    run_test("SET TXQUEUE on CONF 433", test_set_txqueue_433);
     run_test("GET CHANNEL on CONF 433", test_get_channel_433);
 
     if (!daemon_alive()) {

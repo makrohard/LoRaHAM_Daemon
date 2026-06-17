@@ -148,6 +148,15 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    int txqueue_enabled = 0;
+    if(config_status_is_set_txqueue(line, &txqueue_enabled)) {
+        if(ctx->ctrl)
+            ctx->ctrl->tx_queue_active.store(txqueue_enabled != 0);
+        printf("[%s] TXQUEUE=%d\n", ctx->tag, txqueue_enabled ? 1 : 0);
+        fflush(stdout);
+        return;
+    }
+
     RadioTxMode_t txmode = RADIO_TX_MODE_MANAGED;
     if(config_status_is_set_txmode(line, &txmode)) {
         if(ctx->ctrl)

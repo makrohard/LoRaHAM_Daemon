@@ -46,6 +46,7 @@ struct RadioController {
     std::atomic<bool> cad_active;
     std::atomic<bool> getrssi_active;
     std::atomic<bool> tx_result_active;
+    std::atomic<bool> tx_queue_active;
     RadioTxMode_t tx_mode;
     uint16_t tx_result_seq;
     DaemonTxWorker tx_worker;
@@ -83,6 +84,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_active.store(false);
     ctrl->getrssi_active.store(false);
     ctrl->tx_result_active.store(false);
+    ctrl->tx_queue_active.store(false);
     ctrl->tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl->tx_result_seq = 0;
     daemon_tx_worker_init(&ctrl->tx_worker);
