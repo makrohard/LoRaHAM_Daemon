@@ -24,9 +24,6 @@ void lhkt_config_defaults(lhkt_config_t *cfg)
     cfg->tx_settle_ms = 100;
     cfg->tx_return_ms = 1000;
     cfg->tx_busy_timeout_ms = 120000;
-    cfg->cad_wait_ms = 20000;
-    cfg->cad_idle_ms = 500;
-    cfg->cad_ignore = 0;
     cfg->tx_queue_len = 8;
     cfg->tx_packet_ttl_ms = 180000;
 

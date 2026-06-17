@@ -93,9 +93,6 @@ static void test_queue_policy_options(void)
     char *argv[] = {
         "test_cli",
         "--tx-busy-timeout-ms", "120500",
-        "--cad-wait-ms", "20500",
-        "--cad-idle-ms", "600",
-        "--cad-ignore",
         "--tx-queue-len", "5",
         "--tx-packet-ttl-ms", "181000",
         NULL
@@ -105,9 +102,6 @@ static void test_queue_policy_options(void)
 
     assert(lhkt_cli_apply(argc_of(argv), argv, &cfg) == LHKT_OK);
     assert(cfg.tx_busy_timeout_ms == 120500);
-    assert(cfg.cad_wait_ms == 20500);
-    assert(cfg.cad_idle_ms == 600);
-    assert(cfg.cad_ignore == 1);
     assert(cfg.tx_queue_len == 5);
     assert(cfg.tx_packet_ttl_ms == 181000);
 }

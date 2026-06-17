@@ -15,6 +15,7 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - uses framed DATA sockets for daemon packet I/O
 - daemon 110 `RX_PACKET` RSSI/SNR metadata is stripped before KISS output
 - `TX_PACKET` payloads are still sent as RF bytes without metadata
+
 ## Limitations
 - single KISS/TCP client
 - KISS port 0 only
@@ -24,16 +25,16 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - framed DATA socket only for daemon packet I/O
 - requires `loraham_daemon` 110+ framed RX metadata layout
 - RX RSSI/SNR metadata is ignored and not forwarded to KISS clients
-- uses CONF events (`TX=`, `STATUS`) for TX lifecycle state
+- uses CONF events (`TX=`, `CAD=`, `STATUS`) for TX lifecycle/status visibility
 
 ## TX policy
 
 - queued TX waits for fresh `STATUS` after CONF reconnect
 - `TX=1` delays TX until `TX=0`; timeout drops the packet
 - daemon 110 performs the final CAD gate before RF transmit
-- bridge CAD wait options are accepted for compatibility but are no-ops
+- bridge-side CAD wait/ignore options were removed; daemon 110 owns channel gating
 
-The bridge intentionally does not requeue daemon `CAD_TIMEOUT` framed errors. The framed DATA protocol has no TX/error correlation, so requeueing could duplicate or misassign APRS packets.
+The bridge intentionally does not requeue daemon `CAD_TIMEOUT` framed errors. The framed DATA protocol has no TX/error correlation, so requeueing could duplicate or misassign APRS packets. There are no bridge-side `--cad-*` policy options.
 
 ## Build
 
@@ -73,9 +74,6 @@ Options:
       --tx-return-ms MS    Fallback wait after TX before RX restore
       --tx-busy-timeout-ms MS
                             Max wait for local TX busy
-      --cad-wait-ms MS     Max polite wait for busy channel
-      --cad-idle-ms MS     Required CAD idle stability
-      --cad-ignore         Ignore CAD/channel busy state
       --tx-queue-len N     Queued TX packet limit
       --tx-packet-ttl-ms MS
                             Max queued packet lifetime

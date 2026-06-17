@@ -33,9 +33,6 @@ void lhkt_cli_print_usage(const char *prog)
     printf("      --tx-return-ms MS    Fallback wait after TX\n");
     printf("      --tx-busy-timeout-ms MS\n");
     printf("                            Max wait for local TX busy\n");
-    printf("      --cad-wait-ms MS     Deprecated no-op; daemon gates CAD\n");
-    printf("      --cad-idle-ms MS     Deprecated no-op; daemon gates CAD\n");
-    printf("      --cad-ignore         Deprecated no-op; daemon gates CAD\n");
     printf("      --tx-queue-len N     Queued TX packet limit\n");
     printf("      --tx-packet-ttl-ms MS\n");
     printf("                            Max queued packet lifetime\n");
@@ -152,9 +149,6 @@ static int parse_cli_args(int argc, char **argv, lhkt_config_t *cfg)
         OPT_TX_SETTLE_MS,
         OPT_TX_RETURN_MS,
         OPT_TX_BUSY_TIMEOUT_MS,
-        OPT_CAD_WAIT_MS,
-        OPT_CAD_IDLE_MS,
-        OPT_CAD_IGNORE,
         OPT_TX_QUEUE_LEN,
         OPT_TX_PACKET_TTL_MS,
         OPT_VERSION
@@ -172,9 +166,6 @@ static int parse_cli_args(int argc, char **argv, lhkt_config_t *cfg)
         { "tx-settle-ms", required_argument, 0, OPT_TX_SETTLE_MS },
         { "tx-return-ms", required_argument, 0, OPT_TX_RETURN_MS },
         { "tx-busy-timeout-ms", required_argument, 0, OPT_TX_BUSY_TIMEOUT_MS },
-        { "cad-wait-ms", required_argument, 0, OPT_CAD_WAIT_MS },
-        { "cad-idle-ms", required_argument, 0, OPT_CAD_IDLE_MS },
-        { "cad-ignore", no_argument, 0, OPT_CAD_IGNORE },
         { "tx-queue-len", required_argument, 0, OPT_TX_QUEUE_LEN },
         { "tx-packet-ttl-ms", required_argument, 0, OPT_TX_PACKET_TTL_MS },
         { "version",      no_argument,       0, OPT_VERSION },
@@ -279,24 +270,6 @@ static int parse_cli_args(int argc, char **argv, lhkt_config_t *cfg)
             }
             break;
 
-        case OPT_CAD_WAIT_MS:
-            ret = parse_int_arg(optarg, 0, 600000, &cfg->cad_wait_ms);
-            if (ret != LHKT_OK) {
-                return ret;
-            }
-            break;
-
-        case OPT_CAD_IDLE_MS:
-            ret = parse_int_arg(optarg, 0, 60000, &cfg->cad_idle_ms);
-            if (ret != LHKT_OK) {
-                return ret;
-            }
-            break;
-
-        case OPT_CAD_IGNORE:
-            cfg->cad_ignore = 1;
-            break;
-
         case OPT_TX_QUEUE_LEN:
             ret = parse_int_arg(optarg, 1, 16, &cfg->tx_queue_len);
             if (ret != LHKT_OK) {
@@ -369,9 +342,6 @@ void lhkt_cli_print_config(const lhkt_config_t *cfg)
     printf("[CFG] tx_settle_ms=%d\n", cfg->tx_settle_ms);
     printf("[CFG] tx_return_ms=%d\n", cfg->tx_return_ms);
     printf("[CFG] tx_busy_timeout_ms=%d\n", cfg->tx_busy_timeout_ms);
-    printf("[CFG] cad_wait_ms=%d\n", cfg->cad_wait_ms);
-    printf("[CFG] cad_idle_ms=%d\n", cfg->cad_idle_ms);
-    printf("[CFG] cad_ignore=%d\n", cfg->cad_ignore);
     printf("[CFG] tx_queue_len=%d\n", cfg->tx_queue_len);
     printf("[CFG] tx_packet_ttl_ms=%d\n", cfg->tx_packet_ttl_ms);
 

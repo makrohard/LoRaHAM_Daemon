@@ -289,29 +289,8 @@ int lhkt_config_parse_line(lhkt_config_t *cfg, char *line, unsigned int line_no)
         return ret;
     }
 
-    if (strcmp(key, "cad_wait_ms") == 0) {
-        ret = parse_long_value(value, 0, 600000, &lval);
-        if (ret == LHKT_OK) {
-            cfg->cad_wait_ms = (int)lval;
-        }
-        return ret;
-    }
 
-    if (strcmp(key, "cad_idle_ms") == 0) {
-        ret = parse_long_value(value, 0, 60000, &lval);
-        if (ret == LHKT_OK) {
-            cfg->cad_idle_ms = (int)lval;
-        }
-        return ret;
-    }
 
-    if (strcmp(key, "cad_ignore") == 0) {
-        ret = parse_bool_value(value, &bval);
-        if (ret == LHKT_OK) {
-            cfg->cad_ignore = bval;
-        }
-        return ret;
-    }
 
     if (strcmp(key, "tx_queue_len") == 0) {
         ret = parse_long_value(value, 1, 16, &lval);

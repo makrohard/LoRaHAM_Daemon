@@ -140,13 +140,8 @@ int bridge_tx_head_decision(const lhkt_config_t *cfg,
 
 #ifdef LHKT_TEST
 int lhkt_test_bridge_tx_decision(int tx_busy,
-                                  int cad_busy,
-                                  int cad_ignore,
                                   long queued_age_ms,
-                                  long tx_wait_age_ms,
-                                  long cad_wait_age_ms,
-                                  long cad_idle_age_ms,
-                                  int cad_was_busy)
+                                  long tx_wait_age_ms)
 {
     lhkt_config_t cfg;
     bridge_conf_state_t conf_state;
@@ -154,28 +149,17 @@ int lhkt_test_bridge_tx_decision(int tx_busy,
     long now;
 
     lhkt_config_defaults(&cfg);
-    cfg.cad_ignore = cad_ignore;
     bridge_conf_state_init(&conf_state);
     memset(&item, 0, sizeof(item));
 
     conf_state.tx_busy = tx_busy;
-    conf_state.cad_busy = cad_busy;
     item.packet_len = 10;
-    item.cad_was_busy = cad_was_busy;
 
     now = bridge_tx_now_ms();
     item.queued_ms = now - (queued_age_ms >= 0 ? queued_age_ms : 0);
 
     if (tx_wait_age_ms >= 0) {
         item.tx_wait_start_ms = now - tx_wait_age_ms;
-    }
-
-    if (cad_wait_age_ms >= 0) {
-        item.cad_wait_start_ms = now - cad_wait_age_ms;
-    }
-
-    if (cad_idle_age_ms >= 0) {
-        item.cad_idle_since_ms = now - cad_idle_age_ms;
     }
 
     return bridge_tx_head_decision(&cfg, &conf_state, &item, now);

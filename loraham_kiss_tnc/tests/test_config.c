@@ -21,9 +21,6 @@ static void test_defaults(void)
     assert(cfg.tx_settle_ms == 100);
     assert(cfg.tx_return_ms == 1000);
     assert(cfg.tx_busy_timeout_ms == 120000);
-    assert(cfg.cad_wait_ms == 20000);
-    assert(cfg.cad_idle_ms == 500);
-    assert(cfg.cad_ignore == 0);
     assert(cfg.tx_queue_len == 8);
     assert(cfg.tx_packet_ttl_ms == 180000);
     assert(cfg.have_rx_freq == 1);
@@ -55,9 +52,6 @@ static void test_parse_line(void)
     char line10[] = "ldro = auto";
     char line11[] = "ldro = false";
     char line12[] = "tx_busy_timeout_ms = 120001";
-    char line13[] = "cad_wait_ms = 20001";
-    char line14[] = "cad_idle_ms = 501";
-    char line15[] = "cad_ignore = true";
     char line16[] = "tx_queue_len = 4";
     char line17[] = "tx_packet_ttl_ms = 180001";
 
@@ -102,12 +96,6 @@ static void test_parse_line(void)
 
     assert(lhkt_config_parse_line(&cfg, line12, 12) == LHKT_OK);
     assert(cfg.tx_busy_timeout_ms == 120001);
-    assert(lhkt_config_parse_line(&cfg, line13, 13) == LHKT_OK);
-    assert(cfg.cad_wait_ms == 20001);
-    assert(lhkt_config_parse_line(&cfg, line14, 14) == LHKT_OK);
-    assert(cfg.cad_idle_ms == 501);
-    assert(lhkt_config_parse_line(&cfg, line15, 15) == LHKT_OK);
-    assert(cfg.cad_ignore == 1);
     assert(lhkt_config_parse_line(&cfg, line16, 16) == LHKT_OK);
     assert(cfg.tx_queue_len == 4);
     assert(lhkt_config_parse_line(&cfg, line17, 17) == LHKT_OK);
@@ -146,9 +134,6 @@ static void test_load_file(void)
     fprintf(fp, "tx_settle_ms = 250\n");
     fprintf(fp, "tx_return_ms = 750\n");
     fprintf(fp, "tx_busy_timeout_ms = 120500\n");
-    fprintf(fp, "cad_wait_ms = 20500\n");
-    fprintf(fp, "cad_idle_ms = 600\n");
-    fprintf(fp, "cad_ignore = yes\n");
     fprintf(fp, "tx_queue_len = 5\n");
     fprintf(fp, "tx_packet_ttl_ms = 181000\n");
     fprintf(fp, "rx_freq = 433.775\n");
@@ -177,9 +162,6 @@ static void test_load_file(void)
     assert(cfg.tx_settle_ms == 250);
     assert(cfg.tx_return_ms == 750);
     assert(cfg.tx_busy_timeout_ms == 120500);
-    assert(cfg.cad_wait_ms == 20500);
-    assert(cfg.cad_idle_ms == 600);
-    assert(cfg.cad_ignore == 1);
     assert(cfg.tx_queue_len == 5);
     assert(cfg.tx_packet_ttl_ms == 181000);
     assert(cfg.have_rx_freq == 1);

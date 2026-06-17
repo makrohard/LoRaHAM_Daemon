@@ -27,9 +27,6 @@ tx_return_ms=1000   # fallback wait after TX before switching back to RX frequen
 # TX queue policy in milliseconds.
 # Daemon 110 performs the final CAD gate before RF transmit.
 tx_busy_timeout_ms=120000  # drop packet if local TX stays busy longer.
-cad_wait_ms=20000          # deprecated no-op; accepted for compatibility.
-cad_idle_ms=500            # deprecated no-op; accepted for compatibility.
-cad_ignore=0               # deprecated no-op; accepted for compatibility.
 tx_queue_len=8             # max queued packets.
 tx_packet_ttl_ms=180000    # drop queued packets older than this.
 

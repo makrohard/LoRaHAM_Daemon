@@ -68,13 +68,8 @@ int lhkt_test_bridge_conf_feed_events(const char *text,
                                       unsigned long *cad_idle_seq);
 int lhkt_test_bridge_wait_tx_complete_events(const char *events);
 int lhkt_test_bridge_tx_decision(int tx_busy,
-                                  int cad_busy,
-                                  int cad_ignore,
                                   long queued_age_ms,
-                                  long tx_wait_age_ms,
-                                  long cad_wait_age_ms,
-                                  long cad_idle_age_ms,
-                                  int cad_was_busy);
+                                  long tx_wait_age_ms);
 int lhkt_test_bridge_drain_waits_for_data_socket(size_t *queue_depth,
                                                  uint64_t *drops);
 int lhkt_test_bridge_drain_waits_for_conf_socket(size_t *queue_depth,
@@ -172,24 +167,16 @@ static void test_tx_complete_handles_combined_events(void)
 
 static void test_tx_queue_policy_decisions(void)
 {
-    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 1000, -1, -1, 0) ==
+    assert(lhkt_test_bridge_tx_decision(1, 0, 1000) ==
            TEST_TX_DECISION_WAIT);
-    assert(lhkt_test_bridge_tx_decision(1, 0, 0, 0, 120000, -1, -1, 0) ==
+    assert(lhkt_test_bridge_tx_decision(1, 0, 120000) ==
            TEST_TX_DECISION_DROP);
 
-    /* Daemon 110 owns the final CAD gate; bridge CAD state is ignored. */
-    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 0, -1, 0) ==
-           TEST_TX_DECISION_SEND);
-    assert(lhkt_test_bridge_tx_decision(0, 1, 0, 0, -1, 20000, -1, 0) ==
-           TEST_TX_DECISION_SEND);
-    assert(lhkt_test_bridge_tx_decision(0, 1, 1, 0, -1, 0, -1, 0) ==
-           TEST_TX_DECISION_SEND);
-    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 100, 1) ==
-           TEST_TX_DECISION_SEND);
-    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 0, -1, 1000, 500, 1) ==
+    /* Daemon 110 owns the final CAD gate; bridge only waits for local TX=0. */
+    assert(lhkt_test_bridge_tx_decision(0, 0, -1) ==
            TEST_TX_DECISION_SEND);
 
-    assert(lhkt_test_bridge_tx_decision(0, 0, 0, 180000, -1, -1, -1, 0) ==
+    assert(lhkt_test_bridge_tx_decision(0, 180000, -1) ==
            TEST_TX_DECISION_DROP);
 }
 

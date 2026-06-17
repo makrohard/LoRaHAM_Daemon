@@ -18,9 +18,6 @@ typedef struct {
     size_t packet_len;
     long queued_ms;
     long tx_wait_start_ms;
-    long cad_wait_start_ms;
-    long cad_idle_since_ms;
-    int cad_was_busy;
 } bridge_tx_item_t;
 
 typedef struct {
@@ -49,13 +46,8 @@ int bridge_tx_head_decision(const lhkt_config_t *cfg,
 
 #ifdef LHKT_TEST
 int lhkt_test_bridge_tx_decision(int tx_busy,
-                                  int cad_busy,
-                                  int cad_ignore,
                                   long queued_age_ms,
-                                  long tx_wait_age_ms,
-                                  long cad_wait_age_ms,
-                                  long cad_idle_age_ms,
-                                  int cad_was_busy);
+                                  long tx_wait_age_ms);
 #endif
 
 #endif
