@@ -136,10 +136,11 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M0 adds
-characterization tests only: raw DATA sockets remain byte-transparent, framed
-`RX_PACKET` RSSI/SNR layout remains unchanged, and the desired future behavior
-for recoverable framed TX failures is recorded as an expected-failing test.
+The CAD/TX signaling rework is being introduced in small milestones. M1 keeps
+framed DATA clients connected when a recoverable RF/TX execution failure occurs.
+Until `TX_RESULT` exists, the failure is reported through the existing `ERROR`
+frame path. Raw DATA sockets and framed `RX_PACKET` RSSI/SNR layout remain
+unchanged.
 
 ## DATA sockets
 

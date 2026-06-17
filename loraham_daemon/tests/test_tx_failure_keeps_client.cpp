@@ -4,20 +4,26 @@
 #include <string.h>
 
 /*
- * M0 characterization guard for the CAD/TX signaling rework.
+ * M1 regression guard for the CAD/TX signaling rework.
  *
- * Desired future behavior (M1): a recoverable RF/TX execution failure must be
- * reported to the framed client and must not make the framed TX parser return a
- * fatal error to the socket runtime.
- *
- * Current behavior: the TX handler failure is propagated as -1. Keep that as an
- * expected failure in M0; M1 will flip this test to a normal passing assertion.
+ * A recoverable RF/TX execution failure must be reported to the framed client
+ * and must not make the framed TX parser return a fatal error to the socket
+ * runtime. Until TX_RESULT exists, the report is the existing ERROR path.
  */
 
 static int g_ok = 0;
 static int g_fail = 0;
-static int g_xfail = 0;
-static int g_xpass = 0;
+
+static void expect_int(const char *name, int actual, int expected)
+{
+    if (actual == expected) {
+        g_ok++;
+        printf("[ OK ] %s\n", name);
+    } else {
+        g_fail++;
+        printf("[FAIL] %s: expected %d, got %d\n", name, expected, actual);
+    }
+}
 
 static int failing_rf_tx(uint8_t *payload, size_t len, void *ctx)
 {
@@ -44,7 +50,7 @@ static void make_tx_frame(uint8_t *frame, const uint8_t *payload, uint16_t len)
         memcpy(frame + FRAMED_DATA_HEADER_LEN, payload, len);
 }
 
-static void characterize_tx_failure(void)
+static void test_tx_failure_keeps_parser_alive(void)
 {
     FramedDataTxState state;
     const uint8_t payload[] = { 0x42 };
@@ -63,22 +69,8 @@ static void characterize_tx_failure(void)
                                    record_error,
                                    &error_count);
 
-    if (rc == -1 && error_count == 0) {
-        g_xfail++;
-        printf("[XFAIL] RF TX failure currently propagates fatal parser error\n");
-        return;
-    }
-
-    if (rc == 0 && error_count == 1) {
-        g_xpass++;
-        printf("[XPASS] RF TX failure already keeps framed parser alive\n");
-        return;
-    }
-
-    g_fail++;
-    printf("[FAIL] unexpected TX failure behavior: rc=%d error_count=%d\n",
-           rc,
-           error_count);
+    expect_int("RF TX failure keeps parser alive", rc, 0);
+    expect_int("RF TX failure reports ERROR", error_count, 1);
 }
 
 int main(int argc, char **argv)
@@ -100,13 +92,9 @@ int main(int argc, char **argv)
         }
     }
 
-    characterize_tx_failure();
+    test_tx_failure_keeps_parser_alive();
 
-    printf("\nSummary: ok=%d fail=%d skip=0 xfail=%d xpass=%d\n",
-           g_ok,
-           g_fail,
-           g_xfail,
-           g_xpass);
+    printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
-    return (g_fail || g_xpass) ? 1 : 0;
+    return g_fail ? 1 : 0;
 }

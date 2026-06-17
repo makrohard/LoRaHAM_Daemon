@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Framed DATA TX execution failures now emit ERROR and keep the parser/client alive.
 - CAD/TX rework guardrail: add expected-failing framed TX failure characterization.
 
 - Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.

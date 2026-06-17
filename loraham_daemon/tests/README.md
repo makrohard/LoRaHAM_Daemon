@@ -66,7 +66,7 @@ DATA/RF/TX:
 - `test_rf_packet`
 - `test_framed_data`
 - `test_framed_data_tx`
-- `test_tx_failure_keeps_client` (expected failure until M1)
+- `test_tx_failure_keeps_client`
 
 Client/socket/runtime:
 
@@ -94,4 +94,4 @@ Public integration baseline:
 
 ## CAD/TX rework guardrail
 
-`test_tx_failure_keeps_client` is an expected failure in M0. It records the M1 target behavior: recoverable RF/TX execution failures must be reported without closing the framed client connection.
+`test_tx_failure_keeps_client` verifies the M1 behavior: recoverable RF/TX execution failures are reported through the existing ERROR path without closing the framed client connection.

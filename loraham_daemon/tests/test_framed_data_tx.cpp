@@ -165,10 +165,10 @@ static void test_handler_failure_is_reported(void)
     framed_data_tx_state_init(&state);
     encode_tx(frame, payload, sizeof(payload));
 
-    expect_int("handler failure propagated",
+    expect_int("handler failure feed ok",
                framed_data_tx_feed_state(&state, frame, sizeof(frame),
-                                         on_tx_fail, &ctx, on_error, &ctx), -1);
-    expect_int("handler failure errors", ctx.error_count, 0);
+                                         on_tx_fail, &ctx, on_error, &ctx), 0);
+    expect_int("handler failure error reported", ctx.error_count, 1);
 }
 
 static void test_null_arguments(void)

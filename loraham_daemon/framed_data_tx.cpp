@@ -82,9 +82,12 @@ static int framed_data_tx_complete_frame(FramedDataTxState *state,
         framed_data_tx_error(on_error, error_ctx, "unsupported client frame");
     }
 
+    if (result != 0)
+        framed_data_tx_error(on_error, error_ctx, "TX failed");
+
     framed_data_tx_state_init(state);
 
-    return result == 0 ? 0 : -1;
+    return 0;
 }
 
 int framed_data_tx_feed_state(FramedDataTxState *state,
