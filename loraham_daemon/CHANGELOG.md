@@ -2,8 +2,7 @@
 
 ## loraham_daemon 110
 
-- CAD/TX rework guardrail: characterize framed TX failure as expected-failing before behavior changes.
-- Tests: add CAD/TX rework M0 guardrails.
+- CAD/TX rework guardrail: add expected-failing framed TX failure characterization.
 
 - Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.
 
