@@ -136,10 +136,10 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M3a
-adds per-band `SET TXMODE=MANAGED|RAW` state and exposes it through
-`GET STATUS`; TX behavior is unchanged until the real CAD milestone. Raw
-DATA sockets and framed `RX_PACKET` RSSI/SNR layout remain unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M3b
+adds a shared real-CAD probe helper using RadioLib `scanChannel()`. TX
+behavior is unchanged until the next milestone. Raw DATA sockets and framed
+`RX_PACKET` RSSI/SNR layout remain unchanged.
 
 ## DATA sockets
 

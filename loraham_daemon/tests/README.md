@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 31 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 32 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -86,6 +86,7 @@ Lifecycle/helper behavior:
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
+- `test_radio_cad_probe`
 
 Public integration baseline:
 
@@ -97,3 +98,4 @@ Public integration baseline:
 `test_tx_failure_keeps_client` verifies the M1 behavior: recoverable RF/TX execution failures are reported through the existing ERROR path without closing the framed client connection.
 
 - `test_conf_status` covers `TXRESULT` and `TXMODE` CONF state reporting.
+- `test_radio_cad_probe` verifies the M3b real-CAD helper mapping without changing TX behavior.
