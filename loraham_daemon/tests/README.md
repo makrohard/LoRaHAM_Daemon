@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 33 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 34 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -64,6 +64,7 @@ DATA/RF/TX:
 - `test_data_tx`
 - `test_tx_result`
 - `test_daemon_tx_outcome`
+- `test_daemon_tx_job`
 - `test_rf_packet`
 - `test_framed_data` (including `TX_RESULT` layout)
 - `test_framed_data_tx`
@@ -102,3 +103,5 @@ Public integration baseline:
 - `test_radio_cad_probe` verifies the real-CAD helper and the M3c RAW-mode one-probe TX guard behavior.
 
 - `test_daemon_tx_outcome` verifies internal TX outcome to framed TX_RESULT status mapping.
+
+- `test_daemon_tx_job` verifies future TX job/result data structures without changing TX behavior.
