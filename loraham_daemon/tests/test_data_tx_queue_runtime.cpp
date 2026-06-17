@@ -9,9 +9,10 @@ static int g_ok = 0;
 static int g_fail = 0;
 
 
-TxResult lora_send(uint8_t *payload, size_t len, int band)
+/* --- Local production-symbol stubs for this unit test --- */
+TxResult lora_send(uint8_t *buf, size_t len, int band)
 {
-    (void)payload;
+    (void)buf;
     (void)len;
     (void)band;
     return TX_RESULT_RADIO_ERROR;
@@ -36,6 +37,11 @@ void daemon_led_flash_pin(int pin)
 {
     (void)pin;
 }
+/* --- End local production-symbol stubs --- */
+
+
+
+
 
 struct FakeRadio {
     int scan_count;
