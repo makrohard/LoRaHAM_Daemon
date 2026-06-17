@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- TXQUEUE opt-in DATA TX path now uses bounded queue with synchronous drain.
 - TXQUEUE opt-in configuration and status visibility added without changing TX path.
 - Per-radio TX worker state and passive GET STATUS queue counters added.
 - TX worker state facade added around the bounded queue for future threaded TX.

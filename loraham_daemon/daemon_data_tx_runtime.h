@@ -91,6 +91,72 @@ static uint16_t daemon_data_tx_next_result_seq(void *ctx)
     return tx->ctrl->tx_result_seq;
 }
 
+
+typedef struct {
+    int seen;
+    DaemonTxJobResult result;
+} DataTxQueueResultCapture;
+
+static inline void daemon_data_tx_capture_queue_result(const DaemonTxJobResult *result,
+                                                       void *ctx)
+{
+    DataTxQueueResultCapture *capture =
+        (DataTxQueueResultCapture *)ctx;
+
+    if (!capture || !result)
+        return;
+
+    capture->result = *result;
+    capture->seen = 1;
+}
+
+template<typename RadioT>
+static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> *tx,
+                                                    const DaemonTxJob *job,
+                                                    DaemonTxSendFn send_fn)
+{
+    DaemonTxJobResult result;
+    DataTxQueueResultCapture capture;
+
+    daemon_tx_job_result_init(&result,
+                              job,
+                              DAEMON_TX_OUTCOME_RADIO_ERROR);
+
+    if (!tx || !tx->ctrl || !job)
+        return result;
+
+    if (!tx->ctrl->tx_queue_active.load())
+        return daemon_tx_execute_job_with_sender(job, send_fn, tx->send_ctx);
+
+    if (daemon_tx_worker_submit(&tx->ctrl->tx_worker, job) != 0) {
+        daemon_tx_job_result_init(&result,
+                                  job,
+                                  DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+        result.tx_result = TX_RESULT_BUSY;
+        return result;
+    }
+
+    capture.seen = 0;
+    daemon_tx_job_result_init(&capture.result,
+                              job,
+                              DAEMON_TX_OUTCOME_RADIO_ERROR);
+
+    if (daemon_tx_worker_drain(&tx->ctrl->tx_worker,
+                               send_fn,
+                               tx->send_ctx,
+                               daemon_data_tx_capture_queue_result,
+                               &capture,
+                               1) != 1 || !capture.seen) {
+        daemon_tx_job_result_init(&result,
+                                  job,
+                                  DAEMON_TX_OUTCOME_RADIO_ERROR);
+        result.tx_result = TX_RESULT_RADIO_ERROR;
+        return result;
+    }
+
+    return capture.result;
+}
+
 template<typename RadioT>
 static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
@@ -137,7 +203,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     }
 
     daemon_radio_runtime_led(ctrl, 1);
-    result = daemon_tx_execute_job_with_sender(&job, send_fn, tx->send_ctx);
+    result = daemon_data_tx_execute_job(tx, &job, send_fn);
     daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
     daemon_radio_runtime_led(ctrl, 0);
 

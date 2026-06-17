@@ -290,6 +290,28 @@ build_one_data_tx_test() {
 }
 
 
+build_one_data_tx_queue_runtime_test() {
+  local src="$1"
+  local out="$2"
+
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for DATA TX queue runtime test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_log.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp"
+}
+
+
 build_one_client_output_queue_test() {
   local src="$1"
   local out="$2"
@@ -521,6 +543,7 @@ build_one_config_dispatch_test() {
 
 build_tests() {
   build_one_data_tx_test "$TEST_DIR/test_data_tx.cpp" "$TEST_DIR/test_data_tx"
+  build_one_data_tx_queue_runtime_test "$TEST_DIR/test_data_tx_queue_runtime.cpp" "$TEST_DIR/test_data_tx_queue_runtime"
   build_one_client_output_queue_test "$TEST_DIR/test_client_output_queue.cpp" "$TEST_DIR/test_client_output_queue"
   build_one_client_nonblocking_test "$TEST_DIR/test_client_nonblocking.cpp" "$TEST_DIR/test_client_nonblocking"
   build_one_client_queued_broadcast_test "$TEST_DIR/test_client_queued_broadcast.cpp" "$TEST_DIR/test_client_queued_broadcast"
@@ -634,6 +657,7 @@ section "Run tests"
 
 tests=(
   "$TEST_DIR/test_data_tx"
+  "$TEST_DIR/test_data_tx_queue_runtime"
   "$TEST_DIR/test_client_output_queue"
   "$TEST_DIR/test_client_nonblocking"
   "$TEST_DIR/test_client_queued_broadcast"
