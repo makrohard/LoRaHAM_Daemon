@@ -32,6 +32,7 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - queued TX waits for fresh `STATUS` after CONF reconnect
 - `TX=1` delays TX until `TX=0`; timeout drops the packet
 - daemon 110 performs the final CAD gate before RF transmit
+- CAD daemon status is retained for stats output
 - bridge-side CAD wait/ignore options were removed; daemon 110 owns channel gating
 
 The bridge intentionally does not requeue daemon `CAD_TIMEOUT` framed errors. The framed DATA protocol has no TX/error correlation, so requeueing could duplicate or misassign APRS packets. There are no bridge-side `--cad-*` policy options.

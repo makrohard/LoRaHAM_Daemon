@@ -17,7 +17,7 @@ static void test_defaults(void)
     assert(strcmp(cfg.conf_socket, "/tmp/loraconf433.sock") == 0);
     assert(cfg.rx_only == 0);
     assert(cfg.verbose == 0);
-    assert(cfg.stats_interval == 60);
+    assert(cfg.stats_interval == 900);
     assert(cfg.tx_settle_ms == 100);
     assert(cfg.tx_return_ms == 1000);
     assert(cfg.tx_busy_timeout_ms == 120000);

@@ -160,6 +160,45 @@ static void test_conf_event_transition_counters(void)
     assert(cad_idle_seq == 1);
 }
 
+
+static void test_conf_cad_stats_collection(void)
+{
+    const char events[] = "CAD=1\nCAD=0\nSTATUS RADIO=READY TX=0 CAD=1 GETRSSI=0\n";
+    bridge_conf_state_t state;
+    lhkt_stats_t stats;
+    unsigned long last_busy_seq = 0;
+    unsigned long last_idle_seq = 0;
+
+    bridge_conf_state_init(&state);
+    lhkt_stats_init(&stats);
+
+    bridge_conf_feed(&state, (const uint8_t *)events, strlen(events));
+    bridge_conf_collect_cad_stats(&state,
+                                  &stats,
+                                  &last_busy_seq,
+                                  &last_idle_seq);
+
+    assert(stats.cad_busy_events == 1);
+    assert(stats.cad_idle_events == 1);
+    assert(stats.cad_current_busy == 1);
+
+    bridge_conf_collect_cad_stats(&state,
+                                  &stats,
+                                  &last_busy_seq,
+                                  &last_idle_seq);
+    assert(stats.cad_busy_events == 1);
+    assert(stats.cad_idle_events == 1);
+
+    bridge_conf_feed(&state, (const uint8_t *)"CAD=1\n", 6);
+    bridge_conf_collect_cad_stats(&state,
+                                  &stats,
+                                  &last_busy_seq,
+                                  &last_idle_seq);
+    assert(stats.cad_busy_events == 2);
+    assert(stats.cad_idle_events == 1);
+    assert(stats.cad_current_busy == 1);
+}
+
 static void test_tx_complete_handles_combined_events(void)
 {
     assert(lhkt_test_bridge_wait_tx_complete_events("TX=1\nTX=0\n") == LHKT_OK);
@@ -780,6 +819,7 @@ int main(void)
 
     test_conf_status_parser();
     test_conf_event_transition_counters();
+    test_conf_cad_stats_collection();
     test_tx_complete_handles_combined_events();
     test_tx_queue_policy_decisions();
     test_tx_queue_lifecycle_waits_for_sockets();

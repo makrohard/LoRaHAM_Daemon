@@ -113,6 +113,8 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     time_t next_stats;
     time_t now;
     long stats_wait;
+    unsigned long cad_stats_busy_seq;
+    unsigned long cad_stats_idle_seq;
 
     kiss_decoder_t kiss_dec;
     kiss_frame_t kiss_frame;
@@ -132,6 +134,8 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     client_fd = -1;
     config_ok = 0;
     next_stats = 0;
+    cad_stats_busy_seq = 0;
+    cad_stats_idle_seq = 0;
 
     kiss_decoder_init(&kiss_dec);
     kiss_params_init(&kiss_params);
@@ -202,6 +206,11 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                            "write failed");
             config_ok = 0;
         }
+
+        bridge_conf_collect_cad_stats(&conf_state,
+                                      stats,
+                                      &cad_stats_busy_seq,
+                                      &cad_stats_idle_seq);
 
         FD_ZERO(&rfds);
         max_fd = -1;
@@ -442,6 +451,11 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                                stats,
                                                "disconnected");
                 config_ok = 0;
+            } else {
+                bridge_conf_collect_cad_stats(&conf_state,
+                                              stats,
+                                              &cad_stats_busy_seq,
+                                              &cad_stats_idle_seq);
             }
         }
 
@@ -503,6 +517,11 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
             }
         }
     }
+
+    bridge_conf_collect_cad_stats(&conf_state,
+                                  stats,
+                                  &cad_stats_busy_seq,
+                                  &cad_stats_idle_seq);
 
     if (bridge_runtime_should_stop()) {
         printf("[Bridge] Shutdown requested\n");

@@ -1,4 +1,5 @@
 # 0.3.0
+- Add CAD status counters to stats output and set default stats interval to 900s
 - Remove deprecated bridge-side CAD configuration options
 - Drop malformed KISS frames until the next frame delimiter
 - Rely on daemon 110 CAD gate; bridge-side CAD wait options are no-ops

@@ -168,6 +168,37 @@ void bridge_conf_feed(bridge_conf_state_t *state,
     }
 }
 
+
+void bridge_conf_collect_cad_stats(const bridge_conf_state_t *state,
+                                   lhkt_stats_t *stats,
+                                   unsigned long *last_busy_seq,
+                                   unsigned long *last_idle_seq)
+{
+    if (!state || !stats || !last_busy_seq || !last_idle_seq) {
+        return;
+    }
+
+    if (state->cad_busy_seq < *last_busy_seq) {
+        *last_busy_seq = state->cad_busy_seq;
+    }
+
+    if (state->cad_idle_seq < *last_idle_seq) {
+        *last_idle_seq = state->cad_idle_seq;
+    }
+
+    if (state->cad_busy_seq > *last_busy_seq) {
+        stats->cad_busy_events += state->cad_busy_seq - *last_busy_seq;
+        *last_busy_seq = state->cad_busy_seq;
+    }
+
+    if (state->cad_idle_seq > *last_idle_seq) {
+        stats->cad_idle_events += state->cad_idle_seq - *last_idle_seq;
+        *last_idle_seq = state->cad_idle_seq;
+    }
+
+    stats->cad_current_busy = state->cad_busy;
+}
+
 int bridge_conf_read_available(int conf_fd,
                                bridge_conf_state_t *state)
 {

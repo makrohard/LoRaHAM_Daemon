@@ -36,6 +36,11 @@ int bridge_conf_wait_read(int conf_fd,
                           bridge_conf_state_t *state,
                           long wait_ms);
 
+void bridge_conf_collect_cad_stats(const bridge_conf_state_t *state,
+                                   lhkt_stats_t *stats,
+                                   unsigned long *last_busy_seq,
+                                   unsigned long *last_idle_seq);
+
 #ifdef LHKT_TEST
 int lhkt_test_bridge_conf_feed_events(const char *text,
                                       int *tx_busy,

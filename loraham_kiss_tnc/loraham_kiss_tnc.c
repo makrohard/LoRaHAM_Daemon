@@ -20,7 +20,7 @@ void lhkt_config_defaults(lhkt_config_t *cfg)
 
     cfg->rx_only = 0;
     cfg->verbose = 0;
-    cfg->stats_interval = 60;
+    cfg->stats_interval = 900;
     cfg->tx_settle_ms = 100;
     cfg->tx_return_ms = 1000;
     cfg->tx_busy_timeout_ms = 120000;
@@ -70,6 +70,10 @@ void lhkt_stats_print(const lhkt_stats_t *stats)
            stats->loraham_tx,
            stats->loraham_drop,
            stats->loraham_framed_errors);
+    printf("[STAT] CAD current_busy=%d busy_events=%" PRIu64 " idle_events=%" PRIu64 "\n",
+           stats->cad_current_busy,
+           stats->cad_busy_events,
+           stats->cad_idle_events);
     printf("[STAT] TX oversize=%" PRIu64 " unconfirmed=%" PRIu64 " restore_failures=%" PRIu64 " reconnects=%" PRIu64 " client_disconnects=%" PRIu64 "\n",
            stats->tx_drop_oversize,
            stats->tx_unconfirmed,

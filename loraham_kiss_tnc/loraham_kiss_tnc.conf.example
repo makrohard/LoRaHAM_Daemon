@@ -18,7 +18,7 @@ rx_only=0
 verbose=0
 
 # Runtime stats print interval in seconds. Set to 0 to disable.
-stats_interval=3600
+stats_interval=900
 
 # TX timing in milliseconds.
 tx_settle_ms=100    # wait after switching to TX frequency before sending.

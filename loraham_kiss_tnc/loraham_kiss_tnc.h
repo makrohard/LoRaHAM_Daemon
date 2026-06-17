@@ -85,6 +85,10 @@ typedef struct {
     uint64_t loraham_drop;
     uint64_t loraham_framed_errors;
 
+    uint64_t cad_busy_events;
+    uint64_t cad_idle_events;
+    int cad_current_busy;
+
     uint64_t tx_drop_oversize;
     uint64_t tx_unconfirmed;
     uint64_t tx_restore_failures;
