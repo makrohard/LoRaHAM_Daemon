@@ -10,6 +10,7 @@
 #include "daemon_timing.h"
 #include "radio_controller.h"
 #include "radio_health.h"
+#include "radio_cad.h"
 
 /* --- CONF status queries ------------------------------------------------- */
 
@@ -81,6 +82,11 @@ static inline int config_status_is_get_stats(const char *line)
     return config_status_command_equals(line, "GET STATS");
 }
 
+static inline int config_status_is_get_channel(const char *line)
+{
+    return config_status_command_equals(line, "GET CHANNEL");
+}
+
 static inline int config_status_is_set_txresult(const char *line,
                                                int *enabled)
 {
@@ -140,6 +146,24 @@ static inline void config_status_format(char *buf,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
              (ctrl && ctrl->getrssi_active.load()) ? 1 : 0,
              (ctrl && ctrl->tx_result_active.load()) ? 1 : 0,
+             radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
+}
+
+template<typename RadioT>
+static inline void config_status_format_channel(char *buf,
+                                                size_t buf_size,
+                                                RadioController<RadioT> *ctrl)
+{
+    RadioCadProbeResult probe = radio_cad_probe(ctrl);
+
+    snprintf(buf,
+             buf_size,
+             "CHANNEL RADIO=%s BUSY=%d CAD=%d RSSI=%.2f MODE=%s TXMODE=%s\n",
+             radio_health_name(radio_controller_health(ctrl)),
+             probe.status == RADIO_CAD_PROBE_BUSY ? 1 : 0,
+             probe.scan_ran ? 1 : 0,
+             probe.rssi_dbm,
+             radio_mode_name(radio_controller_mode(ctrl)),
              radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
 }
 

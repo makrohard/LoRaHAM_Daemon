@@ -23,6 +23,11 @@ static inline const char *radio_tx_mode_name(RadioTxMode_t mode)
     return mode == RADIO_TX_MODE_RAW ? "RAW" : "MANAGED";
 }
 
+static inline const char *radio_mode_name(RadioMode_t mode)
+{
+    return mode == RADIO_MODE_FSK ? "FSK" : "LORA";
+}
+
 template<typename RadioT>
 struct RadioController {
     RadioBand_t band;

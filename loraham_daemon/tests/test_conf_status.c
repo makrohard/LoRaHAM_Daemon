@@ -117,6 +117,35 @@ static int test_set_txmode_433(void)
     return TEST_PASS;
 }
 
+static int test_get_channel_433(void)
+{
+    int fd;
+    char line[192];
+
+    fd = connect_unix_retry(SOCK_CONF_433, 2000);
+    if (fd < 0)
+        return TEST_FAIL;
+
+    if (write_all(fd, "GET CHANNEL\n", strlen("GET CHANNEL\n")) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    if (wait_for_matching_line(fd,
+                               "^CHANNEL RADIO=(READY|FAILED|UNINITIALIZED) BUSY=[01] CAD=[01] RSSI=-?[0-9]+\\.[0-9][0-9] MODE=(LORA|FSK) TXMODE=(MANAGED|RAW)$",
+                               2000,
+                               line,
+                               sizeof(line)) < 0) {
+        close(fd);
+        return TEST_FAIL;
+    }
+
+    printf("       433 channel line: %s\n", line);
+
+    close(fd);
+    return TEST_PASS;
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -153,6 +182,7 @@ int main(int argc, char **argv)
     run_test("GET STATUS on CONF 433", test_get_status_433);
     run_test("SET TXRESULT on CONF 433", test_set_txresult_433);
     run_test("SET TXMODE on CONF 433", test_set_txmode_433);
+    run_test("GET CHANNEL on CONF 433", test_get_channel_433);
 
     if (!daemon_alive()) {
         fail_msg("daemon exited during test");

@@ -118,6 +118,27 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    if(config_status_is_get_channel(line)) {
+        char channel[192];
+
+        config_status_format_channel(channel, sizeof(channel), ctx->ctrl);
+        if(!client_output_queue_append(&ctx->slot->output,
+                                       (const uint8_t *)channel,
+                                       strlen(channel))) {
+            client_slot_close(ctx->slot);
+            return;
+        }
+        client_slot_flush_output(ctx->slot);
+
+        if(ctx->ctrl && ctx->ctrl->radio &&
+           radio_controller_ready(ctx->ctrl) &&
+           ctx->ctrl->mode == RADIO_MODE_LORA) {
+            ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
+            ctx->ctrl->radio->startReceive();
+        }
+        return;
+    }
+
     int txresult_enabled = 0;
     if(config_status_is_set_txresult(line, &txresult_enabled)) {
         if(ctx->ctrl)
