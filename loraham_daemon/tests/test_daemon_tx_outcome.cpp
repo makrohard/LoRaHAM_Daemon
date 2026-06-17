@@ -12,12 +12,10 @@ static void expect_int(const char *name, int actual, int expected)
 {
     if (actual == expected) {
         g_ok++;
-        printf("[ OK ] %s
-", name);
+        printf("[ OK ] %s\n", name);
     } else {
         g_fail++;
-        printf("[FAIL] %s: expected %d, got %d
-", name, expected, actual);
+        printf("[FAIL] %s: expected %d, got %d\n", name, expected, actual);
     }
 }
 
@@ -89,19 +87,16 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--bin") == 0) {
             if (i + 1 >= argc) {
-                printf("Usage: %s [--bin ignored]
-", argv[0]);
+                printf("Usage: %s [--bin ignored]\n", argv[0]);
                 return 2;
             }
             i++;
         } else if (strcmp(argv[i], "--help") == 0 ||
                    strcmp(argv[i], "-h") == 0) {
-            printf("Usage: %s [--bin ignored]
-", argv[0]);
+            printf("Usage: %s [--bin ignored]\n", argv[0]);
             return 0;
         } else {
-            printf("Usage: %s [--bin ignored]
-", argv[0]);
+            printf("Usage: %s [--bin ignored]\n", argv[0]);
             return 2;
         }
     }
@@ -110,9 +105,7 @@ int main(int argc, char **argv)
     test_tx_result_to_outcome();
     test_outcome_to_framed_status();
 
-    printf("
-Summary: ok=%d fail=%d
-", g_ok, g_fail);
+    printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
     return g_fail ? 1 : 0;
 }
