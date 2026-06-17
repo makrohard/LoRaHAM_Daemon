@@ -54,6 +54,7 @@ static inline DaemonTxJobResult daemon_tx_execute_job_with_sender(const DaemonTx
     daemon_tx_job_result_init(&result,
                               job,
                               daemon_tx_outcome_from_tx_result(tx_result));
+    result.tx_result = tx_result;
     return result;
 }
 

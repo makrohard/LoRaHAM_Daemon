@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Synchronous DATA TX path now routes through the TX executor seam.
 - Synchronous TX executor seam added for future worker-thread integration.
 - TX job/result structs added as preparation for future async TX worker.
 - Fix TX outcome test string literals so the M5a test builds.

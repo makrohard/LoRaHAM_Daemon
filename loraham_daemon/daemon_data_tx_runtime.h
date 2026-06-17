@@ -11,6 +11,7 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_stats.h"
 #include "daemon_tx.h"
+#include "daemon_tx_executor.h"
 #include "daemon_tx_outcome.h"
 #include "radio_cad.h"
 #include "radio_controller.h"
@@ -25,6 +26,8 @@ template<typename RadioT>
 struct DataTxDaemonContext {
     RadioController<RadioT> *ctrl;
     const char *log_ctx;
+    DaemonTxSendFn send_fn;
+    void *send_ctx;
 };
 
 void daemon_data_tx_trace_message(void *ctx, const char *msg);
@@ -119,16 +122,31 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
 
+    DaemonTxJob job;
+    DaemonTxJobResult result;
+    DaemonTxSendFn send_fn = tx->send_fn ?
+                             tx->send_fn :
+                             daemon_tx_executor_default_send;
+
+    daemon_tx_job_init(&job, band, ctrl->tx_mode, 0);
+    job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+    if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
+        daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
+        printf("[%s] DATA-TX abgebrochen: INVALID_PACKET\n", tag);
+        return DAEMON_TX_OUTCOME_INVALID_PACKET;
+    }
+
     daemon_radio_runtime_led(ctrl, 1);
-    TxResult result = lora_send(chunk, len, band);
-    daemon_radio_stats_record_tx_result(&ctrl->stats, result);
+    result = daemon_tx_execute_job_with_sender(&job, send_fn, tx->send_ctx);
+    daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
     daemon_radio_runtime_led(ctrl, 0);
 
-    if (!tx_result_is_ok(result)) {
-        daemon_debug_ctx(tx->log_ctx, "Abbruch: %s", tx_result_name(result));
+    if (daemon_tx_outcome_is_failure(result.outcome)) {
+        daemon_debug_ctx(tx->log_ctx, "Abbruch: %s",
+                         tx_result_name(result.tx_result));
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
-               tx_result_name(result));
-        return daemon_tx_outcome_from_tx_result(result);
+               tx_result_name(result.tx_result));
+        return result.outcome;
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk gesendet");
@@ -147,7 +165,9 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
 
     DataTxDaemonContext<RadioT> ctx = {
         ctrl,
-        log_ctx
+        log_ctx,
+        daemon_tx_executor_default_send,
+        NULL
     };
 
     return ctx;

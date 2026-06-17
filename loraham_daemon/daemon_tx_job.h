@@ -23,6 +23,7 @@ typedef struct {
     uint16_t seq;
     uint8_t flags;
     DaemonTxOutcome outcome;
+    TxResult tx_result;
     uint8_t framed_status;
 } DaemonTxJobResult;
 
@@ -68,6 +69,7 @@ static inline void daemon_tx_job_result_init(DaemonTxJobResult *result,
     result->seq = job ? job->seq : 0;
     result->flags = job ? job->flags : 0;
     result->outcome = outcome;
+    result->tx_result = daemon_tx_outcome_to_tx_result(outcome);
     result->framed_status = daemon_tx_outcome_to_framed_status(outcome);
 }
 

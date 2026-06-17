@@ -91,6 +91,7 @@ static void test_result_init(void)
     expect_int("result seq", result.seq, 99);
     expect_int("result flags", result.flags, FRAMED_DATA_TX_RESULT_FLAG_MANAGED);
     expect_int("result outcome", result.outcome, DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("result tx result", result.tx_result, TX_RESULT_CAD_TIMEOUT);
     expect_int("result framed status", result.framed_status,
                FRAMED_DATA_TX_STATUS_CHANNEL_BUSY);
 }
@@ -105,6 +106,8 @@ static void test_null_safe(void)
 
     daemon_tx_job_result_init(&result, NULL, DAEMON_TX_OUTCOME_RADIO_NOT_READY);
     expect_int("null result seq", result.seq, 0);
+    expect_int("null result tx result", result.tx_result,
+               TX_RESULT_RADIO_NOT_READY);
     expect_int("null result framed status", result.framed_status,
                FRAMED_DATA_TX_STATUS_RADIO_NOT_READY);
 }

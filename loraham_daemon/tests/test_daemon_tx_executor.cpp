@@ -71,6 +71,7 @@ static void test_execute_success(void)
     expect_int("executor result seq", result.seq, 17);
     expect_int("executor result flags", result.flags, FRAMED_DATA_TX_RESULT_FLAG_MANAGED);
     expect_int("executor result outcome", result.outcome, DAEMON_TX_OUTCOME_OK);
+    expect_int("executor tx result ok", result.tx_result, TX_RESULT_OK);
     expect_int("executor framed ok", result.framed_status, FRAMED_DATA_TX_STATUS_OK);
 }
 
@@ -86,6 +87,7 @@ static void test_execute_busy_mapping(void)
 
     expect_int("executor busy sender called", sender.calls, 1);
     expect_int("executor busy outcome", result.outcome, DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("executor busy tx result", result.tx_result, TX_RESULT_CAD_TIMEOUT);
     expect_int("executor busy framed", result.framed_status,
                FRAMED_DATA_TX_STATUS_CHANNEL_BUSY);
 }
@@ -102,6 +104,8 @@ static void test_execute_not_ready_mapping(void)
 
     expect_int("executor not ready outcome", result.outcome,
                DAEMON_TX_OUTCOME_RADIO_NOT_READY);
+    expect_int("executor not ready tx result", result.tx_result,
+               TX_RESULT_RADIO_NOT_READY);
     expect_int("executor not ready framed", result.framed_status,
                FRAMED_DATA_TX_STATUS_RADIO_NOT_READY);
 }
@@ -116,6 +120,8 @@ static void test_execute_null_safe(void)
     result = daemon_tx_execute_job_with_sender(NULL, fake_send, NULL);
     expect_int("executor null job outcome", result.outcome,
                DAEMON_TX_OUTCOME_INVALID_PACKET);
+    expect_int("executor null job tx result", result.tx_result,
+               TX_RESULT_INVALID_PACKET);
     expect_int("executor null job framed", result.framed_status,
                FRAMED_DATA_TX_STATUS_INVALID_PACKET);
 
@@ -123,6 +129,8 @@ static void test_execute_null_safe(void)
     expect_int("executor null sender seq", result.seq, 9);
     expect_int("executor null sender outcome", result.outcome,
                DAEMON_TX_OUTCOME_RADIO_ERROR);
+    expect_int("executor null sender tx result", result.tx_result,
+               TX_RESULT_RADIO_ERROR);
     expect_int("executor null sender framed", result.framed_status,
                FRAMED_DATA_TX_STATUS_RADIO_ERROR);
 }

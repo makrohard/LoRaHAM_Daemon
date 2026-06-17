@@ -107,4 +107,4 @@ Public integration baseline:
 
 - `test_daemon_tx_job` verifies future TX job/result data structures without changing TX behavior.
 
-- `test_daemon_tx_executor` verifies the synchronous TX executor seam without changing daemon TX behavior.
+- `test_daemon_tx_executor` verifies the synchronous TX executor seam and raw `TxResult` preservation without changing daemon TX behavior.

@@ -49,6 +49,27 @@ static inline DaemonTxOutcome daemon_tx_outcome_from_tx_result(TxResult result)
     }
 }
 
+static inline TxResult daemon_tx_outcome_to_tx_result(DaemonTxOutcome outcome)
+{
+    switch (outcome) {
+        case DAEMON_TX_OUTCOME_OK:
+            return TX_RESULT_OK;
+        case DAEMON_TX_OUTCOME_BUSY:
+            return TX_RESULT_BUSY;
+        case DAEMON_TX_OUTCOME_CHANNEL_BUSY:
+            return TX_RESULT_CAD_TIMEOUT;
+        case DAEMON_TX_OUTCOME_RADIO_NOT_READY:
+            return TX_RESULT_RADIO_NOT_READY;
+        case DAEMON_TX_OUTCOME_INVALID_PACKET:
+            return TX_RESULT_INVALID_PACKET;
+        case DAEMON_TX_OUTCOME_INVALID_BAND:
+            return TX_RESULT_INVALID_BAND;
+        case DAEMON_TX_OUTCOME_RADIO_ERROR:
+        default:
+            return TX_RESULT_RADIO_ERROR;
+    }
+}
+
 static inline uint8_t daemon_tx_outcome_to_framed_status(int outcome)
 {
     switch (outcome) {
