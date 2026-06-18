@@ -1,6 +1,8 @@
 #ifndef LORAHAM_CLIENT_SLOT_H
 #define LORAHAM_CLIENT_SLOT_H
 
+#include <stdint.h>
+
 #include "client_output_queue.h"
 #include "config_stream.h"
 #include "event_loop.h"
@@ -11,12 +13,14 @@ typedef struct {
     int fd;
     ClientOutputQueue output;
     ConfigStreamBuffer stream;
+    uint32_t generation;
 } ClientSlot;
 
 void client_slot_init(ClientSlot *slot);
 void client_slot_init_all(ClientSlot *slots, int count);
 int client_slot_has_client(const ClientSlot *slot);
 int client_slot_fd(const ClientSlot *slot);
+uint32_t client_slot_generation(const ClientSlot *slot);
 void client_slot_set_fd(ClientSlot *slot, int fd);
 void client_slot_reset_output(ClientSlot *slot);
 void client_slot_reset_stream(ClientSlot *slot);

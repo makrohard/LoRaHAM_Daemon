@@ -54,6 +54,10 @@ static inline int daemon_tx_completion_deliver_to_slot(ClientSlot *slots,
     if (!client_slot_has_client(&slots[idx]))
         return 0;
 
+    if (result->completion_generation != 0u &&
+        client_slot_generation(&slots[idx]) != result->completion_generation)
+        return 0;
+
     if (daemon_tx_completion_encode_frame(frame, sizeof(frame), result) != 0)
         return -1;
 

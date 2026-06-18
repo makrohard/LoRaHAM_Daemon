@@ -19,7 +19,7 @@ int daemon_framed_tx_should_emit_immediate_result(int result_active,
 typedef int (*DaemonFramedTxResultEnabledFn)(void *ctx);
 typedef uint16_t (*DaemonFramedTxNextSeqFn)(void *ctx);
 typedef int (*DaemonFramedTxResultDeferredFn)(void *ctx);
-typedef void (*DaemonFramedTxTargetFn)(void *ctx, int slot_index, uint16_t seq);
+typedef void (*DaemonFramedTxTargetFn)(void *ctx, int slot_index, uint32_t generation, uint16_t seq);
 
 template<typename RadioT>
 static int send_framed_data_packet(uint8_t *payload,

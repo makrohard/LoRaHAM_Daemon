@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Deferred framed TX_RESULT delivery now checks client-slot generation before delivery.
 - DATA TX carries TX-busy wait limits in context so tests avoid real-time policy sleeps.
 - Synchronous DATA TX now drops after the bounded TX-busy policy timeout.
 - MANAGED CAD-timeout send attempts are now visible in runtime statistics.

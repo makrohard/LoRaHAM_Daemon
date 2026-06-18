@@ -186,6 +186,7 @@ static void test_completion_delivers_to_target_slot(void)
 
     daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
     result.completion_slot = 1;
+    result.completion_generation = client_slot_generation(&slots[1]);
 
     expect_int("completion deliver target",
                daemon_tx_completion_deliver_to_slot(slots, 2, &result),
@@ -202,6 +203,44 @@ static void test_completion_delivers_to_target_slot(void)
     close(sv[1]);
     client_slot_close_all(slots, 2);
 }
+
+static void test_completion_ignores_reused_slot_generation(void)
+{
+    ClientSlot slots[1];
+    int old_sv[2];
+    int new_sv[2];
+    DaemonTxJob job = make_job(0x4567, FRAMED_DATA_TX_RESULT_FLAG_DEFERRED);
+    DaemonTxJobResult result;
+
+    client_slot_init_all(slots, 1);
+    expect_int("stale completion old socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, old_sv),
+               0);
+    client_slot_set_fd(&slots[0], old_sv[0]);
+
+    daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+    result.completion_slot = 0;
+    result.completion_generation = client_slot_generation(&slots[0]);
+
+    close(old_sv[1]);
+    client_slot_close(&slots[0]);
+
+    expect_int("stale completion new socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, new_sv),
+               0);
+    client_slot_set_fd(&slots[0], new_sv[0]);
+
+    expect_int("stale completion ignored",
+               daemon_tx_completion_deliver_to_slot(slots, 1, &result),
+               0);
+    expect_size("stale completion queued bytes",
+                client_output_queue_pending(&slots[0].output),
+                0);
+
+    close(new_sv[1]);
+    client_slot_close_all(slots, 1);
+}
+
 
 static void test_completion_ignores_missing_target(void)
 {
@@ -245,6 +284,7 @@ static void test_drain_delivers_queued_completion(void)
 
     daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
     result.completion_slot = 0;
+    result.completion_generation = client_slot_generation(&slots[0]);
     daemon_tx_completion_queue_push(
         daemon_tx_async_runtime_completion_queue_for_band(433),
         &result);
@@ -314,6 +354,7 @@ int main(int argc, char **argv)
     test_completion_queue_push_pop();
     test_completion_queue_drops_oldest_when_full();
     test_completion_delivers_to_target_slot();
+    test_completion_ignores_reused_slot_generation();
     test_completion_ignores_missing_target();
     test_drain_delivers_queued_completion();
     test_encode_rejects_bad_args();

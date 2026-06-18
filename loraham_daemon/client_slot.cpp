@@ -8,12 +8,19 @@
 
 /* --- Unified client slot state ------------------------------------------ */
 
+static uint32_t client_slot_next_generation(uint32_t generation)
+{
+    generation++;
+    return generation ? generation : 1u;
+}
+
 void client_slot_init(ClientSlot *slot)
 {
     if (!slot)
         return;
 
     slot->fd = -1;
+    slot->generation = 1u;
     client_output_queue_init(&slot->output);
     config_stream_init(&slot->stream);
 }
@@ -37,12 +44,18 @@ int client_slot_fd(const ClientSlot *slot)
     return slot ? slot->fd : -1;
 }
 
+uint32_t client_slot_generation(const ClientSlot *slot)
+{
+    return slot ? slot->generation : 0u;
+}
+
 void client_slot_set_fd(ClientSlot *slot, int fd)
 {
     if (!slot)
         return;
 
     slot->fd = fd;
+    slot->generation = client_slot_next_generation(slot->generation);
     client_output_queue_reset(&slot->output);
     config_stream_init(&slot->stream);
 }
@@ -71,7 +84,10 @@ void client_slot_close(ClientSlot *slot)
     if (slot->fd >= 0)
         close(slot->fd);
 
-    client_slot_init(slot);
+    slot->fd = -1;
+    slot->generation = client_slot_next_generation(slot->generation);
+    client_output_queue_init(&slot->output);
+    config_stream_init(&slot->stream);
 }
 
 void client_slot_close_all(ClientSlot *slots, int count)

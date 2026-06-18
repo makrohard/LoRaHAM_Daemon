@@ -20,6 +20,7 @@ typedef struct {
     size_t payload_len;
     uint8_t payload[FRAMED_DATA_MAX_RF_PAYLOAD];
     int completion_slot;
+    uint32_t completion_generation;
 } DaemonTxJob;
 
 typedef struct {
@@ -29,6 +30,7 @@ typedef struct {
     TxResult tx_result;
     uint8_t framed_status;
     int completion_slot;
+    uint32_t completion_generation;
 } DaemonTxJobResult;
 
 static inline void daemon_tx_job_init(DaemonTxJob *job,
@@ -44,6 +46,7 @@ static inline void daemon_tx_job_init(DaemonTxJob *job,
     job->tx_mode = tx_mode;
     job->seq = seq;
     job->completion_slot = DAEMON_TX_COMPLETION_SLOT_NONE;
+    job->completion_generation = 0u;
 }
 
 static inline int daemon_tx_job_set_payload(DaemonTxJob *job,
@@ -77,6 +80,7 @@ static inline void daemon_tx_job_result_init(DaemonTxJobResult *result,
     result->tx_result = daemon_tx_outcome_to_tx_result(outcome);
     result->framed_status = daemon_tx_outcome_to_framed_status(outcome);
     result->completion_slot = job ? job->completion_slot : DAEMON_TX_COMPLETION_SLOT_NONE;
+    result->completion_generation = job ? job->completion_generation : 0u;
 }
 
 #endif

@@ -122,13 +122,16 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
                       tx->result_deferred(tx->handler_ctx);
 
     if (tx->set_target)
-        tx->set_target(tx->handler_ctx, tx->slot_index, seq);
+        tx->set_target(tx->handler_ctx,
+                       tx->slot_index,
+                       client_slot_generation(tx->slot),
+                       seq);
 
     if (tx->handler)
         result = tx->handler(payload, len, tx->handler_ctx);
 
     if (tx->set_target)
-        tx->set_target(tx->handler_ctx, DAEMON_TX_COMPLETION_SLOT_NONE, 0);
+        tx->set_target(tx->handler_ctx, DAEMON_TX_COMPLETION_SLOT_NONE, 0u, 0);
 
     if (daemon_framed_tx_should_emit_immediate_result(result_active,
                                                         deferred_result,

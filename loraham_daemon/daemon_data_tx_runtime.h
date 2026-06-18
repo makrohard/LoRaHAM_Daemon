@@ -52,6 +52,7 @@ struct DataTxDaemonContext {
     void *send_ctx;
     int completion_slot;
     uint16_t completion_seq;
+    uint32_t completion_generation;
     uint32_t tx_busy_wait_ticks;
     useconds_t tx_busy_sleep_usec;
 };
@@ -72,6 +73,7 @@ static int daemon_data_tx_result_deferred(void *ctx)
 template<typename RadioT>
 static void daemon_data_tx_set_completion_target(void *ctx,
                                                  int slot_index,
+                                                 uint32_t generation,
                                                  uint16_t seq)
 {
     DataTxDaemonContext<RadioT> *tx =
@@ -81,6 +83,7 @@ static void daemon_data_tx_set_completion_target(void *ctx,
         return;
 
     tx->completion_slot = slot_index;
+    tx->completion_generation = generation;
     tx->completion_seq = seq;
 }
 
@@ -305,6 +308,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     daemon_tx_job_init(&job, band, ctrl->tx_mode, tx->completion_seq);
     job.completion_slot = tx->completion_slot;
+    job.completion_generation = tx->completion_generation;
     job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
     data_tx_apply_cad_decision_flags(&job, cad_decision);
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
@@ -347,6 +351,7 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
         NULL,
         DAEMON_TX_COMPLETION_SLOT_NONE,
         0,
+        0u,
         daemon_tx_policy_busy_timeout_ticks(),
         (useconds_t)daemon_tx_policy_poll_interval_usec()
     };
