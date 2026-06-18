@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <mutex>
 
+#include "client_slot.h"
 #include "daemon_tx_job.h"
 #include "framed_data.h"
 
@@ -29,6 +30,40 @@ static inline int daemon_tx_completion_encode_frame(uint8_t *frame,
                                         result->framed_status,
                                         result->flags,
                                         result->seq);
+}
+
+
+
+static inline int daemon_tx_completion_deliver_to_slot(ClientSlot *slots,
+                                                       int max_slots,
+                                                       const DaemonTxJobResult *result)
+{
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+    int idx;
+
+    if (!slots || max_slots <= 0 || !result)
+        return -1;
+
+    idx = result->completion_slot;
+    if (idx == DAEMON_TX_COMPLETION_SLOT_NONE)
+        return 0;
+
+    if (idx < 0 || idx >= max_slots)
+        return 0;
+
+    if (!client_slot_has_client(&slots[idx]))
+        return 0;
+
+    if (daemon_tx_completion_encode_frame(frame, sizeof(frame), result) != 0)
+        return -1;
+
+    if (!client_output_queue_append(&slots[idx].output, frame, sizeof(frame))) {
+        client_slot_close(&slots[idx]);
+        return -1;
+    }
+
+    client_slot_flush_output(&slots[idx]);
+    return 1;
 }
 
 

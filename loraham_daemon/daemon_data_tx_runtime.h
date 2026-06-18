@@ -29,10 +29,24 @@ struct DataTxDaemonContext {
     const char *log_ctx;
     DaemonTxSendFn send_fn;
     void *send_ctx;
+    int completion_slot;
 };
 
 void daemon_data_tx_trace_message(void *ctx, const char *msg);
 DataTxLog daemon_data_tx_log(const char *ctx);
+
+
+template<typename RadioT>
+static void daemon_data_tx_set_completion_slot(void *ctx, int slot_index)
+{
+    DataTxDaemonContext<RadioT> *tx =
+        (DataTxDaemonContext<RadioT> *)ctx;
+
+    if (!tx)
+        return;
+
+    tx->completion_slot = slot_index;
+}
 
 template<typename RadioT>
 static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
@@ -179,6 +193,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
                              daemon_tx_executor_default_send;
 
     daemon_tx_job_init(&job, band, ctrl->tx_mode, 0);
+    job.completion_slot = tx->completion_slot;
     job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
         daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
@@ -217,7 +232,8 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
         ctrl,
         log_ctx,
         daemon_tx_executor_default_send,
-        NULL
+        NULL,
+        DAEMON_TX_COMPLETION_SLOT_NONE
     };
 
     return ctx;

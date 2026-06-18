@@ -29,7 +29,8 @@ void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          send_framed_data_packet<SX1278>,
                                          data_tx_433_ctx,
                                          daemon_data_tx_result_enabled<SX1278>,
-                                         daemon_data_tx_next_result_seq<SX1278>);
+                                         daemon_data_tx_next_result_seq<SX1278>,
+                                         daemon_data_tx_set_completion_slot<SX1278>);
         config_dispatch_context<SX1278>(config_433_ctx, MAX_CLIENTS, readfds, buf);
         daemon_flush_channel_logged(&channel_433, readfds, "CLIENT433");
     }
@@ -47,7 +48,8 @@ void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          send_framed_data_packet<RFM95>,
                                          data_tx_868_ctx,
                                          daemon_data_tx_result_enabled<RFM95>,
-                                         daemon_data_tx_next_result_seq<RFM95>);
+                                         daemon_data_tx_next_result_seq<RFM95>,
+                                         daemon_data_tx_set_completion_slot<RFM95>);
         config_dispatch_context<RFM95>(config_868_ctx, MAX_CLIENTS, readfds, buf);
         daemon_flush_channel_logged(&channel_868, readfds, "CLIENT868");
     }

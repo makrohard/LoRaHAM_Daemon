@@ -146,6 +146,7 @@ static void init_context(RadioController<FakeRadio> *ctrl,
     ctx->log_ctx = "TEST";
     ctx->send_fn = fake_send;
     ctx->send_ctx = sender;
+    ctx->completion_slot = DAEMON_TX_COMPLETION_SLOT_NONE;
 }
 
 static void test_default_direct_path(void)
@@ -175,6 +176,7 @@ static void test_txqueue_optin_path(void)
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.tx_queue_active.store(true);
+    ctx.completion_slot = 3;
 
     expect_int("queue tx result",
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
@@ -199,6 +201,7 @@ static void test_txqueue_optin_path(void)
                daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
                0);
     expect_int("queue completion result", completion.tx_result, TX_RESULT_OK);
+    expect_int("queue completion target", completion.completion_slot, 3);
     expect_size("queue completion pending drained",
                 daemon_tx_async_runtime_completion_pending_for_band(433),
                 0);

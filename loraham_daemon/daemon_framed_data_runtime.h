@@ -6,6 +6,7 @@
 
 #include "client_slot.h"
 #include "daemon_data_tx_runtime.h"
+#include "daemon_tx_completion.h"
 #include "event_loop.h"
 #include "framed_data_tx.h"
 
@@ -13,6 +14,7 @@
 
 typedef int (*DaemonFramedTxResultEnabledFn)(void *ctx);
 typedef uint16_t (*DaemonFramedTxNextSeqFn)(void *ctx);
+typedef void (*DaemonFramedTxTargetSlotFn)(void *ctx, int slot_index);
 
 template<typename RadioT>
 static int send_framed_data_packet(uint8_t *payload,
@@ -30,6 +32,12 @@ void daemon_process_framed_data_slots(const char *tag,
                                       FramedDataTxPacketHandler handler,
                                       void *ctx,
                                       DaemonFramedTxResultEnabledFn result_enabled,
-                                      DaemonFramedTxNextSeqFn next_seq);
+                                      DaemonFramedTxNextSeqFn next_seq,
+                                      DaemonFramedTxTargetSlotFn set_target);
+
+void daemon_drain_framed_tx_completions(const char *tag,
+                                        int band,
+                                        ClientSlot *slots,
+                                        int max_clients);
 
 #endif

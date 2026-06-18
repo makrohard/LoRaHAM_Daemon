@@ -10,6 +10,8 @@
 
 /* --- Interner TX-Auftrag ------------------------------------------------- */
 
+#define DAEMON_TX_COMPLETION_SLOT_NONE -1
+
 typedef struct {
     int band;
     int tx_mode;
@@ -17,6 +19,7 @@ typedef struct {
     uint8_t flags;
     size_t payload_len;
     uint8_t payload[FRAMED_DATA_MAX_RF_PAYLOAD];
+    int completion_slot;
 } DaemonTxJob;
 
 typedef struct {
@@ -25,6 +28,7 @@ typedef struct {
     DaemonTxOutcome outcome;
     TxResult tx_result;
     uint8_t framed_status;
+    int completion_slot;
 } DaemonTxJobResult;
 
 static inline void daemon_tx_job_init(DaemonTxJob *job,
@@ -39,6 +43,7 @@ static inline void daemon_tx_job_init(DaemonTxJob *job,
     job->band = band;
     job->tx_mode = tx_mode;
     job->seq = seq;
+    job->completion_slot = DAEMON_TX_COMPLETION_SLOT_NONE;
 }
 
 static inline int daemon_tx_job_set_payload(DaemonTxJob *job,
@@ -71,6 +76,7 @@ static inline void daemon_tx_job_result_init(DaemonTxJobResult *result,
     result->outcome = outcome;
     result->tx_result = daemon_tx_outcome_to_tx_result(outcome);
     result->framed_status = daemon_tx_outcome_to_framed_status(outcome);
+    result->completion_slot = job ? job->completion_slot : DAEMON_TX_COMPLETION_SLOT_NONE;
 }
 
 #endif

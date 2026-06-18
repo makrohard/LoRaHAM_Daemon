@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 /* --- TX completion frame bridge tests ----------------------------------- */
 
@@ -141,6 +143,60 @@ static void test_completion_queue_drops_oldest_when_full(void)
 }
 
 
+
+static void test_completion_delivers_to_target_slot(void)
+{
+    ClientSlot slots[2];
+    int sv[2];
+    DaemonTxJob job = make_job(0x2222, FRAMED_DATA_TX_RESULT_FLAG_DEFERRED);
+    DaemonTxJobResult result;
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+
+    client_slot_init_all(slots, 2);
+    expect_int("completion socketpair", socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+
+    client_slot_set_fd(&slots[1], sv[0]);
+
+    daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+    result.completion_slot = 1;
+
+    expect_int("completion deliver target",
+               daemon_tx_completion_deliver_to_slot(slots, 2, &result),
+               1);
+
+    expect_int("completion read frame",
+               (int)read(sv[1], frame, sizeof(frame)),
+               (int)sizeof(frame));
+    expect_int("completion delivered type", frame[0], FRAMED_DATA_TYPE_TX_RESULT);
+    expect_int("completion delivered status", frame[3], FRAMED_DATA_TX_STATUS_OK);
+    expect_int("completion delivered seq lo", frame[5], 0x22);
+    expect_int("completion delivered seq hi", frame[6], 0x22);
+
+    close(sv[1]);
+    client_slot_close_all(slots, 2);
+}
+
+static void test_completion_ignores_missing_target(void)
+{
+    ClientSlot slots[1];
+    DaemonTxJob job = make_job(1, 0);
+    DaemonTxJobResult result;
+
+    client_slot_init_all(slots, 1);
+    daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+    result.completion_slot = DAEMON_TX_COMPLETION_SLOT_NONE;
+
+    expect_int("completion ignore no target",
+               daemon_tx_completion_deliver_to_slot(slots, 1, &result),
+               0);
+
+    result.completion_slot = 4;
+    expect_int("completion ignore bad target",
+               daemon_tx_completion_deliver_to_slot(slots, 1, &result),
+               0);
+}
+
+
 static void test_encode_rejects_bad_args(void)
 {
     DaemonTxJob job = make_job(1, 0);
@@ -181,6 +237,8 @@ int main(int argc, char **argv)
     test_encode_error_frame();
     test_completion_queue_push_pop();
     test_completion_queue_drops_oldest_when_full();
+    test_completion_delivers_to_target_slot();
+    test_completion_ignores_missing_target();
     test_encode_rejects_bad_args();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

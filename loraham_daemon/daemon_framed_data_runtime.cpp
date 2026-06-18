@@ -7,6 +7,8 @@
 
 #include "client_output_queue.h"
 #include "daemon_log.h"
+#include "daemon_tx_async_runtime.h"
+#include "daemon_tx_completion.h"
 #include "daemon_tx_outcome.h"
 #include "framed_data.h"
 
@@ -82,6 +84,8 @@ typedef struct {
     void *handler_ctx;
     DaemonFramedTxResultEnabledFn result_enabled;
     DaemonFramedTxNextSeqFn next_seq;
+    DaemonFramedTxTargetSlotFn set_target;
+    int slot_index;
 } DaemonFramedTxContext;
 
 static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
@@ -99,8 +103,14 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
     if (result_active && tx->next_seq)
         seq = tx->next_seq(tx->handler_ctx);
 
+    if (tx->set_target)
+        tx->set_target(tx->handler_ctx, tx->slot_index);
+
     if (tx->handler)
         result = tx->handler(payload, len, tx->handler_ctx);
+
+    if (tx->set_target)
+        tx->set_target(tx->handler_ctx, DAEMON_TX_COMPLETION_SLOT_NONE);
 
     if (result_active) {
         uint8_t status = daemon_framed_tx_status_from_handler_result(result);
@@ -142,7 +152,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       FramedDataTxPacketHandler handler,
                                       void *ctx,
                                       DaemonFramedTxResultEnabledFn result_enabled,
-                                      DaemonFramedTxNextSeqFn next_seq)
+                                      DaemonFramedTxNextSeqFn next_seq,
+                                      DaemonFramedTxTargetSlotFn set_target)
 {
     if (!slots || !states)
         return;
@@ -189,7 +200,9 @@ void daemon_process_framed_data_slots(const char *tag,
             handler,
             ctx,
             result_enabled,
-            next_seq
+            next_seq,
+            set_target,
+            i
         };
 
         daemon_debug_ctx(tag, "Framed DATA: %zd Byte empfangen", n);
@@ -206,3 +219,27 @@ void daemon_process_framed_data_slots(const char *tag,
         }
     }
 }
+
+
+void daemon_drain_framed_tx_completions(const char *tag,
+                                        int band,
+                                        ClientSlot *slots,
+                                        int max_clients)
+{
+    DaemonTxJobResult result;
+
+    if (!slots || max_clients <= 0)
+        return;
+
+    while (daemon_tx_async_runtime_pop_completion_for_band(band, &result) == 0) {
+        int rc = daemon_tx_completion_deliver_to_slot(slots,
+                                                      max_clients,
+                                                      &result);
+
+        if (rc < 0) {
+            daemon_debug_ctx(tag ? tag : "TXF",
+                             "TX completion delivery failed");
+        }
+    }
+}
+
