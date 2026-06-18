@@ -136,9 +136,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M8a
-adds a client-slot generation guard for deferred framed `TX_RESULT` delivery
-so stale completions cannot target a reused slot.
+The CAD/TX signaling rework is being introduced in small milestones. M8b
+exposes stale deferred framed `TX_RESULT` drops as `TXQSTALE` while keeping
+the M8a delivery guard unchanged.
 
 ## DATA sockets
 
@@ -236,6 +236,7 @@ Rules:
 - M7f adds a bounded synchronous TX-busy wait/drop guard using the central busy-timeout policy; opt-in queued TX still enters the daemon worker path.
 - M7g carries TX-busy wait limits in the DATA TX context; production keeps the central policy values, tests use short limits to avoid real-time 120 s waits.
 - M8a carries a client-slot generation with deferred framed TX completions and drops stale completions when a slot was closed/reused before delivery.
+- M8b counts stale deferred framed TX completions and exposes the count in `GET STATUS` as `TXQSTALE`.
 - M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.

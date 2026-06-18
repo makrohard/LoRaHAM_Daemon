@@ -18,6 +18,8 @@ void daemon_tx_async_runtime_shutdown(void);
 DaemonTxAsyncWorker *daemon_tx_async_runtime_worker_for_band(int band);
 int daemon_tx_async_runtime_pop_completion_for_band(int band, DaemonTxJobResult *out);
 size_t daemon_tx_async_runtime_completion_dropped_for_band(int band);
+size_t daemon_tx_async_runtime_completion_stale_for_band(int band);
+void daemon_tx_async_runtime_record_completion_stale_for_band(int band);
 size_t daemon_tx_async_runtime_completion_pending_for_band(int band);
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result, void *ctx);
 DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue_for_band(int band);

@@ -129,7 +129,7 @@ Public integration baseline:
 
 - `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.
 
-- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames, bounded completion queue behavior, targeted slot delivery, stale slot-generation rejection, main-loop drain delivery, and final-only queued result policy.
+- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames, bounded completion queue behavior, targeted slot delivery, stale slot-generation rejection and accounting, main-loop drain delivery, and final-only queued result policy.
 
 - `test_daemon_tx_policy` verifies the central CAD/TX timing policy constants and pure helper behavior used by the DATA TX CAD wait path.
 

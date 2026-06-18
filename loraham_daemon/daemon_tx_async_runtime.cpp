@@ -8,6 +8,8 @@ DaemonTxAsyncWorker daemon_tx_async_worker_433;
 DaemonTxAsyncWorker daemon_tx_async_worker_868;
 DaemonTxCompletionQueue daemon_tx_async_completion_queue_433;
 DaemonTxCompletionQueue daemon_tx_async_completion_queue_868;
+static size_t daemon_tx_async_completion_stale_433;
+static size_t daemon_tx_async_completion_stale_868;
 
 void daemon_tx_async_runtime_init(void)
 {
@@ -17,6 +19,8 @@ void daemon_tx_async_runtime_init(void)
     daemon_tx_async_worker_init(&daemon_tx_async_worker_868);
     daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue_433);
     daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue_868);
+    daemon_tx_async_completion_stale_433 = 0;
+    daemon_tx_async_completion_stale_868 = 0;
 }
 
 void daemon_tx_async_runtime_shutdown(void)
@@ -51,6 +55,32 @@ DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue_for_band(int b
         return &daemon_tx_async_completion_queue_868;
 
     return NULL;
+}
+
+static size_t *daemon_tx_async_runtime_stale_counter_for_band(int band)
+{
+    if (band == 433)
+        return &daemon_tx_async_completion_stale_433;
+
+    if (band == 868)
+        return &daemon_tx_async_completion_stale_868;
+
+    return NULL;
+}
+
+void daemon_tx_async_runtime_record_completion_stale_for_band(int band)
+{
+    size_t *counter = daemon_tx_async_runtime_stale_counter_for_band(band);
+
+    if (counter)
+        (*counter)++;
+}
+
+size_t daemon_tx_async_runtime_completion_stale_for_band(int band)
+{
+    size_t *counter = daemon_tx_async_runtime_stale_counter_for_band(band);
+
+    return counter ? *counter : 0;
 }
 
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result,

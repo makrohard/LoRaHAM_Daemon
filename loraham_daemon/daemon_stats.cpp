@@ -115,7 +115,8 @@ void daemon_stats_format_fields(char *buf,
              stats->tx_ok,
              stats->tx_errors,
              stats->tx_busy,
-             stats->cad_timeouts);
+             stats->cad_timeouts,
+             stats->cad_timeout_sends);
 }
 
 void daemon_stats_format_response(char *buf,

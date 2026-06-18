@@ -264,6 +264,13 @@ void daemon_drain_framed_tx_completions(const char *tag,
                                                       max_clients,
                                                       &result);
 
+        if (rc == DAEMON_TX_COMPLETION_DELIVERY_STALE) {
+            daemon_tx_async_runtime_record_completion_stale_for_band(band);
+            daemon_debug_ctx(tag ? tag : "TXF",
+                             "TX completion stale, dropped");
+            continue;
+        }
+
         if (rc < 0) {
             daemon_debug_ctx(tag ? tag : "TXF",
                              "TX completion delivery failed");
