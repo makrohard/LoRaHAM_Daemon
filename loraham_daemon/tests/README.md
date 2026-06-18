@@ -121,7 +121,7 @@ Public integration baseline:
 
 - `test_daemon_tx_worker` verifies the future TX worker state facade without changing daemon TX behavior.
 
-- `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path, last-completion bookkeeping, target/sequence propagation, completion queue handoff, RAW/MANAGED CAD wait policy behavior, MANAGED stable-idle enforcement, CAD-timeout flag preservation, and synchronous TX-busy timeout behavior while keeping default DATA TX direct.
+- `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path, last-completion bookkeeping, target/sequence propagation, completion queue handoff, RAW/MANAGED CAD wait policy behavior, MANAGED stable-idle enforcement, CAD-timeout flag preservation, and synchronous TX-busy timeout behavior with fast bounded test limits while keeping default DATA TX direct.
 
 - `test_radio_controller_tx_worker` verifies that each radio controller owns initialized TX worker state.
 

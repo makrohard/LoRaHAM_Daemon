@@ -52,6 +52,8 @@ struct DataTxDaemonContext {
     void *send_ctx;
     int completion_slot;
     uint16_t completion_seq;
+    uint32_t tx_busy_wait_ticks;
+    useconds_t tx_busy_sleep_usec;
 };
 
 void daemon_data_tx_trace_message(void *ctx, const char *msg);
@@ -260,7 +262,10 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
     }
 
-    if (!ctrl->tx_queue_active.load() && data_tx_wait_tx_ready(ctrl)) {
+    if (!ctrl->tx_queue_active.load() &&
+        data_tx_wait_tx_ready_with_limits(ctrl,
+                                          tx->tx_busy_wait_ticks,
+                                          tx->tx_busy_sleep_usec)) {
         daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
         daemon_debug_ctx(tx->log_ctx, "TX belegt");
         printf("[%s] DATA-TX abgebrochen: %s\n", tag,
@@ -341,7 +346,9 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
         daemon_tx_executor_default_send,
         NULL,
         DAEMON_TX_COMPLETION_SLOT_NONE,
-        0
+        0,
+        daemon_tx_policy_busy_timeout_ticks(),
+        (useconds_t)daemon_tx_policy_poll_interval_usec()
     };
 
     return ctx;

@@ -159,6 +159,8 @@ static void init_context(RadioController<FakeRadio> *ctrl,
     ctx->send_ctx = sender;
     ctx->completion_slot = DAEMON_TX_COMPLETION_SLOT_NONE;
     ctx->completion_seq = 0;
+    ctx->tx_busy_wait_ticks = 2;
+    ctx->tx_busy_sleep_usec = 0;
 }
 
 static void test_default_direct_path(void)
