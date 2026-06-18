@@ -14,15 +14,12 @@
 #include "daemon_tx_async_runtime.h"
 #include "daemon_tx_executor.h"
 #include "daemon_tx_outcome.h"
+#include "daemon_tx_policy.h"
 #include "radio_cad.h"
 #include "radio_controller.h"
 #include "tx_result.h"
 
 /* --- DATA TX runtime helpers -------------------------------------------- */
-
-#define DATA_TX_CAD_MAX_WAIT_TICKS 300
-#define DATA_TX_CAD_SLEEP_USEC 10000
-
 template<typename RadioT>
 struct DataTxDaemonContext {
     RadioController<RadioT> *ctrl;
@@ -75,10 +72,12 @@ static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
 }
 
 template<typename RadioT>
-static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
+static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx,
+                                                 uint32_t max_ticks,
+                                                 useconds_t sleep_usec)
 {
     RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
-    int cad_wait = 0;
+    uint32_t cad_wait = 0;
 
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return 0;
@@ -86,15 +85,25 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
     if (ctrl->tx_mode == RADIO_TX_MODE_RAW)
         return data_tx_probe_channel_busy(tx);
 
-    while (cad_wait < DATA_TX_CAD_MAX_WAIT_TICKS) {
+    while (cad_wait < max_ticks) {
         if (!data_tx_probe_channel_busy(tx))
             return 0;
 
-        usleep(DATA_TX_CAD_SLEEP_USEC);
+        if (sleep_usec > 0)
+            usleep(sleep_usec);
         cad_wait++;
     }
 
-    return 1;
+    return daemon_tx_policy_send_after_cad_timeout() ? 0 : 1;
+}
+
+template<typename RadioT>
+static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
+{
+    return data_tx_wait_channel_free_with_limits(
+        tx,
+        daemon_tx_policy_cad_wait_ticks(),
+        (useconds_t)daemon_tx_policy_poll_interval_usec());
 }
 
 template<typename RadioT>

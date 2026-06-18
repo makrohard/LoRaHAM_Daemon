@@ -47,14 +47,15 @@ void daemon_led_flash_pin(int pin)
 
 struct FakeRadio {
     int scan_count;
+    int scan_state;
     float rssi;
 
-    FakeRadio() : scan_count(0), rssi(-81.0f) {}
+    FakeRadio() : scan_count(0), scan_state(0), rssi(-81.0f) {}
 
     int scanChannel()
     {
         scan_count++;
-        return 0;
+        return scan_state;
     }
 
     float getRSSI()
@@ -244,6 +245,61 @@ static void test_txqueue_direct_full_rejects_newest(void)
     daemon_tx_async_runtime_shutdown();
 }
 
+
+static void test_raw_busy_probe_blocks_immediately(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 9 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_RAW;
+    ctrl.radio->scan_state = 1;
+
+    expect_int("raw busy tx result",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("raw busy no send", sender.calls, 0);
+    expect_int("raw busy one cad probe", ctrl.radio->scan_count, 1);
+}
+
+static void test_managed_busy_timeout_policy_sends_anyway(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 1;
+
+    expect_int("managed busy timeout sends anyway",
+               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 0),
+               0);
+    expect_int("managed busy timeout probe count", ctrl.radio->scan_count, 2);
+}
+
+static void test_managed_free_sends_immediately(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 0;
+
+    expect_int("managed free sends",
+               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 0),
+               0);
+    expect_int("managed free one probe", ctrl.radio->scan_count, 1);
+}
+
+
 static void test_not_ready_still_short_circuits(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -284,6 +340,9 @@ int main(int argc, char **argv)
     test_default_direct_path();
     test_txqueue_optin_path();
     test_txqueue_direct_full_rejects_newest();
+    test_raw_busy_probe_blocks_immediately();
+    test_managed_busy_timeout_policy_sends_anyway();
+    test_managed_free_sends_immediately();
     test_not_ready_still_short_circuits();
 
     daemon_tx_async_runtime_shutdown();

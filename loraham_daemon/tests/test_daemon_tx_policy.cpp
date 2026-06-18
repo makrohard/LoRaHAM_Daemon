@@ -36,6 +36,9 @@ static void test_policy_constants(void)
     expect_u32("cad wait timeout ms", DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS, 20000u);
     expect_u32("cad idle stable ms", DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS, 500u);
     expect_u32("poll interval ms", DAEMON_TX_POLICY_POLL_INTERVAL_MS, 100u);
+    expect_u32("poll interval usec",
+               daemon_tx_policy_poll_interval_usec(),
+               100000u);
     expect_int("send after cad timeout",
                daemon_tx_policy_send_after_cad_timeout(),
                1);

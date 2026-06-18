@@ -39,6 +39,12 @@ static inline uint32_t daemon_tx_policy_cad_idle_stable_ticks(void)
                                          DAEMON_TX_POLICY_POLL_INTERVAL_MS);
 }
 
+
+static inline uint32_t daemon_tx_policy_poll_interval_usec(void)
+{
+    return DAEMON_TX_POLICY_POLL_INTERVAL_MS * 1000u;
+}
+
 static inline int daemon_tx_policy_timeout_reached(uint32_t elapsed_ms,
                                                    uint32_t timeout_ms)
 {
