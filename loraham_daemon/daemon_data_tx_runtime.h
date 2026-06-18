@@ -145,6 +145,37 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 }
 
 template<typename RadioT>
+static int data_tx_wait_tx_ready_with_limits(RadioController<RadioT> *ctrl,
+                                             uint32_t max_ticks,
+                                             useconds_t sleep_usec)
+{
+    uint32_t tx_wait = 0;
+
+    if (!ctrl)
+        return 1;
+
+    while (ctrl->tx_busy.load()) {
+        if (tx_wait >= max_ticks)
+            return 1;
+
+        tx_wait++;
+        if (sleep_usec > 0 && tx_wait < max_ticks)
+            usleep(sleep_usec);
+    }
+
+    return 0;
+}
+
+template<typename RadioT>
+static int data_tx_wait_tx_ready(RadioController<RadioT> *ctrl)
+{
+    return data_tx_wait_tx_ready_with_limits(
+        ctrl,
+        daemon_tx_policy_busy_timeout_ticks(),
+        (useconds_t)daemon_tx_policy_poll_interval_usec());
+}
+
+template<typename RadioT>
 static int daemon_data_tx_result_enabled(void *ctx)
 {
     DataTxDaemonContext<RadioT> *tx =
@@ -227,6 +258,14 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
         printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
+    }
+
+    if (!ctrl->tx_queue_active.load() && data_tx_wait_tx_ready(ctrl)) {
+        daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
+        daemon_debug_ctx(tx->log_ctx, "TX belegt");
+        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+               tx_result_name(TX_RESULT_BUSY));
+        return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
 
     // CAD guard: LoRa only.

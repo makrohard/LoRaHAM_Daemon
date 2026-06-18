@@ -256,6 +256,60 @@ static void test_txqueue_direct_full_rejects_newest(void)
 }
 
 
+static void test_direct_tx_busy_timeout_blocks_send(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 1, 2 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_busy.store(true);
+
+    expect_int("direct tx busy wait times out",
+               data_tx_wait_tx_ready_with_limits<FakeRadio>(&ctrl, 2, 0),
+               1);
+    expect_int("direct tx busy no send",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("direct tx busy sender calls", sender.calls, 0);
+    expect_size("direct tx busy stats", ctrl.stats.tx_busy, 1);
+}
+
+static void test_queued_tx_skips_frontdoor_tx_busy_wait(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 2, 3 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(true);
+    ctrl.tx_busy.store(true);
+
+    expect_int("queued tx accepted while tx busy",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               0);
+    expect_int("queued tx processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued tx sender calls", sender.calls, 1);
+    expect_size("queued tx busy frontdoor stats", ctrl.stats.tx_busy, 0);
+}
+
+static void test_tx_busy_wait_clears(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_busy.store(false);
+
+    expect_int("tx busy clear immediately",
+               data_tx_wait_tx_ready_with_limits<FakeRadio>(&ctrl, 2, 0),
+               0);
+}
+
+
 static void test_raw_busy_probe_blocks_immediately(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -400,6 +454,9 @@ int main(int argc, char **argv)
     test_default_direct_path();
     test_txqueue_optin_path();
     test_txqueue_direct_full_rejects_newest();
+    test_direct_tx_busy_timeout_blocks_send();
+    test_queued_tx_skips_frontdoor_tx_busy_wait();
+    test_tx_busy_wait_clears();
     test_raw_busy_probe_blocks_immediately();
     test_managed_busy_timeout_policy_sends_anyway();
     test_managed_free_waits_for_stable_idle();
