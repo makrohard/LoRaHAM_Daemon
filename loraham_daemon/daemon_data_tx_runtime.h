@@ -11,6 +11,7 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_stats.h"
 #include "daemon_tx.h"
+#include "daemon_tx_async_runtime.h"
 #include "daemon_tx_executor.h"
 #include "daemon_tx_outcome.h"
 #include "radio_cad.h"
@@ -92,31 +93,13 @@ static uint16_t daemon_data_tx_next_result_seq(void *ctx)
 }
 
 
-typedef struct {
-    int seen;
-    DaemonTxJobResult result;
-} DataTxQueueResultCapture;
-
-static inline void daemon_data_tx_capture_queue_result(const DaemonTxJobResult *result,
-                                                       void *ctx)
-{
-    DataTxQueueResultCapture *capture =
-        (DataTxQueueResultCapture *)ctx;
-
-    if (!capture || !result)
-        return;
-
-    capture->result = *result;
-    capture->seen = 1;
-}
-
 template<typename RadioT>
 static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> *tx,
                                                     const DaemonTxJob *job,
                                                     DaemonTxSendFn send_fn)
 {
     DaemonTxJobResult result;
-    DataTxQueueResultCapture capture;
+    DaemonTxAsyncWorker *async;
 
     daemon_tx_job_result_init(&result,
                               job,
@@ -128,7 +111,20 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
     if (!tx->ctrl->tx_queue_active.load())
         return daemon_tx_execute_job_with_sender(job, send_fn, tx->send_ctx);
 
-    if (daemon_tx_worker_submit(&tx->ctrl->tx_worker, job) != 0) {
+    async = daemon_tx_async_runtime_worker_for_band(job->band);
+    if (!async)
+        return result;
+
+    daemon_tx_async_worker_configure(async,
+                                     send_fn,
+                                     tx->send_ctx,
+                                     NULL,
+                                     NULL);
+
+    if (daemon_tx_async_worker_start(async) != 0)
+        return result;
+
+    if (daemon_tx_async_worker_submit(async, job) != 0) {
         daemon_tx_job_result_init(&result,
                                   job,
                                   DAEMON_TX_OUTCOME_CHANNEL_BUSY);
@@ -136,25 +132,11 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
         return result;
     }
 
-    capture.seen = 0;
-    daemon_tx_job_result_init(&capture.result,
+    daemon_tx_job_result_init(&result,
                               job,
-                              DAEMON_TX_OUTCOME_RADIO_ERROR);
-
-    if (daemon_tx_worker_drain(&tx->ctrl->tx_worker,
-                               send_fn,
-                               tx->send_ctx,
-                               daemon_data_tx_capture_queue_result,
-                               &capture,
-                               1) != 1 || !capture.seen) {
-        daemon_tx_job_result_init(&result,
-                                  job,
-                                  DAEMON_TX_OUTCOME_RADIO_ERROR);
-        result.tx_result = TX_RESULT_RADIO_ERROR;
-        return result;
-    }
-
-    return capture.result;
+                              DAEMON_TX_OUTCOME_OK);
+    result.tx_result = TX_RESULT_OK;
+    return result;
 }
 
 template<typename RadioT>

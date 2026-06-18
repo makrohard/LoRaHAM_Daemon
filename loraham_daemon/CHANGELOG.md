@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- TXQUEUE opt-in DATA TX now enqueues into daemon-owned async workers.
 - Daemon-owned async TX worker lifecycle state added without live TX routing.
 - Standalone async TX worker skeleton added for future queued runtime TX.
 - TXQUEUE opt-in DATA TX path now uses bounded queue with synchronous drain.

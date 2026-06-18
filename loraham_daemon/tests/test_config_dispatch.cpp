@@ -63,6 +63,27 @@ typedef struct {
 
 static ApplyState g_apply_state;
 
+
+/* --- Async TX runtime status stubs -------------------------------------- */
+
+size_t daemon_tx_async_runtime_pending_for_band(int band)
+{
+    (void)band;
+    return 0;
+}
+
+size_t daemon_tx_async_runtime_dropped_for_band(int band)
+{
+    (void)band;
+    return 0;
+}
+
+size_t daemon_tx_async_runtime_processed_for_band(int band)
+{
+    (void)band;
+    return 0;
+}
+
 static void fake_rx_callback(void)
 {
 }

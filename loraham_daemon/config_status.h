@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "daemon_stats.h"
+#include "daemon_tx_async_runtime.h"
 #include "daemon_timing.h"
 #include "radio_controller.h"
 #include "radio_health.h"
@@ -157,6 +158,43 @@ static inline int config_status_is_set_txmode(const char *line,
     return 0;
 }
 
+
+template<typename RadioT>
+static inline size_t config_status_txq_pending(const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl)
+        return 0;
+
+    if (ctrl->tx_queue_active.load())
+        return daemon_tx_async_runtime_pending_for_band(radio_controller_band_number(ctrl));
+
+    return daemon_tx_worker_pending(&ctrl->tx_worker);
+}
+
+template<typename RadioT>
+static inline size_t config_status_txq_dropped(const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl)
+        return 0;
+
+    if (ctrl->tx_queue_active.load())
+        return daemon_tx_async_runtime_dropped_for_band(radio_controller_band_number(ctrl));
+
+    return daemon_tx_worker_dropped(&ctrl->tx_worker);
+}
+
+template<typename RadioT>
+static inline size_t config_status_txq_processed(const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl)
+        return 0;
+
+    if (ctrl->tx_queue_active.load())
+        return daemon_tx_async_runtime_processed_for_band(radio_controller_band_number(ctrl));
+
+    return daemon_tx_worker_processed(&ctrl->tx_worker);
+}
+
 template<typename RadioT>
 static inline void config_status_format(char *buf,
                                         size_t buf_size,
@@ -172,9 +210,9 @@ static inline void config_status_format(char *buf,
              (ctrl && ctrl->tx_result_active.load()) ? 1 : 0,
              radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED),
              (ctrl && ctrl->tx_queue_active.load()) ? 1 : 0,
-             ctrl ? daemon_tx_worker_pending(&ctrl->tx_worker) : 0,
-             ctrl ? daemon_tx_worker_dropped(&ctrl->tx_worker) : 0,
-             ctrl ? daemon_tx_worker_processed(&ctrl->tx_worker) : 0);
+             config_status_txq_pending(ctrl),
+             config_status_txq_dropped(ctrl),
+             config_status_txq_processed(ctrl));
 }
 
 template<typename RadioT>

@@ -42,6 +42,27 @@ size_t daemon_tx_async_runtime_pending_for_band(int band)
     return daemon_tx_async_worker_pending(daemon_tx_async_runtime_worker_for_band(band));
 }
 
+
+size_t daemon_tx_async_runtime_accepted_for_band(int band)
+{
+    return daemon_tx_async_worker_accepted(daemon_tx_async_runtime_worker_for_band(band));
+}
+
+size_t daemon_tx_async_runtime_rejected_for_band(int band)
+{
+    return daemon_tx_async_worker_rejected(daemon_tx_async_runtime_worker_for_band(band));
+}
+
+size_t daemon_tx_async_runtime_processed_for_band(int band)
+{
+    return daemon_tx_async_worker_processed(daemon_tx_async_runtime_worker_for_band(band));
+}
+
+size_t daemon_tx_async_runtime_dropped_for_band(int band)
+{
+    return daemon_tx_async_worker_dropped(daemon_tx_async_runtime_worker_for_band(band));
+}
+
 int daemon_tx_async_runtime_running_for_band(int band)
 {
     return daemon_tx_async_worker_running(daemon_tx_async_runtime_worker_for_band(band));

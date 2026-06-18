@@ -1,6 +1,8 @@
 #include "../daemon_data_tx_runtime.h"
 
+#include <chrono>
 #include <stdio.h>
+#include <thread>
 #include <string.h>
 
 /* --- DATA TX queue opt-in runtime tests --------------------------------- */
@@ -108,6 +110,18 @@ static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
     return sender->result[idx];
 }
 
+
+static int wait_async_processed(int band, size_t expected)
+{
+    for (int i = 0; i < 1000; i++) {
+        if (daemon_tx_async_runtime_processed_for_band(band) >= expected)
+            return 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return 0;
+}
+
 static void init_context(RadioController<FakeRadio> *ctrl,
                          DataTxDaemonContext<FakeRadio> *ctx,
                          FakeSender *sender)
@@ -121,6 +135,9 @@ static void init_context(RadioController<FakeRadio> *ctrl,
     ctrl->radio.reset(new FakeRadio());
     ctrl->health = RADIO_HEALTH_READY;
     ctrl->mode = RADIO_MODE_FSK;
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
 
     memset(sender, 0, sizeof(*sender));
     sender->result[0] = TX_RESULT_OK;
@@ -162,21 +179,21 @@ static void test_txqueue_optin_path(void)
     expect_int("queue tx result",
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
                0);
+    expect_int("queue processed wait", wait_async_processed(433, 1), 1);
     expect_int("queue sender calls", sender.calls, 1);
-    expect_size("queue accepted", daemon_tx_worker_accepted(&ctrl.tx_worker), 1);
-    expect_size("queue processed", daemon_tx_worker_processed(&ctrl.tx_worker), 1);
-    expect_size("queue pending drained", daemon_tx_worker_pending(&ctrl.tx_worker), 0);
+    expect_size("queue async accepted", daemon_tx_async_runtime_accepted_for_band(433), 1);
+    expect_size("queue async processed", daemon_tx_async_runtime_processed_for_band(433), 1);
+    expect_size("queue async pending drained", daemon_tx_async_runtime_pending_for_band(433), 0);
 }
 
-static void test_txqueue_full_rejects_without_send(void)
+static void test_txqueue_direct_full_rejects_newest(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
-    FakeSender sender;
-    uint8_t payload[] = { 8, 9 };
+    DaemonTxAsyncWorker *worker;
 
-    init_context(&ctrl, &ctx, &sender);
-    ctrl.tx_queue_active.store(true);
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+
+    worker = daemon_tx_async_runtime_worker_for_band(433);
 
     for (int i = 0; i < DAEMON_TX_QUEUE_CAPACITY; i++) {
         DaemonTxJob job;
@@ -184,17 +201,23 @@ static void test_txqueue_full_rejects_without_send(void)
 
         daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, (uint16_t)i);
         daemon_tx_job_set_payload(&job, queued, sizeof(queued));
-        daemon_tx_worker_submit(&ctrl.tx_worker, &job);
+        daemon_tx_async_worker_submit(worker, &job);
     }
 
-    expect_int("queue full tx result",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
-               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
-    expect_int("queue full no send", sender.calls, 0);
-    expect_size("queue full rejected", daemon_tx_worker_rejected(&ctrl.tx_worker), 1);
-    expect_size("queue full dropped", daemon_tx_worker_dropped(&ctrl.tx_worker), 1);
-    expect_size("queue full still pending", daemon_tx_worker_pending(&ctrl.tx_worker),
+    DaemonTxJob extra;
+    uint8_t payload[] = { 8, 9 };
+    daemon_tx_job_init(&extra, 433, RADIO_TX_MODE_MANAGED, 99);
+    daemon_tx_job_set_payload(&extra, payload, sizeof(payload));
+
+    expect_int("queue full direct reject",
+               daemon_tx_async_worker_submit(worker, &extra),
+               -1);
+    expect_size("queue full rejected", daemon_tx_async_runtime_rejected_for_band(433), 1);
+    expect_size("queue full dropped", daemon_tx_async_runtime_dropped_for_band(433), 1);
+    expect_size("queue full still pending", daemon_tx_async_runtime_pending_for_band(433),
                 DAEMON_TX_QUEUE_CAPACITY);
+
+    daemon_tx_async_runtime_shutdown();
 }
 
 static void test_not_ready_still_short_circuits(void)
@@ -212,7 +235,7 @@ static void test_not_ready_still_short_circuits(void)
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
                DAEMON_TX_OUTCOME_RADIO_NOT_READY);
     expect_int("not ready no send", sender.calls, 0);
-    expect_size("not ready no queued", daemon_tx_worker_pending(&ctrl.tx_worker), 0);
+    expect_size("not ready no queued", daemon_tx_async_runtime_pending_for_band(433), 0);
 }
 
 int main(int argc, char **argv)
@@ -236,8 +259,10 @@ int main(int argc, char **argv)
 
     test_default_direct_path();
     test_txqueue_optin_path();
-    test_txqueue_full_rejects_without_send();
+    test_txqueue_direct_full_rejects_newest();
     test_not_ready_still_short_circuits();
+
+    daemon_tx_async_runtime_shutdown();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

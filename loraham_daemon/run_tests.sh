@@ -307,6 +307,7 @@ build_one_data_tx_queue_runtime_test() {
     "$out" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \

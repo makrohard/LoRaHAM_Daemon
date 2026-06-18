@@ -73,6 +73,15 @@ static inline size_t daemon_tx_async_worker_pending(DaemonTxAsyncWorker *async)
     return daemon_tx_worker_pending(&async->worker);
 }
 
+static inline size_t daemon_tx_async_worker_accepted(DaemonTxAsyncWorker *async)
+{
+    if (!async)
+        return 0;
+
+    std::lock_guard<std::mutex> guard(async->lock);
+    return daemon_tx_worker_accepted(&async->worker);
+}
+
 static inline size_t daemon_tx_async_worker_processed(DaemonTxAsyncWorker *async)
 {
     if (!async)
