@@ -288,7 +288,7 @@ static void test_managed_busy_timeout_policy_sends_anyway(void)
 
     expect_int("managed busy timeout sends anyway",
                data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 3, 0),
-               0);
+               DATA_TX_CAD_WAIT_TIMEOUT_SEND);
     expect_int("managed busy timeout probe count", ctrl.radio->scan_count, 2);
 }
 
@@ -305,7 +305,7 @@ static void test_managed_free_waits_for_stable_idle(void)
 
     expect_int("managed stable idle sends",
                data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
-               0);
+               DATA_TX_CAD_WAIT_FREE);
     expect_int("managed stable idle probes", ctrl.radio->scan_count, 3);
 }
 
@@ -327,8 +327,36 @@ static void test_managed_busy_resets_stable_idle(void)
 
     expect_int("managed busy resets idle sends",
                data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
-               0);
+               DATA_TX_CAD_WAIT_FREE);
     expect_int("managed busy resets idle probes", ctrl.radio->scan_count, 5);
+}
+
+
+
+static void test_cad_timeout_sets_result_flag(void)
+{
+    DaemonTxJob job;
+
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 77);
+    job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+
+    data_tx_apply_cad_decision_flags(&job, DATA_TX_CAD_WAIT_TIMEOUT_SEND);
+    expect_int("cad timeout flag set",
+               job.flags & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+               FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT);
+}
+
+static void test_cad_free_does_not_set_timeout_flag(void)
+{
+    DaemonTxJob job;
+
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 78);
+    job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+
+    data_tx_apply_cad_decision_flags(&job, DATA_TX_CAD_WAIT_FREE);
+    expect_int("cad free timeout flag clear",
+               job.flags & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+               0);
 }
 
 
@@ -376,6 +404,8 @@ int main(int argc, char **argv)
     test_managed_busy_timeout_policy_sends_anyway();
     test_managed_free_waits_for_stable_idle();
     test_managed_busy_resets_stable_idle();
+    test_cad_timeout_sets_result_flag();
+    test_cad_free_does_not_set_timeout_flag();
     test_not_ready_still_short_circuits();
 
     daemon_tx_async_runtime_shutdown();

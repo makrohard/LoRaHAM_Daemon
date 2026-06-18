@@ -233,6 +233,20 @@ static void test_tx_result_encode(void)
     expect_int("decoded TX_RESULT type", type, FRAMED_DATA_TYPE_TX_RESULT);
     expect_int("decoded TX_RESULT len", len, FRAMED_DATA_TX_RESULT_PAYLOAD_LEN);
 
+
+    uint8_t cad_frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+
+    expect_int("encode TX_RESULT cad timeout flag ok",
+               framed_data_encode_tx_result(cad_frame,
+                                            sizeof(cad_frame),
+                                            FRAMED_DATA_TX_STATUS_OK,
+                                            FRAMED_DATA_TX_RESULT_FLAG_MANAGED |
+                                            FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+                                            2), 0);
+    expect_int("TX_RESULT cad timeout flag",
+               cad_frame[4] & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+               FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT);
+
     expect_int("encode TX_RESULT small buffer fails",
                framed_data_encode_tx_result(small,
                                             sizeof(small),

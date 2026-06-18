@@ -27,8 +27,9 @@
 #define FRAMED_DATA_TX_STATUS_INVALID_PACKET  5
 #define FRAMED_DATA_TX_STATUS_INVALID_BAND    6
 
-#define FRAMED_DATA_TX_RESULT_FLAG_MANAGED  0x01
-#define FRAMED_DATA_TX_RESULT_FLAG_DEFERRED 0x02
+#define FRAMED_DATA_TX_RESULT_FLAG_MANAGED     0x01
+#define FRAMED_DATA_TX_RESULT_FLAG_DEFERRED    0x02
+#define FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT 0x04
 
 int framed_data_type_known(uint8_t frame_type);
 int framed_data_rf_payload_len_valid(size_t payload_len);

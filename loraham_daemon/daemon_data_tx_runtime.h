@@ -20,6 +20,30 @@
 #include "tx_result.h"
 
 /* --- DATA TX runtime helpers -------------------------------------------- */
+#define DATA_TX_CAD_WAIT_FREE 0
+#define DATA_TX_CAD_WAIT_BLOCK 1
+#define DATA_TX_CAD_WAIT_TIMEOUT_SEND 2
+
+static inline int data_tx_cad_wait_blocks_tx(int decision)
+{
+    return decision == DATA_TX_CAD_WAIT_BLOCK;
+}
+
+static inline int data_tx_cad_wait_timed_out(int decision)
+{
+    return decision == DATA_TX_CAD_WAIT_TIMEOUT_SEND;
+}
+
+static inline void data_tx_apply_cad_decision_flags(DaemonTxJob *job,
+                                                    int decision)
+{
+    if (!job)
+        return;
+
+    if (data_tx_cad_wait_timed_out(decision))
+        job->flags |= FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT;
+}
+
 template<typename RadioT>
 struct DataTxDaemonContext {
     RadioController<RadioT> *ctrl;
@@ -83,16 +107,19 @@ static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx
     uint32_t required_free_ticks = stable_idle_ticks ? stable_idle_ticks : 1u;
 
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
-        return 0;
+        return DATA_TX_CAD_WAIT_FREE;
 
-    if (ctrl->tx_mode == RADIO_TX_MODE_RAW)
-        return data_tx_probe_channel_busy(tx);
+    if (ctrl->tx_mode == RADIO_TX_MODE_RAW) {
+        return data_tx_probe_channel_busy(tx) ?
+               DATA_TX_CAD_WAIT_BLOCK :
+               DATA_TX_CAD_WAIT_FREE;
+    }
 
     while (cad_wait < max_ticks) {
         if (!data_tx_probe_channel_busy(tx)) {
             free_ticks++;
             if (free_ticks >= required_free_ticks)
-                return 0;
+                return DATA_TX_CAD_WAIT_FREE;
         } else {
             free_ticks = 0;
         }
@@ -102,7 +129,9 @@ static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx
             usleep(sleep_usec);
     }
 
-    return daemon_tx_policy_send_after_cad_timeout() ? 0 : 1;
+    return daemon_tx_policy_send_after_cad_timeout() ?
+           DATA_TX_CAD_WAIT_TIMEOUT_SEND :
+           DATA_TX_CAD_WAIT_BLOCK;
 }
 
 template<typename RadioT>
@@ -204,7 +233,9 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     if (ctrl->mode == RADIO_MODE_LORA)
         daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
 
-    if (data_tx_wait_channel_free(tx)) {
+    int cad_decision = data_tx_wait_channel_free(tx);
+
+    if (data_tx_cad_wait_blocks_tx(cad_decision)) {
         TxResult busy_result = ctrl->tx_mode == RADIO_TX_MODE_RAW ?
                                TX_RESULT_BUSY : TX_RESULT_CAD_TIMEOUT;
         daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
@@ -214,6 +245,9 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
                tx_result_name(busy_result));
         return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
+
+    if (data_tx_cad_wait_timed_out(cad_decision))
+        daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
 
@@ -226,6 +260,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     daemon_tx_job_init(&job, band, ctrl->tx_mode, tx->completion_seq);
     job.completion_slot = tx->completion_slot;
     job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+    data_tx_apply_cad_decision_flags(&job, cad_decision);
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
         daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
         printf("[%s] DATA-TX abgebrochen: INVALID_PACKET\n", tag);
