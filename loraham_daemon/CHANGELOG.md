@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- MANAGED CAD-timeout send attempts are now visible in runtime statistics.
 - Framed TX_RESULT now preserves MANAGED CAD-timeout send context in flags.
 - MANAGED DATA TX now requires a stable idle CAD window before transmit.
 - DATA TX CAD wait behavior now uses the central CAD/TX policy.

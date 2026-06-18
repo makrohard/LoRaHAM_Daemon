@@ -69,7 +69,7 @@ static void test_stats_format_includes_cad_timeout(void)
 
     daemon_stats_format_response(buf, sizeof(buf), 12, RADIO_HEALTH_READY, &stats);
 
-    expect_int("stats has cad timeout", strstr(buf, "CADTIMEOUT=1") != NULL, 1);
+    expect_int("stats has cad timeout", strstr(buf, "CADTIMEOUT=1 CADSEND=0") != NULL, 1);
 }
 
 int main(int argc, char **argv)

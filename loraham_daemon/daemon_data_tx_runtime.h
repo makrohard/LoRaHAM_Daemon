@@ -246,8 +246,10 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
 
-    if (data_tx_cad_wait_timed_out(cad_decision))
+    if (data_tx_cad_wait_timed_out(cad_decision)) {
+        daemon_radio_stats_record_cad_timeout_send(&ctrl->stats);
         daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
+    }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
 

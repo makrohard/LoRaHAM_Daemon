@@ -24,7 +24,7 @@ static int test_get_stats_433(void)
 
     if (wait_for_matching_line(
             fd,
-            "^STATS UPTIME=[0-9]+ RADIO=READY RX=[0-9]+ RXBYTES=[0-9]+ RXDROPS=[0-9]+ TXOK=[0-9]+ TXERR=[0-9]+ TXBUSY=[0-9]+ CADTIMEOUT=[0-9]+$",
+            "^STATS UPTIME=[0-9]+ RADIO=READY RX=[0-9]+ RXBYTES=[0-9]+ RXDROPS=[0-9]+ TXOK=[0-9]+ TXERR=[0-9]+ TXBUSY=[0-9]+ CADTIMEOUT=[0-9]+ CADSEND=[0-9]+$",
             DEFAULT_RSSI_TIMEOUT_MS,
             line,
             sizeof(line)) < 0) {

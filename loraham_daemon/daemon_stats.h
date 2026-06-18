@@ -18,6 +18,7 @@ typedef struct {
     unsigned long tx_errors;
     unsigned long tx_busy;
     unsigned long cad_timeouts;
+    unsigned long cad_timeout_sends;
 } DaemonRadioStats;
 
 void daemon_radio_stats_init(DaemonRadioStats *stats);
@@ -26,6 +27,7 @@ void daemon_radio_stats_record_rx_drop(DaemonRadioStats *stats);
 void daemon_radio_stats_record_tx_result(DaemonRadioStats *stats,
                                          TxResult result);
 void daemon_radio_stats_record_cad_timeout(DaemonRadioStats *stats);
+void daemon_radio_stats_record_cad_timeout_send(DaemonRadioStats *stats);
 
 void daemon_stats_start(long now_ms);
 long daemon_stats_uptime_seconds(long now_ms);

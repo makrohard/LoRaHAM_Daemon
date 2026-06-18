@@ -65,6 +65,15 @@ void daemon_radio_stats_record_cad_timeout(DaemonRadioStats *stats)
     stats->cad_timeouts++;
 }
 
+
+void daemon_radio_stats_record_cad_timeout_send(DaemonRadioStats *stats)
+{
+    if (!stats)
+        return;
+
+    stats->cad_timeout_sends++;
+}
+
 void daemon_stats_start(long now_ms)
 {
     g_stats_start_ms = now_ms;
@@ -97,7 +106,7 @@ void daemon_stats_format_fields(char *buf,
     snprintf(buf,
              buf_size,
              "UPTIME=%ld RADIO=%s RX=%lu RXBYTES=%lu RXDROPS=%lu "
-             "TXOK=%lu TXERR=%lu TXBUSY=%lu CADTIMEOUT=%lu",
+             "TXOK=%lu TXERR=%lu TXBUSY=%lu CADTIMEOUT=%lu CADSEND=%lu",
              uptime_seconds,
              radio_health_name(health),
              stats->rx_packets,
