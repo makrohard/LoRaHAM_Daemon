@@ -456,14 +456,28 @@ build_one_tx_completion_test() {
   local src="$1"
   local out="$2"
 
+
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for TX completion test." >&2
+      exit 1
+    fi
+  fi
+
   build_one_cpp_sources \
     "$out" \
+    "${radiolib_cflags[@]}" \
+    -pthread \
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
     "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}" \
+    "$SCRIPT_DIR/daemon_framed_data_runtime.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/daemon_log.cpp" \
+    "$SCRIPT_DIR/framed_data_tx.cpp" \
     "$SCRIPT_DIR/framed_data.cpp"
 }
 

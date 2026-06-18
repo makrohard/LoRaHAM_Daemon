@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Main-loop draining now delivers async TX completions to framed DATA clients.
 - Async TX completions now carry framed-slot targets for safe later delivery.
 - Async TX completions are now queued for later main-loop delivery.
 - Internal TX completion results can now be encoded as framed TX_RESULT frames.

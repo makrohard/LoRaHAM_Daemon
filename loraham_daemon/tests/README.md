@@ -128,4 +128,4 @@ Public integration baseline:
 
 - `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.
 
-- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames, bounded completion queue behavior, and targeted slot delivery.
+- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames, bounded completion queue behavior, targeted slot delivery, and main-loop drain delivery.

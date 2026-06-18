@@ -1,4 +1,5 @@
 #include "../daemon_tx_completion.h"
+#include "../daemon_tx_async_runtime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -6,6 +7,13 @@
 #include <unistd.h>
 
 /* --- TX completion frame bridge tests ----------------------------------- */
+
+
+void daemon_drain_framed_tx_completions(const char *tag,
+                                        int band,
+                                        ClientSlot *slots,
+                                        int max_clients);
+
 
 static int g_ok = 0;
 static int g_fail = 0;
@@ -197,6 +205,54 @@ static void test_completion_ignores_missing_target(void)
 }
 
 
+
+static void test_drain_delivers_queued_completion(void)
+{
+    ClientSlot slots[2];
+    int sv[2];
+    DaemonTxJob job = make_job(0x3456, FRAMED_DATA_TX_RESULT_FLAG_DEFERRED);
+    DaemonTxJobResult result;
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+
+    client_slot_init_all(slots, 2);
+    expect_int("completion drain socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, sv),
+               0);
+
+    client_slot_set_fd(&slots[0], sv[0]);
+
+    daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+    result.completion_slot = 0;
+    daemon_tx_completion_queue_push(
+        daemon_tx_async_runtime_completion_queue_for_band(433),
+        &result);
+
+    expect_size("completion drain pending before",
+                daemon_tx_async_runtime_completion_pending_for_band(433),
+                1);
+
+    daemon_drain_framed_tx_completions("TESTF", 433, slots, 2);
+
+    expect_size("completion drain pending after",
+                daemon_tx_async_runtime_completion_pending_for_band(433),
+                0);
+    expect_int("completion drain read frame",
+               (int)read(sv[1], frame, sizeof(frame)),
+               (int)sizeof(frame));
+    expect_int("completion drain type", frame[0], FRAMED_DATA_TYPE_TX_RESULT);
+    expect_int("completion drain status", frame[3], FRAMED_DATA_TX_STATUS_OK);
+    expect_int("completion drain seq lo", frame[5], 0x56);
+    expect_int("completion drain seq hi", frame[6], 0x34);
+
+    close(sv[1]);
+    client_slot_close_all(slots, 2);
+    daemon_tx_async_runtime_shutdown();
+}
+
+
 static void test_encode_rejects_bad_args(void)
 {
     DaemonTxJob job = make_job(1, 0);
@@ -239,6 +295,7 @@ int main(int argc, char **argv)
     test_completion_queue_drops_oldest_when_full();
     test_completion_delivers_to_target_slot();
     test_completion_ignores_missing_target();
+    test_drain_delivers_queued_completion();
     test_encode_rejects_bad_args();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
