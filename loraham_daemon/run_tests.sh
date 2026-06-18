@@ -452,6 +452,17 @@ build_one_tx_result_test() {
 }
 
 
+build_one_tx_completion_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/framed_data.cpp"
+}
+
+
 build_one_tx_async_worker_test() {
   local src="$1"
   local out="$2"
@@ -581,6 +592,7 @@ build_tests() {
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_outcome.cpp" "$TEST_DIR/test_daemon_tx_outcome"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_job.cpp" "$TEST_DIR/test_daemon_tx_job"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_executor.cpp" "$TEST_DIR/test_daemon_tx_executor"
+  build_one_tx_completion_test "$TEST_DIR/test_daemon_tx_completion.cpp" "$TEST_DIR/test_daemon_tx_completion"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_queue.cpp" "$TEST_DIR/test_daemon_tx_queue"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_worker.cpp" "$TEST_DIR/test_daemon_tx_worker"
   build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker.cpp" "$TEST_DIR/test_daemon_tx_async_worker"
@@ -697,6 +709,7 @@ tests=(
   "$TEST_DIR/test_daemon_tx_outcome"
   "$TEST_DIR/test_daemon_tx_job"
   "$TEST_DIR/test_daemon_tx_executor"
+  "$TEST_DIR/test_daemon_tx_completion"
   "$TEST_DIR/test_daemon_tx_queue"
   "$TEST_DIR/test_daemon_tx_worker"
   "$TEST_DIR/test_daemon_tx_async_worker"
