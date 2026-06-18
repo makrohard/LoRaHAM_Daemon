@@ -14,6 +14,19 @@
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
 
+int daemon_framed_tx_should_emit_immediate_result(int result_active,
+                                                  int result_deferred,
+                                                  int handler_result)
+{
+    if (!result_active)
+        return 0;
+
+    if (!result_deferred)
+        return 1;
+
+    return daemon_tx_outcome_is_failure(handler_result);
+}
+
 
 static int daemon_queue_framed_tx_result(ClientSlot *slot,
                                          uint8_t status,
@@ -84,7 +97,8 @@ typedef struct {
     void *handler_ctx;
     DaemonFramedTxResultEnabledFn result_enabled;
     DaemonFramedTxNextSeqFn next_seq;
-    DaemonFramedTxTargetSlotFn set_target;
+    DaemonFramedTxResultDeferredFn result_deferred;
+    DaemonFramedTxTargetFn set_target;
     int slot_index;
 } DaemonFramedTxContext;
 
@@ -94,6 +108,7 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
     int result_active;
     uint16_t seq = 0;
     int result = -1;
+    int deferred_result = 0;
 
     if (!tx)
         return -1;
@@ -103,16 +118,21 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
     if (result_active && tx->next_seq)
         seq = tx->next_seq(tx->handler_ctx);
 
+    deferred_result = tx->result_deferred &&
+                      tx->result_deferred(tx->handler_ctx);
+
     if (tx->set_target)
-        tx->set_target(tx->handler_ctx, tx->slot_index);
+        tx->set_target(tx->handler_ctx, tx->slot_index, seq);
 
     if (tx->handler)
         result = tx->handler(payload, len, tx->handler_ctx);
 
     if (tx->set_target)
-        tx->set_target(tx->handler_ctx, DAEMON_TX_COMPLETION_SLOT_NONE);
+        tx->set_target(tx->handler_ctx, DAEMON_TX_COMPLETION_SLOT_NONE, 0);
 
-    if (result_active) {
+    if (daemon_framed_tx_should_emit_immediate_result(result_active,
+                                                        deferred_result,
+                                                        result)) {
         uint8_t status = daemon_framed_tx_status_from_handler_result(result);
 
         if (daemon_queue_framed_tx_result(tx->slot,
@@ -127,6 +147,9 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
 
         return 0;
     }
+
+    if (result_active)
+        return 0;
 
     return result;
 }
@@ -153,7 +176,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       void *ctx,
                                       DaemonFramedTxResultEnabledFn result_enabled,
                                       DaemonFramedTxNextSeqFn next_seq,
-                                      DaemonFramedTxTargetSlotFn set_target)
+                                      DaemonFramedTxResultDeferredFn result_deferred,
+                                      DaemonFramedTxTargetFn set_target)
 {
     if (!slots || !states)
         return;
@@ -201,6 +225,7 @@ void daemon_process_framed_data_slots(const char *tag,
             ctx,
             result_enabled,
             next_seq,
+            result_deferred,
             set_target,
             i
         };

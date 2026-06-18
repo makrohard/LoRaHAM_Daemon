@@ -30,6 +30,7 @@ struct DataTxDaemonContext {
     DaemonTxSendFn send_fn;
     void *send_ctx;
     int completion_slot;
+    uint16_t completion_seq;
 };
 
 void daemon_data_tx_trace_message(void *ctx, const char *msg);
@@ -37,7 +38,18 @@ DataTxLog daemon_data_tx_log(const char *ctx);
 
 
 template<typename RadioT>
-static void daemon_data_tx_set_completion_slot(void *ctx, int slot_index)
+static int daemon_data_tx_result_deferred(void *ctx)
+{
+    DataTxDaemonContext<RadioT> *tx =
+        (DataTxDaemonContext<RadioT> *)ctx;
+
+    return tx && tx->ctrl && tx->ctrl->tx_queue_active.load();
+}
+
+template<typename RadioT>
+static void daemon_data_tx_set_completion_target(void *ctx,
+                                                 int slot_index,
+                                                 uint16_t seq)
 {
     DataTxDaemonContext<RadioT> *tx =
         (DataTxDaemonContext<RadioT> *)ctx;
@@ -46,6 +58,7 @@ static void daemon_data_tx_set_completion_slot(void *ctx, int slot_index)
         return;
 
     tx->completion_slot = slot_index;
+    tx->completion_seq = seq;
 }
 
 template<typename RadioT>
@@ -192,7 +205,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
                              tx->send_fn :
                              daemon_tx_executor_default_send;
 
-    daemon_tx_job_init(&job, band, ctrl->tx_mode, 0);
+    daemon_tx_job_init(&job, band, ctrl->tx_mode, tx->completion_seq);
     job.completion_slot = tx->completion_slot;
     job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
@@ -233,7 +246,8 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
         log_ctx,
         daemon_tx_executor_default_send,
         NULL,
-        DAEMON_TX_COMPLETION_SLOT_NONE
+        DAEMON_TX_COMPLETION_SLOT_NONE,
+        0
     };
 
     return ctx;

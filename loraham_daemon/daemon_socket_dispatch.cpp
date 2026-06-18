@@ -30,7 +30,8 @@ void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          data_tx_433_ctx,
                                          daemon_data_tx_result_enabled<SX1278>,
                                          daemon_data_tx_next_result_seq<SX1278>,
-                                         daemon_data_tx_set_completion_slot<SX1278>);
+                                         daemon_data_tx_result_deferred<SX1278>,
+                                         daemon_data_tx_set_completion_target<SX1278>);
         daemon_drain_framed_tx_completions("TX433F",
                                            433,
                                            client_data433_framed_slots,
@@ -53,7 +54,8 @@ void daemon_process_ready_sockets(ConfigDispatchContext<SX1278> *config_433_ctx,
                                          data_tx_868_ctx,
                                          daemon_data_tx_result_enabled<RFM95>,
                                          daemon_data_tx_next_result_seq<RFM95>,
-                                         daemon_data_tx_set_completion_slot<RFM95>);
+                                         daemon_data_tx_result_deferred<RFM95>,
+                                         daemon_data_tx_set_completion_target<RFM95>);
         daemon_drain_framed_tx_completions("TX868F",
                                            868,
                                            client_data868_framed_slots,

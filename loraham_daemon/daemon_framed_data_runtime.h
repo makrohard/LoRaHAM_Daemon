@@ -12,9 +12,14 @@
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
 
+int daemon_framed_tx_should_emit_immediate_result(int result_active,
+                                                  int result_deferred,
+                                                  int handler_result);
+
 typedef int (*DaemonFramedTxResultEnabledFn)(void *ctx);
 typedef uint16_t (*DaemonFramedTxNextSeqFn)(void *ctx);
-typedef void (*DaemonFramedTxTargetSlotFn)(void *ctx, int slot_index);
+typedef int (*DaemonFramedTxResultDeferredFn)(void *ctx);
+typedef void (*DaemonFramedTxTargetFn)(void *ctx, int slot_index, uint16_t seq);
 
 template<typename RadioT>
 static int send_framed_data_packet(uint8_t *payload,
@@ -33,7 +38,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       void *ctx,
                                       DaemonFramedTxResultEnabledFn result_enabled,
                                       DaemonFramedTxNextSeqFn next_seq,
-                                      DaemonFramedTxTargetSlotFn set_target);
+                                      DaemonFramedTxResultDeferredFn result_deferred,
+                                      DaemonFramedTxTargetFn set_target);
 
 void daemon_drain_framed_tx_completions(const char *tag,
                                         int band,

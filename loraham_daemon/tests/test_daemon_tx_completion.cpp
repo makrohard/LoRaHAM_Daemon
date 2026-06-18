@@ -1,4 +1,5 @@
 #include "../daemon_tx_completion.h"
+#include "../daemon_framed_data_runtime.h"
 #include "../daemon_tx_async_runtime.h"
 
 #include <stdio.h>
@@ -51,6 +52,24 @@ static DaemonTxJob make_job(uint16_t seq, uint8_t flags)
 
     return job;
 }
+
+
+static void test_framed_immediate_result_policy(void)
+{
+    expect_int("framed no txresult no immediate",
+               daemon_framed_tx_should_emit_immediate_result(0, 0, DAEMON_TX_OUTCOME_OK),
+               0);
+    expect_int("framed direct success immediate",
+               daemon_framed_tx_should_emit_immediate_result(1, 0, DAEMON_TX_OUTCOME_OK),
+               1);
+    expect_int("framed queued success final only",
+               daemon_framed_tx_should_emit_immediate_result(1, 1, DAEMON_TX_OUTCOME_OK),
+               0);
+    expect_int("framed queued failure immediate",
+               daemon_framed_tx_should_emit_immediate_result(1, 1, DAEMON_TX_OUTCOME_CHANNEL_BUSY),
+               1);
+}
+
 
 static void test_frame_len(void)
 {
@@ -288,6 +307,7 @@ int main(int argc, char **argv)
         }
     }
 
+    test_framed_immediate_result_policy();
     test_frame_len();
     test_encode_ok_frame();
     test_encode_error_frame();
