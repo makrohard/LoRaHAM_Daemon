@@ -136,9 +136,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M6d-b
-adds a tested bridge from internal TX completion results to existing framed
-`TX_RESULT` frames. Runtime client emission is still unchanged.
+The CAD/TX signaling rework is being introduced in small milestones. M6d-c
+adds a bounded async TX completion queue for main-loop draining. Runtime
+client emission is still unchanged.
 
 ## DATA sockets
 
@@ -224,6 +224,7 @@ Rules:
 - M6c routes opt-in `TXQUEUE=1` DATA TX into daemon-owned async workers; completion/result policy remains M6d.
 - M6d-a records queued async TX completion and exposes `TXQLAST`/`TXQSEQ` in `GET STATUS`; DATA socket behavior remains unchanged.
 - M6d-b adds a tested internal bridge from async completion results to framed `TX_RESULT` frames; runtime client emission remains unchanged.
+- M6d-c records async TX completions in a bounded queue for later main-loop draining; runtime client emission remains unchanged.
 - M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.

@@ -120,7 +120,7 @@ Public integration baseline:
 
 - `test_daemon_tx_worker` verifies the future TX worker state facade without changing daemon TX behavior.
 
-- `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path and last-completion bookkeeping while keeping default DATA TX direct.
+- `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path, last-completion bookkeeping, and completion queue handoff while keeping default DATA TX direct.
 
 - `test_radio_controller_tx_worker` verifies that each radio controller owns initialized TX worker state.
 
@@ -128,4 +128,4 @@ Public integration baseline:
 
 - `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.
 
-- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames.
+- `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames and bounded completion queue behavior.

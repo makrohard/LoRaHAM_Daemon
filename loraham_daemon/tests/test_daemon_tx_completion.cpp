@@ -86,6 +86,61 @@ static void test_encode_error_frame(void)
     expect_int("completion error seq", frame[5], 7);
 }
 
+
+static void test_completion_queue_push_pop(void)
+{
+    DaemonTxCompletionQueue queue;
+    DaemonTxJob job = make_job(11, FRAMED_DATA_TX_RESULT_FLAG_MANAGED);
+    DaemonTxJobResult result;
+    DaemonTxJobResult out;
+
+    daemon_tx_completion_queue_init(&queue);
+    daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+
+    expect_int("completion queue push",
+               daemon_tx_completion_queue_push(&queue, &result),
+               0);
+    expect_size("completion queue pending after push",
+                daemon_tx_completion_queue_pending(&queue),
+                1);
+    expect_int("completion queue pop",
+               daemon_tx_completion_queue_pop(&queue, &out),
+               0);
+    expect_int("completion queue pop result", out.tx_result, TX_RESULT_OK);
+    expect_int("completion queue pop seq", out.seq, 11);
+    expect_size("completion queue pending after pop",
+                daemon_tx_completion_queue_pending(&queue),
+                0);
+}
+
+static void test_completion_queue_drops_oldest_when_full(void)
+{
+    DaemonTxCompletionQueue queue;
+    DaemonTxJobResult out;
+
+    daemon_tx_completion_queue_init(&queue);
+
+    for (int i = 0; i < DAEMON_TX_COMPLETION_QUEUE_CAPACITY + 1; i++) {
+        DaemonTxJob job = make_job((uint16_t)i, 0);
+        DaemonTxJobResult result;
+
+        daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
+        daemon_tx_completion_queue_push(&queue, &result);
+    }
+
+    expect_size("completion queue full pending",
+                daemon_tx_completion_queue_pending(&queue),
+                DAEMON_TX_COMPLETION_QUEUE_CAPACITY);
+    expect_size("completion queue dropped oldest",
+                daemon_tx_completion_queue_dropped(&queue),
+                1);
+    expect_int("completion queue oldest removed",
+               daemon_tx_completion_queue_pop(&queue, &out),
+               0);
+    expect_int("completion queue first remaining seq", out.seq, 1);
+}
+
+
 static void test_encode_rejects_bad_args(void)
 {
     DaemonTxJob job = make_job(1, 0);
@@ -124,6 +179,8 @@ int main(int argc, char **argv)
     test_frame_len();
     test_encode_ok_frame();
     test_encode_error_frame();
+    test_completion_queue_push_pop();
+    test_completion_queue_drops_oldest_when_full();
     test_encode_rejects_bad_args();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

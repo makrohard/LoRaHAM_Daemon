@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Async TX completions are now queued for later main-loop delivery.
 - Internal TX completion results can now be encoded as framed TX_RESULT frames.
 - Queued async TX last-completion status is now exposed via GET STATUS.
 - TXQUEUE opt-in DATA TX now enqueues into daemon-owned async workers.

@@ -190,6 +190,18 @@ static void test_txqueue_optin_path(void)
                daemon_tx_async_runtime_last_result_for_band(433, &last),
                1);
     expect_int("queue async last result", last.tx_result, TX_RESULT_OK);
+
+    expect_size("queue completion pending",
+                daemon_tx_async_runtime_completion_pending_for_band(433),
+                1);
+    DaemonTxJobResult completion;
+    expect_int("queue completion pop",
+               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               0);
+    expect_int("queue completion result", completion.tx_result, TX_RESULT_OK);
+    expect_size("queue completion pending drained",
+                daemon_tx_async_runtime_completion_pending_for_band(433),
+                0);
 }
 
 static void test_txqueue_direct_full_rejects_newest(void)

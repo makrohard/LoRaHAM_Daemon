@@ -100,6 +100,7 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
 {
     DaemonTxJobResult result;
     DaemonTxAsyncWorker *async;
+    DaemonTxCompletionQueue *completion_queue;
 
     daemon_tx_job_result_init(&result,
                               job,
@@ -112,14 +113,15 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
         return daemon_tx_execute_job_with_sender(job, send_fn, tx->send_ctx);
 
     async = daemon_tx_async_runtime_worker_for_band(job->band);
-    if (!async)
+    completion_queue = daemon_tx_async_runtime_completion_queue_for_band(job->band);
+    if (!async || !completion_queue)
         return result;
 
     daemon_tx_async_worker_configure(async,
                                      send_fn,
                                      tx->send_ctx,
-                                     NULL,
-                                     NULL);
+                                     daemon_tx_async_runtime_record_completion,
+                                     completion_queue);
 
     if (daemon_tx_async_worker_start(async) != 0)
         return result;
