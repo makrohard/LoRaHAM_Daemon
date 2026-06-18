@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 42 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 43 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -65,6 +65,7 @@ DATA/RF/TX:
 - `test_data_tx_queue_runtime`
 - `test_tx_result`
 - `test_daemon_tx_outcome`
+- `test_daemon_tx_policy`
 - `test_daemon_tx_job`
 - `test_daemon_tx_executor`
 - `test_daemon_tx_completion`
@@ -129,3 +130,5 @@ Public integration baseline:
 - `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.
 
 - `test_daemon_tx_completion` verifies encoding internal TX completion results as framed `TX_RESULT` frames, bounded completion queue behavior, targeted slot delivery, main-loop drain delivery, and final-only queued result policy.
+
+- `test_daemon_tx_policy` verifies the central CAD/TX timing policy constants and pure helper behavior.
