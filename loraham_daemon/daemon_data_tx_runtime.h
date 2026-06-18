@@ -74,10 +74,13 @@ static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
 template<typename RadioT>
 static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx,
                                                  uint32_t max_ticks,
+                                                 uint32_t stable_idle_ticks,
                                                  useconds_t sleep_usec)
 {
     RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
     uint32_t cad_wait = 0;
+    uint32_t free_ticks = 0;
+    uint32_t required_free_ticks = stable_idle_ticks ? stable_idle_ticks : 1u;
 
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return 0;
@@ -86,12 +89,17 @@ static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx
         return data_tx_probe_channel_busy(tx);
 
     while (cad_wait < max_ticks) {
-        if (!data_tx_probe_channel_busy(tx))
-            return 0;
+        if (!data_tx_probe_channel_busy(tx)) {
+            free_ticks++;
+            if (free_ticks >= required_free_ticks)
+                return 0;
+        } else {
+            free_ticks = 0;
+        }
 
-        if (sleep_usec > 0)
-            usleep(sleep_usec);
         cad_wait++;
+        if (sleep_usec > 0 && cad_wait < max_ticks)
+            usleep(sleep_usec);
     }
 
     return daemon_tx_policy_send_after_cad_timeout() ? 0 : 1;
@@ -103,6 +111,7 @@ static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
     return data_tx_wait_channel_free_with_limits(
         tx,
         daemon_tx_policy_cad_wait_ticks(),
+        daemon_tx_policy_cad_idle_stable_ticks(),
         (useconds_t)daemon_tx_policy_poll_interval_usec());
 }
 

@@ -48,13 +48,23 @@ void daemon_led_flash_pin(int pin)
 struct FakeRadio {
     int scan_count;
     int scan_state;
+    int scan_pattern[16];
+    int scan_pattern_len;
     float rssi;
 
-    FakeRadio() : scan_count(0), scan_state(0), rssi(-81.0f) {}
+    FakeRadio() : scan_count(0), scan_state(0), scan_pattern_len(0), rssi(-81.0f)
+    {
+        memset(scan_pattern, 0, sizeof(scan_pattern));
+    }
 
     int scanChannel()
     {
+        int idx = scan_count;
+
         scan_count++;
+        if (idx < scan_pattern_len)
+            return scan_pattern[idx];
+
         return scan_state;
     }
 
@@ -277,12 +287,12 @@ static void test_managed_busy_timeout_policy_sends_anyway(void)
     ctrl.radio->scan_state = 1;
 
     expect_int("managed busy timeout sends anyway",
-               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 0),
+               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 3, 0),
                0);
     expect_int("managed busy timeout probe count", ctrl.radio->scan_count, 2);
 }
 
-static void test_managed_free_sends_immediately(void)
+static void test_managed_free_waits_for_stable_idle(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> ctx;
@@ -293,10 +303,32 @@ static void test_managed_free_sends_immediately(void)
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl.radio->scan_state = 0;
 
-    expect_int("managed free sends",
-               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 0),
+    expect_int("managed stable idle sends",
+               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
                0);
-    expect_int("managed free one probe", ctrl.radio->scan_count, 1);
+    expect_int("managed stable idle probes", ctrl.radio->scan_count, 3);
+}
+
+static void test_managed_busy_resets_stable_idle(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_pattern[0] = 0;
+    ctrl.radio->scan_pattern[1] = 1;
+    ctrl.radio->scan_pattern[2] = 0;
+    ctrl.radio->scan_pattern[3] = 0;
+    ctrl.radio->scan_pattern[4] = 0;
+    ctrl.radio->scan_pattern_len = 5;
+
+    expect_int("managed busy resets idle sends",
+               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
+               0);
+    expect_int("managed busy resets idle probes", ctrl.radio->scan_count, 5);
 }
 
 
@@ -342,7 +374,8 @@ int main(int argc, char **argv)
     test_txqueue_direct_full_rejects_newest();
     test_raw_busy_probe_blocks_immediately();
     test_managed_busy_timeout_policy_sends_anyway();
-    test_managed_free_sends_immediately();
+    test_managed_free_waits_for_stable_idle();
+    test_managed_busy_resets_stable_idle();
     test_not_ready_still_short_circuits();
 
     daemon_tx_async_runtime_shutdown();

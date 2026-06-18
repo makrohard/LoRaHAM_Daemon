@@ -136,9 +136,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## CAD/TX rework status
 
-The CAD/TX signaling rework is being introduced in small milestones. M7b
-wires the central CAD policy into DATA TX: RAW probes once and blocks on busy,
-while MANAGED waits up to the policy timeout and then sends as configured.
+The CAD/TX signaling rework is being introduced in small milestones. M7c
+requires a stable idle CAD window before MANAGED TX. RAW mode remains a
+single-probe busy check.
 
 ## DATA sockets
 
@@ -230,6 +230,7 @@ Rules:
 - M6d-f suppresses immediate success `TX_RESULT` frames for queued framed TX, keeps immediate queued failures, and carries the framed sequence into final async completions.
 - M7a adds central CAD/TX timing policy constants and pure tests; runtime TX wait behavior remains unchanged.
 - M7b wires the central CAD policy into DATA TX wait behavior: RAW probes once and blocks on busy; MANAGED waits up to the policy timeout and then follows the send-after-timeout policy.
+- M7c requires the policy stable-idle CAD window before MANAGED TX; busy probes reset the stable-idle counter, while RAW mode remains one probe.
 - M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
 - oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
 - unsupported client frame types are rejected with an `ERROR` frame.
