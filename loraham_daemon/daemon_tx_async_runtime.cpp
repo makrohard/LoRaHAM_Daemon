@@ -63,6 +63,12 @@ size_t daemon_tx_async_runtime_dropped_for_band(int band)
     return daemon_tx_async_worker_dropped(daemon_tx_async_runtime_worker_for_band(band));
 }
 
+int daemon_tx_async_runtime_last_result_for_band(int band, DaemonTxJobResult *out)
+{
+    return daemon_tx_async_worker_last_result_copy(daemon_tx_async_runtime_worker_for_band(band),
+                                                  out);
+}
+
 int daemon_tx_async_runtime_running_for_band(int band)
 {
     return daemon_tx_async_worker_running(daemon_tx_async_runtime_worker_for_band(band));

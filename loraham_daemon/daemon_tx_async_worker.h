@@ -123,6 +123,23 @@ static inline const DaemonTxJobResult *daemon_tx_async_worker_last_result_unsafe
     return async ? daemon_tx_worker_last_result(&async->worker) : NULL;
 }
 
+static inline int daemon_tx_async_worker_last_result_copy(DaemonTxAsyncWorker *async,
+                                                             DaemonTxJobResult *out)
+{
+    const DaemonTxJobResult *last;
+
+    if (!async || !out)
+        return 0;
+
+    std::lock_guard<std::mutex> guard(async->lock);
+    last = daemon_tx_worker_last_result(&async->worker);
+    if (!last)
+        return 0;
+
+    *out = *last;
+    return 1;
+}
+
 static inline void daemon_tx_async_worker_loop(DaemonTxAsyncWorker *async)
 {
     for (;;) {

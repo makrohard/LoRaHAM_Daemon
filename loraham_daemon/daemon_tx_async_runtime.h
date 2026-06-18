@@ -18,6 +18,7 @@ size_t daemon_tx_async_runtime_dropped_for_band(int band);
 size_t daemon_tx_async_runtime_processed_for_band(int band);
 size_t daemon_tx_async_runtime_rejected_for_band(int band);
 size_t daemon_tx_async_runtime_accepted_for_band(int band);
+int daemon_tx_async_runtime_last_result_for_band(int band, DaemonTxJobResult *out);
 int daemon_tx_async_runtime_running_for_band(int band);
 
 #endif

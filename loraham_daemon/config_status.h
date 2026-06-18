@@ -195,6 +195,43 @@ static inline size_t config_status_txq_processed(const RadioController<RadioT> *
     return daemon_tx_worker_processed(&ctrl->tx_worker);
 }
 
+
+template<typename RadioT>
+static inline int config_status_txq_last_result(const RadioController<RadioT> *ctrl,
+                                                DaemonTxJobResult *result)
+{
+    if (!ctrl || !result)
+        return 0;
+
+    if (!ctrl->tx_queue_active.load())
+        return 0;
+
+    return daemon_tx_async_runtime_last_result_for_band(radio_controller_band_number(ctrl),
+                                                       result);
+}
+
+template<typename RadioT>
+static inline const char *config_status_txq_last_name(const RadioController<RadioT> *ctrl)
+{
+    DaemonTxJobResult result;
+
+    if (!config_status_txq_last_result(ctrl, &result))
+        return "NONE";
+
+    return tx_result_name(result.tx_result);
+}
+
+template<typename RadioT>
+static inline unsigned config_status_txq_last_seq(const RadioController<RadioT> *ctrl)
+{
+    DaemonTxJobResult result;
+
+    if (!config_status_txq_last_result(ctrl, &result))
+        return 0;
+
+    return result.seq;
+}
+
 template<typename RadioT>
 static inline void config_status_format(char *buf,
                                         size_t buf_size,
@@ -202,7 +239,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQDONE=%zu\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
@@ -212,7 +249,9 @@ static inline void config_status_format(char *buf,
              (ctrl && ctrl->tx_queue_active.load()) ? 1 : 0,
              config_status_txq_pending(ctrl),
              config_status_txq_dropped(ctrl),
-             config_status_txq_processed(ctrl));
+             config_status_txq_processed(ctrl),
+             config_status_txq_last_name(ctrl),
+             config_status_txq_last_seq(ctrl));
 }
 
 template<typename RadioT>

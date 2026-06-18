@@ -563,6 +563,7 @@ build_one_config_dispatch_test() {
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
     "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/client_slot.cpp"

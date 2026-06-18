@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Queued async TX last-completion status is now exposed via GET STATUS.
 - TXQUEUE opt-in DATA TX now enqueues into daemon-owned async workers.
 - Daemon-owned async TX worker lifecycle state added without live TX routing.
 - Standalone async TX worker skeleton added for future queued runtime TX.

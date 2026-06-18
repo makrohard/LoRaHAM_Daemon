@@ -84,6 +84,14 @@ size_t daemon_tx_async_runtime_processed_for_band(int band)
     return 0;
 }
 
+int daemon_tx_async_runtime_last_result_for_band(int band,
+                                                     DaemonTxJobResult *out)
+{
+    (void)band;
+    (void)out;
+    return 0;
+}
+
 static void fake_rx_callback(void)
 {
 }
