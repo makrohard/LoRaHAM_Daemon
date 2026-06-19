@@ -83,7 +83,7 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `./build.sh --debug` | Build with debug flags |
 | `./build.sh --clean` | Remove the daemon binary |
 | `./build.sh --radiolib-dir DIR` | Use an explicit RadioLib source/build tree |
-| `./run_tests.sh` | Build daemon/tests and run the normal non-RF test suite |
+| `./run_tests.sh` | Build daemon/tests, run the normal non-RF test suite, then remove generated test binaries |
 | `./run_tests.sh --TX` | Also run optional RF transmit smoke tests |
 | `./run_tests.sh --TX --rx-seconds N` | Set RF TX/RX observation time; default is `15` seconds |
 

@@ -12,6 +12,72 @@ rx_seconds="${RX_SECONDS:-15}"
 cc="${CC:-gcc}"
 cxx="${CXX:-g++}"
 
+test_binaries=(
+  "$TEST_DIR/test_data_tx"
+  "$TEST_DIR/test_data_tx_queue_runtime"
+  "$TEST_DIR/test_client_output_queue"
+  "$TEST_DIR/test_client_nonblocking"
+  "$TEST_DIR/test_client_queued_broadcast"
+  "$TEST_DIR/test_client_slow_output"
+  "$TEST_DIR/test_event_loop_output_flush"
+  "$TEST_DIR/test_tx_result"
+  "$TEST_DIR/test_daemon_tx_outcome"
+  "$TEST_DIR/test_daemon_tx_policy"
+  "$TEST_DIR/test_daemon_tx_job"
+  "$TEST_DIR/test_daemon_tx_executor"
+  "$TEST_DIR/test_daemon_tx_completion"
+  "$TEST_DIR/test_daemon_tx_queue"
+  "$TEST_DIR/test_daemon_tx_worker"
+  "$TEST_DIR/test_daemon_tx_async_worker"
+  "$TEST_DIR/test_daemon_tx_async_runtime"
+  "$TEST_DIR/test_radio_controller_tx_worker"
+  "$TEST_DIR/test_daemon_radio_selection"
+  "$TEST_DIR/test_daemon_led"
+  "$TEST_DIR/test_radio_health"
+  "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_rf_packet"
+  "$TEST_DIR/test_framed_data"
+  "$TEST_DIR/test_framed_rx_contract"
+  "$TEST_DIR/test_framed_data_tx"
+  "$TEST_DIR/test_tx_failure_keeps_client"
+  "$TEST_DIR/test_event_loop"
+  "$TEST_DIR/test_daemon_timing"
+  "$TEST_DIR/test_daemon_stats"
+  "$TEST_DIR/test_daemon_stats_cad_timeout_send"
+  "$TEST_DIR/test_daemon_lifecycle"
+  "$TEST_DIR/test_unix_socket"
+  "$TEST_DIR/test_config_parser"
+  "$TEST_DIR/test_config_stream_buffer"
+  "$TEST_DIR/test_config_value"
+  "$TEST_DIR/test_config_policy"
+  "$TEST_DIR/test_config_validate"
+  "$TEST_DIR/test_config_apply_transactional"
+  "$TEST_DIR/test_config_dispatch"
+  "$TEST_DIR/test_interface_baseline"
+  "$TEST_DIR/test_config_stream"
+  "$TEST_DIR/test_rssi_multiclient"
+  "$TEST_DIR/test_conf_status"
+  "$TEST_DIR/test_conf_stats"
+  "$TEST_DIR/test_client_lifecycle"
+)
+
+cleanup_test_binaries() {
+  local test_bin
+
+  for test_bin in "${test_binaries[@]}"; do
+    rm -f -- "$test_bin"
+  done
+}
+
+cleanup_on_exit() {
+  local rc=$?
+
+  cleanup_test_binaries
+  return "$rc"
+}
+
+trap cleanup_on_exit EXIT
+
 section() {
   local title="$1"
 
@@ -744,52 +810,7 @@ build_tests
 
 section "Run tests"
 
-tests=(
-  "$TEST_DIR/test_data_tx"
-  "$TEST_DIR/test_data_tx_queue_runtime"
-  "$TEST_DIR/test_client_output_queue"
-  "$TEST_DIR/test_client_nonblocking"
-  "$TEST_DIR/test_client_queued_broadcast"
-  "$TEST_DIR/test_client_slow_output"
-  "$TEST_DIR/test_event_loop_output_flush"
-  "$TEST_DIR/test_tx_result"
-  "$TEST_DIR/test_daemon_tx_outcome"
-  "$TEST_DIR/test_daemon_tx_policy"
-  "$TEST_DIR/test_daemon_tx_job"
-  "$TEST_DIR/test_daemon_tx_executor"
-  "$TEST_DIR/test_daemon_tx_completion"
-  "$TEST_DIR/test_daemon_tx_queue"
-  "$TEST_DIR/test_daemon_tx_worker"
-  "$TEST_DIR/test_daemon_tx_async_worker"
-  "$TEST_DIR/test_daemon_tx_async_runtime"
-  "$TEST_DIR/test_radio_controller_tx_worker"
-  "$TEST_DIR/test_daemon_radio_selection"
-  "$TEST_DIR/test_radio_health"
-  "$TEST_DIR/test_radio_cad_probe"
-  "$TEST_DIR/test_rf_packet"
-  "$TEST_DIR/test_framed_data"
-  "$TEST_DIR/test_framed_rx_contract"
-  "$TEST_DIR/test_framed_data_tx"
-  "$TEST_DIR/test_tx_failure_keeps_client"
-  "$TEST_DIR/test_event_loop"
-  "$TEST_DIR/test_daemon_timing"
-  "$TEST_DIR/test_daemon_stats_cad_timeout_send"
-  "$TEST_DIR/test_daemon_lifecycle"
-  "$TEST_DIR/test_unix_socket"
-  "$TEST_DIR/test_config_parser"
-  "$TEST_DIR/test_config_stream_buffer"
-  "$TEST_DIR/test_config_value"
-  "$TEST_DIR/test_config_policy"
-  "$TEST_DIR/test_config_validate"
-  "$TEST_DIR/test_config_apply_transactional"
-  "$TEST_DIR/test_config_dispatch"
-  "$TEST_DIR/test_interface_baseline"
-  "$TEST_DIR/test_config_stream"
-  "$TEST_DIR/test_rssi_multiclient"
-  "$TEST_DIR/test_conf_status"
-  "$TEST_DIR/test_conf_stats"
-  "$TEST_DIR/test_client_lifecycle"
-)
+tests=("${test_binaries[@]}")
 
 overall_rc=0
 total_tests=0
@@ -944,10 +965,9 @@ cleanup_on_exit() {
     pkill -KILL -x loraham_daemon 2>/dev/null || true
   fi
 
+  cleanup_test_binaries
   return "$rc"
 }
-
-trap cleanup_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
