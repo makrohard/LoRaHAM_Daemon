@@ -9,6 +9,8 @@
 
 static int g_ok = 0;
 static int g_fail = 0;
+static int g_led_set_count = 0;
+static int g_led_last_state = -1;
 
 
 /* --- Local production-symbol stubs for this unit test --- */
@@ -32,7 +34,8 @@ int daemon_led_ready(void)
 void daemon_led_set_pin(int pin, int state)
 {
     (void)pin;
-    (void)state;
+    g_led_set_count++;
+    g_led_last_state = state;
 }
 
 void daemon_led_flash_pin(int pin)
@@ -198,6 +201,7 @@ static void test_default_direct_path(void)
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("direct sender calls", sender.calls, 1);
+    expect_int("direct frontdoor led untouched", g_led_set_count, 0);
     expect_size("direct queue accepted", daemon_tx_worker_accepted(&ctrl.tx_worker), 0);
     expect_size("direct queue processed", daemon_tx_worker_processed(&ctrl.tx_worker), 0);
     expect_size("direct queue pending", daemon_tx_worker_pending(&ctrl.tx_worker), 0);
@@ -221,6 +225,7 @@ static void test_txqueue_optin_path(void)
                0);
     expect_int("queue processed wait", wait_async_processed(433, 1), 1);
     expect_int("queue sender calls", sender.calls, 1);
+    expect_int("queue frontdoor led untouched", g_led_set_count, 0);
     expect_size("queue stats tx ok from completion", ctrl.stats.tx_ok, 1);
     expect_size("queue stats tx busy", ctrl.stats.tx_busy, 0);
     expect_size("queue async accepted", daemon_tx_async_runtime_accepted_for_band(433), 1);

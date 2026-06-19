@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- DATA TX LED handling now reflects actual RF transmit instead of queue acceptance.
 - Test runner linkage and GET CHANNEL tests now cover expanded channel status fields.
 - GET CHANNEL now adds explicit LIVERSSI alongside legacy packet RSSI fields.
 - README GET STATUS example now reflects the default TXQUEUE=1 state.

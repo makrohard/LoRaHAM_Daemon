@@ -419,11 +419,9 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_INVALID_PACKET;
     }
 
-    daemon_radio_runtime_led(ctrl, 1);
     result = daemon_data_tx_execute_job(tx, &job, send_fn);
     if (!queued_tx || daemon_tx_outcome_is_failure(result.outcome))
         daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
-    daemon_radio_runtime_led(ctrl, 0);
 
     if (daemon_tx_outcome_is_failure(result.outcome)) {
         daemon_debug_ctx(tx->log_ctx, "Abbruch: %s",
