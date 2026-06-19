@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Test runner cleanup now has one authoritative exit handler.
 - Test runner now executes all built tests and removes generated test binaries on exit.
 - LED GPIO claim and shutdown failure paths now have hardware-free tests.
 - LED setup now releases a successfully claimed first pin if the second pin claim fails.

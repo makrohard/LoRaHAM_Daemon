@@ -69,14 +69,7 @@ cleanup_test_binaries() {
   done
 }
 
-cleanup_on_exit() {
-  local rc=$?
 
-  cleanup_test_binaries
-  return "$rc"
-}
-
-trap cleanup_on_exit EXIT
 
 section() {
   local title="$1"
@@ -968,6 +961,8 @@ cleanup_on_exit() {
   cleanup_test_binaries
   return "$rc"
 }
+
+trap cleanup_on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
