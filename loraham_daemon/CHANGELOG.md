@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Test runner linkage and GET CHANNEL tests now cover expanded channel status fields.
 - GET CHANNEL now adds explicit LIVERSSI alongside legacy packet RSSI fields.
 - README GET STATUS example now reflects the default TXQUEUE=1 state.
 - GET CHANNEL now adds explicit CADSCAN, CADSTATE, and PACKETRSSI fields while keeping legacy fields.

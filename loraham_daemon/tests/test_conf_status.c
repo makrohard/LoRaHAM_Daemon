@@ -163,7 +163,7 @@ static int test_get_channel_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^CHANNEL RADIO=(READY|FAILED|UNINITIALIZED) BUSY=[01] CAD=[01] RSSI=-?[0-9]+\\.[0-9][0-9] MODE=(LORA|FSK) TXMODE=(MANAGED|RAW)$",
+                               "^CHANNEL RADIO=(READY|FAILED|UNINITIALIZED) BUSY=[01] CAD=[01] CADSCAN=[01] CADSTATE=(FREE|BUSY|UNAVAILABLE) RSSI=-?[0-9]+\\.[0-9][0-9] PACKETRSSI=-?[0-9]+\\.[0-9][0-9] LIVERSSI=-?[0-9]+\\.[0-9][0-9] MODE=(LORA|FSK) TXMODE=(MANAGED|RAW)$",
                                2000,
                                line,
                                sizeof(line)) < 0) {

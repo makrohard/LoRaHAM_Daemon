@@ -476,6 +476,8 @@ build_one_tx_completion_test() {
     "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/daemon_framed_data_runtime.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
     "$SCRIPT_DIR/framed_data_tx.cpp" \
     "$SCRIPT_DIR/framed_data.cpp"
@@ -502,6 +504,8 @@ build_one_tx_async_runtime_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/tx_result.cpp"
 }
 
@@ -596,7 +600,8 @@ build_one_config_dispatch_test() {
     "$SCRIPT_DIR/tx_result.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
     "${event_loop_sources[@]}" \
-    "$SCRIPT_DIR/client_slot.cpp"
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "${radiolib_libs[@]}"
 }
 
 build_tests() {

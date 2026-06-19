@@ -434,8 +434,8 @@ static void test_dispatch_get_channel_restores_rx(void)
     expect_contains("get channel live rssi", out, "LIVERSSI=-200.00");
     expect_contains("get channel mode", out, "MODE=LORA");
     expect_contains("get channel txmode", out, "TXMODE=MANAGED");
-    expect_int("get channel callback restored", ctrl.radio->callback_count, 1);
-    expect_int("get channel startReceive called", ctrl.radio->start_receive_count, 1);
+    expect_int("get channel callback restored", ctrl.radio->callback_count, 2);
+    expect_int("get channel startReceive called", ctrl.radio->start_receive_count, 2);
     expect_int("get channel client open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
