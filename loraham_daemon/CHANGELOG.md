@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Async TX workers now have a worker-side CAD/LBT decision seam for queued TX jobs.
 - RadioLib access now uses a per-radio guard across TX, RX, CAD, RSSI, monitoring, and CONFIG apply paths.
 - README now documents current TX/CAD, queue, completion, and CONF interfaces without milestone history.
 - Stale deferred framed TX_RESULT drops are now counted in TX queue status.

@@ -13,6 +13,10 @@ struct DaemonTxAsyncWorker {
     DaemonTxWorker worker;
     DaemonTxSendFn send_fn;
     void *send_ctx;
+    DaemonTxCadProbeFn cad_probe_fn;
+    void *cad_probe_ctx;
+    DaemonTxSleepFn cad_sleep_fn;
+    void *cad_sleep_ctx;
     DaemonTxWorkerResultFn result_fn;
     void *result_ctx;
     std::mutex lock;
@@ -24,6 +28,10 @@ struct DaemonTxAsyncWorker {
     DaemonTxAsyncWorker() :
         send_fn(NULL),
         send_ctx(NULL),
+        cad_probe_fn(NULL),
+        cad_probe_ctx(NULL),
+        cad_sleep_fn(NULL),
+        cad_sleep_ctx(NULL),
         result_fn(NULL),
         result_ctx(NULL),
         running(false),
@@ -42,6 +50,10 @@ static inline void daemon_tx_async_worker_init(DaemonTxAsyncWorker *async)
     daemon_tx_worker_init(&async->worker);
     async->send_fn = NULL;
     async->send_ctx = NULL;
+    async->cad_probe_fn = NULL;
+    async->cad_probe_ctx = NULL;
+    async->cad_sleep_fn = NULL;
+    async->cad_sleep_ctx = NULL;
     async->result_fn = NULL;
     async->result_ctx = NULL;
     async->running = false;
@@ -62,6 +74,22 @@ static inline void daemon_tx_async_worker_configure(DaemonTxAsyncWorker *async,
     async->send_ctx = send_ctx;
     async->result_fn = result_fn;
     async->result_ctx = result_ctx;
+}
+
+static inline void daemon_tx_async_worker_configure_cad(DaemonTxAsyncWorker *async,
+                                                         DaemonTxCadProbeFn cad_probe_fn,
+                                                         void *cad_probe_ctx,
+                                                         DaemonTxSleepFn cad_sleep_fn,
+                                                         void *cad_sleep_ctx)
+{
+    if (!async)
+        return;
+
+    std::lock_guard<std::mutex> guard(async->lock);
+    async->cad_probe_fn = cad_probe_fn;
+    async->cad_probe_ctx = cad_probe_ctx;
+    async->cad_sleep_fn = cad_sleep_fn;
+    async->cad_sleep_ctx = cad_sleep_ctx;
 }
 
 static inline size_t daemon_tx_async_worker_pending(DaemonTxAsyncWorker *async)
@@ -146,6 +174,10 @@ static inline void daemon_tx_async_worker_loop(DaemonTxAsyncWorker *async)
         DaemonTxJob job;
         DaemonTxSendFn send_fn;
         void *send_ctx;
+        DaemonTxCadProbeFn cad_probe_fn;
+        void *cad_probe_ctx;
+        DaemonTxSleepFn cad_sleep_fn;
+        void *cad_sleep_ctx;
         DaemonTxWorkerResultFn result_fn;
         void *result_ctx;
         DaemonTxJobResult result;
@@ -169,11 +201,21 @@ static inline void daemon_tx_async_worker_loop(DaemonTxAsyncWorker *async)
 
             send_fn = async->send_fn;
             send_ctx = async->send_ctx;
+            cad_probe_fn = async->cad_probe_fn;
+            cad_probe_ctx = async->cad_probe_ctx;
+            cad_sleep_fn = async->cad_sleep_fn;
+            cad_sleep_ctx = async->cad_sleep_ctx;
             result_fn = async->result_fn;
             result_ctx = async->result_ctx;
         }
 
-        result = daemon_tx_execute_job_with_sender(&job, send_fn, send_ctx);
+        result = daemon_tx_execute_job_with_sender_and_cad(&job,
+                                                           send_fn,
+                                                           send_ctx,
+                                                           cad_probe_fn,
+                                                           cad_probe_ctx,
+                                                           cad_sleep_fn,
+                                                           cad_sleep_ctx);
 
         {
             DaemonTxWorkerDrainCtx drain;
