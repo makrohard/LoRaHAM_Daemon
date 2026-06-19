@@ -53,11 +53,15 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Raw DATA TX | `data_tx.cpp` | Split raw DATA socket writes into RF-sized chunks before transmit |
-| Radio TX path | `daemon_tx.cpp`, `daemon_tx.h` | Validate TX requests, broadcast TX state on CONF sockets, prepare/restore radio TX state, and map RadioLib TX results |
-| DATA TX runtime | `daemon_data_tx_runtime.cpp`, `daemon_data_tx_runtime.h` | DATA-socket TX callbacks, CAD guard before TX, TX stats updates, and DATA TX logging glue |
-| Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, and RX_PACKET framing for packet-boundary-preserving clients |
-| Framed DATA runtime | `daemon_framed_data_runtime.cpp`, `daemon_framed_data_runtime.h` | Framed DATA socket read loop, TX_PACKET forwarding, and ERROR frame handling |
+| Raw DATA TX | `data_tx.cpp` | Reads raw DATA sockets and splits client writes into RF-sized chunks |
+| Shared DATA TX runtime | `daemon_data_tx_runtime.cpp`, `daemon_data_tx_runtime.h` | Applies radio-health checks, TX-busy policy, CAD policy, TX queue selection, TX result state, stats, and DATA TX logging |
+| TX policy | `daemon_tx_policy.h` | Central TX-busy timeout, CAD wait timeout, stable-idle window, poll interval, and send-after-CAD-timeout policy |
+| TX executor/outcome | `daemon_tx_executor.h`, `daemon_tx_outcome.h`, `daemon_tx_job.h` | Internal TX job/result structures, TX result mapping, and the RadioLib send seam |
+| TX queue / worker | `daemon_tx_queue.h`, `daemon_tx_worker.h`, `daemon_tx_async_worker.*`, `daemon_tx_async_runtime.*` | Bounded reject-newest TX queue, per-radio async worker lifecycle, per-band worker counters, and queued completion storage |
+| TX completion bridge | `daemon_tx_completion.h` | Encodes final async TX results as framed `TX_RESULT`, targets the originating framed slot, and drops stale completions using client-slot generation |
+| Radio TX path | `daemon_tx.cpp`, `daemon_tx.h` | Validates TX requests, broadcasts `TX=1/0` on CONF sockets, prepares/restores radio TX state, and maps RadioLib TX results |
+| Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, TX_RESULT frames, and RX_PACKET framing |
+| Framed DATA runtime | `daemon_framed_data_runtime.cpp`, `daemon_framed_data_runtime.h` | Framed DATA socket read loop, TX_PACKET forwarding, immediate/final TX_RESULT behavior, ERROR handling, and async completion draining |
 | RX runtime | `daemon_rx.cpp`, `daemon_rx.h` | Per-band RX packet read/validate/print/forward flow for raw and framed clients |
 | RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
 
@@ -129,16 +133,20 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | Framed DATA RF payload | `255` bytes | Maximum RF payload accepted for `TX_PACKET` and carried inside `RX_PACKET` |
 | Framed RX metadata | `4` bytes | `int16` RSSI c-dBm + `int16` SNR c-dB before RF bytes |
 | Framed RX frame | `262` bytes | Maximum complete `RX_PACKET`: 3-byte header + 4-byte metadata + 255 RF bytes |
+| TX queue capacity | `8` jobs | Per-radio bounded async TX queue, reject-newest when full |
+| TX completion queue capacity | `16` results | Per-band bounded async completion queue, drop-oldest when full |
+| TX-busy wait timeout | `120000 ms` / `120 s` | Direct synchronous DATA TX waits this long for another TX to finish before returning BUSY |
+| CAD wait timeout | `20000 ms` / `20 s` | MANAGED TX waits this long for channel availability before applying timeout policy |
+| CAD stable-idle window | `500 ms` | MANAGED TX requires this much continuous idle CAD time before TX |
+| TX/CAD policy poll interval | `100 ms` | Poll interval used by TX-busy and CAD wait loops |
+| Send after CAD timeout | enabled | MANAGED TX sends after CAD timeout and marks the final result with the CAD-timeout flag |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
-| CAD poll interval | `30` loop ticks | CAD polling cadence constant |
+| CAD monitor poll interval | `30` loop ticks | CONF `CAD=1/0` monitoring cadence |
 
+## Current TX/CAD behavior
 
-## CAD/TX rework status
-
-The CAD/TX signaling rework is being introduced in small milestones. M8b
-exposes stale deferred framed `TX_RESULT` drops as `TXQSTALE` while keeping
-the M8a delivery guard unchanged.
+The default TX mode is `MANAGED`. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window, sends after the CAD timeout when configured, and marks that final framed `TX_RESULT` with the CAD-timeout flag. `TXQUEUE=0` keeps direct DATA TX behavior. `TXQUEUE=1` routes DATA TX through the per-band async worker and bounded queue. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion.
 
 ## DATA sockets
 
@@ -199,55 +207,32 @@ Frame types:
 | Payload offset | Size | Type | Meaning |
 |---:|---:|---|---|
 | `0` | 1 byte | `uint8` | status: `0` OK, `1` BUSY, `2` CHANNEL_BUSY, `3` RADIO_NOT_READY, `4` RADIO_ERROR, `5` INVALID_PACKET, `6` INVALID_BAND |
-| `1` | 1 byte | bit mask | flags: bit `0` managed-mode attempt, bit `1` deferred/retried |
+| `1` | 1 byte | bit mask | flags: bit `0` managed-mode attempt, bit `1` deferred/final queued result, bit `2` MANAGED send-after-CAD-timeout |
 | `2` | 2 bytes | little-endian `uint16` | sequence number |
 
 Rules:
 
 - `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
 - `TX_RESULT` payload length is exactly `4` bytes.
-- `SET TXRESULT=1` and `SET TXRESULT=0` on a CONF socket enable or disable per-band `TX_RESULT` emission.
-- `SET TXMODE=MANAGED` and `SET TXMODE=RAW` on a CONF socket select per-band TX mode state; default is `MANAGED`.
-- `GET STATUS` includes `TXRESULT=0|1` and `TXMODE=MANAGED|RAW`.
-- `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE` fields.
-- M5a keeps external `TX_RESULT` payloads unchanged while mapping internal TX outcomes at the framed DATA boundary.
-- M5b adds TX job/result structs for future worker-thread TX; current TX execution remains synchronous.
-- M5c adds a synchronous TX executor seam for future worker-thread TX; current TX execution remains synchronous.
-- M5d routes the current synchronous DATA TX path through the TX executor seam; no worker thread or queue is introduced.
-- M5e adds a bounded TX queue contract with reject-newest-on-full behavior and a synchronous drain seam; daemon runtime is not wired to it yet.
-- M5f adds a TX worker state facade around the bounded queue and synchronous drain seam; daemon runtime is not wired to it yet.
-- M5g adds per-radio TX worker state ownership and passive `GET STATUS` queue counters; daemon runtime still sends synchronously.
-- M5h adds `SET TXQUEUE=1/0` and `TXQUEUE=` status visibility; queue-backed live TX remains disabled until explicitly wired later.
-- M5i wires `TXQUEUE=1` to the bounded queue/worker seam with immediate synchronous drain; default `TXQUEUE=0` behavior remains unchanged.
-- M6a adds a standalone async TX worker skeleton and tests; daemon runtime is not connected to it yet.
-- M6b adds daemon-owned async TX worker lifecycle initialization/shutdown; live TX routing remains unchanged.
-- M6c routes opt-in `TXQUEUE=1` DATA TX into daemon-owned async workers; completion/result policy remains M6d.
-- M6d-a records queued async TX completion and exposes `TXQLAST`/`TXQSEQ` in `GET STATUS`; DATA socket behavior remains unchanged.
-- M6d-b adds a tested internal bridge from async completion results to framed `TX_RESULT` frames; runtime client emission remains unchanged.
-- M6d-c records async TX completions in a bounded queue for later main-loop draining; runtime client emission remains unchanged.
-- M6d-d carries framed-slot targets through queued TX and adds a tested targeted completion delivery helper; automatic main-loop emission remains unchanged.
-- M6d-e drains queued async completions on the main loop and delivers framed `TX_RESULT` frames to the originating framed client; raw DATA sockets remain unchanged.
-- M6d-f suppresses immediate success `TX_RESULT` frames for queued framed TX, keeps immediate queued failures, and carries the framed sequence into final async completions.
-- M7a adds central CAD/TX timing policy constants and pure tests; runtime TX wait behavior remains unchanged.
-- M7b wires the central CAD policy into DATA TX wait behavior: RAW probes once and blocks on busy; MANAGED waits up to the policy timeout and then follows the send-after-timeout policy.
-- M7c requires the policy stable-idle CAD window before MANAGED TX; busy probes reset the stable-idle counter, while RAW mode remains one probe.
-- M7d marks MANAGED send-after-CAD-timeout attempts with `FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT` so final framed `TX_RESULT` can preserve that context.
-- M7e adds `CADSEND` statistics for MANAGED send-after-CAD-timeout attempts; transmit behavior is unchanged.
-- M7f adds a bounded synchronous TX-busy wait/drop guard using the central busy-timeout policy; opt-in queued TX still enters the daemon worker path.
-- M7g carries TX-busy wait limits in the DATA TX context; production keeps the central policy values, tests use short limits to avoid real-time 120 s waits.
-- M8a carries a client-slot generation with deferred framed TX completions and drops stale completions when a slot was closed/reused before delivery.
-- M8b counts stale deferred framed TX completions and exposes the count in `GET STATUS` as `TXQSTALE`.
-- M3c maps CAD-blocked framed TX attempts to `CHANNEL_BUSY` when `TXRESULT=1`; generic send failures still map to `RADIO_ERROR`.
-- oversized `TX_PACKET` frames are rejected with an `ERROR` frame.
-- unsupported client frame types are rejected with an `ERROR` frame.
-- one valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
-- one received RF packet is sent to framed clients as exactly one `RX_PACKET`.
+- `SET TXRESULT=1` and `SET TXRESULT=0` on the matching CONF socket enable or disable per-band `TX_RESULT` emission.
+- `SET TXMODE=MANAGED` and `SET TXMODE=RAW` select per-band TX mode; default is `MANAGED`.
+- `SET TXQUEUE=1` routes DATA TX through the per-band bounded async TX queue; `SET TXQUEUE=0` keeps direct DATA TX.
+- `GET STATUS` reports `TXRESULT`, `TXMODE`, `TXQUEUE`, queue counters, last queued TX result, and last queued TX sequence.
+- `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE`.
+- `RAW` TX mode performs one CAD probe and returns `CHANNEL_BUSY` when the channel is busy.
+- `MANAGED` TX mode waits for stable CAD idle before TX and sends after the CAD timeout when the policy allows it.
+- Final framed `TX_RESULT` flags include managed/deferred/CAD-timeout context.
+- Queued framed TX suppresses the immediate success `TX_RESULT`; final async completion is delivered later to the originating framed client.
+- If the originating framed client slot has closed or been reused before completion, the stale final `TX_RESULT` is dropped and counted in `TXQSTALE`.
+- Oversized `TX_PACKET` frames and unsupported frame types are rejected with an `ERROR` frame.
+- One valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
+- One received RF packet is sent to framed clients as exactly one `RX_PACKET`.
 - `RX_PACKET` payload length is `4 + rf_len`; maximum complete RX frame size is `262` bytes.
-- raw DATA clients continue to receive raw RF bytes exactly as before.
-- raw and framed DATA sockets of the same band share the same radio backend.
-- multiple clients may connect to the same band, but TX arbitration is best-effort/event-loop ordered.
-- clients that need exclusive radio use must coordinate externally.
-- framed DATA is packet transport only; higher-level protocols stay in clients.
+- Raw DATA clients continue to receive raw RF bytes exactly as before.
+- Raw and framed DATA sockets of the same band share the same radio backend.
+- Multiple clients may connect to the same band, but TX arbitration is best-effort/event-loop ordered.
+- Clients that need exclusive radio use must coordinate externally.
+- Framed DATA is packet transport only; higher-level protocols stay in clients.
 
 Minimal Python RX frame reader:
 
@@ -301,14 +286,18 @@ CONF sockets accept text commands:
 
 ```text
 SET KEY=VALUE KEY=VALUE ...
+SET TXRESULT=0|1
+SET TXMODE=MANAGED|RAW
+SET TXQUEUE=0|1
 GET STATUS
 GET STATS
+GET CHANNEL
 ```
 
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|RAW TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQDONE=N TXQLAST=NAME TXQSEQ=N
 ```
 
 DATA and framed DATA sockets are payload-only. Status/config messages are never
@@ -327,6 +316,8 @@ Important behavior:
 - LoRa-only keys are ignored in FSK mode.
 - FSK-only keys are ignored in LoRa mode.
 - `GET STATUS` and `GET STATS` return stable one-line responses on the requesting CONF socket.
+- `GET CHANNEL` returns a stable one-line channel snapshot on the requesting CONF socket.
+- `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|RAW`, and `SET TXQUEUE=0|1` are stable per-band control commands.
 - `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
 - `MODE=LORA` calls RadioLib `begin()`.
 - `MODE=FSK` calls RadioLib `beginFSK()`.
@@ -385,8 +376,9 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0` | Current radio health and runtime flags |
-| `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0` | Counters since daemon start |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=0 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0` | Current radio health, runtime flags, TX mode, and TX queue state |
+| `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
+| `GET CHANNEL` | `CHANNEL RADIO=READY BUSY=0 CAD=1 RSSI=-87.50 MODE=LORA TXMODE=MANAGED` | Current channel probe snapshot |
 
 The daemon also prints one compact operator stats line per selected radio every
 60 minutes by default. This terminal log uses the same fields as `GET STATS`.
@@ -400,8 +392,9 @@ The daemon also prints one compact operator stats line per selected radio every
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
-| `STATUS RADIO=... TX=... CAD=... GETRSSI=...\n` | requesting CONF socket | Reply to `GET STATUS` |
-| `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=...\n` | requesting CONF socket | Reply to `GET STATS` |
+| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQSTALE=... TXQDONE=... TXQLAST=... TXQSEQ=...\n` | requesting CONF socket | Reply to `GET STATUS` |
+| `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=...\n` | requesting CONF socket | Reply to `GET STATS` |
+| `CHANNEL RADIO=... BUSY=... CAD=... RSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.

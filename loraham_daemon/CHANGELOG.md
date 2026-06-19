@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- README now documents current TX/CAD, queue, completion, and CONF interfaces without milestone history.
 - Stale deferred framed TX_RESULT drops are now counted in TX queue status.
 - Deferred framed TX_RESULT delivery now checks client-slot generation before delivery.
 - DATA TX carries TX-busy wait limits in context so tests avoid real-time policy sleeps.
