@@ -149,7 +149,6 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 The default TX mode is `MANAGED`. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window, sends after the CAD timeout when configured, and marks that final framed `TX_RESULT` with the CAD-timeout flag. `TXQUEUE=0` keeps direct DATA TX behavior. `TXQUEUE=1` routes DATA TX through the per-band async worker and bounded queue. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion.
 
 ## DATA sockets
-## DATA sockets
 
 DATA sockets are raw byte streams. They have no line protocol and no length prefix.
 
@@ -323,7 +322,6 @@ Important behavior:
 - `MODE=FSK` calls RadioLib `beginFSK()`.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
 
-## Startup and shutdown behavior
 ## Startup and shutdown behavior
 
 Startup is selected-radio aware:

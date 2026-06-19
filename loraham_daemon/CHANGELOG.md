@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- README duplicate section headings were removed from the current interface documentation.
 - Queued DATA TX statistics are now recorded from async worker completion instead of enqueue acceptance.
 - CAD probes now restore LoRa RX after scan, including busy/error probe exits and GET CHANNEL.
 - Queued DATA TX now defers CAD/LBT decisions to the async worker instead of the dispatch path.
