@@ -219,6 +219,8 @@ static void test_txqueue_optin_path(void)
                0);
     expect_int("queue processed wait", wait_async_processed(433, 1), 1);
     expect_int("queue sender calls", sender.calls, 1);
+    expect_size("queue stats tx ok from completion", ctrl.stats.tx_ok, 1);
+    expect_size("queue stats tx busy", ctrl.stats.tx_busy, 0);
     expect_size("queue async accepted", daemon_tx_async_runtime_accepted_for_band(433), 1);
     expect_size("queue async processed", daemon_tx_async_runtime_processed_for_band(433), 1);
     expect_size("queue async pending drained", daemon_tx_async_runtime_pending_for_band(433), 0);
@@ -462,6 +464,9 @@ static void test_queued_managed_cad_runs_in_worker(void)
     expect_int("queued managed cad processed wait", wait_async_processed(433, 1), 1);
     expect_int("queued managed cad worker probes", ctrl.radio->scan_count, 2);
     expect_int("queued managed cad sends after timeout", sender.calls, 1);
+    expect_size("queued managed cad stats ok", ctrl.stats.tx_ok, 1);
+    expect_size("queued managed cad stats cadsend", ctrl.stats.cad_timeout_sends, 1);
+    expect_size("queued managed cad stats cadtimeout", ctrl.stats.cad_timeouts, 0);
 
     DaemonTxJobResult completion;
     expect_int("queued managed cad completion pop",
@@ -494,6 +499,8 @@ static void test_queued_raw_cad_busy_blocks_in_worker(void)
     expect_int("queued raw cad one worker probe", ctrl.radio->scan_count, 1);
     expect_int("queued raw cad no send", sender.calls, 0);
     expect_int("queued raw cad rx restarted", ctrl.radio->start_receive_count, 1);
+    expect_size("queued raw stats no tx ok", ctrl.stats.tx_ok, 0);
+    expect_size("queued raw stats cadtimeout", ctrl.stats.cad_timeouts, 1);
 
     DaemonTxJobResult completion;
     expect_int("queued raw completion pop",

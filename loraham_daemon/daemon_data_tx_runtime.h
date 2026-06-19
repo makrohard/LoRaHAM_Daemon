@@ -296,6 +296,7 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
     DaemonTxJobResult result;
     DaemonTxAsyncWorker *async;
     DaemonTxCompletionQueue *completion_queue;
+    void *completion_record_ctx;
 
     daemon_tx_job_result_init(&result,
                               job,
@@ -309,14 +310,18 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
 
     async = daemon_tx_async_runtime_worker_for_band(job->band);
     completion_queue = daemon_tx_async_runtime_completion_queue_for_band(job->band);
-    if (!async || !completion_queue)
+    completion_record_ctx =
+        daemon_tx_async_runtime_completion_record_ctx_for_band(job->band);
+    if (!async || !completion_queue || !completion_record_ctx)
         return result;
+
+    daemon_tx_async_runtime_set_stats_for_band(job->band, &tx->ctrl->stats);
 
     daemon_tx_async_worker_configure(async,
                                      send_fn,
                                      tx->send_ctx,
                                      daemon_tx_async_runtime_record_completion,
-                                     completion_queue);
+                                     completion_record_ctx);
     daemon_data_tx_configure_worker_cad(async, tx, job);
 
     if (daemon_tx_async_worker_start(async) != 0)
@@ -416,7 +421,8 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     daemon_radio_runtime_led(ctrl, 1);
     result = daemon_data_tx_execute_job(tx, &job, send_fn);
-    daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
+    if (!queued_tx || daemon_tx_outcome_is_failure(result.outcome))
+        daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
     daemon_radio_runtime_led(ctrl, 0);
 
     if (daemon_tx_outcome_is_failure(result.outcome)) {

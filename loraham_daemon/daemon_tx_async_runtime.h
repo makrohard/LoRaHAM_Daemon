@@ -5,6 +5,7 @@
 
 #include "daemon_tx_async_worker.h"
 #include "daemon_tx_completion.h"
+#include "daemon_stats.h"
 
 /* --- TX-Async-Runtime ---------------------------------------------------- */
 
@@ -20,6 +21,8 @@ int daemon_tx_async_runtime_pop_completion_for_band(int band, DaemonTxJobResult 
 size_t daemon_tx_async_runtime_completion_dropped_for_band(int band);
 size_t daemon_tx_async_runtime_completion_stale_for_band(int band);
 void daemon_tx_async_runtime_record_completion_stale_for_band(int band);
+void daemon_tx_async_runtime_set_stats_for_band(int band, DaemonRadioStats *stats);
+void *daemon_tx_async_runtime_completion_record_ctx_for_band(int band);
 size_t daemon_tx_async_runtime_completion_pending_for_band(int band);
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result, void *ctx);
 DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue_for_band(int band);
