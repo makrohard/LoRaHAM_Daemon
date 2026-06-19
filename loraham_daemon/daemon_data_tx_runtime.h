@@ -55,6 +55,9 @@ struct DataTxDaemonContext {
     uint32_t completion_generation;
     uint32_t tx_busy_wait_ticks;
     useconds_t tx_busy_sleep_usec;
+    uint32_t cad_wait_ticks;
+    uint32_t cad_idle_stable_ticks;
+    useconds_t cad_sleep_usec;
 };
 
 void daemon_data_tx_trace_message(void *ctx, const char *msg);
@@ -204,6 +207,88 @@ static uint16_t daemon_data_tx_next_result_seq(void *ctx)
 
 
 template<typename RadioT>
+static int daemon_data_tx_worker_cad_probe(int band, void *ctx)
+{
+    RadioController<RadioT> *ctrl = (RadioController<RadioT> *)ctx;
+    RadioCadProbeResult probe;
+
+    if (!ctrl || band != radio_controller_band_number(ctrl))
+        return DAEMON_TX_CAD_PROBE_UNAVAILABLE;
+
+    if (!radio_controller_ready(ctrl))
+        return DAEMON_TX_CAD_PROBE_UNAVAILABLE;
+
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return DAEMON_TX_CAD_PROBE_FREE;
+
+    probe = radio_cad_probe(ctrl);
+    if (probe.status == RADIO_CAD_PROBE_FREE)
+        return DAEMON_TX_CAD_PROBE_FREE;
+
+    if (probe.status == RADIO_CAD_PROBE_BUSY)
+        return DAEMON_TX_CAD_PROBE_BUSY;
+
+    return DAEMON_TX_CAD_PROBE_UNAVAILABLE;
+}
+
+static inline void daemon_data_tx_worker_cad_sleep(uint32_t usec, void *ctx)
+{
+    (void)ctx;
+
+    if (usec > 0)
+        usleep((useconds_t)usec);
+}
+
+template<typename RadioT>
+static void daemon_data_tx_configure_worker_cad(DaemonTxAsyncWorker *async,
+                                                DataTxDaemonContext<RadioT> *tx,
+                                                const DaemonTxJob *job)
+{
+    if (!async)
+        return;
+
+    if (!tx || !tx->ctrl || !job || !job->cad_enabled) {
+        daemon_tx_async_worker_configure_cad(async, NULL, NULL, NULL, NULL);
+        return;
+    }
+
+    daemon_tx_async_worker_configure_cad(async,
+                                         daemon_data_tx_worker_cad_probe<RadioT>,
+                                         tx->ctrl,
+                                         daemon_data_tx_worker_cad_sleep,
+                                         NULL);
+}
+
+template<typename RadioT>
+static void data_tx_configure_job_cad_policy(DataTxDaemonContext<RadioT> *tx,
+                                             DaemonTxJob *job)
+{
+    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+
+    if (!tx || !job || !ctrl || ctrl->mode != RADIO_MODE_LORA) {
+        daemon_tx_job_configure_cad_policy(job, 0, 0, 0, 0, 0);
+        return;
+    }
+
+    if (ctrl->tx_mode == RADIO_TX_MODE_RAW) {
+        daemon_tx_job_configure_cad_policy(job,
+                                           1,
+                                           1,
+                                           1,
+                                           0,
+                                           0);
+        return;
+    }
+
+    daemon_tx_job_configure_cad_policy(job,
+                                       1,
+                                       tx->cad_wait_ticks,
+                                       tx->cad_idle_stable_ticks,
+                                       (uint32_t)tx->cad_sleep_usec,
+                                       daemon_tx_policy_send_after_cad_timeout());
+}
+
+template<typename RadioT>
 static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> *tx,
                                                     const DaemonTxJob *job,
                                                     DaemonTxSendFn send_fn)
@@ -232,6 +317,7 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
                                      tx->send_ctx,
                                      daemon_tx_async_runtime_record_completion,
                                      completion_queue);
+    daemon_data_tx_configure_worker_cad(async, tx, job);
 
     if (daemon_tx_async_worker_start(async) != 0)
         return result;
@@ -276,26 +362,35 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
 
-    // CAD guard: LoRa only.
-    if (ctrl->mode == RADIO_MODE_LORA)
-        daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
+    int queued_tx = ctrl->tx_queue_active.load();
+    int cad_decision = DATA_TX_CAD_WAIT_FREE;
 
-    int cad_decision = data_tx_wait_channel_free(tx);
-
-    if (data_tx_cad_wait_blocks_tx(cad_decision)) {
-        TxResult busy_result = ctrl->tx_mode == RADIO_TX_MODE_RAW ?
-                               TX_RESULT_BUSY : TX_RESULT_CAD_TIMEOUT;
-        daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
-        daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
-        printf("[%s] Kanal belegt, Paket verworfen\n", tag);
-        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
-               tx_result_name(busy_result));
-        return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
+    // CAD guard: LoRa only. Queued TX runs CAD in the worker.
+    if (ctrl->mode == RADIO_MODE_LORA) {
+        if (queued_tx)
+            daemon_debug_ctx(tx->log_ctx, "CAD wird im Worker geprüft");
+        else
+            daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
     }
 
-    if (data_tx_cad_wait_timed_out(cad_decision)) {
-        daemon_radio_stats_record_cad_timeout_send(&ctrl->stats);
-        daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
+    if (!queued_tx) {
+        cad_decision = data_tx_wait_channel_free(tx);
+
+        if (data_tx_cad_wait_blocks_tx(cad_decision)) {
+            TxResult busy_result = ctrl->tx_mode == RADIO_TX_MODE_RAW ?
+                                   TX_RESULT_BUSY : TX_RESULT_CAD_TIMEOUT;
+            daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
+            daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
+            printf("[%s] Kanal belegt, Paket verworfen\n", tag);
+            printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+                   tx_result_name(busy_result));
+            return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
+        }
+
+        if (data_tx_cad_wait_timed_out(cad_decision)) {
+            daemon_radio_stats_record_cad_timeout_send(&ctrl->stats);
+            daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
+        }
     }
 
     daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
@@ -310,6 +405,8 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     job.completion_slot = tx->completion_slot;
     job.completion_generation = tx->completion_generation;
     job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+    if (queued_tx)
+        data_tx_configure_job_cad_policy(tx, &job);
     data_tx_apply_cad_decision_flags(&job, cad_decision);
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
         daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
@@ -353,6 +450,9 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
         0,
         0u,
         daemon_tx_policy_busy_timeout_ticks(),
+        (useconds_t)daemon_tx_policy_poll_interval_usec(),
+        daemon_tx_policy_cad_wait_ticks(),
+        daemon_tx_policy_cad_idle_stable_ticks(),
         (useconds_t)daemon_tx_policy_poll_interval_usec()
     };
 

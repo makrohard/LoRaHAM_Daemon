@@ -162,6 +162,9 @@ static void init_context(RadioController<FakeRadio> *ctrl,
     ctx->completion_generation = 0u;
     ctx->tx_busy_wait_ticks = 2;
     ctx->tx_busy_sleep_usec = 0;
+    ctx->cad_wait_ticks = 2;
+    ctx->cad_idle_stable_ticks = 1;
+    ctx->cad_sleep_usec = 0;
 }
 
 static void test_default_direct_path(void)
@@ -419,6 +422,71 @@ static void test_cad_free_does_not_set_timeout_flag(void)
 }
 
 
+static void test_queued_managed_cad_runs_in_worker(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 6, 7 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(true);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 1;
+    ctx.completion_seq = 55;
+
+    expect_int("queued managed cad accepted",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               0);
+    expect_int("queued managed cad no frontdoor scan",
+               ctrl.radio->scan_count <= 1 ? 1 : 0,
+               1);
+    expect_int("queued managed cad processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued managed cad worker probes", ctrl.radio->scan_count, 2);
+    expect_int("queued managed cad sends after timeout", sender.calls, 1);
+
+    DaemonTxJobResult completion;
+    expect_int("queued managed cad completion pop",
+               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               0);
+    expect_int("queued managed cad completion result", completion.tx_result, TX_RESULT_OK);
+    expect_int("queued managed cad timeout flag",
+               completion.flags & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+               FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT);
+}
+
+static void test_queued_raw_cad_busy_blocks_in_worker(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 8 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(true);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_RAW;
+    ctrl.radio->scan_state = 1;
+    ctx.completion_seq = 56;
+
+    expect_int("queued raw cad accepted",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               0);
+    expect_int("queued raw processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued raw cad one worker probe", ctrl.radio->scan_count, 1);
+    expect_int("queued raw cad no send", sender.calls, 0);
+
+    DaemonTxJobResult completion;
+    expect_int("queued raw completion pop",
+               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               0);
+    expect_int("queued raw completion result", completion.tx_result, TX_RESULT_CAD_TIMEOUT);
+    expect_int("queued raw completion framed", completion.framed_status,
+               FRAMED_DATA_TX_STATUS_CHANNEL_BUSY);
+}
+
+
 static void test_not_ready_still_short_circuits(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -468,6 +536,8 @@ int main(int argc, char **argv)
     test_managed_busy_resets_stable_idle();
     test_cad_timeout_sets_result_flag();
     test_cad_free_does_not_set_timeout_flag();
+    test_queued_managed_cad_runs_in_worker();
+    test_queued_raw_cad_busy_blocks_in_worker();
     test_not_ready_still_short_circuits();
 
     daemon_tx_async_runtime_shutdown();
