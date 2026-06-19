@@ -85,6 +85,7 @@ static inline RadioCadProbeResult radio_cad_probe(RadioController<RadioT> *ctrl)
     if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
         return result;
 
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);
 
     if (ctrl->mode != RADIO_MODE_LORA)

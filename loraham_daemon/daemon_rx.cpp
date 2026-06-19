@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <mutex>
 
 #include <RadioLib.h>
 
@@ -46,7 +47,6 @@ template<typename RadioT>
 static void daemon_discard_rx_during_tx(RadioController<RadioT> *ctrl)
 {
     ctrl->received.store(false);
-    ctrl->radio->clearIrq(0xFFFFFFFF);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX während TX verworfen");
     printf("[%s] RX während TX - verwerfe Paket\n",
            radio_controller_tag(ctrl));
@@ -438,6 +438,8 @@ static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
         return;
 
     daemon_note_rx_flag_observed(ctrl);
+
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
 
     if (ctrl->tx_busy.load()) {
         daemon_discard_rx_during_tx(ctrl);

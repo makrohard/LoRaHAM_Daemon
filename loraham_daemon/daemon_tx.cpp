@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <mutex>
 
 #include <RadioLib.h>
 
@@ -194,50 +195,59 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
         return TX_RESULT_BUSY;
     }
 
-    // Copy the buffer after TX ownership is acquired.
-    uint8_t send_buf[RF_PACKET_MAX_PAYLOAD_LEN];
-    memcpy(send_buf, buf, len);
+    TxResult result;
 
-    lora_print_tx_preview(tx_ctx, send_buf, len);
-    lora_debug_tx_preview(tx_ctx, send_buf, len);
+    {
+        std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
 
-    lora_send_prepare_controller_tx(ctrl);
+        // Copy the buffer after TX ownership and radio access are acquired.
+        uint8_t send_buf[RF_PACKET_MAX_PAYLOAD_LEN];
+        memcpy(send_buf, buf, len);
 
-    if (ctrl->band == RADIO_BAND_433) {
-        // Clear IRQs once more before TX.
+        lora_print_tx_preview(tx_ctx, send_buf, len);
+        lora_debug_tx_preview(tx_ctx, send_buf, len);
+
+        lora_send_prepare_controller_tx(ctrl);
+
+        if (ctrl->band == RADIO_BAND_433) {
+            // Clear IRQs once more before TX.
+            ctrl->radio->clearIrq(0xFFFFFFFF);
+
+            daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
+            lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
+        }
+
+        // transmit() blocks until the packet is sent.
+        int state = ctrl->radio->transmit(send_buf, len);
+
+        if(state != RADIOLIB_ERR_NONE) {
+            daemon_debug_ctx(tx_ctx, "transmit Fehler %d", state);
+            if (ctrl->band == RADIO_BAND_433)
+                printf("[433] transmit ERROR: %d\n", state);
+            else
+                printf("[868] TX ERROR: %d\n", state);
+        } else {
+            daemon_debug_ctx(tx_ctx, "transmit OK");
+        }
+
+        if (ctrl->band == RADIO_BAND_868)
+            usleep(50000); // 50 ms guard delay
+
+        // Restore IRQ handling and RX callback after TX.
+        // transmit() can clear the callback.
         ctrl->radio->clearIrq(0xFFFFFFFF);
+        ctrl->received.store(false);
+        ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
+        ctrl->radio->startReceive();
 
-        daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
-        lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
+        result = state == RADIOLIB_ERR_NONE
+            ? TX_RESULT_OK
+            : TX_RESULT_RADIO_ERROR;
     }
 
-    // transmit() blocks until the packet is sent.
-    int state = ctrl->radio->transmit(send_buf, len);
-
-    if(state != RADIOLIB_ERR_NONE) {
-        daemon_debug_ctx(tx_ctx, "transmit Fehler %d", state);
-        if (ctrl->band == RADIO_BAND_433)
-            printf("[433] transmit ERROR: %d\n", state);
-        else
-            printf("[868] TX ERROR: %d\n", state);
-    } else {
-        daemon_debug_ctx(tx_ctx, "transmit OK");
-    }
-
-    if (ctrl->band == RADIO_BAND_868)
-        usleep(50000); // 50 ms guard delay
-
-    // Restore IRQ handling and RX callback after TX.
-    // transmit() can clear the callback.
-    ctrl->radio->clearIrq(0xFFFFFFFF);
-    ctrl->received.store(false);
-    ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
     lora_send_release_controller_tx(ctrl);
-    ctrl->radio->startReceive();
+    return result;
 
-    return state == RADIOLIB_ERR_NONE
-        ? TX_RESULT_OK
-        : TX_RESULT_RADIO_ERROR;
 }
 
 TxResult lora_send(uint8_t *buf, size_t len, int band) {

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <atomic>
+#include <mutex>
 
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
@@ -38,6 +39,7 @@ struct RadioController {
     std::unique_ptr<PiHal> hal;
     std::unique_ptr<Module> mod;
     std::unique_ptr<RadioT> radio;
+    std::recursive_mutex radio_mutex;
 
     RadioHealth health;
     RadioMode_t mode;
@@ -140,6 +142,7 @@ static inline float radio_controller_packet_rssi(RadioController<RadioT> *ctrl)
     if (!ctrl || !ctrl->radio)
         return -200.0f;
 
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
     return ctrl->radio->getRSSI();
 }
 

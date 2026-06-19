@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- RadioLib access now uses a per-radio guard across TX, RX, CAD, RSSI, monitoring, and CONFIG apply paths.
 - README now documents current TX/CAD, queue, completion, and CONF interfaces without milestone history.
 - Stale deferred framed TX_RESULT drops are now counted in TX queue status.
 - Deferred framed TX_RESULT delivery now checks client-slot generation before delivery.

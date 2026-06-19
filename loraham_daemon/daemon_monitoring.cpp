@@ -1,6 +1,7 @@
 #include "daemon_monitoring.h"
 
 #include <stdio.h>
+#include <mutex>
 
 #include "client_slot.h"
 #include "daemon_log.h"
@@ -43,6 +44,7 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
     if (ctrl->mode != RADIO_MODE_LORA)
         return;
 
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
     uint8_t modem = ctrl->radio->getModemStatus();
     bool hardware_active = (modem & 0x01) || (modem & 0x10);
     const char *ctx = daemon_cad_log_ctx(ctrl);
@@ -107,6 +109,7 @@ static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
         return;
     }
 
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
     float rssi = radio_channel_read_live_rssi(ctrl->mod.get(),
                                               ctrl->mode,
                                               ctrl->is_hf);

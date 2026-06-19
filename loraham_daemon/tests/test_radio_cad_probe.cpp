@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 /* --- Radio CAD probe helper tests --------------------------------------- */
 
@@ -163,6 +166,38 @@ static void test_probe_lora_free_busy_error(void)
 }
 
 
+static void test_probe_waits_for_radio_access_guard(void)
+{
+    RadioController<FakeRadio> ctrl;
+    std::atomic<int> entered(0);
+    std::atomic<int> finished(0);
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.radio->scan_result = 0;
+
+    std::unique_lock<std::recursive_mutex> hold(ctrl.radio_mutex);
+    std::thread worker([&]() {
+        entered.store(1);
+        RadioCadProbeResult result = radio_cad_probe(&ctrl);
+        expect_int("guarded probe status", result.status, RADIO_CAD_PROBE_FREE);
+        finished.store(1);
+    });
+
+    while (!entered.load())
+        std::this_thread::yield();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    expect_int("guarded probe blocked scan", ctrl.radio->scan_count, 0);
+    expect_int("guarded probe not finished", finished.load(), 0);
+
+    hold.unlock();
+    worker.join();
+
+    expect_int("guarded probe scan after release", ctrl.radio->scan_count, 1);
+    expect_int("guarded probe finished", finished.load(), 1);
+}
+
+
 static void test_tx_wait_raw_mode_uses_single_cad_probe(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -220,6 +255,7 @@ int main(int argc, char **argv)
     test_probe_null_and_not_ready();
     test_probe_fsk_has_rssi_no_cad();
     test_probe_lora_free_busy_error();
+    test_probe_waits_for_radio_access_guard();
     test_tx_wait_raw_mode_uses_single_cad_probe();
     test_tx_wait_fsk_skips_cad();
 

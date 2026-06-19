@@ -133,6 +133,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
         if(ctx->ctrl && ctx->ctrl->radio &&
            radio_controller_ready(ctx->ctrl) &&
            ctx->ctrl->mode == RADIO_MODE_LORA) {
+            std::lock_guard<std::recursive_mutex> radio_lock(ctx->ctrl->radio_mutex);
             ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
             ctx->ctrl->radio->startReceive();
         }
@@ -178,13 +179,17 @@ static void config_dispatch_apply_line(const char *line, void *user)
 
     config_dispatch_log_message(&ctx->log, "Apply startet");
 
-    ctx->apply_config(*ctx->ctrl->radio, ctx->tag, line,
-                      ctx->ctrl->mode, ctx->ctrl->getrssi_active);
+    {
+        std::lock_guard<std::recursive_mutex> radio_lock(ctx->ctrl->radio_mutex);
 
-    // beginFSK()/begin() clears the IRQ callback.
-    ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
-    config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
-    ctx->ctrl->radio->startReceive();
+        ctx->apply_config(*ctx->ctrl->radio, ctx->tag, line,
+                          ctx->ctrl->mode, ctx->ctrl->getrssi_active);
+
+        // beginFSK()/begin() clears the IRQ callback.
+        ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
+        config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
+        ctx->ctrl->radio->startReceive();
+    }
     config_dispatch_log_message(&ctx->log, "RX neu gestartet");
 }
 
