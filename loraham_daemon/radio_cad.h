@@ -78,6 +78,19 @@ static inline RadioCadProbeResult radio_cad_probe_unavailable(void)
 }
 
 template<typename RadioT>
+static inline void radio_cad_restore_rx_after_probe(RadioController<RadioT> *ctrl)
+{
+    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
+        return;
+
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return;
+
+    ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
+    ctrl->radio->startReceive();
+}
+
+template<typename RadioT>
 static inline RadioCadProbeResult radio_cad_probe(RadioController<RadioT> *ctrl)
 {
     RadioCadProbeResult result = radio_cad_probe_unavailable();
@@ -94,6 +107,7 @@ static inline RadioCadProbeResult radio_cad_probe(RadioController<RadioT> *ctrl)
     ctrl->cad_active.store(true);
     result.scan_state = ctrl->radio->scanChannel();
     ctrl->cad_active.store(false);
+    radio_cad_restore_rx_after_probe(ctrl);
 
     result.scan_ran = 1;
     result.status = radio_cad_status_from_scan_state(result.scan_state);

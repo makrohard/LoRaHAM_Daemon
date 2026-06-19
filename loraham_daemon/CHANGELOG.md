@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CAD probes now restore LoRa RX after scan, including busy/error probe exits and GET CHANNEL.
 - Queued DATA TX now defers CAD/LBT decisions to the async worker instead of the dispatch path.
 - Async TX workers now have a worker-side CAD/LBT decision seam for queued TX jobs.
 - RadioLib access now uses a per-radio guard across TX, RX, CAD, RSSI, monitoring, and CONFIG apply paths.

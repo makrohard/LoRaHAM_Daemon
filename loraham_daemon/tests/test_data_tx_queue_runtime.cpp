@@ -50,11 +50,27 @@ struct FakeRadio {
     int scan_state;
     int scan_pattern[16];
     int scan_pattern_len;
+    int callback_count;
+    int start_receive_count;
     float rssi;
+    void (*last_callback)(void);
 
-    FakeRadio() : scan_count(0), scan_state(0), scan_pattern_len(0), rssi(-81.0f)
+    FakeRadio() : scan_count(0), scan_state(0), scan_pattern_len(0),
+                  callback_count(0), start_receive_count(0), rssi(-81.0f),
+                  last_callback(NULL)
     {
         memset(scan_pattern, 0, sizeof(scan_pattern));
+    }
+
+    void setPacketReceivedAction(void (*cb)(void))
+    {
+        last_callback = cb;
+        callback_count++;
+    }
+
+    void startReceive()
+    {
+        start_receive_count++;
     }
 
     int scanChannel()
@@ -335,6 +351,7 @@ static void test_raw_busy_probe_blocks_immediately(void)
                DAEMON_TX_OUTCOME_CHANNEL_BUSY);
     expect_int("raw busy no send", sender.calls, 0);
     expect_int("raw busy one cad probe", ctrl.radio->scan_count, 1);
+    expect_int("raw busy rx restarted", ctrl.radio->start_receive_count, 1);
 }
 
 static void test_managed_busy_timeout_policy_sends_anyway(void)
@@ -476,6 +493,7 @@ static void test_queued_raw_cad_busy_blocks_in_worker(void)
     expect_int("queued raw processed wait", wait_async_processed(433, 1), 1);
     expect_int("queued raw cad one worker probe", ctrl.radio->scan_count, 1);
     expect_int("queued raw cad no send", sender.calls, 0);
+    expect_int("queued raw cad rx restarted", ctrl.radio->start_receive_count, 1);
 
     DaemonTxJobResult completion;
     expect_int("queued raw completion pop",

@@ -15,9 +15,24 @@ static int g_fail = 0;
 struct FakeRadio {
     int scan_result;
     int scan_count;
+    int callback_count;
+    int start_receive_count;
     float rssi;
+    void (*last_callback)(void);
 
-    FakeRadio() : scan_result(0), scan_count(0), rssi(-91.5f) {}
+    FakeRadio() : scan_result(0), scan_count(0), callback_count(0),
+                  start_receive_count(0), rssi(-91.5f), last_callback(NULL) {}
+
+    void setPacketReceivedAction(void (*cb)(void))
+    {
+        last_callback = cb;
+        callback_count++;
+    }
+
+    void startReceive()
+    {
+        start_receive_count++;
+    }
 
     int scanChannel()
     {
@@ -134,6 +149,8 @@ static void test_probe_fsk_has_rssi_no_cad(void)
     expect_int("fsk cad unavailable", result.status, RADIO_CAD_PROBE_UNAVAILABLE);
     expect_int("fsk scan not run", result.scan_ran, 0);
     expect_int("fsk scan count", ctrl.radio->scan_count, 0);
+    expect_int("fsk callback not restored", ctrl.radio->callback_count, 0);
+    expect_int("fsk startReceive not called", ctrl.radio->start_receive_count, 0);
     expect_float_centi("fsk rssi snapshot", result.rssi_dbm, -8825);
 }
 
@@ -152,17 +169,23 @@ static void test_probe_lora_free_busy_error(void)
     expect_int("lora free scan count", ctrl.radio->scan_count, 1);
     expect_int("lora free cad flag cleared", ctrl.cad_active.load() ? 1 : 0, 0);
     expect_int("lora free raw state", result.scan_state, 0);
+    expect_int("lora free callback restored", ctrl.radio->callback_count, 1);
+    expect_int("lora free rx restarted", ctrl.radio->start_receive_count, 1);
     expect_float_centi("lora free rssi snapshot", result.rssi_dbm, -9150);
 
     ctrl.radio->scan_result = 1;
     result = radio_cad_probe(&ctrl);
     expect_int("lora busy status", result.status, RADIO_CAD_PROBE_BUSY);
     expect_int("lora busy raw state", result.scan_state, 1);
+    expect_int("lora busy callback restored", ctrl.radio->callback_count, 2);
+    expect_int("lora busy rx restarted", ctrl.radio->start_receive_count, 2);
 
     ctrl.radio->scan_result = -2;
     result = radio_cad_probe(&ctrl);
     expect_int("lora error unavailable", result.status, RADIO_CAD_PROBE_UNAVAILABLE);
     expect_int("lora error raw state", result.scan_state, -2);
+    expect_int("lora error callback restored", ctrl.radio->callback_count, 3);
+    expect_int("lora error rx restarted", ctrl.radio->start_receive_count, 3);
 }
 
 
