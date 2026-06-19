@@ -375,7 +375,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=0 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0` | Current radio health, runtime flags, TX mode, and TX queue state |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0` | Current radio health, runtime flags, TX mode, and TX queue state |
 | `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, current modem mode, and TX mode |
 
