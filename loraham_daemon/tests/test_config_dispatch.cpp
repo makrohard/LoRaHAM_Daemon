@@ -427,7 +427,10 @@ static void test_dispatch_get_channel_restores_rx(void)
     expect_contains("get channel prefix", out, "CHANNEL RADIO=READY");
     expect_contains("get channel busy", out, "BUSY=1");
     expect_contains("get channel cad", out, "CAD=1");
+    expect_contains("get channel cadscan", out, "CADSCAN=1");
+    expect_contains("get channel cadstate", out, "CADSTATE=BUSY");
     expect_contains("get channel rssi", out, "RSSI=-77.25");
+    expect_contains("get channel packet rssi", out, "PACKETRSSI=-77.25");
     expect_contains("get channel mode", out, "MODE=LORA");
     expect_contains("get channel txmode", out, "TXMODE=MANAGED");
     expect_int("get channel callback restored", ctrl.radio->callback_count, 1);

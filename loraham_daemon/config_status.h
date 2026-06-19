@@ -266,6 +266,17 @@ static inline void config_status_format(char *buf,
              config_status_txq_last_seq(ctrl));
 }
 
+static inline const char *config_status_cad_state_name(RadioCadProbeStatus status)
+{
+    if (status == RADIO_CAD_PROBE_FREE)
+        return "FREE";
+
+    if (status == RADIO_CAD_PROBE_BUSY)
+        return "BUSY";
+
+    return "UNAVAILABLE";
+}
+
 template<typename RadioT>
 static inline void config_status_format_channel(char *buf,
                                                 size_t buf_size,
@@ -275,10 +286,14 @@ static inline void config_status_format_channel(char *buf,
 
     snprintf(buf,
              buf_size,
-             "CHANNEL RADIO=%s BUSY=%d CAD=%d RSSI=%.2f MODE=%s TXMODE=%s\n",
+             "CHANNEL RADIO=%s BUSY=%d CAD=%d CADSCAN=%d CADSTATE=%s "
+             "RSSI=%.2f PACKETRSSI=%.2f MODE=%s TXMODE=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              probe.status == RADIO_CAD_PROBE_BUSY ? 1 : 0,
              probe.scan_ran ? 1 : 0,
+             probe.scan_ran ? 1 : 0,
+             config_status_cad_state_name(probe.status),
+             probe.rssi_dbm,
              probe.rssi_dbm,
              radio_mode_name(radio_controller_mode(ctrl)),
              radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
