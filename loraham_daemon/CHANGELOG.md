@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CONF CAD monitoring now uses the shared RadioLib CAD probe path instead of getModemStatus bit checks.
 - The bounded async DATA TX queue is now enabled by default; SET TXQUEUE=0 keeps the direct path available.
 - README duplicate section headings were removed from the current interface documentation.
 - Queued DATA TX statistics are now recorded from async worker completion instead of enqueue acceptance.

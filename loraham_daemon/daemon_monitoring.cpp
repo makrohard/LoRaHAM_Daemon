@@ -11,6 +11,7 @@
 #include "daemon_stats.h"
 #include "radio_channel.h"
 #include "radio_controller.h"
+#include "radio_cad.h"
 #include "radio_health.h"
 
 /* --- External daemon channel state -------------------------------------- */
@@ -44,10 +45,14 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
     if (ctrl->mode != RADIO_MODE_LORA)
         return;
 
-    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
-    uint8_t modem = ctrl->radio->getModemStatus();
-    bool hardware_active = (modem & 0x01) || (modem & 0x10);
+    bool was_active = ctrl->cad_active.load();
+    RadioCadProbeResult probe = radio_cad_probe(ctrl);
     const char *ctx = daemon_cad_log_ctx(ctrl);
+
+    if (probe.status == RADIO_CAD_PROBE_UNAVAILABLE)
+        return;
+
+    bool hardware_active = probe.status == RADIO_CAD_PROBE_BUSY;
 
     if (hardware_active) {
         if (ctrl->band == RADIO_BAND_433)
@@ -55,19 +60,25 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         else
             setFlashFlag868();
 
-        if (!ctrl->cad_active.load()) {
-            daemon_debug_ctx(ctx, "Aktiv modem=0x%02X", modem);
+        if (!was_active) {
+            daemon_debug_ctx(ctx, "Aktiv cad=%s scan=%d",
+                             radio_cad_probe_status_name(probe.status),
+                             probe.scan_state);
             daemon_radio_runtime_led(ctrl, 1);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
-            ctrl->cad_active.store(true);
         }
+
+        ctrl->cad_active.store(true);
     } else {
-        if (ctrl->cad_active.load() && !ctrl->received.load()) {
-            daemon_debug_ctx(ctx, "Inaktiv modem=0x%02X", modem);
+        if (was_active && !ctrl->received.load()) {
+            daemon_debug_ctx(ctx, "Inaktiv cad=%s scan=%d",
+                             radio_cad_probe_status_name(probe.status),
+                             probe.scan_state);
             daemon_radio_runtime_led(ctrl, 0);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
-            ctrl->cad_active.store(false);
         }
+
+        ctrl->cad_active.store(false);
     }
 }
 /* --- RSSI streaming ------------------------------------------------------- */
