@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- The bounded async DATA TX queue is now enabled by default; SET TXQUEUE=0 keeps the direct path available.
 - README duplicate section headings were removed from the current interface documentation.
 - Queued DATA TX statistics are now recorded from async worker completion instead of enqueue acceptance.
 - CAD probes now restore LoRa RX after scan, including busy/error probe exits and GET CHANNEL.

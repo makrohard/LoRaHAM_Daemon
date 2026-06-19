@@ -191,6 +191,8 @@ static void test_default_direct_path(void)
     uint8_t payload[] = { 1, 2, 3 };
 
     init_context(&ctrl, &ctx, &sender);
+    expect_int("default txqueue enabled", ctrl.tx_queue_active.load() ? 1 : 0, 1);
+    ctrl.tx_queue_active.store(false);
 
     expect_int("direct tx result",
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
@@ -290,6 +292,7 @@ static void test_direct_tx_busy_timeout_blocks_send(void)
     uint8_t payload[] = { 1, 2 };
 
     init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
     ctrl.tx_busy.store(true);
 
     expect_int("direct tx busy wait times out",
@@ -344,6 +347,7 @@ static void test_raw_busy_probe_blocks_immediately(void)
     uint8_t payload[] = { 9 };
 
     init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_RAW;
     ctrl.radio->scan_state = 1;

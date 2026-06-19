@@ -86,7 +86,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_active.store(false);
     ctrl->getrssi_active.store(false);
     ctrl->tx_result_active.store(false);
-    ctrl->tx_queue_active.store(false);
+    ctrl->tx_queue_active.store(true);
     ctrl->tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl->tx_result_seq = 0;
     daemon_tx_worker_init(&ctrl->tx_worker);
