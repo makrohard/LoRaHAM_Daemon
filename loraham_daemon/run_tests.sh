@@ -412,6 +412,26 @@ build_one_framed_data_tx_test() {
     "$SCRIPT_DIR/framed_data.cpp"
 }
 
+
+build_one_daemon_led_test() {
+  local src="$1"
+  local out="$2"
+
+  "$cxx" \
+    -std=c++11 \
+    -Wall \
+    -Wextra \
+    -O2 \
+    -I"$TEST_DIR/fakes" \
+    -I"$TEST_DIR" \
+    -I"$SCRIPT_DIR" \
+    -o "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_led.cpp"
+
+  echo "Built test:   $out"
+}
+
 build_one_radio_health_test() {
   local src="$1"
   local out="$2"
@@ -624,6 +644,7 @@ build_tests() {
   build_one_tx_async_runtime_test "$TEST_DIR/test_daemon_tx_async_runtime.cpp" "$TEST_DIR/test_daemon_tx_async_runtime"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_controller_tx_worker.cpp" "$TEST_DIR/test_radio_controller_tx_worker"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
+  build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"

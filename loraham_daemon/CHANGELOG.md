@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- LED GPIO claim and shutdown failure paths now have hardware-free tests.
 - LED setup now releases a successfully claimed first pin if the second pin claim fails.
 - LED GPIOs are claimed low at startup and released low on shutdown; radio-init blinking remains.
 - DATA TX LED handling now reflects actual RF transmit instead of queue acceptance.
