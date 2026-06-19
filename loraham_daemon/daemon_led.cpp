@@ -11,15 +11,23 @@ static int daemon_led_chip = -1;
 static int daemon_led_433_claimed = 0;
 static int daemon_led_868_claimed = 0;
 
-static int daemon_led_claim_pin(int pin)
+static int daemon_led_claim_pin(int pin, int *claimed)
 {
-    int rc = lgGpioClaimOutput(daemon_led_chip, 0, pin, 0);
+    int rc;
 
-    if (rc < 0)
+    if (!claimed)
+        return -1;
+
+    rc = lgGpioClaimOutput(daemon_led_chip, 0, pin, 0);
+
+    if (rc < 0) {
         printf("[GPIO] Fehler: LED GPIO %d konnte nicht belegt werden: %d\n",
                pin, rc);
+        return rc;
+    }
 
-    return rc;
+    *claimed = 1;
+    return 0;
 }
 
 static void daemon_led_release_pin(int pin, int *claimed)
@@ -54,14 +62,13 @@ void daemon_led_init(void)
         return;
     }
 
-    if (daemon_led_claim_pin(DAEMON_LED_PIN_433) < 0 ||
-        daemon_led_claim_pin(DAEMON_LED_PIN_868) < 0) {
+    if (daemon_led_claim_pin(DAEMON_LED_PIN_433,
+                              &daemon_led_433_claimed) < 0 ||
+        daemon_led_claim_pin(DAEMON_LED_PIN_868,
+                              &daemon_led_868_claimed) < 0) {
         daemon_led_shutdown();
         return;
     }
-
-    daemon_led_433_claimed = 1;
-    daemon_led_868_claimed = 1;
 
     daemon_led_set_pin(DAEMON_LED_PIN_433, 0);
     daemon_led_set_pin(DAEMON_LED_PIN_868, 0);

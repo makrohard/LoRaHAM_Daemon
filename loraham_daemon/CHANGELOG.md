@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- LED setup now releases a successfully claimed first pin if the second pin claim fails.
 - LED GPIOs are claimed low at startup and released low on shutdown; radio-init blinking remains.
 - DATA TX LED handling now reflects actual RF transmit instead of queue acceptance.
 - Test runner linkage and GET CHANNEL tests now cover expanded channel status fields.
