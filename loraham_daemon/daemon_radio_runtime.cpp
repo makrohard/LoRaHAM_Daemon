@@ -97,6 +97,8 @@ void daemon_radio_shutdown_cleanup(void)
         daemon_debug_ctx("RADIO", "Shutdown 868");
         radio_controller_shutdown(&radio_controller_868);
     }
+
+    daemon_led_shutdown();
 }
 
 /* --- RX callbacks -------------------------------------------------------- */
