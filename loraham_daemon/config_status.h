@@ -278,16 +278,35 @@ static inline const char *config_status_cad_state_name(RadioCadProbeStatus statu
 }
 
 template<typename RadioT>
+static inline float config_status_live_rssi_dbm(const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl || !ctrl->mod)
+        return -200.0f;
+
+    uint8_t reg = (ctrl->mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
+    int16_t raw = ctrl->mod->SPIgetRegValue(reg, 7, 0);
+
+    if (raw < 0)
+        return -200.0f;
+
+    if (ctrl->mode == RADIO_MODE_LORA)
+        return (ctrl->is_hf ? -157.0f : -164.0f) + (float)raw;
+
+    return -((float)raw) / 2.0f;
+}
+
+template<typename RadioT>
 static inline void config_status_format_channel(char *buf,
                                                 size_t buf_size,
                                                 RadioController<RadioT> *ctrl)
 {
     RadioCadProbeResult probe = radio_cad_probe(ctrl);
+    float live_rssi = config_status_live_rssi_dbm(ctrl);
 
     snprintf(buf,
              buf_size,
              "CHANNEL RADIO=%s BUSY=%d CAD=%d CADSCAN=%d CADSTATE=%s "
-             "RSSI=%.2f PACKETRSSI=%.2f MODE=%s TXMODE=%s\n",
+             "RSSI=%.2f PACKETRSSI=%.2f LIVERSSI=%.2f MODE=%s TXMODE=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              probe.status == RADIO_CAD_PROBE_BUSY ? 1 : 0,
              probe.scan_ran ? 1 : 0,
@@ -295,6 +314,7 @@ static inline void config_status_format_channel(char *buf,
              config_status_cad_state_name(probe.status),
              probe.rssi_dbm,
              probe.rssi_dbm,
+             live_rssi,
              radio_mode_name(radio_controller_mode(ctrl)),
              radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
 }

@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- GET CHANNEL now adds explicit LIVERSSI alongside legacy packet RSSI fields.
 - README GET STATUS example now reflects the default TXQUEUE=1 state.
 - GET CHANNEL now adds explicit CADSCAN, CADSTATE, and PACKETRSSI fields while keeping legacy fields.
 - CONF CAD monitoring now uses the shared RadioLib CAD probe path instead of getModemStatus bit checks.
