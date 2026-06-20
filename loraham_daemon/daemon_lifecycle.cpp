@@ -95,7 +95,7 @@ void daemon_lifecycle_enter_background(void)
     if (pid < 0) exit(EXIT_FAILURE);
     if (pid > 0) exit(EXIT_SUCCESS);
 
-    umask(0);
+    umask(007);
     if (chdir("/") != 0)
         exit(EXIT_FAILURE);
 

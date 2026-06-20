@@ -35,6 +35,17 @@ static int path_exists(const char *path)
     return stat(path, &st) == 0;
 }
 
+static int path_mode(const char *path, mode_t *mode)
+{
+    struct stat st;
+
+    if (!mode || stat(path, &st) != 0)
+        return -1;
+
+    *mode = st.st_mode & 0777;
+    return 0;
+}
+
 /* --- setup/close behavior --- */
 
 static void test_close_unix_socket_unlinks_and_clears_fd(void)
@@ -56,6 +67,26 @@ static void test_close_unix_socket_unlinks_and_clears_fd(void)
     close_unix_socket(&fd, path);
     expect_int("close helper idempotent fd", fd, -1);
     expect_int("close helper idempotent path", path_exists(path), 0);
+}
+
+static void test_setup_socket_mode(void)
+{
+    const char *path = "/tmp/loraham_test_unix_socket_mode.sock";
+    int fd;
+    mode_t mode = 0;
+    mode_t old_umask;
+
+    unlink(path);
+
+    old_umask = umask(0077);
+    fd = setup_unix_socket(path, 1);
+    umask(old_umask);
+
+    expect_int("mode test socket setup", fd >= 0, 1);
+    expect_int("mode test stat succeeds", path_mode(path, &mode), 0);
+    expect_int("socket mode is 0660", (int)mode, 0660);
+
+    close_unix_socket(&fd, path);
 }
 
 static void test_setup_rejects_regular_file_path(void)
@@ -122,6 +153,7 @@ int main(int argc, char **argv)
     }
 
     test_close_unix_socket_unlinks_and_clears_fd();
+    test_setup_socket_mode();
     test_setup_rejects_regular_file_path();
     test_setup_replaces_stale_socket_path();
 

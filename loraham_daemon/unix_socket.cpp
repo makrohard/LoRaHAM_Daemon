@@ -77,6 +77,12 @@ int setup_unix_socket(const char *path, int backlog)
         return -1;
     }
 
+    if (chmod(path, 0660) != 0) {
+        close(fd);
+        unlink(path);
+        return -1;
+    }
+
     if (listen(fd, backlog) < 0) {
         close(fd);
         unlink(path);
