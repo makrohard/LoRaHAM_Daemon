@@ -862,6 +862,57 @@ static void test_dispatch_set_cadwait_invalid_rejected(void)
     client_slot_close(&slots[0]);
 }
 
+static void test_cad_policy_value_bounds(void)
+{
+    uint32_t ms = 0;
+    int v = 0;
+
+    /* CADWAIT 50..5000 ms */
+    expect_int("cadwait lo accept",
+               config_status_is_set_cadwait("SET CADWAIT=50", &ms), 1);
+    expect_int("cadwait lo value", (int)ms, 50);
+    expect_int("cadwait hi accept",
+               config_status_is_set_cadwait("SET CADWAIT=5000", &ms), 1);
+    expect_int("cadwait hi value", (int)ms, 5000);
+    expect_int("cadwait below reject",
+               config_status_is_set_cadwait("SET CADWAIT=49", &ms), 0);
+    expect_int("cadwait above reject",
+               config_status_is_set_cadwait("SET CADWAIT=5001", &ms), 0);
+    expect_int("cadwait empty reject",
+               config_status_is_set_cadwait("SET CADWAIT=", &ms), 0);
+    expect_int("cadwait suffix reject",
+               config_status_is_set_cadwait("SET CADWAIT=300x", &ms), 0);
+
+    /* CADIDLE 0..2000 ms */
+    expect_int("cadidle lo accept",
+               config_status_is_set_cadidle("SET CADIDLE=0", &ms), 1);
+    expect_int("cadidle lo value", (int)ms, 0);
+    expect_int("cadidle hi accept",
+               config_status_is_set_cadidle("SET CADIDLE=2000", &ms), 1);
+    expect_int("cadidle above reject",
+               config_status_is_set_cadidle("SET CADIDLE=2001", &ms), 0);
+
+    /* CADPOLL 10..500 ms */
+    expect_int("cadpoll lo accept",
+               config_status_is_set_cadpoll("SET CADPOLL=10", &ms), 1);
+    expect_int("cadpoll hi accept",
+               config_status_is_set_cadpoll("SET CADPOLL=500", &ms), 1);
+    expect_int("cadpoll below reject",
+               config_status_is_set_cadpoll("SET CADPOLL=9", &ms), 0);
+    expect_int("cadpoll above reject",
+               config_status_is_set_cadpoll("SET CADPOLL=501", &ms), 0);
+
+    /* CADTXAFTERTIMEOUT 0|1 */
+    expect_int("cadtx 1 accept",
+               config_status_is_set_cadtxaftertimeout("SET CADTXAFTERTIMEOUT=1", &v), 1);
+    expect_int("cadtx 1 value", v, 1);
+    expect_int("cadtx 0 accept",
+               config_status_is_set_cadtxaftertimeout("SET CADTXAFTERTIMEOUT=0", &v), 1);
+    expect_int("cadtx 0 value", v, 0);
+    expect_int("cadtx 2 reject",
+               config_status_is_set_cadtxaftertimeout("SET CADTXAFTERTIMEOUT=2", &v), 0);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -896,6 +947,7 @@ int main(int argc, char **argv)
     test_dispatch_set_cadpoll();
     test_dispatch_set_cadtxaftertimeout();
     test_dispatch_set_cadwait_invalid_rejected();
+    test_cad_policy_value_bounds();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
