@@ -654,6 +654,73 @@ static void test_controller_cad_policy_snapshot(void)
     daemon_tx_async_runtime_shutdown();
 }
 
+static void test_managed_busy_timeout_send_when_opt_in(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    DaemonTxJob job;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 1;   /* Kanal bleibt belegt */
+
+    /* Opt-in: nach CAD-Timeout trotzdem senden. */
+    expect_int("managed busy timeout sends when opt-in",
+               data_tx_wait_channel_free_with_limits_ex<FakeRadio>(&ctx, 2, 3, 0, true),
+               DATA_TX_CAD_WAIT_TIMEOUT_SEND);
+    expect_int("managed busy timeout send probe count", ctrl.radio->scan_count, 2);
+
+    /* Queued-Snapshot traegt das Opt-in mit. */
+    ctrl.cad_send_after_timeout.store(true);
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 81);
+    data_tx_configure_job_cad_policy(&ctx, &job);
+    expect_int("managed queued timeout send opt-in",
+               job.cad_send_after_timeout, 1);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
+static void test_queue_long_wait_does_not_starve_later_job(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload_a[] = { 1 };
+    uint8_t payload_b[] = { 2 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(true);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 1;   /* Kanal fuer beide Jobs belegt */
+
+    /* Job A laeuft beschraenkt in den CAD-Timeout, nicht 20 s. */
+    ctx.completion_seq = 60;
+    expect_int("starve guard job A accepted",
+               send_data_chunk<FakeRadio>(payload_a, sizeof(payload_a), 0, &ctx),
+               0);
+
+    /* Job B direkt dahinter. */
+    ctx.completion_seq = 61;
+    expect_int("starve guard job B accepted",
+               send_data_chunk<FakeRadio>(payload_b, sizeof(payload_b), 0, &ctx),
+               0);
+
+    /* Beide muessen abgearbeitet werden: A blockiert B nicht. */
+    expect_int("starve guard both processed", wait_async_processed(433, 2), 1);
+    expect_size("starve guard processed count",
+                daemon_tx_async_runtime_processed_for_band(433), 2);
+
+    /* Pro Job auf cad_wait_ticks (2) beschraenkt -> Gesamtprobes beschraenkt. */
+    expect_int("starve guard bounded probes",
+               ctrl.radio->scan_count <= 4 ? 1 : 0, 1);
+    expect_int("starve guard no transmit on busy", sender.calls, 0);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -691,6 +758,8 @@ int main(int argc, char **argv)
     test_queued_raw_cad_busy_blocks_in_worker();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();
+    test_managed_busy_timeout_send_when_opt_in();
+    test_queue_long_wait_does_not_starve_later_job();
 
     daemon_tx_async_runtime_shutdown();
 
