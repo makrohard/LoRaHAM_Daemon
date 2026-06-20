@@ -972,6 +972,15 @@ static void test_cad_policy_value_bounds(void)
                config_status_is_set_cadwait("SET CADWAIT=5001", &ms), 0);
     expect_int("cadwait empty reject",
                config_status_is_set_cadwait("SET CADWAIT=", &ms), 0);
+
+    ms = 123u;
+    expect_int("cadwait blank reject",
+               config_status_is_set_cadwait("", &ms), 0);
+    expect_int("cadwait blank unchanged", (int)ms, 123);
+    expect_int("cadwait null reject",
+               config_status_is_set_cadwait(NULL, &ms), 0);
+    expect_int("cadwait null unchanged", (int)ms, 123);
+
     expect_int("cadwait suffix reject",
                config_status_is_set_cadwait("SET CADWAIT=300x", &ms), 0);
 

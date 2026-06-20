@@ -166,10 +166,14 @@ static inline int config_status_parse_set_uval(const char *cmd,
                                                uint32_t lo, uint32_t hi,
                                                uint32_t *out)
 {
-    size_t plen = strlen(prefix);
+    size_t plen;
     char *endptr;
     unsigned long v;
 
+    if (!cmd || !prefix || cmd[0] == '\0' || prefix[0] == '\0')
+        return 0;
+
+    plen = strlen(prefix);
     if (strncmp(cmd, prefix, plen) != 0)
         return 0;
 
