@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Test sources now avoid avoidable initialization and string-copy build warnings.
 - Async completion stats targets now use atomic worker-to-runtime handoff.
 - STATUS now reports completion-queue evictions as TXQRESULTDROP.
 - Daemon shutdown now discards queued TX jobs while allowing only an in-flight job to finish.
