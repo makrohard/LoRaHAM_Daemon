@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CI now runs pinned RadioLib builds with normal, strict, ASan/UBSan, and TSan tests.
 - Tests now support ASan/UBSan and TSan modes with TX worker stress coverage.
 - Release builds now use hardening; tests support strict bounded runs.
 - Daemon sockets now use 0660 permissions with a restrictive daemon umask.
