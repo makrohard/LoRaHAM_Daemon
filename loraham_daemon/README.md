@@ -146,7 +146,7 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## Current TX/CAD behavior
 
-The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window, sends after the CAD timeout when configured, and marks that final framed `TX_RESULT` with the CAD-timeout flag. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded; an already dequeued job is allowed to finish.
+The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window, sends after the CAD timeout when configured, and marks that final framed `TX_RESULT` with the CAD-timeout flag. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
 
 ## DATA sockets
 
@@ -297,8 +297,11 @@ GET CHANNEL
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|RAW TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQDONE=N TXQLAST=NAME TXQSEQ=N
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|RAW TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N
 ```
+
+`TXQDROP` counts full-queue rejections and pending jobs discarded at shutdown. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
+
 
 DATA and framed DATA sockets are payload-only. Status/config messages are never
 sent on DATA or framed DATA sockets.
@@ -375,7 +378,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0` | Current radio health, runtime flags, TX mode, and TX queue state |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0` | Current radio health, runtime flags, TX mode, and TX queue state |
 | `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, explicit live-register `LIVERSSI`, current modem mode, and TX mode |
 

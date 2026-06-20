@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- README now documents TXQRESULTDROP and queued-TX shutdown behavior.
 - TX workers now reject jobs submitted after shutdown begins.
 - Worker CAD mode checks now serialize with CONFIG radio-mode changes.
 - Queued LoRa jobs now retain their CAD callback across later non-CAD submissions.
