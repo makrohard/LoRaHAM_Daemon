@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <thread>
 
 /* --- Runtime statistics tests --- */
 
@@ -72,6 +73,53 @@ static void test_stats_format_includes_cad_timeout(void)
     expect_int("stats has cad timeout", strstr(buf, "CADTIMEOUT=1 CADSEND=0") != NULL, 1);
 }
 
+static void test_stats_concurrent_record_and_format(void)
+{
+    DaemonRadioStats stats;
+    char buf[256];
+    const int iterations = 2000;
+
+    daemon_radio_stats_init(&stats);
+
+    std::thread tx([&stats, iterations]() {
+        for (int i = 0; i < iterations; i++) {
+            daemon_radio_stats_record_tx_result(&stats, TX_RESULT_OK);
+            daemon_radio_stats_record_cad_timeout_send(&stats);
+        }
+    });
+
+    std::thread rx([&stats, iterations]() {
+        for (int i = 0; i < iterations; i++) {
+            daemon_radio_stats_record_rx(&stats, 3);
+            daemon_radio_stats_record_rx_drop(&stats);
+        }
+    });
+
+    for (int i = 0; i < iterations; i++) {
+        daemon_stats_format_response(buf, sizeof(buf), i, RADIO_HEALTH_READY, &stats);
+        if (strstr(buf, "STATS UPTIME=") == NULL) {
+            g_fail++;
+            printf("[FAIL] concurrent stats format\n");
+            break;
+        }
+    }
+
+    tx.join();
+    rx.join();
+
+    expect_ulong("concurrent tx total", stats.tx_ok, (unsigned long)iterations);
+    expect_ulong("concurrent cad-send total",
+                 stats.cad_timeout_sends,
+                 (unsigned long)iterations);
+    expect_ulong("concurrent rx total", stats.rx_packets, (unsigned long)iterations);
+    expect_ulong("concurrent rx bytes",
+                 stats.rx_bytes,
+                 (unsigned long)(iterations * 3));
+    expect_ulong("concurrent rx-drop total",
+                 stats.rx_drops,
+                 (unsigned long)iterations);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -94,6 +142,7 @@ int main(int argc, char **argv)
     test_tx_result_counters();
     test_cad_timeout_counted_once_via_tx_result();
     test_stats_format_includes_cad_timeout();
+    test_stats_concurrent_record_and_format();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

@@ -1,17 +1,20 @@
 #include "daemon_stats.h"
 
+#include <mutex>
 #include <stdio.h>
 #include <string.h>
 
 /* --- Runtime statistics -------------------------------------------------- */
 
 static long g_stats_start_ms = 0;
+static std::mutex g_stats_lock;
 
 void daemon_radio_stats_init(DaemonRadioStats *stats)
 {
     if (!stats)
         return;
 
+    std::lock_guard<std::mutex> guard(g_stats_lock);
     memset(stats, 0, sizeof(*stats));
 }
 
@@ -20,6 +23,7 @@ void daemon_radio_stats_record_rx(DaemonRadioStats *stats, size_t bytes)
     if (!stats)
         return;
 
+    std::lock_guard<std::mutex> guard(g_stats_lock);
     stats->rx_packets++;
     stats->rx_bytes += (unsigned long)bytes;
 }
@@ -29,6 +33,7 @@ void daemon_radio_stats_record_rx_drop(DaemonRadioStats *stats)
     if (!stats)
         return;
 
+    std::lock_guard<std::mutex> guard(g_stats_lock);
     stats->rx_drops++;
 }
 
@@ -37,6 +42,8 @@ void daemon_radio_stats_record_tx_result(DaemonRadioStats *stats,
 {
     if (!stats)
         return;
+
+    std::lock_guard<std::mutex> guard(g_stats_lock);
 
     switch (result) {
         case TX_RESULT_OK:
@@ -62,15 +69,16 @@ void daemon_radio_stats_record_cad_timeout(DaemonRadioStats *stats)
     if (!stats)
         return;
 
+    std::lock_guard<std::mutex> guard(g_stats_lock);
     stats->cad_timeouts++;
 }
-
 
 void daemon_radio_stats_record_cad_timeout_send(DaemonRadioStats *stats)
 {
     if (!stats)
         return;
 
+    std::lock_guard<std::mutex> guard(g_stats_lock);
     stats->cad_timeout_sends++;
 }
 
@@ -93,14 +101,16 @@ void daemon_stats_format_fields(char *buf,
                                 RadioHealth health,
                                 const DaemonRadioStats *stats)
 {
-    DaemonRadioStats empty;
+    DaemonRadioStats snapshot;
 
     if (!buf || buf_size == 0)
         return;
 
-    if (!stats) {
-        daemon_radio_stats_init(&empty);
-        stats = &empty;
+    memset(&snapshot, 0, sizeof(snapshot));
+
+    if (stats) {
+        std::lock_guard<std::mutex> guard(g_stats_lock);
+        snapshot = *stats;
     }
 
     snprintf(buf,
@@ -109,14 +119,14 @@ void daemon_stats_format_fields(char *buf,
              "TXOK=%lu TXERR=%lu TXBUSY=%lu CADTIMEOUT=%lu CADSEND=%lu",
              uptime_seconds,
              radio_health_name(health),
-             stats->rx_packets,
-             stats->rx_bytes,
-             stats->rx_drops,
-             stats->tx_ok,
-             stats->tx_errors,
-             stats->tx_busy,
-             stats->cad_timeouts,
-             stats->cad_timeout_sends);
+             snapshot.rx_packets,
+             snapshot.rx_bytes,
+             snapshot.rx_drops,
+             snapshot.tx_ok,
+             snapshot.tx_errors,
+             snapshot.tx_busy,
+             snapshot.cad_timeouts,
+             snapshot.cad_timeout_sends);
 }
 
 void daemon_stats_format_response(char *buf,

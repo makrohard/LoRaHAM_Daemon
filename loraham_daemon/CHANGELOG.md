@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Runtime radio statistics now synchronize async TX updates with GET STATS formatting.
 - Test runner cleanup now has one authoritative exit handler.
 - Test runner now executes all built tests and removes generated test binaries on exit.
 - LED GPIO claim and shutdown failure paths now have hardware-free tests.
