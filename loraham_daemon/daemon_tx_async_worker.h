@@ -287,6 +287,12 @@ static inline int daemon_tx_async_worker_submit(DaemonTxAsyncWorker *async,
 
     {
         std::lock_guard<std::mutex> guard(async->lock);
+
+        if (async->stop_requested) {
+            async->worker.rejected++;
+            return -1;
+        }
+
         rc = daemon_tx_worker_submit(&async->worker, job);
     }
 

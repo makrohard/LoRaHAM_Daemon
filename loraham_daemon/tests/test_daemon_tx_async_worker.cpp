@@ -188,6 +188,22 @@ static int wait_pending_empty(DaemonTxAsyncWorker *async)
     return 0;
 }
 
+static int wait_stop_requested(DaemonTxAsyncWorker *async)
+{
+    for (int i = 0; i < 1000; i++) {
+        {
+            std::lock_guard<std::mutex> guard(async->lock);
+
+            if (async->stop_requested)
+                return 1;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return 0;
+}
+
 static void test_start_submit_stop(void)
 {
     DaemonTxAsyncWorker async;
@@ -281,6 +297,59 @@ static void test_stop_discards_pending_jobs(void)
     expect_size("async discard processed", daemon_tx_async_worker_processed(&async), 1);
     expect_size("async discard pending", daemon_tx_async_worker_pending(&async), 0);
     expect_size("async discard dropped", daemon_tx_async_worker_dropped(&async), 2);
+}
+
+
+static void test_stop_rejects_late_submit(void)
+{
+    DaemonTxAsyncWorker async;
+    BlockingSender sender;
+    ResultRecorder recorder;
+    DaemonTxJob first = make_job(13);
+    DaemonTxJob late = make_job(14);
+
+    memset(&recorder, 0, sizeof(recorder));
+
+    daemon_tx_async_worker_init(&async);
+    daemon_tx_async_worker_configure(&async,
+                                     blocking_send,
+                                     &sender,
+                                     record_result,
+                                     &recorder);
+
+    expect_int("async late stop start", daemon_tx_async_worker_start(&async), 0);
+    expect_int("async late stop first submit",
+               daemon_tx_async_worker_submit(&async, &first),
+               0);
+    expect_int("async late stop first entered", wait_sender_entered(&sender), 1);
+
+    std::thread stopper([&async]() {
+        daemon_tx_async_worker_stop(&async);
+    });
+
+    expect_int("async late stop requested", wait_stop_requested(&async), 1);
+    expect_int("async late stop submit rejected",
+               daemon_tx_async_worker_submit(&async, &late),
+               -1);
+    expect_size("async late stop rejected count",
+                daemon_tx_async_worker_rejected(&async),
+                1);
+    expect_size("async late stop pending",
+                daemon_tx_async_worker_pending(&async),
+                0);
+
+    release_sender(&sender);
+    stopper.join();
+
+    expect_int("async late stop stopped", daemon_tx_async_worker_running(&async), 0);
+    expect_int("async late stop sender calls", sender.calls, 1);
+    expect_int("async late stop result callback", recorder.calls, 1);
+    expect_size("async late stop processed",
+                daemon_tx_async_worker_processed(&async),
+                1);
+    expect_size("async late stop dropped",
+                daemon_tx_async_worker_dropped(&async),
+                0);
 }
 
 
@@ -431,6 +500,7 @@ int main(int argc, char **argv)
     test_start_submit_stop();
     test_full_queue_rejects();
     test_stop_discards_pending_jobs();
+    test_stop_rejects_late_submit();
     test_worker_cad_waits_before_send();
     test_worker_cad_timeout_blocks_without_send();
     test_worker_cad_timeout_sends_with_flag();
