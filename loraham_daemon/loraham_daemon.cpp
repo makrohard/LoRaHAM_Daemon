@@ -69,15 +69,11 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 
 /* --- Event wait/runtime -------------------------------------------------- */
 static int daemon_wait_for_events(EventLoopSet *event_set,
-                                  EventLoopReadySet *readfds)
+                                   EventLoopReadySet *readfds)
 {
-    int ret;
+    int ret = event_loop_wait(event_set, readfds,
+                              DAEMON_EVENT_LOOP_TIMEOUT_USEC);
 
-    event_loop_reset(event_set);
-
-    daemon_io_add_event_fds(event_set);
-
-    ret = event_loop_wait(event_set, readfds, DAEMON_EVENT_LOOP_TIMEOUT_USEC);
     if (ret > 0)
         daemon_debug_ctx("SOCKET", "%d Event(s)", ret);
 
@@ -166,6 +162,7 @@ static void daemon_main_context_init(DaemonMainContext *ctx)
     daemon_debug_ctx("LIFE", "Initialisiere Laufzeitkontext");
     daemon_runtime_init(&ctx->event_set);
     daemon_loop_context_init(&ctx->loop_ctx);
+    daemon_io_sync_event_fds(&ctx->event_set);
     daemon_debug_ctx("LIFE", "Laufzeitkontext bereit");
 }
 
@@ -195,11 +192,11 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *cad_timer,
 
 /* --- Main loop iteration ------------------------------------------------- */
 static void daemon_process_loop_iteration(EventLoopSet *event_set,
-                                          EventLoopReadySet *readfds,
-                                          DaemonLoopContext *loop_ctx,
-                                          uint8_t *buf,
-                                          uint8_t (&rx_buf_433)[buf_SIZE],
-                                          uint8_t (&rx_buf_868)[buf_SIZE])
+                                           EventLoopReadySet *readfds,
+                                           DaemonLoopContext *loop_ctx,
+                                           uint8_t *buf,
+                                           uint8_t (&rx_buf_433)[buf_SIZE],
+                                           uint8_t (&rx_buf_868)[buf_SIZE])
 {
     // Wait for socket events.
     int ret = daemon_wait_for_events(event_set, readfds);
@@ -211,25 +208,26 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
 
         perror("event_loop_wait");
 
-        if (event_loop_registration_failed(event_set)) {
+        if (event_loop_registration_failed(event_set))
             daemon_lifecycle_request_stop(0);
-        }
 
         return;
     }
 
     // Process ready socket clients.
     daemon_process_ready_sockets(&loop_ctx->config_433_ctx,
-                                &loop_ctx->config_868_ctx,
-                                &loop_ctx->data_tx_433_ctx,
-                                &loop_ctx->data_tx_868_ctx,
-                                readfds, buf);
+                                 &loop_ctx->config_868_ctx,
+                                 &loop_ctx->data_tx_433_ctx,
+                                 &loop_ctx->data_tx_868_ctx,
+                                 readfds, buf);
 
     daemon_process_radio_polling(&loop_ctx->cad_timer,
-                                  &loop_ctx->rssi_timer,
-                                  &loop_ctx->stats_timer,
+                                 &loop_ctx->rssi_timer,
+                                 &loop_ctx->stats_timer,
                                  rx_buf_433,
                                  rx_buf_868);
+
+    daemon_io_sync_event_fds(event_set);
 }
 
 /* --- Polling loop -------------------------------------------------------- */

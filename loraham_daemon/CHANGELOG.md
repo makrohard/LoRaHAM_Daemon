@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Daemon runtime now reconciles persistent epoll watches instead of re-registering them each loop.
 - Added persistent epoll reconciliation primitives with reuse-safe tests.
 - Removed stale controller TX state and clarified TX queue counters.
 - CI now runs pinned RadioLib builds with normal, strict, ASan/UBSan, and TSan tests.

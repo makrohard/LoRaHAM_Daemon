@@ -30,7 +30,6 @@ int client_slot_add(ClientSlot *slots, int max_clients, int fd);
 int client_slot_accept_with_output(int listen_fd, ClientSlot *slots, int max_clients);
 int client_slot_ready(const ClientSlot *slot, const EventLoopReadySet *ready);
 int client_slot_output_ready(const ClientSlot *slot, const EventLoopReadySet *ready);
-void client_slot_add_to_event_loop_with_output(ClientSlot *slots, int max_clients, EventLoopSet *set);
 void client_slot_flush_output(ClientSlot *slot);
 void client_slot_flush_ready_outputs(ClientSlot *slots, int max_clients, const EventLoopReadySet *ready);
 int client_slot_has_clients(ClientSlot *slots, int max_clients);
