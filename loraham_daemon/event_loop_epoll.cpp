@@ -64,8 +64,10 @@ int event_loop_epoll_add_fd_events(EventLoopEpollSet *set, int fd, uint32_t even
 {
     struct epoll_event ev;
 
-    if (!set || set->epoll_fd < 0 || fd < 0)
+    if (!set || set->epoll_fd < 0 || fd < 0) {
+        errno = EINVAL;
         return -1;
+    }
 
     if (set->registered_fds >= EVENT_LOOP_EPOLL_MAX_REGISTERED_FDS) {
         errno = ENOSPC;

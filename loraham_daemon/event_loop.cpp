@@ -1,9 +1,19 @@
 #include "event_loop.h"
 
+#include <errno.h>
+
 /* --- Event-loop wrapper ------------------------------------------------- */
+
+static void event_loop_record_registration_error(EventLoopSet *set)
+{
+    if (set->registration_errno == 0)
+        set->registration_errno = errno ? errno : EIO;
+}
 
 int event_loop_init(EventLoopSet *set)
 {
+    set->registration_errno = 0;
+
     if (event_loop_epoll_init(&set->epoll_backend) != 0) {
         set->backend = EVENT_LOOP_BACKEND_EPOLL;
         return -1;
@@ -17,6 +27,7 @@ void event_loop_close(EventLoopSet *set)
 {
     event_loop_epoll_close(&set->epoll_backend);
     set->backend = EVENT_LOOP_BACKEND_EPOLL;
+    set->registration_errno = 0;
 }
 
 EventLoopBackend event_loop_backend(const EventLoopSet *set)
@@ -34,16 +45,24 @@ const char *event_loop_backend_name(EventLoopBackend backend)
 void event_loop_reset(EventLoopSet *set)
 {
     event_loop_epoll_reset(&set->epoll_backend);
+    set->registration_errno = 0;
 }
 
 void event_loop_add_fd(EventLoopSet *set, int fd)
 {
-    (void)event_loop_epoll_add_fd(&set->epoll_backend, fd);
+    if (event_loop_epoll_add_fd(&set->epoll_backend, fd) != 0)
+        event_loop_record_registration_error(set);
 }
 
 void event_loop_add_fd_events(EventLoopSet *set, int fd, uint32_t events)
 {
-    (void)event_loop_epoll_add_fd_events(&set->epoll_backend, fd, events);
+    if (event_loop_epoll_add_fd_events(&set->epoll_backend, fd, events) != 0)
+        event_loop_record_registration_error(set);
+}
+
+int event_loop_registration_failed(const EventLoopSet *set)
+{
+    return set && set->registration_errno != 0;
 }
 
 int event_loop_has_registered_fds(const EventLoopSet *set)
@@ -70,6 +89,11 @@ int event_loop_wait(const EventLoopSet *set,
                     EventLoopReadySet *ready,
                     int timeout_usec)
 {
+    if (set->registration_errno != 0) {
+        errno = set->registration_errno;
+        return -1;
+    }
+
     ready->backend = set->backend;
 
     return event_loop_epoll_wait(&set->epoll_backend,

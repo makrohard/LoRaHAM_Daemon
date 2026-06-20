@@ -15,6 +15,7 @@ typedef enum {
 typedef struct {
     EventLoopBackend backend;
     EventLoopEpollSet epoll_backend;
+    int registration_errno;
 } EventLoopSet;
 
 typedef struct {
@@ -29,6 +30,7 @@ const char *event_loop_backend_name(EventLoopBackend backend);
 void event_loop_reset(EventLoopSet *set);
 void event_loop_add_fd(EventLoopSet *set, int fd);
 void event_loop_add_fd_events(EventLoopSet *set, int fd, uint32_t events);
+int event_loop_registration_failed(const EventLoopSet *set);
 int event_loop_has_registered_fds(const EventLoopSet *set);
 int event_loop_ready_fd(const EventLoopReadySet *ready, int fd);
 int event_loop_ready_fd_read(const EventLoopReadySet *ready, int fd);

@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Epoll registration now supports 128 FDs and stops cleanly on registration errors.
 - TX status broadcasts now drain in the main loop instead of async TX workers.
 - CAD monitoring state now uses a dedicated broadcast latch separate from transient probes.
 - GET CHANNEL now returns immediately during active TX without probing the radio.

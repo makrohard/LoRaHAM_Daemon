@@ -1,5 +1,6 @@
 #include "../event_loop.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -214,6 +215,83 @@ static void test_reset_clears_registered_fds(void)
     close(fds[1]);
 }
 
+static void test_registration_capacity(void)
+{
+    enum { TEST_FDS = 65 };
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int pipes[TEST_FDS][2];
+    int created = 0;
+    char ch = 'x';
+
+    if (event_loop_init(&set) != 0) {
+        g_fail++;
+        printf("[FAIL] init for registration capacity\n");
+        return;
+    }
+
+    for (int i = 0; i < TEST_FDS; i++) {
+        if (pipe(pipes[i]) != 0) {
+            g_fail++;
+            printf("[FAIL] capacity pipe setup\n");
+            break;
+        }
+
+        created++;
+        event_loop_add_fd(&set, pipes[i][0]);
+    }
+
+    if (created == TEST_FDS) {
+        expect_int("registration remains clear above old limit",
+                   event_loop_registration_failed(&set), 0);
+
+        (void)write(pipes[TEST_FDS - 1][1], &ch, 1);
+
+        expect_int("65th registered fd is readable",
+                   event_loop_wait(&set, &ready, 100000), 1);
+        expect_int("ready helper sees 65th fd",
+                   event_loop_ready_fd_read(&ready,
+                                            pipes[TEST_FDS - 1][0]), 1);
+    }
+
+    event_loop_close(&set);
+
+    for (int i = 0; i < created; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+}
+
+static void test_registration_failure_is_not_silent(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+
+    if (event_loop_init(&set) != 0) {
+        g_fail++;
+        printf("[FAIL] init for registration failure\n");
+        return;
+    }
+
+    errno = 0;
+    event_loop_add_fd(&set, -1);
+
+    expect_int("invalid registration is recorded",
+               event_loop_registration_failed(&set), 1);
+    expect_int("invalid registration errno", errno, EINVAL);
+    expect_int("wait fails after registration failure",
+               event_loop_wait(&set, &ready, 1000), -1);
+
+    event_loop_reset(&set);
+
+    expect_int("reset clears registration failure",
+               event_loop_registration_failed(&set), 0);
+    expect_int("wait works after registration reset",
+               event_loop_wait(&set, &ready, 1000), 0);
+
+    event_loop_close(&set);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -239,6 +317,8 @@ int main(int argc, char **argv)
     test_wait_writable_pipe();
     test_reset_keeps_loop_reusable();
     test_reset_clears_registered_fds();
+    test_registration_capacity();
+    test_registration_failure_is_not_silent();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
