@@ -11,7 +11,6 @@
 #include "daemon_tx_policy.h"
 #include "radio_channel.h"
 #include "daemon_stats.h"
-#include "daemon_tx_worker.h"
 #include "radio_health.h"
 
 /* --- Radio hardware/runtime state --------------------------------------- */
@@ -55,7 +54,6 @@ struct RadioController {
     std::atomic<bool> tx_queue_active;
     RadioTxMode_t tx_mode;
     uint16_t tx_result_seq;
-    DaemonTxWorker tx_worker;
 
     std::atomic<uint32_t> cad_wait_timeout_ms;
     std::atomic<uint32_t> cad_idle_stable_ms;
@@ -101,7 +99,6 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->tx_queue_active.store(true);
     ctrl->tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl->tx_result_seq = 0;
-    daemon_tx_worker_init(&ctrl->tx_worker);
 
     ctrl->cad_wait_timeout_ms.store(DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS);
     ctrl->cad_idle_stable_ms.store(DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS);

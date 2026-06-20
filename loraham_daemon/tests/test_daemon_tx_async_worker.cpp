@@ -250,7 +250,7 @@ static void test_full_queue_rejects(void)
     DaemonTxJob extra = make_job(99);
     expect_int("async full reject", daemon_tx_async_worker_submit(&async, &extra), -1);
     expect_size("async rejected count", daemon_tx_async_worker_rejected(&async), 1);
-    expect_size("async dropped count", daemon_tx_async_worker_dropped(&async), 1);
+    expect_size("async dropped count", daemon_tx_async_worker_dropped(&async), 0);
     expect_size("async pending capacity", daemon_tx_async_worker_pending(&async),
                 DAEMON_TX_QUEUE_CAPACITY);
 }

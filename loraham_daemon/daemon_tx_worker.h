@@ -101,6 +101,7 @@ static inline void daemon_tx_worker_record_result(const DaemonTxJobResult *resul
         drain->result_fn(result, drain->result_ctx);
 }
 
+/* Testnaht: synchrones Leeren. */
 static inline size_t daemon_tx_worker_drain(DaemonTxWorker *worker,
                                             DaemonTxSendFn send_fn,
                                             void *send_ctx,

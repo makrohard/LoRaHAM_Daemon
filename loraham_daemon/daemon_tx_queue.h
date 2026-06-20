@@ -21,7 +21,7 @@ typedef struct {
     size_t head;
     size_t tail;
     size_t count;
-    size_t dropped;
+    size_t dropped; /* Beim Stop verworfen. */
 } DaemonTxQueue;
 
 static inline void daemon_tx_queue_init(DaemonTxQueue *queue)
@@ -59,7 +59,7 @@ static inline int daemon_tx_queue_push(DaemonTxQueue *queue,
         return -1;
 
     if (daemon_tx_queue_full(queue)) {
-        queue->dropped++;
+        /* Voll: Übergabe abgewiesen, kein Paket verworfen. */
         return -1;
     }
 
@@ -101,6 +101,7 @@ static inline size_t daemon_tx_queue_discard_all(DaemonTxQueue *queue)
     return discarded;
 }
 
+/* Testnaht: synchrones Leeren. */
 static inline size_t daemon_tx_queue_drain(DaemonTxQueue *queue,
                                            DaemonTxSendFn send_fn,
                                            void *send_ctx,

@@ -78,6 +78,12 @@ size_t daemon_tx_async_runtime_dropped_for_band(int band)
     return 0;
 }
 
+size_t daemon_tx_async_runtime_rejected_for_band(int band)
+{
+    (void)band;
+    return 0;
+}
+
 size_t daemon_tx_async_runtime_processed_for_band(int band)
 {
     (void)band;
@@ -394,6 +400,7 @@ static void test_status_uses_cad_broadcast_latch(void)
     ctrl.cad_broadcast_active.store(true);
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status reports broadcast CAD", status, " CAD=1 ");
+    expect_contains("status reports queue rejects", status, " TXQREJECT=0 ");
 }
 
 static void test_dispatch_get_channel_restores_rx(void)

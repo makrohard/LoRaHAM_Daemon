@@ -73,7 +73,6 @@ DATA/RF/TX:
 - `test_daemon_tx_worker`
 - `test_daemon_tx_async_worker`
 - `test_daemon_tx_async_runtime`
-- `test_radio_controller_tx_worker`
 - `test_rf_packet`
 - `test_framed_data` (including `TX_RESULT` layout)
 - `test_framed_data_tx`
@@ -119,13 +118,13 @@ Public integration baseline:
 
 - `test_daemon_tx_queue` verifies the bounded TX queue contract and synchronous drain seam without changing daemon TX behavior.
 
-- `test_daemon_tx_worker` verifies the future TX worker state facade without changing daemon TX behavior.
+- `test_daemon_tx_worker` verifies the synchronous TX worker test facade and drain seam.
 
 - `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path, last-completion bookkeeping, target/sequence/generation propagation, completion queue handoff, RAW/MANAGED CAD wait policy behavior, MANAGED stable-idle enforcement, CAD-timeout flag preservation, and synchronous TX-busy timeout behavior with fast bounded test limits while keeping default DATA TX direct.
 
-- `test_radio_controller_tx_worker` verifies that each radio controller owns initialized TX worker state.
+- `test_daemon_tx_async_worker` verifies the standalone async TX worker lifecycle.
 
-- `test_daemon_tx_async_worker` verifies the standalone async TX worker skeleton without wiring it into daemon runtime.
+- `test_daemon_tx_async_worker_stress` verifies concurrent submit/stop accounting.
 
 - `test_daemon_tx_async_runtime` verifies daemon-owned async TX worker lifecycle state without live TX routing.
 

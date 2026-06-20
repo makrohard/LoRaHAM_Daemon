@@ -79,7 +79,6 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
     ctrl->tx_busy.store(false);
     ctrl->cad_active.store(false);
     ctrl->getrssi_active.store(false);
-    daemon_tx_worker_init(&ctrl->tx_worker);
     daemon_radio_stats_init(&ctrl->stats);
     daemon_debug_band(tag, "Zustand zurückgesetzt");
 }
