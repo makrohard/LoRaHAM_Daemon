@@ -91,6 +91,41 @@ static inline void radio_cad_restore_rx_after_probe(RadioController<RadioT> *ctr
 }
 
 template<typename RadioT>
+static inline RadioCadProbeResult radio_cad_try_probe(RadioController<RadioT> *ctrl)
+{
+    RadioCadProbeResult result = radio_cad_probe_unavailable();
+
+    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
+        return result;
+
+    if (ctrl->tx_busy.load())
+        return result;
+
+    std::unique_lock<std::recursive_mutex> radio_lock(
+        ctrl->radio_mutex, std::try_to_lock);
+    if (!radio_lock.owns_lock())
+        return result;
+
+    if (ctrl->tx_busy.load())
+        return result;
+
+    result.rssi_dbm = ctrl->radio->getRSSI();
+
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return result;
+
+    ctrl->cad_active.store(true);
+    result.scan_state = ctrl->radio->scanChannel();
+    ctrl->cad_active.store(false);
+    radio_cad_restore_rx_after_probe(ctrl);
+
+    result.scan_ran = 1;
+    result.status = radio_cad_status_from_scan_state(result.scan_state);
+
+    return result;
+}
+
+template<typename RadioT>
 static inline RadioCadProbeResult radio_cad_probe(RadioController<RadioT> *ctrl)
 {
     RadioCadProbeResult result = radio_cad_probe_unavailable();

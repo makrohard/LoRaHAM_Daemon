@@ -441,8 +441,8 @@ static void test_dispatch_get_channel_restores_rx(void)
     expect_contains("get channel live rssi", out, "LIVERSSI=-200.00");
     expect_contains("get channel mode", out, "MODE=LORA");
     expect_contains("get channel txmode", out, "TXMODE=MANAGED");
-    expect_int("get channel callback restored", ctrl.radio->callback_count, 2);
-    expect_int("get channel startReceive called", ctrl.radio->start_receive_count, 2);
+    expect_int("get channel callback restored", ctrl.radio->callback_count, 1);
+    expect_int("get channel startReceive called", ctrl.radio->start_receive_count, 1);
     expect_int("get channel client open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -450,6 +450,79 @@ static void test_dispatch_get_channel_restores_rx(void)
     client_slot_close(&slots[0]);
 }
 
+
+static void test_dispatch_get_channel_during_tx_skips_scan(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    char out[256];
+    ssize_t n;
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    ctrl.tx_busy.store(true);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+    memset(out, 0, sizeof(out));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config GET CHANNEL busy init\n");
+        return;
+    }
+
+    write(sv[0], "GET CHANNEL\n", strlen("GET CHANNEL\n"));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("get channel busy wait",
+               event_loop_wait(&set, &readfds, 100000),
+               1);
+
+    ConfigDispatchContext<FakeRadio> ctx =
+        make_context(slots, &ctrl);
+
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    n = read(sv[0], out, sizeof(out) - 1);
+    if (n < 0)
+        n = 0;
+    out[n] = '\0';
+
+    expect_int("get channel busy apply count", g_apply_state.calls, 0);
+    expect_int("get channel busy no scan", ctrl.radio->scan_count, 0);
+    expect_contains("get channel busy marker", out, "BUSY=1");
+    expect_contains("get channel busy CAD marker", out, "CAD=0");
+    expect_contains("get channel busy scan marker", out, "CADSCAN=0");
+    expect_contains("get channel busy state", out, "CADSTATE=UNAVAILABLE");
+    expect_int("get channel busy callback untouched",
+               ctrl.radio->callback_count,
+               0);
+    expect_int("get channel busy RX untouched",
+               ctrl.radio->start_receive_count,
+               0);
+    expect_int("get channel busy client open",
+               client_slot_has_client(&slots[0]),
+               1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
 
 static void test_dispatch_set_txqueue(void)
 {
@@ -939,6 +1012,7 @@ int main(int argc, char **argv)
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();
     test_dispatch_get_channel_restores_rx();
+    test_dispatch_get_channel_during_tx_skips_scan();
     test_dispatch_set_txresult();
     test_dispatch_set_txqueue();
     test_dispatch_closes_eof_client();

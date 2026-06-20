@@ -221,6 +221,27 @@ static void test_probe_waits_for_radio_access_guard(void)
 }
 
 
+static void test_try_probe_skips_active_tx(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.radio->scan_result = 1;
+    ctrl.tx_busy.store(true);
+
+    result = radio_cad_try_probe(&ctrl);
+
+    expect_int("try probe busy unavailable",
+               result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("try probe busy scan not run", result.scan_ran, 0);
+    expect_int("try probe busy no scan", ctrl.radio->scan_count, 0);
+    expect_int("try probe busy cad flag clear",
+               ctrl.cad_active.load() ? 1 : 0,
+               0);
+}
+
 static void test_tx_wait_raw_mode_uses_single_cad_probe(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -279,6 +300,7 @@ int main(int argc, char **argv)
     test_probe_fsk_has_rssi_no_cad();
     test_probe_lora_free_busy_error();
     test_probe_waits_for_radio_access_guard();
+    test_try_probe_skips_active_tx();
     test_tx_wait_raw_mode_uses_single_cad_probe();
     test_tx_wait_fsk_skips_cad();
 
