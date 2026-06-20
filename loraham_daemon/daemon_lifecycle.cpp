@@ -61,6 +61,28 @@ static void daemon_lifecycle_close_inherited_fds(void)
         close((int)fd);
 }
 
+int daemon_lifecycle_redirect_stdio(const char *log_path)
+{
+    if (!log_path || log_path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (!freopen(log_path, "a", stdout))
+        return -1;
+
+    if (dup2(fileno(stdout), STDERR_FILENO) < 0)
+        return -1;
+
+    if (setvbuf(stdout, NULL, _IOLBF, 0) != 0)
+        return -1;
+
+    if (setvbuf(stderr, NULL, _IONBF, 0) != 0)
+        return -1;
+
+    return 0;
+}
+
 void daemon_lifecycle_enter_background(void)
 {
     pid_t pid = fork();
@@ -81,10 +103,7 @@ void daemon_lifecycle_enter_background(void)
     if (!freopen("/dev/null", "r", stdin))
         exit(EXIT_FAILURE);
 
-    if (!freopen("/tmp/lora_daemon.log", "w", stdout))
-        exit(EXIT_FAILURE);
-
-    if (!freopen("/tmp/lora_daemon.log", "w", stderr))
+    if (daemon_lifecycle_redirect_stdio("/tmp/lora_daemon.log") != 0)
         exit(EXIT_FAILURE);
 
     daemon_lifecycle_close_inherited_fds();
