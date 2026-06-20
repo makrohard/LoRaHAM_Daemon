@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Queued LoRa jobs now retain their CAD callback across later non-CAD submissions.
 - Test sources now avoid avoidable initialization and string-copy build warnings.
 - Async completion stats targets now use atomic worker-to-runtime handoff.
 - STATUS now reports completion-queue evictions as TXQRESULTDROP.

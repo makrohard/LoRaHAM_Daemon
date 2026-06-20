@@ -247,7 +247,9 @@ static void daemon_data_tx_configure_worker_cad(DaemonTxAsyncWorker *async,
     if (!async)
         return;
 
-    if (!tx || !tx->ctrl || !job || !job->cad_enabled) {
+    (void)job;
+
+    if (!tx || !tx->ctrl) {
         daemon_tx_async_worker_configure_cad(async, NULL, NULL, NULL, NULL);
         return;
     }

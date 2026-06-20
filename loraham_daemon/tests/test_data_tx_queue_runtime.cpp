@@ -450,6 +450,55 @@ static void test_cad_free_does_not_set_timeout_flag(void)
 }
 
 
+static void test_queued_cad_callback_survives_later_non_cad_config(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    DaemonTxAsyncWorker *worker;
+    DaemonTxJob protected_job;
+    DaemonTxJob later_non_cad_job;
+    DaemonTxJobResult last;
+    uint8_t payload[] = { 0x42 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 1;
+
+    worker = daemon_tx_async_runtime_worker_for_band(433);
+    daemon_tx_async_worker_configure(worker, fake_send, &sender, NULL, NULL);
+
+    daemon_tx_job_init(&protected_job, 433, RADIO_TX_MODE_MANAGED, 90);
+    daemon_tx_job_configure_cad_policy(&protected_job, 1, 1, 1, 0, 0);
+    daemon_tx_job_set_payload(&protected_job, payload, sizeof(payload));
+    daemon_data_tx_configure_worker_cad(worker, &ctx, &protected_job);
+    expect_int("queued CAD callback queue protected",
+               daemon_tx_async_worker_submit(worker, &protected_job),
+               0);
+
+    daemon_tx_job_init(&later_non_cad_job, 433, RADIO_TX_MODE_MANAGED, 91);
+    daemon_data_tx_configure_worker_cad(worker, &ctx, &later_non_cad_job);
+
+    expect_int("queued CAD callback start",
+               daemon_tx_async_worker_start(worker),
+               0);
+    expect_int("queued CAD callback processed",
+               wait_async_processed(433, 1),
+               1);
+    expect_int("queued CAD callback probe", ctrl.radio->scan_count, 1);
+    expect_int("queued CAD callback blocks send", sender.calls, 0);
+    expect_int("queued CAD callback last result",
+               daemon_tx_async_runtime_last_result_for_band(433, &last),
+               1);
+    expect_int("queued CAD callback result busy",
+               last.tx_result,
+               TX_RESULT_CAD_TIMEOUT);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
+
 static void test_queued_managed_cad_runs_in_worker(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -570,6 +619,7 @@ int main(int argc, char **argv)
     test_managed_busy_resets_stable_idle();
     test_cad_timeout_sets_result_flag();
     test_cad_free_does_not_set_timeout_flag();
+    test_queued_cad_callback_survives_later_non_cad_config();
     test_queued_managed_cad_runs_in_worker();
     test_queued_raw_cad_busy_blocks_in_worker();
     test_not_ready_still_short_circuits();
