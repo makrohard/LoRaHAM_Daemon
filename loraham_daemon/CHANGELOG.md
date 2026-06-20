@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Worker CAD mode checks now serialize with CONFIG radio-mode changes.
 - Queued LoRa jobs now retain their CAD callback across later non-CAD submissions.
 - Test sources now avoid avoidable initialization and string-copy build warnings.
 - Async completion stats targets now use atomic worker-to-runtime handoff.

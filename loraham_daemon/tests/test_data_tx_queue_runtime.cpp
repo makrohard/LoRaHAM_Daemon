@@ -449,6 +449,25 @@ static void test_cad_free_does_not_set_timeout_flag(void)
                0);
 }
 
+static void test_worker_cad_mode_check_uses_radio_lock(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_FSK;
+
+    expect_int("worker FSK CAD reports free",
+               daemon_data_tx_worker_cad_probe<FakeRadio>(433, &ctrl),
+               DAEMON_TX_CAD_PROBE_FREE);
+    expect_int("worker FSK CAD does not scan",
+               ctrl.radio->scan_count,
+               0);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
 
 static void test_queued_cad_callback_survives_later_non_cad_config(void)
 {
@@ -619,6 +638,7 @@ int main(int argc, char **argv)
     test_managed_busy_resets_stable_idle();
     test_cad_timeout_sets_result_flag();
     test_cad_free_does_not_set_timeout_flag();
+    test_worker_cad_mode_check_uses_radio_lock();
     test_queued_cad_callback_survives_later_non_cad_config();
     test_queued_managed_cad_runs_in_worker();
     test_queued_raw_cad_busy_blocks_in_worker();

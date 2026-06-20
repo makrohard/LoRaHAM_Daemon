@@ -215,6 +215,8 @@ static int daemon_data_tx_worker_cad_probe(int band, void *ctx)
     if (!ctrl || band != radio_controller_band_number(ctrl))
         return DAEMON_TX_CAD_PROBE_UNAVAILABLE;
 
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
+
     if (!radio_controller_ready(ctrl))
         return DAEMON_TX_CAD_PROBE_UNAVAILABLE;
 
