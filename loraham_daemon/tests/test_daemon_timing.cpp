@@ -2,6 +2,8 @@
 #include "../daemon_monitoring.h"
 #include "../daemon_protocol.h"
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -26,6 +28,20 @@ static void expect_int(const char *name, int actual, int expected)
     } else {
         g_fail++;
         printf("[FAIL] %s: expected %d, got %d\n", name, expected, actual);
+    }
+}
+
+static void expect_time(const char *name,
+                        DaemonTimeMs actual,
+                        DaemonTimeMs expected)
+{
+    if (actual == expected) {
+        g_ok++;
+        printf("[ OK ] %s\n", name);
+    } else {
+        g_fail++;
+        printf("[FAIL] %s: expected %" PRId64 ", got %" PRId64 "\n",
+               name, (int64_t)expected, (int64_t)actual);
     }
 }
 
@@ -87,15 +103,42 @@ static void test_deadline_timer(void)
 }
 
 
+static void test_deadline_timer_crosses_32bit_ms(void)
+{
+    const DaemonTimeMs start = INT64_C(2147483600);
+    DaemonDeadlineTimer timer;
+
+    daemon_deadline_timer_init(&timer, start, INT64_C(100));
+
+    expect_time("deadline crosses 32-bit next due",
+                timer.next_due_ms, start + INT64_C(100));
+    expect_time("deadline timeout across 32-bit boundary",
+                daemon_deadline_timer_timeout_ms(&timer, start),
+                INT64_C(100));
+    expect_int("deadline waits across 32-bit boundary",
+               daemon_deadline_timer_due(&timer, start + INT64_C(99)),
+               0);
+    expect_int("deadline fires across 32-bit boundary",
+               daemon_deadline_timer_due(&timer, start + INT64_C(100)),
+               1);
+    expect_time("deadline advances across 32-bit boundary",
+                timer.next_due_ms, start + INT64_C(200));
+    expect_int("deadline catches up across 32-bit boundary",
+               daemon_deadline_timer_due(&timer, start + INT64_C(450)),
+               1);
+    expect_time("deadline catches up with 64-bit arithmetic",
+                timer.next_due_ms, start + INT64_C(500));
+}
+
 static void test_monitoring_cad_gate(void)
 {
     DaemonDeadlineTimer timer;
     int probes = 0;
-    long last_probe = 0;
+    DaemonTimeMs last_probe = 0;
 
     daemon_deadline_timer_init(&timer, 1000, DAEMON_CAD_POLL_INTERVAL_MS);
 
-    for (long now = 1000; now <= 2000; now += 50) {
+    for (DaemonTimeMs now = 1000; now <= 2000; now += 50) {
         if (daemon_monitoring_cad_probe_due(&timer, now, 1)) {
             if (last_probe > 0) {
                 expect_int("CAD gate interval",
@@ -111,7 +154,7 @@ static void test_monitoring_cad_gate(void)
 
     daemon_deadline_timer_init(&timer, 1000, DAEMON_CAD_POLL_INTERVAL_MS);
     probes = 0;
-    for (long now = 1000; now <= 2000; now += 50) {
+    for (DaemonTimeMs now = 1000; now <= 2000; now += 50) {
         if (daemon_monitoring_cad_probe_due(&timer, now, 0))
             probes++;
     }
@@ -164,16 +207,18 @@ static void test_tx_status_generation_order(void)
 
 static void test_monotonic_now_ms(void)
 {
-    long t1 = daemon_now_ms();
+    DaemonTimeMs t1 = daemon_now_ms();
     usleep(1000);
-    long t2 = daemon_now_ms();
+    DaemonTimeMs t2 = daemon_now_ms();
 
     if (t2 >= t1) {
         g_ok++;
         printf("[ OK ] monotonic now does not go backwards\n");
     } else {
         g_fail++;
-        printf("[FAIL] monotonic now went backwards: %ld -> %ld\n", t1, t2);
+        printf("[FAIL] monotonic now went backwards: %" PRId64
+               " -> %" PRId64 "\n",
+               (int64_t)t1, (int64_t)t2);
     }
 }
 
@@ -201,6 +246,7 @@ int main(int argc, char **argv)
     test_plain_counter_tick();
     test_state_counter_tick();
     test_deadline_timer();
+    test_deadline_timer_crosses_32bit_ms();
     test_monitoring_cad_gate();
     test_cad_broadcast_edges();
     test_tx_status_generation_order();

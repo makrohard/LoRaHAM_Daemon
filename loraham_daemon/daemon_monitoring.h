@@ -9,7 +9,7 @@
 
 static inline int daemon_monitoring_cad_probe_due(
     DaemonDeadlineTimer *cad_timer,
-    long now_ms,
+    DaemonTimeMs now_ms,
     int has_conf_clients)
 {
     if (!cad_timer || !has_conf_clients)

@@ -1,6 +1,12 @@
 #ifndef LORAHAM_DAEMON_TIMING_H
 #define LORAHAM_DAEMON_TIMING_H
 
+#include <stdint.h>
+
+/* --- Millisekunden-Zeittyp -------------------------------------------- */
+
+typedef int64_t DaemonTimeMs;
+
 /* --- Event-loop timing --- */
 
 #define DAEMON_EVENT_LOOP_TIMEOUT_USEC 10000
@@ -25,20 +31,21 @@ int daemon_tick_due(int *counter, int interval);
 /* --- Deadline timer helper --- */
 
 typedef struct {
-    long interval_ms;
-    long next_due_ms;
+    DaemonTimeMs interval_ms;
+    DaemonTimeMs next_due_ms;
 } DaemonDeadlineTimer;
 
 void daemon_deadline_timer_init(DaemonDeadlineTimer *timer,
-                                long now_ms,
-                                long interval_ms);
-long daemon_deadline_timer_timeout_ms(const DaemonDeadlineTimer *timer,
-                                      long now_ms);
+                                DaemonTimeMs now_ms,
+                                DaemonTimeMs interval_ms);
+DaemonTimeMs daemon_deadline_timer_timeout_ms(
+    const DaemonDeadlineTimer *timer,
+    DaemonTimeMs now_ms);
 int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
-                              long now_ms);
+                              DaemonTimeMs now_ms);
 
 /* --- Monotonic time --- */
 
-long daemon_now_ms(void);
+DaemonTimeMs daemon_now_ms(void);
 
 #endif
