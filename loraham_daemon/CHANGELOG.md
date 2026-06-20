@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Added persistent epoll reconciliation primitives with reuse-safe tests.
 - Removed stale controller TX state and clarified TX queue counters.
 - CI now runs pinned RadioLib builds with normal, strict, ASan/UBSan, and TSan tests.
 - Tests now support ASan/UBSan and TSan modes with TX worker stress coverage.
