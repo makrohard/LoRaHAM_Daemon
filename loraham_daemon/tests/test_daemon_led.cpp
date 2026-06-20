@@ -1,4 +1,5 @@
 #include "../daemon_led.h"
+#include "../daemon_radio_runtime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -24,6 +25,11 @@ static unsigned g_write_pins[8];
 static int g_write_levels[8];
 static unsigned g_free_pins[4];
 
+// Last GPIO write, tracked independently of the bounded arrays above so the
+// sync_led tests can assert the final LED state after many writes.
+static int g_last_write_pin = -1;
+static int g_last_write_level = -1;
+
 extern "C" int lgGpiochipOpen(int gpio_dev)
 {
     (void)gpio_dev;
@@ -39,13 +45,13 @@ extern "C" int lgGpiochipClose(int handle)
 }
 
 extern "C" int lgGpioClaimOutput(int handle, int flags,
-                                 unsigned gpio, int level)
+                                 int gpio, int level)
 {
     (void)handle;
     (void)flags;
 
     if (g_claim_count < (int)(sizeof(g_claim_pins) / sizeof(g_claim_pins[0]))) {
-        g_claim_pins[g_claim_count] = gpio;
+        g_claim_pins[g_claim_count] = (unsigned)gpio;
         g_claim_levels[g_claim_count] = level;
     }
     g_claim_count++;
@@ -59,24 +65,26 @@ extern "C" int lgGpioClaimOutput(int handle, int flags,
     return -99;
 }
 
-extern "C" int lgGpioWrite(int handle, unsigned gpio, int level)
+extern "C" int lgGpioWrite(int handle, int gpio, int level)
 {
     (void)handle;
 
     if (g_write_count < (int)(sizeof(g_write_pins) / sizeof(g_write_pins[0]))) {
-        g_write_pins[g_write_count] = gpio;
+        g_write_pins[g_write_count] = (unsigned)gpio;
         g_write_levels[g_write_count] = level;
     }
     g_write_count++;
+    g_last_write_pin = gpio;
+    g_last_write_level = level;
     return 0;
 }
 
-extern "C" int lgGpioFree(int handle, unsigned gpio)
+extern "C" int lgGpioFree(int handle, int gpio)
 {
     (void)handle;
 
     if (g_free_count < (int)(sizeof(g_free_pins) / sizeof(g_free_pins[0])))
-        g_free_pins[g_free_count] = gpio;
+        g_free_pins[g_free_count] = (unsigned)gpio;
     g_free_count++;
     return 0;
 }
@@ -105,6 +113,9 @@ static void reset_fake(void)
     g_claim_count = 0;
     g_write_count = 0;
     g_free_count = 0;
+
+    g_last_write_pin = -1;
+    g_last_write_level = -1;
 
     memset(g_claim_pins, 0, sizeof(g_claim_pins));
     memset(g_claim_levels, 0, sizeof(g_claim_levels));
@@ -188,12 +199,147 @@ static void test_chip_open_failure(void)
     expect_int("chip open failure closes nothing", g_close_count, 0);
 }
 
+/* --- sync_led derived-state tests --------------------------------------- */
+// Empty radio stand-in: sync_led never touches the radio, only the atomics.
+struct FakeRadio {};
+
+static void fake_rx_callback(void)
+{
+}
+
+static void init_led_ctrl(RadioController<FakeRadio> *ctrl)
+{
+    radio_controller_init(ctrl,
+                          RADIO_BAND_433,
+                          "TEST",
+                          false,
+                          fake_rx_callback,
+                          DAEMON_LED_PIN_433);
+}
+
+// Calls sync_led and asserts a write happened to the band pin at `level`.
+static void expect_sync_write(RadioController<FakeRadio> *ctrl,
+                              const char *name,
+                              int level)
+{
+    int before = g_write_count;
+
+    daemon_radio_runtime_sync_led(ctrl);
+
+    if (g_write_count != before + 1) {
+        g_fail++;
+        printf("[FAIL] %s: expected a write, count %d -> %d\n",
+               name, before, g_write_count);
+        return;
+    }
+
+    expect_int(name, g_last_write_level, level);
+    expect_int("sync write targets band pin", g_last_write_pin, ctrl->led_pin);
+}
+
+// Calls sync_led and asserts the cache suppressed the redundant GPIO write.
+static void expect_sync_no_write(RadioController<FakeRadio> *ctrl,
+                                 const char *name)
+{
+    int before = g_write_count;
+
+    daemon_radio_runtime_sync_led(ctrl);
+    expect_int(name, g_write_count, before);
+}
+
+static void test_sync_led_derived_state(void)
+{
+    RadioController<FakeRadio> ctrl;
+
+    reset_fake();
+    daemon_led_init();
+    init_led_ctrl(&ctrl);
+
+    // OFF when both atomics are false.
+    ctrl.tx_busy.store(false);
+    ctrl.cad_broadcast_active.store(false);
+    expect_sync_write(&ctrl, "sync off when idle", 0);
+
+    // ON when tx_busy is true (cad still false).
+    ctrl.tx_busy.store(true);
+    expect_sync_write(&ctrl, "sync on when tx busy", 1);
+
+    // Redundant call with unchanged state writes nothing (cache).
+    expect_sync_no_write(&ctrl, "sync caches steady on");
+
+    // Still ON when both are true.
+    ctrl.cad_broadcast_active.store(true);
+    expect_sync_no_write(&ctrl, "sync stays on tx+cad");
+
+    // Back to idle -> OFF.
+    ctrl.tx_busy.store(false);
+    ctrl.cad_broadcast_active.store(false);
+    expect_sync_write(&ctrl, "sync off when both clear", 0);
+
+    // ON when only cad is busy (tx false).
+    ctrl.cad_broadcast_active.store(true);
+    expect_sync_write(&ctrl, "sync on when cad busy", 1);
+
+    // OFF again when both return to false.
+    ctrl.cad_broadcast_active.store(false);
+    expect_sync_write(&ctrl, "sync off again", 0);
+}
+
+static void test_sync_led_no_rx_latch(void)
+{
+    RadioController<FakeRadio> ctrl;
+
+    reset_fake();
+    daemon_led_init();
+    init_led_ctrl(&ctrl);
+
+    // Spurious/empty-IRQ regression: RX observing a flag must never hold the
+    // LED on. sync_led ignores `received`, so with both atomics false the LED
+    // is OFF even while an RX flag is pending.
+    ctrl.tx_busy.store(false);
+    ctrl.cad_broadcast_active.store(false);
+    ctrl.received.store(true);
+    expect_sync_write(&ctrl, "pending rx flag does not latch led", 0);
+
+    // RX-during-TX discard regression: while transmitting the LED is ON; once
+    // TX clears (the discard path leaves the LED untouched) reconciliation
+    // turns it OFF.
+    ctrl.tx_busy.store(true);
+    expect_sync_write(&ctrl, "led on during tx", 1);
+
+    ctrl.received.store(false);   // discard path clears the RX flag, no LED write
+    ctrl.tx_busy.store(false);
+    expect_sync_write(&ctrl, "led off after tx ends", 0);
+}
+
+static void test_sync_led_cad_off_edge(void)
+{
+    RadioController<FakeRadio> ctrl;
+
+    reset_fake();
+    daemon_led_init();
+    init_led_ctrl(&ctrl);
+
+    // Channel busy -> ON.
+    ctrl.cad_broadcast_active.store(true);
+    expect_sync_write(&ctrl, "cad busy turns led on", 1);
+
+    // Channel free while an RX flag is still pending. The old code gated the
+    // OFF on !received and latched; sync_led derives purely from the atomics.
+    ctrl.received.store(true);
+    ctrl.cad_broadcast_active.store(false);
+    expect_sync_write(&ctrl, "cad free turns led off despite rx flag", 0);
+}
+
 int main(void)
 {
     test_successful_lifecycle();
     test_second_claim_failure_cleans_first();
     test_first_claim_failure_stops_cleanly();
     test_chip_open_failure();
+    test_sync_led_derived_state();
+    test_sync_led_no_rx_latch();
+    test_sync_led_cad_off_edge();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

@@ -487,22 +487,24 @@ build_one_daemon_led_test() {
   local src="$1"
   local out="$2"
 
-  "$cxx" \
-    -std=c++20 \
-    -pthread \
-    -Wall \
-    -Wextra \
-    "${strict_flags[@]}" \
-    "${sanitizer_flags[@]}" \
-    "${test_optimization_flags[@]}" \
-    -I"$TEST_DIR/fakes" \
-    -I"$TEST_DIR" \
-    -I"$SCRIPT_DIR" \
-    -o "$out" \
-    "$src" \
-    "$SCRIPT_DIR/daemon_led.cpp"
+  # The sync_led tests instantiate RadioController, so RadioLib headers are
+  # needed. The test supplies its own lgpio fakes (matching <lgpio.h>) and
+  # links the real daemon_led.cpp against them.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for daemon LED test." >&2
+      exit 1
+    fi
+  fi
 
-  echo "Built test:   $out"
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_led.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "${radiolib_libs[@]}"
 }
 
 build_one_radio_health_test() {

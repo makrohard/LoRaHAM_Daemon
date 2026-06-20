@@ -202,7 +202,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
         lora_print_tx_preview(tx_ctx, send_buf, len);
         lora_debug_tx_preview(tx_ctx, send_buf, len);
 
-        daemon_radio_runtime_led(ctrl, 1);
+        daemon_radio_runtime_sync_led(ctrl);
         lora_send_prepare_controller_tx(ctrl);
 
         if (ctrl->band == RADIO_BAND_433) {
@@ -236,14 +236,13 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
         ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
         ctrl->radio->startReceive();
 
-        daemon_radio_runtime_led(ctrl, 0);
-
         result = state == RADIOLIB_ERR_NONE
             ? TX_RESULT_OK
             : TX_RESULT_RADIO_ERROR;
     }
 
     lora_send_release_controller_tx(ctrl);
+    daemon_radio_runtime_sync_led(ctrl);
     return result;
 
 }

@@ -99,16 +99,10 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         hardware_active);
 
     if (hardware_active) {
-        if (ctrl->band == RADIO_BAND_433)
-            setFlashFlag433();
-        else
-            setFlashFlag868();
-
         if (edge > 0) {
             daemon_debug_ctx(ctx, "Aktiv cad=%s scan=%d",
                              radio_cad_probe_status_name(probe.status),
                              probe.scan_state);
-            daemon_radio_runtime_led(ctrl, 1);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
         }
 
@@ -118,12 +112,15 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
             daemon_debug_ctx(ctx, "Inaktiv cad=%s scan=%d",
                              radio_cad_probe_status_name(probe.status),
                              probe.scan_state);
-            daemon_radio_runtime_led(ctrl, 0);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
         }
 
         ctrl->cad_broadcast_active.store(false);
     }
+
+    // The LED is derived from cad_broadcast_active (and tx_busy); reconcile it
+    // immediately after the source-of-truth update.
+    daemon_radio_runtime_sync_led(ctrl);
 }
 /* --- RSSI streaming ------------------------------------------------------- */
 /*
@@ -245,6 +242,18 @@ static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
     daemon_process_rssi_stream(rssi_timer);
 }
 
+/* --- Per-loop LED reconciliation ----------------------------------------- */
+// Safety net: drive each enabled band's LED from the derived state every loop,
+// so a missed edge can never leave the pin latched.
+static void daemon_sync_band_leds(void)
+{
+    if (daemon_radio_433_enabled())
+        daemon_radio_runtime_sync_led(&radio_controller_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_radio_runtime_sync_led(&radio_controller_868);
+}
+
 /* --- Monitoring tick ----------------------------------------------------- */
 void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
                                 DaemonDeadlineTimer *rssi_timer,
@@ -253,4 +262,5 @@ void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
     daemon_process_tx_status_all();
     daemon_process_cad_rssi(cad_timer, rssi_timer);
     daemon_process_periodic_stats(stats_timer);
+    daemon_sync_band_leds();
 }
