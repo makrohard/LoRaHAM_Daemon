@@ -263,6 +263,7 @@ static inline void daemon_tx_async_worker_stop(DaemonTxAsyncWorker *async)
     {
         std::lock_guard<std::mutex> guard(async->lock);
         async->stop_requested = true;
+        daemon_tx_queue_discard_all(&async->worker.queue);
     }
 
     async->wake.notify_all();

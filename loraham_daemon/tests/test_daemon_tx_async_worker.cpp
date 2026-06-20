@@ -1,7 +1,9 @@
 #include "../daemon_tx_async_worker.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <stdio.h>
+#include <mutex>
 #include <string.h>
 #include <thread>
 
@@ -34,6 +36,15 @@ typedef struct {
     int always_busy;
     int sleep_calls;
 } FakeCad;
+
+
+struct BlockingSender {
+    std::mutex lock;
+    std::condition_variable wake;
+    int calls = 0;
+    bool entered = false;
+    bool release = false;
+};
 
 static void expect_int(const char *name, int actual, int expected)
 {
@@ -69,6 +80,43 @@ static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
     sender->calls++;
 
     return sender->result[idx];
+}
+
+
+static TxResult blocking_send(uint8_t *payload, size_t len, int band, void *ctx)
+{
+    BlockingSender *sender = (BlockingSender *)ctx;
+    std::unique_lock<std::mutex> guard(sender->lock);
+
+    (void)payload;
+    (void)len;
+    (void)band;
+
+    sender->calls++;
+    sender->entered = true;
+    sender->wake.notify_all();
+
+    while (!sender->release)
+        sender->wake.wait(guard);
+
+    return TX_RESULT_OK;
+}
+
+static int wait_sender_entered(BlockingSender *sender)
+{
+    std::unique_lock<std::mutex> guard(sender->lock);
+
+    return sender->wake.wait_for(guard,
+                                 std::chrono::seconds(1),
+                                 [sender]() { return sender->entered; }) ? 1 : 0;
+}
+
+static void release_sender(BlockingSender *sender)
+{
+    std::lock_guard<std::mutex> guard(sender->lock);
+
+    sender->release = true;
+    sender->wake.notify_all();
 }
 
 static void record_result(const DaemonTxJobResult *result, void *ctx)
@@ -128,6 +176,18 @@ static int wait_processed(DaemonTxAsyncWorker *async, size_t expected)
     return 0;
 }
 
+
+static int wait_pending_empty(DaemonTxAsyncWorker *async)
+{
+    for (int i = 0; i < 1000; i++) {
+        if (daemon_tx_async_worker_pending(async) == 0)
+            return 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    return 0;
+}
+
 static void test_start_submit_stop(void)
 {
     DaemonTxAsyncWorker async;
@@ -179,36 +239,50 @@ static void test_full_queue_rejects(void)
                 DAEMON_TX_QUEUE_CAPACITY);
 }
 
-static void test_stop_drains_existing_jobs(void)
+static void test_stop_discards_pending_jobs(void)
 {
     DaemonTxAsyncWorker async;
-    FakeSender sender;
+    BlockingSender sender;
     ResultRecorder recorder;
-    DaemonTxJob a = make_job(10);
-    DaemonTxJob b = make_job(11);
+    DaemonTxJob first = make_job(10);
+    DaemonTxJob second = make_job(11);
+    DaemonTxJob third = make_job(12);
 
-    memset(&sender, 0, sizeof(sender));
     memset(&recorder, 0, sizeof(recorder));
-    sender.result[0] = TX_RESULT_OK;
-    sender.result[1] = TX_RESULT_OK;
 
     daemon_tx_async_worker_init(&async);
     daemon_tx_async_worker_configure(&async,
-                                     fake_send,
+                                     blocking_send,
                                      &sender,
                                      record_result,
                                      &recorder);
 
-    expect_int("async start drain", daemon_tx_async_worker_start(&async), 0);
-    expect_int("async submit a", daemon_tx_async_worker_submit(&async, &a), 0);
-    expect_int("async submit b", daemon_tx_async_worker_submit(&async, &b), 0);
+    expect_int("async discard start", daemon_tx_async_worker_start(&async), 0);
+    expect_int("async discard submit first",
+               daemon_tx_async_worker_submit(&async, &first), 0);
+    expect_int("async discard first entered", wait_sender_entered(&sender), 1);
+    expect_int("async discard submit second",
+               daemon_tx_async_worker_submit(&async, &second), 0);
+    expect_int("async discard submit third",
+               daemon_tx_async_worker_submit(&async, &third), 0);
 
-    daemon_tx_async_worker_stop(&async);
+    std::thread stopper([&async]() {
+        daemon_tx_async_worker_stop(&async);
+    });
 
-    expect_int("async drain sender calls", sender.calls, 2);
-    expect_size("async drain processed", daemon_tx_async_worker_processed(&async), 2);
-    expect_size("async drain pending", daemon_tx_async_worker_pending(&async), 0);
+    expect_int("async discard pending cleared", wait_pending_empty(&async), 1);
+
+    release_sender(&sender);
+    stopper.join();
+
+    expect_int("async discard stopped", daemon_tx_async_worker_running(&async), 0);
+    expect_int("async discard sender calls", sender.calls, 1);
+    expect_int("async discard result callback", recorder.calls, 1);
+    expect_size("async discard processed", daemon_tx_async_worker_processed(&async), 1);
+    expect_size("async discard pending", daemon_tx_async_worker_pending(&async), 0);
+    expect_size("async discard dropped", daemon_tx_async_worker_dropped(&async), 2);
 }
+
 
 static void test_worker_cad_waits_before_send(void)
 {
@@ -356,7 +430,7 @@ int main(int argc, char **argv)
 
     test_start_submit_stop();
     test_full_queue_rejects();
-    test_stop_drains_existing_jobs();
+    test_stop_discards_pending_jobs();
     test_worker_cad_waits_before_send();
     test_worker_cad_timeout_blocks_without_send();
     test_worker_cad_timeout_sends_with_flag();

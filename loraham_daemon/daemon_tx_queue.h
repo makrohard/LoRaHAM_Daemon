@@ -83,6 +83,24 @@ static inline int daemon_tx_queue_pop(DaemonTxQueue *queue,
     return 0;
 }
 
+
+static inline size_t daemon_tx_queue_discard_all(DaemonTxQueue *queue)
+{
+    size_t discarded;
+
+    if (!queue)
+        return 0;
+
+    discarded = queue->count;
+    memset(queue->jobs, 0, sizeof(queue->jobs));
+    queue->head = 0;
+    queue->tail = 0;
+    queue->count = 0;
+    queue->dropped += discarded;
+
+    return discarded;
+}
+
 static inline size_t daemon_tx_queue_drain(DaemonTxQueue *queue,
                                            DaemonTxSendFn send_fn,
                                            void *send_ctx,
