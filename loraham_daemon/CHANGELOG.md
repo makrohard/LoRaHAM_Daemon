@@ -1,94 +1,45 @@
 # Changelog
 
+## loraham_daemon 111
+
+- CAD/TX was reworked: MANAGED TX now performs bounded CAD/LBT with a stable
+  idle window and returns `CHANNEL_BUSY` on timeout (default 1.5 s) instead of
+  transmitting, while RAW TX performs an immediate single CAD probe. Per-band
+  CAD policy (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via
+  CONF and reported in `GET STATUS`.
+- DATA TX now runs through a bounded async queue, enabled by default
+  (`SET TXQUEUE=0` keeps the direct path). Daemon-owned worker threads own the
+  CAD/LBT decision, queued jobs retain their CAD callback, and completions are
+  delivered in the main loop as final `TX_RESULT` frames with preserved sequence
+  numbers and client-slot generation checks.
+- RadioLib access now uses a per-radio guard across TX, RX, CAD, RSSI,
+  monitoring, and CONFIG apply. CAD probes restore LoRa RX after scanning, and
+  CAD monitoring uses a dedicated broadcast latch, scanning at most every 200 ms
+  and only for subscribed CONF clients.
+- Status and framed protocol were extended: `GET CHANNEL` reports per-band
+  radio/CAD/RSSI/mode/TXMODE snapshots (LIVERSSI, CADSCAN, CADSTATE, PACKETRSSI)
+  and returns immediately during active TX; framed `TX_RESULT` is configurable
+  per band; STATUS exposes queue and completion counters including
+  `TXQRESULTDROP`.
+- Shutdown now discards queued TX jobs while letting only the in-flight job
+  finish and rejects jobs submitted after shutdown begins. Async completion
+  statistics use an atomic worker-to-runtime handoff and stay in sync with
+  `GET STATS`/`GET STATUS`.
+- Build, test, and operational hardening: release builds are hardened and CI
+  runs pinned-RadioLib normal/strict/ASan-UBSan/TSan suites with TX-worker
+  stress coverage; sockets use 0660 with a restrictive daemon umask; epoll
+  supports 128 FDs and stops cleanly on registration errors; DATA TX LEDs
+  reflect actual RF transmit with partial-claim cleanup. README documents the
+  current TX/CAD/queue/completion/CONF interfaces.
+- Replaced per-loop epoll reset/re-registration with persistent watch
+  reconciliation, dynamic EPOLLOUT interest, stale-watch cleanup, FD-reuse
+  protection, and regression coverage.
+
+
 ## loraham_daemon 110
 
-- Daemon runtime now reconciles persistent epoll watches instead of re-registering them each loop.
-- Added persistent epoll reconciliation primitives with reuse-safe tests.
-- Removed stale controller TX state and clarified TX queue counters.
-- CI now runs pinned RadioLib builds with normal, strict, ASan/UBSan, and TSan tests.
-- Tests now support ASan/UBSan and TSan modes with TX worker stress coverage.
-- Release builds now use hardening; tests support strict bounded runs.
-- Daemon sockets now use 0660 permissions with a restrictive daemon umask.
-- Monotonic deadline timers and stats start time now use 64-bit milliseconds.
-- Daemon logs now share one append-mode file with prompt line output.
-- Epoll registration now supports 128 FDs and stops cleanly on registration errors.
-- TX status broadcasts now drain in the main loop instead of async TX workers.
-- CAD monitoring state now uses a dedicated broadcast latch separate from transient probes.
-- GET CHANNEL now returns immediately during active TX without probing the radio.
-- Per-band runtime CAD policy (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via CONF SET commands and reported in GET STATUS.
-- MANAGED CAD now defaults to a 1.5 s bounded wait and returns CHANNEL_BUSY instead of transmitting on timeout.
-- CAD monitoring now scans at most every 200 ms only for subscribed CONF clients; status documentation was completed.
-- README now documents TXQRESULTDROP and queued-TX shutdown behavior.
-- TX workers now reject jobs submitted after shutdown begins.
-- Worker CAD mode checks now serialize with CONFIG radio-mode changes.
-- Queued LoRa jobs now retain their CAD callback across later non-CAD submissions.
-- Test sources now avoid avoidable initialization and string-copy build warnings.
-- Async completion stats targets now use atomic worker-to-runtime handoff.
-- STATUS now reports completion-queue evictions as TXQRESULTDROP.
-- Daemon shutdown now discards queued TX jobs while allowing only an in-flight job to finish.
-- Runtime radio statistics now synchronize async TX updates with GET STATS formatting.
-- Test runner cleanup now has one authoritative exit handler.
-- Test runner now executes all built tests and removes generated test binaries on exit.
-- LED GPIO claim and shutdown failure paths now have hardware-free tests.
-- LED setup now releases a successfully claimed first pin if the second pin claim fails.
-- LED GPIOs are claimed low at startup and released low on shutdown; radio-init blinking remains.
-- DATA TX LED handling now reflects actual RF transmit instead of queue acceptance.
-- Test runner linkage and GET CHANNEL tests now cover expanded channel status fields.
-- GET CHANNEL now adds explicit LIVERSSI alongside legacy packet RSSI fields.
-- README GET STATUS example now reflects the default TXQUEUE=1 state.
-- GET CHANNEL now adds explicit CADSCAN, CADSTATE, and PACKETRSSI fields while keeping legacy fields.
-- CONF CAD monitoring now uses the shared RadioLib CAD probe path instead of getModemStatus bit checks.
-- The bounded async DATA TX queue is now enabled by default; SET TXQUEUE=0 keeps the direct path available.
-- README duplicate section headings were removed from the current interface documentation.
-- Queued DATA TX statistics are now recorded from async worker completion instead of enqueue acceptance.
-- CAD probes now restore LoRa RX after scan, including busy/error probe exits and GET CHANNEL.
-- Queued DATA TX now defers CAD/LBT decisions to the async worker instead of the dispatch path.
-- Async TX workers now have a worker-side CAD/LBT decision seam for queued TX jobs.
-- RadioLib access now uses a per-radio guard across TX, RX, CAD, RSSI, monitoring, and CONFIG apply paths.
-- README now documents current TX/CAD, queue, completion, and CONF interfaces without milestone history.
-- Stale deferred framed TX_RESULT drops are now counted in TX queue status.
-- Deferred framed TX_RESULT delivery now checks client-slot generation before delivery.
-- DATA TX carries TX-busy wait limits in context so tests avoid real-time policy sleeps.
-- Synchronous DATA TX now drops after the bounded TX-busy policy timeout.
-- MANAGED CAD-timeout send attempts are now visible in runtime statistics.
-- Framed TX_RESULT now preserves MANAGED CAD-timeout send context in flags.
-- MANAGED DATA TX now requires a stable idle CAD window before transmit.
-- DATA TX CAD wait behavior now uses the central CAD/TX policy.
-- Central CAD/TX timing policy constants added for the next runtime step.
-- Queued framed TX_RESULT reporting is now final-only with preserved sequence numbers.
-- Main-loop draining now delivers async TX completions to framed DATA clients.
-- Async TX completions now carry framed-slot targets for safe later delivery.
-- Async TX completions are now queued for later main-loop delivery.
-- Internal TX completion results can now be encoded as framed TX_RESULT frames.
-- Queued async TX last-completion status is now exposed via GET STATUS.
-- TXQUEUE opt-in DATA TX now enqueues into daemon-owned async workers.
-- Daemon-owned async TX worker lifecycle state added without live TX routing.
-- Standalone async TX worker skeleton added for future queued runtime TX.
-- TXQUEUE opt-in DATA TX path now uses bounded queue with synchronous drain.
-- TXQUEUE opt-in configuration and status visibility added without changing TX path.
-- Per-radio TX worker state and passive GET STATUS queue counters added.
-- TX worker state facade added around the bounded queue for future threaded TX.
-- Bounded TX queue contract and synchronous drain seam added for future worker-thread TX.
-- Synchronous DATA TX path now routes through the TX executor seam.
-- Synchronous TX executor seam added for future worker-thread integration.
-- TX job/result structs added as preparation for future async TX worker.
-- Fix TX outcome test string literals so the M5a test builds.
-- Internal TX outcomes now map separately to framed TX_RESULT wire statuses.
-- GET CHANNEL reports per-band radio, CAD, RSSI, mode, and TX mode snapshots.
-- TX guard now uses the real CAD probe and reports CAD-blocked framed TX as CHANNEL_BUSY.
-- Real CAD probe helper added for later TXMODE and GET CHANNEL wiring.
-- CONF TXMODE state can be set per band and is reported in GET STATUS.
-- Framed DATA TX_RESULT can be enabled per band and emitted after TX_PACKET attempts.
-- Framed DATA protocol defines TX_RESULT frame layout and encoder.
-- Framed DATA TX execution failures now emit ERROR and keep the parser/client alive.
-- CAD/TX rework guardrail: add expected-failing framed TX failure characterization.
-
-* CAD/TX was comprehensively reworked: MANAGED TX now uses bounded CAD/LBT with `CHANNEL_BUSY` on timeout by default, while RAW TX performs an immediate CAD probe.
-* Per-band CAD policy is configurable via CONF and visible in `GET STATUS`; queued TX, final `TX_RESULT`, status counters, and statistics were hardened.
-* Radio access, RX recovery, shutdown handling, TX LEDs, documentation, and regression coverage were improved for safe asynchronous TX operation.
-
-
 - Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.
+*Breaks data socket interface dompatibility with 109a*
 
 ## loraham_daemon 109a
 
