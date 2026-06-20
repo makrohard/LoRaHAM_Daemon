@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <mutex>
 
 #include "daemon_stats.h"
 #include "daemon_tx_async_runtime.h"
@@ -372,9 +373,14 @@ static inline const char *config_status_cad_state_name(RadioCadProbeStatus statu
 }
 
 template<typename RadioT>
-static inline float config_status_live_rssi_dbm(const RadioController<RadioT> *ctrl)
+static inline float config_status_live_rssi_dbm(RadioController<RadioT> *ctrl)
 {
-    if (!ctrl || !ctrl->mod)
+    if (!ctrl || !ctrl->mod || ctrl->tx_busy.load())
+        return -200.0f;
+
+    std::unique_lock<std::recursive_mutex> radio_lock(
+        ctrl->radio_mutex, std::try_to_lock);
+    if (!radio_lock.owns_lock() || ctrl->tx_busy.load())
         return -200.0f;
 
     uint8_t reg = (ctrl->mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
@@ -394,7 +400,8 @@ static inline void config_status_format_channel(char *buf,
                                                 size_t buf_size,
                                                 RadioController<RadioT> *ctrl)
 {
-    RadioCadProbeResult probe = radio_cad_probe(ctrl);
+    int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
+    RadioCadProbeResult probe = radio_cad_try_probe(ctrl);
     float live_rssi = config_status_live_rssi_dbm(ctrl);
 
     snprintf(buf,
@@ -402,7 +409,7 @@ static inline void config_status_format_channel(char *buf,
              "CHANNEL RADIO=%s BUSY=%d CAD=%d CADSCAN=%d CADSTATE=%s "
              "RSSI=%.2f PACKETRSSI=%.2f LIVERSSI=%.2f MODE=%s TXMODE=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
-             probe.status == RADIO_CAD_PROBE_BUSY ? 1 : 0,
+             tx_busy || probe.status == RADIO_CAD_PROBE_BUSY ? 1 : 0,
              probe.scan_ran ? 1 : 0,
              probe.scan_ran ? 1 : 0,
              config_status_cad_state_name(probe.status),

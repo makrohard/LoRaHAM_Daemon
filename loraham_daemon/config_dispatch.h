@@ -130,13 +130,6 @@ static void config_dispatch_apply_line(const char *line, void *user)
         }
         client_slot_flush_output(ctx->slot);
 
-        if(ctx->ctrl && ctx->ctrl->radio &&
-           radio_controller_ready(ctx->ctrl) &&
-           ctx->ctrl->mode == RADIO_MODE_LORA) {
-            std::lock_guard<std::recursive_mutex> radio_lock(ctx->ctrl->radio_mutex);
-            ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
-            ctx->ctrl->radio->startReceive();
-        }
         return;
     }
 
