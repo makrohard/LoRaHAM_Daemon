@@ -195,6 +195,18 @@ static inline size_t config_status_txq_stale(const RadioController<RadioT> *ctrl
 
 
 template<typename RadioT>
+static inline size_t config_status_txq_result_dropped(
+    const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl || !ctrl->tx_queue_active.load())
+        return 0;
+
+    return daemon_tx_async_runtime_completion_dropped_for_band(
+        radio_controller_band_number(ctrl));
+}
+
+
+template<typename RadioT>
 static inline size_t config_status_txq_processed(const RadioController<RadioT> *ctrl)
 {
     if (!ctrl)
@@ -250,7 +262,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQSTALE=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
@@ -261,6 +273,7 @@ static inline void config_status_format(char *buf,
              config_status_txq_pending(ctrl),
              config_status_txq_dropped(ctrl),
              config_status_txq_stale(ctrl),
+              config_status_txq_result_dropped(ctrl),
              config_status_txq_processed(ctrl),
              config_status_txq_last_name(ctrl),
              config_status_txq_last_seq(ctrl));

@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- STATUS now reports completion-queue evictions as TXQRESULTDROP.
 - Daemon shutdown now discards queued TX jobs while allowing only an in-flight job to finish.
 - Runtime radio statistics now synchronize async TX updates with GET STATS formatting.
 - Test runner cleanup now has one authoritative exit handler.

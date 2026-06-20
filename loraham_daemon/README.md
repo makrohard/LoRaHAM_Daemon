@@ -134,7 +134,7 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | Framed RX metadata | `4` bytes | `int16` RSSI c-dBm + `int16` SNR c-dB before RF bytes |
 | Framed RX frame | `262` bytes | Maximum complete `RX_PACKET`: 3-byte header + 4-byte metadata + 255 RF bytes |
 | TX queue capacity | `8` jobs | Per-radio bounded async TX queue, reject-newest when full |
-| TX completion queue capacity | `16` results | Per-band bounded async completion queue, drop-oldest when full |
+| TX completion queue capacity | `16` results | Per-band bounded async completion queue, drop-oldest when full; evictions are reported as `TXQRESULTDROP` |
 | TX-busy wait timeout | `120000 ms` / `120 s` | Direct synchronous DATA TX waits this long for another TX to finish before returning BUSY |
 | CAD wait timeout | `20000 ms` / `20 s` | MANAGED TX waits this long for channel availability before applying timeout policy |
 | CAD stable-idle window | `500 ms` | MANAGED TX requires this much continuous idle CAD time before TX |
