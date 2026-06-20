@@ -1,7 +1,6 @@
 #include "daemon_led.h"
 
 #include <stdio.h>
-#include <unistd.h>
 
 #include <lgpio.h>
 
@@ -85,12 +84,4 @@ void daemon_led_set_pin(int pin, int state)
 {
     if (daemon_led_ready())
         lgGpioWrite(daemon_led_chip, pin, state ? 1 : 0);
-}
-
-void daemon_led_flash_pin(int pin)
-{
-    daemon_led_set_pin(pin, 1);
-    usleep(15000);
-    daemon_led_set_pin(pin, 0);
-    usleep(15000);
 }

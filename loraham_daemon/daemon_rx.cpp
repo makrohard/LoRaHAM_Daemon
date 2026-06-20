@@ -39,7 +39,6 @@ template<typename RadioT>
 static void daemon_note_rx_flag_observed(RadioController<RadioT> *ctrl)
 {
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Flag gesetzt");
-    daemon_radio_runtime_led(ctrl, 1);
 }
 
 /* --- RX special cases ---------------------------------------------------- */
@@ -262,7 +261,6 @@ static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
     if (ctrl->band == RADIO_BAND_868)
         memset(buf, 0, buf_len);
 
-    daemon_radio_runtime_led(ctrl, 0);
     ctrl->radio->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit");
 }
@@ -418,7 +416,6 @@ static void daemon_drop_invalid_rx_packet(RadioController<RadioT> *ctrl)
 {
     ctrl->received.store(false);
     ctrl->radio->clearIrq(0xFFFFFFFF);
-    daemon_radio_runtime_led(ctrl, 0);
     ctrl->radio->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit nach Drop");
 }

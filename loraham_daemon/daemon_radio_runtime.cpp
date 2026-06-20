@@ -112,16 +112,6 @@ void setFlag433(void)
     radio_controller_433.received.store(true);
 }
 
-void setFlashFlag868(void)
-{
-    daemon_radio_runtime_flash_led(&radio_controller_868);
-}
-
-void setFlashFlag433(void)
-{
-    daemon_radio_runtime_flash_led(&radio_controller_433);
-}
-
 /* --- Active radio state -------------------------------------------------- */
 
 bool daemon_selected_radio_ready(void)

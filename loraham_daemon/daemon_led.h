@@ -10,6 +10,5 @@ void daemon_led_init(void);
 void daemon_led_shutdown(void);
 int daemon_led_ready(void);
 void daemon_led_set_pin(int pin, int state);
-void daemon_led_flash_pin(int pin);
 
 #endif

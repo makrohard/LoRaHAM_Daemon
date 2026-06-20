@@ -65,6 +65,8 @@ struct RadioController {
     void (*rx_callback)(void);
 
     int led_pin;
+    std::mutex led_mutex;
+    int led_state;
 };
 
 template<typename RadioT>
@@ -110,6 +112,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
 
     ctrl->rx_callback = rx_callback;
     ctrl->led_pin = led_pin;
+    ctrl->led_state = -1;
 }
 
 template<typename RadioT>
