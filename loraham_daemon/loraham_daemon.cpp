@@ -210,6 +210,11 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
         }
 
         perror("event_loop_wait");
+
+        if (event_loop_registration_failed(event_set)) {
+            daemon_lifecycle_request_stop(0);
+        }
+
         return;
     }
 
