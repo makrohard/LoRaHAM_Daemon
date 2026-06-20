@@ -6,11 +6,11 @@
 /* --- CAD/TX-Policy ------------------------------------------------------- */
 
 #define DAEMON_TX_POLICY_BUSY_TIMEOUT_MS      120000u
-#define DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS   20000u
-#define DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS      500u
-#define DAEMON_TX_POLICY_POLL_INTERVAL_MS        100u
+#define DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS    1500u
+#define DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS      250u
+#define DAEMON_TX_POLICY_POLL_INTERVAL_MS         50u
 
-#define DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT 1
+#define DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT 0
 
 static inline uint32_t daemon_tx_policy_ticks_for_ms(uint32_t timeout_ms,
                                                      uint32_t interval_ms)

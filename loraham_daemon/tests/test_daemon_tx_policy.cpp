@@ -33,24 +33,24 @@ static void expect_int(const char *name, int actual, int expected)
 static void test_policy_constants(void)
 {
     expect_u32("busy timeout ms", DAEMON_TX_POLICY_BUSY_TIMEOUT_MS, 120000u);
-    expect_u32("cad wait timeout ms", DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS, 20000u);
-    expect_u32("cad idle stable ms", DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS, 500u);
-    expect_u32("poll interval ms", DAEMON_TX_POLICY_POLL_INTERVAL_MS, 100u);
+    expect_u32("cad wait timeout ms", DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS, 1500u);
+    expect_u32("cad idle stable ms", DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS, 250u);
+    expect_u32("poll interval ms", DAEMON_TX_POLICY_POLL_INTERVAL_MS, 50u);
     expect_u32("poll interval usec",
                daemon_tx_policy_poll_interval_usec(),
-               100000u);
+               50000u);
     expect_int("send after cad timeout",
                daemon_tx_policy_send_after_cad_timeout(),
-               1);
+               0);
 }
 
 static void test_tick_rounding(void)
 {
     expect_u32("ticks exact",
-               daemon_tx_policy_ticks_for_ms(20000u, 100u),
-               200u);
+               daemon_tx_policy_ticks_for_ms(1500u, 50u),
+               30u);
     expect_u32("ticks rounded up",
-               daemon_tx_policy_ticks_for_ms(501u, 100u),
+               daemon_tx_policy_ticks_for_ms(251u, 50u),
                6u);
     expect_u32("ticks zero interval safe",
                daemon_tx_policy_ticks_for_ms(500u, 0u),
@@ -61,10 +61,10 @@ static void test_named_ticks(void)
 {
     expect_u32("busy timeout ticks",
                daemon_tx_policy_busy_timeout_ticks(),
-               1200u);
+               2400u);
     expect_u32("cad wait ticks",
                daemon_tx_policy_cad_wait_ticks(),
-               200u);
+               30u);
     expect_u32("cad stable ticks",
                daemon_tx_policy_cad_idle_stable_ticks(),
                5u);
@@ -73,13 +73,13 @@ static void test_named_ticks(void)
 static void test_timeout_reached(void)
 {
     expect_int("timeout before",
-               daemon_tx_policy_timeout_reached(19999u, 20000u),
+               daemon_tx_policy_timeout_reached(1499u, 1500u),
                0);
     expect_int("timeout exactly",
-               daemon_tx_policy_timeout_reached(20000u, 20000u),
+               daemon_tx_policy_timeout_reached(1500u, 1500u),
                1);
     expect_int("timeout after",
-               daemon_tx_policy_timeout_reached(20001u, 20000u),
+               daemon_tx_policy_timeout_reached(1501u, 1500u),
                1);
     expect_int("timeout disabled",
                daemon_tx_policy_timeout_reached(1u, 0u),

@@ -365,21 +365,28 @@ static void test_raw_busy_probe_blocks_immediately(void)
     expect_int("raw busy rx restarted", ctrl.radio->start_receive_count, 1);
 }
 
-static void test_managed_busy_timeout_policy_sends_anyway(void)
+static void test_managed_busy_timeout_policy_blocks_by_default(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> ctx;
     FakeSender sender;
+    DaemonTxJob job;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
     ctrl.radio->scan_state = 1;
 
-    expect_int("managed busy timeout sends anyway",
+    expect_int("managed busy timeout blocks by default",
                data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 3, 0),
-               DATA_TX_CAD_WAIT_TIMEOUT_SEND);
+               DATA_TX_CAD_WAIT_BLOCK);
     expect_int("managed busy timeout probe count", ctrl.radio->scan_count, 2);
+
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 79);
+    data_tx_configure_job_cad_policy(&ctx, &job);
+    expect_int("managed queued timeout blocks by default",
+               job.cad_send_after_timeout,
+               0);
 }
 
 static void test_managed_free_waits_for_stable_idle(void)
@@ -518,7 +525,7 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
 }
 
 
-static void test_queued_managed_cad_runs_in_worker(void)
+static void test_queued_managed_cad_timeout_blocks_in_worker(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> ctx;
@@ -540,19 +547,21 @@ static void test_queued_managed_cad_runs_in_worker(void)
                1);
     expect_int("queued managed cad processed wait", wait_async_processed(433, 1), 1);
     expect_int("queued managed cad worker probes", ctrl.radio->scan_count, 2);
-    expect_int("queued managed cad sends after timeout", sender.calls, 1);
-    expect_size("queued managed cad stats ok", ctrl.stats.tx_ok, 1);
-    expect_size("queued managed cad stats cadsend", ctrl.stats.cad_timeout_sends, 1);
-    expect_size("queued managed cad stats cadtimeout", ctrl.stats.cad_timeouts, 0);
+    expect_int("queued managed cad timeout blocks send", sender.calls, 0);
+    expect_size("queued managed cad stats no tx ok", ctrl.stats.tx_ok, 0);
+    expect_size("queued managed cad stats no cadsend", ctrl.stats.cad_timeout_sends, 0);
+    expect_size("queued managed cad stats cadtimeout", ctrl.stats.cad_timeouts, 1);
 
     DaemonTxJobResult completion;
     expect_int("queued managed cad completion pop",
                daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
                0);
-    expect_int("queued managed cad completion result", completion.tx_result, TX_RESULT_OK);
-    expect_int("queued managed cad timeout flag",
+    expect_int("queued managed cad completion result",
+               completion.tx_result,
+               TX_RESULT_CAD_TIMEOUT);
+    expect_int("queued managed cad timeout flag clear",
                completion.flags & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
-               FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT);
+               0);
 }
 
 static void test_queued_raw_cad_busy_blocks_in_worker(void)
@@ -633,14 +642,14 @@ int main(int argc, char **argv)
     test_queued_tx_skips_frontdoor_tx_busy_wait();
     test_tx_busy_wait_clears();
     test_raw_busy_probe_blocks_immediately();
-    test_managed_busy_timeout_policy_sends_anyway();
+    test_managed_busy_timeout_policy_blocks_by_default();
     test_managed_free_waits_for_stable_idle();
     test_managed_busy_resets_stable_idle();
     test_cad_timeout_sets_result_flag();
     test_cad_free_does_not_set_timeout_flag();
     test_worker_cad_mode_check_uses_radio_lock();
     test_queued_cad_callback_survives_later_non_cad_config();
-    test_queued_managed_cad_runs_in_worker();
+    test_queued_managed_cad_timeout_blocks_in_worker();
     test_queued_raw_cad_busy_blocks_in_worker();
     test_not_ready_still_short_circuits();
 

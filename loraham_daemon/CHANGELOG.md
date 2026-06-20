@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- MANAGED CAD now defaults to a 1.5 s bounded wait and returns CHANNEL_BUSY instead of transmitting on timeout.
 - CAD monitoring now scans at most every 200 ms only for subscribed CONF clients; status documentation was completed.
 - README now documents TXQRESULTDROP and queued-TX shutdown behavior.
 - TX workers now reject jobs submitted after shutdown begins.

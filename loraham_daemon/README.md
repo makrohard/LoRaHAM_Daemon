@@ -136,17 +136,20 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | TX queue capacity | `8` jobs | Per-radio bounded async TX queue, reject-newest when full |
 | TX completion queue capacity | `16` results | Per-band bounded async completion queue, drop-oldest when full; evictions are reported as `TXQRESULTDROP` |
 | TX-busy wait timeout | `120000 ms` / `120 s` | Direct synchronous DATA TX waits this long for another TX to finish before returning BUSY |
-| CAD wait timeout | `20000 ms` / `20 s` | MANAGED TX waits this long for channel availability before applying timeout policy |
-| CAD stable-idle window | `500 ms` | MANAGED TX requires this much continuous idle CAD time before TX |
-| TX/CAD policy poll interval | `100 ms` | Poll interval used by TX-busy and CAD wait loops |
-| Send after CAD timeout | enabled | MANAGED TX sends after CAD timeout and marks the final result with the CAD-timeout flag |
+| CAD wait timeout | `1500 ms` / `1.5 s` | MANAGED TX waits this long for channel availability before returning `CHANNEL_BUSY` |
+| CAD stable-idle window | `250 ms` | MANAGED TX requires this much continuous idle CAD time before TX |
+| TX/CAD policy poll interval | `50 ms` | Poll interval used by TX-busy and CAD wait loops |
+| Send after CAD timeout | disabled | MANAGED TX returns `CHANNEL_BUSY` after the CAD wait timeout |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD monitor poll interval | `200 ms` | Active CONF `CAD=1/0` scan cadence; no scan without a matching CONF client |
 
 ## Current TX/CAD behavior
 
-The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window, sends after the CAD timeout when configured, and marks that final framed `TX_RESULT` with the CAD-timeout flag. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
+The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window and returns `CHANNEL_BUSY` when the CAD wait timeout expires. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
+
+
+Clients that already implement CSMA/backoff, such as MeshCom, should use `SET TXMODE=RAW`: the daemon performs one CAD probe and returns an immediate result.
 
 ## DATA sockets
 
@@ -220,7 +223,7 @@ Rules:
 - `GET STATUS` reports `TXRESULT`, `TXMODE`, `TXQUEUE`, queue counters, last queued TX result, and last queued TX sequence.
 - `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE`.
 - `RAW` TX mode performs one CAD probe and returns `CHANNEL_BUSY` when the channel is busy.
-- `MANAGED` TX mode waits for stable CAD idle before TX and sends after the CAD timeout when the policy allows it.
+- `MANAGED` TX mode waits for stable CAD idle before TX and returns `CHANNEL_BUSY` when the CAD wait timeout expires.
 - Final framed `TX_RESULT` flags include managed/deferred/CAD-timeout context.
 - Queued framed TX suppresses the immediate success `TX_RESULT`; final async completion is delivered later to the originating framed client.
 - If the originating framed client slot has closed or been reused before completion, the stale final `TX_RESULT` is dropped and counted in `TXQSTALE`.
