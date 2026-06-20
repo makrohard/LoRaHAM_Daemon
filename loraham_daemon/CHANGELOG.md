@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Tests now support ASan/UBSan and TSan modes with TX worker stress coverage.
 - Release builds now use hardening; tests support strict bounded runs.
 - Daemon sockets now use 0660 permissions with a restrictive daemon umask.
 - Monotonic deadline timers and stats start time now use 64-bit milliseconds.
