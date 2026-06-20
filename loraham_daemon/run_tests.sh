@@ -8,12 +8,16 @@ DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
 tx_tests=false
 strict_build=false
+sanitizer_mode=""
 rx_seconds="${RX_SECONDS:-15}"
 test_timeout_seconds="${TEST_TIMEOUT_SECONDS:-60}"
 
 cc="${CC:-gcc}"
 cxx="${CXX:-g++}"
 strict_flags=()
+sanitizer_flags=()
+sanitizer_env=()
+test_optimization_flags=(-O2)
 
 test_binaries=(
   "$TEST_DIR/test_data_tx"
@@ -32,6 +36,7 @@ test_binaries=(
   "$TEST_DIR/test_daemon_tx_queue"
   "$TEST_DIR/test_daemon_tx_worker"
   "$TEST_DIR/test_daemon_tx_async_worker"
+  "$TEST_DIR/test_daemon_tx_async_worker_stress"
   "$TEST_DIR/test_daemon_tx_async_runtime"
   "$TEST_DIR/test_radio_controller_tx_worker"
   "$TEST_DIR/test_daemon_radio_selection"
@@ -241,7 +246,8 @@ build_one_test() {
     -Wall \
     -Wextra \
     "${strict_flags[@]}" \
-    -O2 \
+    "${sanitizer_flags[@]}" \
+    "${test_optimization_flags[@]}" \
     -I"$TEST_DIR" \
     -o "$out" \
     "$src"
@@ -259,7 +265,8 @@ build_one_cpp_sources() {
     -Wall \
     -Wextra \
     "${strict_flags[@]}" \
-    -O2 \
+    "${sanitizer_flags[@]}" \
+    "${test_optimization_flags[@]}" \
     -I"$TEST_DIR" \
     -I"$SCRIPT_DIR" \
     -o "$out" \
@@ -482,10 +489,13 @@ build_one_daemon_led_test() {
   local out="$2"
 
   "$cxx" \
-    -std=c++11 \
+    -std=c++20 \
+    -pthread \
     -Wall \
     -Wextra \
-    -O2 \
+    "${strict_flags[@]}" \
+    "${sanitizer_flags[@]}" \
+    "${test_optimization_flags[@]}" \
     -I"$TEST_DIR/fakes" \
     -I"$TEST_DIR" \
     -I"$SCRIPT_DIR" \
@@ -705,6 +715,7 @@ build_tests() {
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_queue.cpp" "$TEST_DIR/test_daemon_tx_queue"
   build_one_cpp_test "$TEST_DIR/test_daemon_tx_worker.cpp" "$TEST_DIR/test_daemon_tx_worker"
   build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker.cpp" "$TEST_DIR/test_daemon_tx_async_worker"
+  build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker_stress.cpp" "$TEST_DIR/test_daemon_tx_async_worker_stress"
   build_one_tx_async_runtime_test "$TEST_DIR/test_daemon_tx_async_runtime.cpp" "$TEST_DIR/test_daemon_tx_async_runtime"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_controller_tx_worker.cpp" "$TEST_DIR/test_radio_controller_tx_worker"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
@@ -739,13 +750,14 @@ build_tests() {
 
 usage() {
   cat <<EOF_HELP
-Usage: run_tests.sh [--TX] [--strict] [--rx-seconds N] [--timeout-seconds N]
+Usage: run_tests.sh [--TX] [--strict] [--sanitizer MODE] [--rx-seconds N] [--timeout-seconds N]
 
 Builds the daemon, builds test binaries, then runs each test with its own daemon.
 
 Options:
   --TX                 Run RF transmit tests too
   --strict             Build with -Werror
+  --sanitizer MODE     Test-only mode: asan-ubsan or tsan
   --rx-seconds N       RX observation time for --TX, default: 15
   --timeout-seconds N  Timeout per test, default: 60
   -h, --help           Show this help
@@ -761,6 +773,14 @@ while [[ $# -gt 0 ]]; do
     --strict)
       strict_build=true
       shift
+      ;;
+    --sanitizer)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --sanitizer needs a mode." >&2
+        exit 2
+      fi
+      sanitizer_mode="$2"
+      shift 2
       ;;
     --rx-seconds)
       if [[ $# -lt 2 ]]; then
@@ -798,6 +818,28 @@ if [[ "$strict_build" == true ]]; then
   strict_flags=(-Werror)
 fi
 
+case "$sanitizer_mode" in
+  "")
+    ;;
+  asan-ubsan)
+    sanitizer_flags=(-g -fno-omit-frame-pointer -fsanitize=address,undefined)
+    sanitizer_env=(
+      ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1
+      UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+    )
+    test_optimization_flags=(-O1)
+    ;;
+  tsan)
+    sanitizer_flags=(-g -fno-omit-frame-pointer -fsanitize=thread)
+    sanitizer_env=(TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1)
+    test_optimization_flags=(-O1)
+    ;;
+  *)
+    echo "ERROR: unsupported sanitizer mode: $sanitizer_mode" >&2
+    exit 2
+    ;;
+esac
+
 section "Pre-flight"
 require_command "$cc"
 require_command "$cxx"
@@ -822,10 +864,32 @@ suite_start_seconds=$SECONDS
 
 section "Build daemon"
 build_args=()
+build_env=()
 if [[ "$strict_build" == true ]]; then
   build_args+=(--strict)
 fi
-"$SCRIPT_DIR/build.sh" "${build_args[@]}"
+if [[ -n "$sanitizer_mode" ]]; then
+  build_cxxflags=(
+    -std=c++20
+    -O1
+    -g
+    -fno-omit-frame-pointer
+    -pthread
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wformat=2
+    -Wformat-security
+    -Werror=format-security
+    "${strict_flags[@]}"
+    "${sanitizer_flags[@]}"
+  )
+  build_env=(
+    "CXXFLAGS=${build_cxxflags[*]}"
+    "LDFLAGS=${sanitizer_flags[*]}"
+  )
+fi
+env "${build_env[@]}" "$SCRIPT_DIR/build.sh" "${build_args[@]}"
 
 section "Build tests"
 build_tests
@@ -1037,7 +1101,7 @@ run_one_test() {
   fi
 
   if timeout --signal=TERM --kill-after=5s "${test_timeout_seconds}s" \
-      "${cmd[@]}" >"$output_file" 2>&1; then
+      env "${sanitizer_env[@]}" "${cmd[@]}" >"$output_file" 2>&1; then
     rc=0
   else
     rc=$?
