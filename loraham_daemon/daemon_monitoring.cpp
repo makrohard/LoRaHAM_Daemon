@@ -48,7 +48,7 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
     if (ctrl->mode != RADIO_MODE_LORA)
         return;
 
-    bool was_active = ctrl->cad_active.load();
+    bool was_active = ctrl->cad_broadcast_active.load();
     RadioCadProbeResult probe = radio_cad_probe(ctrl);
     const char *ctx = daemon_cad_log_ctx(ctrl);
 
@@ -56,6 +56,9 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         return;
 
     bool hardware_active = probe.status == RADIO_CAD_PROBE_BUSY;
+    int edge = daemon_monitoring_cad_broadcast_edge(
+        was_active,
+        hardware_active);
 
     if (hardware_active) {
         if (ctrl->band == RADIO_BAND_433)
@@ -63,7 +66,7 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         else
             setFlashFlag868();
 
-        if (!was_active) {
+        if (edge > 0) {
             daemon_debug_ctx(ctx, "Aktiv cad=%s scan=%d",
                              radio_cad_probe_status_name(probe.status),
                              probe.scan_state);
@@ -71,9 +74,9 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
         }
 
-        ctrl->cad_active.store(true);
+        ctrl->cad_broadcast_active.store(true);
     } else {
-        if (was_active && !ctrl->received.load()) {
+        if (edge < 0 && !ctrl->received.load()) {
             daemon_debug_ctx(ctx, "Inaktiv cad=%s scan=%d",
                              radio_cad_probe_status_name(probe.status),
                              probe.scan_state);
@@ -81,7 +84,7 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
         }
 
-        ctrl->cad_active.store(false);
+        ctrl->cad_broadcast_active.store(false);
     }
 }
 /* --- RSSI streaming ------------------------------------------------------- */

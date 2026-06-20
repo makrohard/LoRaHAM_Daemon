@@ -189,6 +189,30 @@ static void test_probe_lora_free_busy_error(void)
 }
 
 
+
+static void test_probe_preserves_broadcast_latch(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.radio->scan_result = 0;
+
+    ctrl.cad_broadcast_active.store(true);
+    result = radio_cad_probe(&ctrl);
+    expect_int("probe latch busy scan ran", result.scan_ran, 1);
+    expect_int("probe keeps broadcast active",
+               ctrl.cad_broadcast_active.load() ? 1 : 0,
+               1);
+
+    ctrl.cad_broadcast_active.store(false);
+    result = radio_cad_probe(&ctrl);
+    expect_int("probe latch free scan ran", result.scan_ran, 1);
+    expect_int("probe keeps broadcast inactive",
+               ctrl.cad_broadcast_active.load() ? 1 : 0,
+               0);
+}
+
 static void test_probe_waits_for_radio_access_guard(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -299,6 +323,7 @@ int main(int argc, char **argv)
     test_probe_null_and_not_ready();
     test_probe_fsk_has_rssi_no_cad();
     test_probe_lora_free_busy_error();
+    test_probe_preserves_broadcast_latch();
     test_probe_waits_for_radio_access_guard();
     test_try_probe_skips_active_tx();
     test_tx_wait_raw_mode_uses_single_cad_probe();

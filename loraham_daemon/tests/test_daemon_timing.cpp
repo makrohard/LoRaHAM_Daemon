@@ -123,6 +123,23 @@ static void test_monitoring_cad_gate(void)
 }
 
 
+
+static void test_cad_broadcast_edges(void)
+{
+    expect_int("CAD edge inactive to busy",
+               daemon_monitoring_cad_broadcast_edge(0, 1),
+               1);
+    expect_int("CAD edge busy remains busy",
+               daemon_monitoring_cad_broadcast_edge(1, 1),
+               0);
+    expect_int("CAD edge busy to inactive",
+               daemon_monitoring_cad_broadcast_edge(1, 0),
+               -1);
+    expect_int("CAD edge inactive remains inactive",
+               daemon_monitoring_cad_broadcast_edge(0, 0),
+               0);
+}
+
 static void test_monotonic_now_ms(void)
 {
     long t1 = daemon_now_ms();
@@ -163,6 +180,7 @@ int main(int argc, char **argv)
     test_state_counter_tick();
     test_deadline_timer();
     test_monitoring_cad_gate();
+    test_cad_broadcast_edges();
     test_monotonic_now_ms();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
