@@ -120,7 +120,7 @@ typedef struct {
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
 {
-    long now = daemon_now_ms();    // CAD monitoring timer.
+    DaemonTimeMs now = daemon_now_ms();    // CAD monitoring timer.
     daemon_deadline_timer_init(&ctx->cad_timer,
                                 now,
                                 DAEMON_CAD_POLL_INTERVAL_MS);

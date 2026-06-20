@@ -6,7 +6,7 @@
 
 /* --- Runtime statistics -------------------------------------------------- */
 
-static long g_stats_start_ms = 0;
+static DaemonTimeMs g_stats_start_ms = 0;
 static std::mutex g_stats_lock;
 
 void daemon_radio_stats_init(DaemonRadioStats *stats)
@@ -82,17 +82,17 @@ void daemon_radio_stats_record_cad_timeout_send(DaemonRadioStats *stats)
     stats->cad_timeout_sends++;
 }
 
-void daemon_stats_start(long now_ms)
+void daemon_stats_start(DaemonTimeMs now_ms)
 {
     g_stats_start_ms = now_ms;
 }
 
-long daemon_stats_uptime_seconds(long now_ms)
+long daemon_stats_uptime_seconds(DaemonTimeMs now_ms)
 {
     if (g_stats_start_ms <= 0 || now_ms < g_stats_start_ms)
         return 0;
 
-    return (now_ms - g_stats_start_ms) / 1000L;
+    return (long)((now_ms - g_stats_start_ms) / INT64_C(1000));
 }
 
 void daemon_stats_format_fields(char *buf,

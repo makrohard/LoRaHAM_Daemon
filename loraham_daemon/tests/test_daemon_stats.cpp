@@ -1,5 +1,6 @@
 #include "../daemon_stats.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <thread>
@@ -28,6 +29,17 @@ static void expect_int(const char *name, int actual, int expected)
     } else {
         g_fail++;
         printf("[FAIL] %s: expected %d, got %d\n", name, expected, actual);
+    }
+}
+
+static void expect_long(const char *name, long actual, long expected)
+{
+    if (actual == expected) {
+        g_ok++;
+        printf("[ OK ] %s\n", name);
+    } else {
+        g_fail++;
+        printf("[FAIL] %s: expected %ld, got %ld\n", name, expected, actual);
     }
 }
 
@@ -71,6 +83,18 @@ static void test_stats_format_includes_cad_timeout(void)
     daemon_stats_format_response(buf, sizeof(buf), 12, RADIO_HEALTH_READY, &stats);
 
     expect_int("stats has cad timeout", strstr(buf, "CADTIMEOUT=1 CADSEND=0") != NULL, 1);
+}
+
+static void test_uptime_crosses_32bit_ms_boundary(void)
+{
+    const DaemonTimeMs start = INT64_C(2147483600);
+
+    daemon_stats_start(start);
+
+    expect_long("uptime starts at zero",
+                daemon_stats_uptime_seconds(start), 0);
+    expect_long("uptime crosses 32-bit ms boundary",
+                daemon_stats_uptime_seconds(start + INT64_C(1500)), 1);
 }
 
 static void test_stats_concurrent_record_and_format(void)
@@ -142,6 +166,7 @@ int main(int argc, char **argv)
     test_tx_result_counters();
     test_cad_timeout_counted_once_via_tx_result();
     test_stats_format_includes_cad_timeout();
+    test_uptime_crosses_32bit_ms_boundary();
     test_stats_concurrent_record_and_format();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

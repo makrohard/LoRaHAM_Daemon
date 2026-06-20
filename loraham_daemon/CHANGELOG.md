@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Monotonic deadline timers and stats start time now use 64-bit milliseconds.
 - Daemon logs now share one append-mode file with prompt line output.
 - Epoll registration now supports 128 FDs and stops cleanly on registration errors.
 - TX status broadcasts now drain in the main loop instead of async TX workers.

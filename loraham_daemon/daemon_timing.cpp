@@ -30,15 +30,16 @@ int daemon_tick_state_due(DaemonTick *tick)
 /* --- Deadline timers ---------------------------------------------------- */
 
 void daemon_deadline_timer_init(DaemonDeadlineTimer *timer,
-                                long now_ms,
-                                long interval_ms)
+                                DaemonTimeMs now_ms,
+                                DaemonTimeMs interval_ms)
 {
     timer->interval_ms = interval_ms;
     timer->next_due_ms = now_ms + interval_ms;
 }
 
-long daemon_deadline_timer_timeout_ms(const DaemonDeadlineTimer *timer,
-                                      long now_ms)
+DaemonTimeMs daemon_deadline_timer_timeout_ms(
+    const DaemonDeadlineTimer *timer,
+    DaemonTimeMs now_ms)
 {
     if (now_ms >= timer->next_due_ms)
         return 0;
@@ -47,7 +48,7 @@ long daemon_deadline_timer_timeout_ms(const DaemonDeadlineTimer *timer,
 }
 
 int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
-                              long now_ms)
+                              DaemonTimeMs now_ms)
 {
     if (now_ms < timer->next_due_ms)
         return 0;
@@ -61,11 +62,12 @@ int daemon_deadline_timer_due(DaemonDeadlineTimer *timer,
 
 /* --- Monotonic clock ---------------------------------------------------- */
 
-long daemon_now_ms(void)
+DaemonTimeMs daemon_now_ms(void)
 {
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (long)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
+    return (DaemonTimeMs)ts.tv_sec * INT64_C(1000) +
+           (DaemonTimeMs)(ts.tv_nsec / 1000000L);
 }
 
