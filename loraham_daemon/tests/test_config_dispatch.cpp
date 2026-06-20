@@ -657,6 +657,211 @@ static void test_dispatch_closes_eof_client(void)
     event_loop_close(&set);
 }
 
+static void test_dispatch_set_cadwait(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) { g_fail++; return; }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]); client_slot_close(&slots[0]); g_fail++;
+        printf("[FAIL] cadwait init\n"); return;
+    }
+
+    const char *cmd = "SET CADWAIT=300\n";
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadwait wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("cadwait apply not called",  g_apply_state.calls, 0);
+    expect_int("cadwait stored", (int)ctrl.cad_wait_timeout_ms.load(), 300);
+    expect_int("cadwait callback not restored",  ctrl.radio->callback_count, 0);
+    expect_int("cadwait startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadwait client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_dispatch_set_cadidle(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) { g_fail++; return; }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]); client_slot_close(&slots[0]); g_fail++;
+        printf("[FAIL] cadidle init\n"); return;
+    }
+
+    const char *cmd = "SET CADIDLE=100\n";
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadidle wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("cadidle apply not called",  g_apply_state.calls, 0);
+    expect_int("cadidle stored", (int)ctrl.cad_idle_stable_ms.load(), 100);
+    expect_int("cadidle callback not restored",  ctrl.radio->callback_count, 0);
+    expect_int("cadidle startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadidle client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_dispatch_set_cadpoll(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) { g_fail++; return; }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]); client_slot_close(&slots[0]); g_fail++;
+        printf("[FAIL] cadpoll init\n"); return;
+    }
+
+    const char *cmd = "SET CADPOLL=50\n";
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadpoll wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("cadpoll apply not called",  g_apply_state.calls, 0);
+    expect_int("cadpoll stored", (int)ctrl.cad_poll_interval_ms.load(), 50);
+    expect_int("cadpoll callback not restored",  ctrl.radio->callback_count, 0);
+    expect_int("cadpoll startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadpoll client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_dispatch_set_cadtxaftertimeout(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) { g_fail++; return; }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]); client_slot_close(&slots[0]); g_fail++;
+        printf("[FAIL] cadtx init\n"); return;
+    }
+
+    const char *cmd = "SET CADTXAFTERTIMEOUT=1\n";
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadtx wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("cadtx apply not called",  g_apply_state.calls, 0);
+    expect_int("cadtx stored", ctrl.cad_send_after_timeout.load() ? 1 : 0, 1);
+    expect_int("cadtx callback not restored",  ctrl.radio->callback_count, 0);
+    expect_int("cadtx startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadtx client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_dispatch_set_cadwait_invalid_rejected(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) { g_fail++; return; }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]); client_slot_close(&slots[0]); g_fail++;
+        printf("[FAIL] cadwait-invalid init\n"); return;
+    }
+
+    const char *cmd = "SET CADWAIT=1\n";
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadwait-invalid wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+
+    expect_int("cadwait-invalid apply not called",  g_apply_state.calls, 0);
+    expect_int("cadwait-invalid value unchanged",
+               (int)ctrl.cad_wait_timeout_ms.load(),
+               (int)DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS);
+    expect_int("cadwait-invalid client still open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 /* --- CLI parsing and test sequence --- */
 
 int main(int argc, char **argv)
@@ -686,6 +891,11 @@ int main(int argc, char **argv)
     test_dispatch_set_txresult();
     test_dispatch_set_txqueue();
     test_dispatch_closes_eof_client();
+    test_dispatch_set_cadwait();
+    test_dispatch_set_cadidle();
+    test_dispatch_set_cadpoll();
+    test_dispatch_set_cadtxaftertimeout();
+    test_dispatch_set_cadwait_invalid_rejected();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

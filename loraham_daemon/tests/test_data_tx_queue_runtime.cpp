@@ -165,6 +165,10 @@ static void init_context(RadioController<FakeRadio> *ctrl,
     ctrl->radio.reset(new FakeRadio());
     ctrl->health = RADIO_HEALTH_READY;
     ctrl->mode = RADIO_MODE_FSK;
+    ctrl->cad_wait_timeout_ms.store(2u);
+    ctrl->cad_idle_stable_ms.store(1u);
+    ctrl->cad_poll_interval_ms.store(1u);
+    ctrl->cad_send_after_timeout.store(false);
 
     daemon_tx_async_runtime_shutdown();
     daemon_tx_async_runtime_init();
@@ -616,6 +620,40 @@ static void test_not_ready_still_short_circuits(void)
     expect_size("not ready no queued", daemon_tx_async_runtime_pending_for_band(433), 0);
 }
 
+static void test_controller_cad_policy_snapshot(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    DaemonTxJob job;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode    = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+
+    ctrl.cad_wait_timeout_ms.store(300u);
+    ctrl.cad_idle_stable_ms.store(100u);
+    ctrl.cad_poll_interval_ms.store(50u);
+    ctrl.cad_send_after_timeout.store(true);
+
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 80);
+    data_tx_configure_job_cad_policy(&ctx, &job);
+
+    /* wait_ticks  = ceil(300/50) = 6 */
+    expect_int("cad policy snapshot wait ticks",
+               (int)job.cad_wait_ticks, 6);
+    /* idle_ticks  = ceil(100/50) = 2 */
+    expect_int("cad policy snapshot idle ticks",
+               (int)job.cad_idle_stable_ticks, 2);
+    /* poll_usec   = 50 * 1000 = 50000 */
+    expect_int("cad policy snapshot poll usec",
+               (int)job.cad_poll_interval_usec, 50000);
+    expect_int("cad policy snapshot timeout send",
+               (int)job.cad_send_after_timeout, 1);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -652,6 +690,7 @@ int main(int argc, char **argv)
     test_queued_managed_cad_timeout_blocks_in_worker();
     test_queued_raw_cad_busy_blocks_in_worker();
     test_not_ready_still_short_circuits();
+    test_controller_cad_policy_snapshot();
 
     daemon_tx_async_runtime_shutdown();
 

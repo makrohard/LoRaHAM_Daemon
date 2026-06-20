@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "daemon_stats.h"
@@ -159,6 +160,79 @@ static inline int config_status_is_set_txmode(const char *line,
 }
 
 
+static inline int config_status_parse_set_uval(const char *cmd,
+                                               const char *prefix,
+                                               uint32_t lo, uint32_t hi,
+                                               uint32_t *out)
+{
+    size_t plen = strlen(prefix);
+    char *endptr;
+    unsigned long v;
+
+    if (strncmp(cmd, prefix, plen) != 0)
+        return 0;
+
+    if (cmd[plen] == '\0')
+        return 0;
+
+    v = strtoul(cmd + plen, &endptr, 10);
+    if (*endptr != '\0' || v < (unsigned long)lo || v > (unsigned long)hi)
+        return 0;
+
+    if (out)
+        *out = (uint32_t)v;
+    return 1;
+}
+
+static inline int config_status_is_set_cadwait(const char *line, uint32_t *ms)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+    return config_status_parse_set_uval(cmd, "SET CADWAIT=", 50u, 5000u, ms);
+}
+
+static inline int config_status_is_set_cadidle(const char *line, uint32_t *ms)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+    return config_status_parse_set_uval(cmd, "SET CADIDLE=", 0u, 2000u, ms);
+}
+
+static inline int config_status_is_set_cadpoll(const char *line, uint32_t *ms)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+    return config_status_parse_set_uval(cmd, "SET CADPOLL=", 10u, 500u, ms);
+}
+
+static inline int config_status_is_set_cadtxaftertimeout(const char *line, int *val)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+
+    if (strcmp(cmd, "SET CADTXAFTERTIMEOUT=1") == 0) {
+        if (val)
+            *val = 1;
+        return 1;
+    }
+
+    if (strcmp(cmd, "SET CADTXAFTERTIMEOUT=0") == 0) {
+        if (val)
+            *val = 0;
+        return 1;
+    }
+
+    return 0;
+}
+
 template<typename RadioT>
 static inline size_t config_status_txq_pending(const RadioController<RadioT> *ctrl)
 {
@@ -262,7 +336,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_active.load()) ? 1 : 0,
@@ -273,10 +347,17 @@ static inline void config_status_format(char *buf,
              config_status_txq_pending(ctrl),
              config_status_txq_dropped(ctrl),
              config_status_txq_stale(ctrl),
-              config_status_txq_result_dropped(ctrl),
+             config_status_txq_result_dropped(ctrl),
              config_status_txq_processed(ctrl),
              config_status_txq_last_name(ctrl),
-             config_status_txq_last_seq(ctrl));
+             config_status_txq_last_seq(ctrl),
+             ctrl ? (unsigned)ctrl->cad_wait_timeout_ms.load()
+                  : DAEMON_TX_POLICY_CAD_WAIT_TIMEOUT_MS,
+             ctrl ? (unsigned)ctrl->cad_idle_stable_ms.load()
+                  : DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS,
+             ctrl ? (unsigned)ctrl->cad_poll_interval_ms.load()
+                  : DAEMON_TX_POLICY_POLL_INTERVAL_MS,
+             (ctrl && ctrl->cad_send_after_timeout.load()) ? 1 : 0);
 }
 
 static inline const char *config_status_cad_state_name(RadioCadProbeStatus status)
