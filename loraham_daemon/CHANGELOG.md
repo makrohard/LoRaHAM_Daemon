@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CAD monitoring now scans at most every 200 ms only for subscribed CONF clients; status documentation was completed.
 - README now documents TXQRESULTDROP and queued-TX shutdown behavior.
 - TX workers now reject jobs submitted after shutdown begins.
 - Worker CAD mode checks now serialize with CONFIG radio-mode changes.

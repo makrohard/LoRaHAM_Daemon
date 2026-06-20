@@ -1,4 +1,6 @@
 #include "../daemon_timing.h"
+#include "../daemon_monitoring.h"
+#include "../daemon_protocol.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -85,6 +87,42 @@ static void test_deadline_timer(void)
 }
 
 
+static void test_monitoring_cad_gate(void)
+{
+    DaemonDeadlineTimer timer;
+    int probes = 0;
+    long last_probe = 0;
+
+    daemon_deadline_timer_init(&timer, 1000, DAEMON_CAD_POLL_INTERVAL_MS);
+
+    for (long now = 1000; now <= 2000; now += 50) {
+        if (daemon_monitoring_cad_probe_due(&timer, now, 1)) {
+            if (last_probe > 0) {
+                expect_int("CAD gate interval",
+                           (int)(now - last_probe),
+                           DAEMON_CAD_POLL_INTERVAL_MS);
+            }
+            last_probe = now;
+            probes++;
+        }
+    }
+
+    expect_int("CAD gate probe count", probes, 5);
+
+    daemon_deadline_timer_init(&timer, 1000, DAEMON_CAD_POLL_INTERVAL_MS);
+    probes = 0;
+    for (long now = 1000; now <= 2000; now += 50) {
+        if (daemon_monitoring_cad_probe_due(&timer, now, 0))
+            probes++;
+    }
+
+    expect_int("CAD gate no CONF client", probes, 0);
+    expect_int("CAD gate first subscriber probe",
+               daemon_monitoring_cad_probe_due(&timer, 2000, 1),
+               1);
+}
+
+
 static void test_monotonic_now_ms(void)
 {
     long t1 = daemon_now_ms();
@@ -124,6 +162,7 @@ int main(int argc, char **argv)
     test_plain_counter_tick();
     test_state_counter_tick();
     test_deadline_timer();
+    test_monitoring_cad_gate();
     test_monotonic_now_ms();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

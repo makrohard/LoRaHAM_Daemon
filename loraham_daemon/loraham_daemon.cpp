@@ -109,6 +109,7 @@ static void daemon_runtime_init(EventLoopSet *event_set)
 
 /* --- Loop context --------------------------------------------------------- */
 typedef struct {
+    DaemonDeadlineTimer cad_timer;
     DaemonDeadlineTimer rssi_timer;
     DaemonDeadlineTimer stats_timer;
     DataTxDaemonContext<SX1278> data_tx_433_ctx;
@@ -119,7 +120,12 @@ typedef struct {
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
 {
-    long now = daemon_now_ms();
+    long now = daemon_now_ms();    // CAD monitoring timer.
+    daemon_deadline_timer_init(&ctx->cad_timer,
+                                now,
+                                DAEMON_CAD_POLL_INTERVAL_MS);
+
+
 
     // RSSI timer.
     daemon_deadline_timer_init(&ctx->rssi_timer,
@@ -171,8 +177,9 @@ static void daemon_log_loop_start(void)
 }
 
 /* --- Radio polling order ------------------------------------------------- */
-static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
-                                         DaemonDeadlineTimer *stats_timer,
+static void daemon_process_radio_polling(DaemonDeadlineTimer *cad_timer,
+                                          DaemonDeadlineTimer *rssi_timer,
+                                          DaemonDeadlineTimer *stats_timer,
                                          uint8_t (&rx_buf_433)[buf_SIZE],
                                          uint8_t (&rx_buf_868)[buf_SIZE])
 {
@@ -183,7 +190,7 @@ static void daemon_process_radio_polling(DaemonDeadlineTimer *rssi_timer,
         daemon_process_radio_868(rx_buf_868);
 
     // Monitoring: CAD/RSSI/status stats.
-    daemon_process_monitoring(rssi_timer, stats_timer);
+    daemon_process_monitoring(cad_timer, rssi_timer, stats_timer);
 }
 
 /* --- Main loop iteration ------------------------------------------------- */
@@ -213,8 +220,9 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
                                 &loop_ctx->data_tx_868_ctx,
                                 readfds, buf);
 
-    daemon_process_radio_polling(&loop_ctx->rssi_timer,
-                                 &loop_ctx->stats_timer,
+    daemon_process_radio_polling(&loop_ctx->cad_timer,
+                                  &loop_ctx->rssi_timer,
+                                  &loop_ctx->stats_timer,
                                  rx_buf_433,
                                  rx_buf_868);
 }

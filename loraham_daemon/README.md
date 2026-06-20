@@ -142,7 +142,7 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | Send after CAD timeout | enabled | MANAGED TX sends after CAD timeout and marks the final result with the CAD-timeout flag |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
-| CAD monitor poll interval | `30` loop ticks | CONF `CAD=1/0` monitoring cadence |
+| CAD monitor poll interval | `200 ms` | Active CONF `CAD=1/0` scan cadence; no scan without a matching CONF client |
 
 ## Current TX/CAD behavior
 
@@ -394,12 +394,14 @@ The daemon also prints one compact operator stats line per selected radio every
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
-| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQSTALE=... TXQDONE=... TXQLAST=... TXQSEQ=...\n` | requesting CONF socket | Reply to `GET STATUS` |
+| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=...\n` | requesting CONF socket | Reply to `GET STATUS` |
 | `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=...\n` | requesting CONF socket | Reply to `GET STATS` |
 | `CHANNEL RADIO=... BUSY=... CAD=... RSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
+
+`CAD=1/0` monitoring runs an active scan at most every `200 ms` and only while at least one client is connected to the matching CONF socket. Without a matching CONF client, no active CAD scan runs; the CAD-monitor LED indication is not refreshed.
 
 ## Examples
 

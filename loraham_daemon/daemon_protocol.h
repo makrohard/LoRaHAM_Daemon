@@ -6,9 +6,9 @@
 #define buf_SIZE 256
 #define MAX_CLIENTS 10
 
-/* --- CAD loop timing --- */
+/* --- CAD monitoring cadence --- */
 
-#define CAD_POLL_INTERVAL 30
+#define DAEMON_CAD_POLL_INTERVAL_MS 200
 
 /* --- Public Unix socket paths --- */
 

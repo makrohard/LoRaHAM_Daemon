@@ -39,6 +39,9 @@ template<typename RadioT>
 static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
                                       RadioChannelIo *io)
 {
+    if (!io || !client_slot_has_clients(io->conf_slots, MAX_CLIENTS))
+        return;
+
     if (!radio_controller_ready(ctrl) || !ctrl->radio)
         return;
 
@@ -180,21 +183,32 @@ static void daemon_process_periodic_stats(DaemonDeadlineTimer *stats_timer)
 }
 
 /* --- CAD/RSSI polling ---------------------------------------------------- */
-static void daemon_process_cad_rssi(DaemonDeadlineTimer *rssi_timer)
+static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
+                                    DaemonDeadlineTimer *rssi_timer)
 {
-    if (daemon_radio_433_enabled())
-        daemon_process_cad_status(&radio_controller_433, &channel_433);
+    bool cad_433_subscribed = daemon_radio_433_enabled() &&
+        client_slot_has_clients(channel_433.conf_slots, MAX_CLIENTS);
+    bool cad_868_subscribed = daemon_radio_868_enabled() &&
+        client_slot_has_clients(channel_868.conf_slots, MAX_CLIENTS);
 
-    if (daemon_radio_868_enabled())
-        daemon_process_cad_status(&radio_controller_868, &channel_868);
+    if (daemon_monitoring_cad_probe_due(cad_timer,
+                                        daemon_now_ms(),
+                                        cad_433_subscribed || cad_868_subscribed)) {
+        if (cad_433_subscribed)
+            daemon_process_cad_status(&radio_controller_433, &channel_433);
+
+        if (cad_868_subscribed)
+            daemon_process_cad_status(&radio_controller_868, &channel_868);
+    }
+
     daemon_process_rssi_stream(rssi_timer);
 }
 
-
 /* --- Monitoring tick ----------------------------------------------------- */
-void daemon_process_monitoring(DaemonDeadlineTimer *rssi_timer,
-                               DaemonDeadlineTimer *stats_timer)
+void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
+                                DaemonDeadlineTimer *rssi_timer,
+                                DaemonDeadlineTimer *stats_timer)
 {
-    daemon_process_cad_rssi(rssi_timer);
+    daemon_process_cad_rssi(cad_timer, rssi_timer);
     daemon_process_periodic_stats(stats_timer);
 }
