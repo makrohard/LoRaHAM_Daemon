@@ -140,6 +140,28 @@ static void test_cad_broadcast_edges(void)
                0);
 }
 
+static void test_tx_status_generation_order(void)
+{
+    uint32_t observed_generation = 0;
+
+    expect_int("TX status first transition busy",
+               daemon_monitoring_tx_status_next_busy(
+                   observed_generation),
+               1);
+
+    observed_generation++;
+    expect_int("TX status second transition idle",
+               daemon_monitoring_tx_status_next_busy(
+                   observed_generation),
+               0);
+
+    observed_generation++;
+    expect_int("TX status third transition busy",
+               daemon_monitoring_tx_status_next_busy(
+                   observed_generation),
+               1);
+}
+
 static void test_monotonic_now_ms(void)
 {
     long t1 = daemon_now_ms();
@@ -181,6 +203,7 @@ int main(int argc, char **argv)
     test_deadline_timer();
     test_monitoring_cad_gate();
     test_cad_broadcast_edges();
+    test_tx_status_generation_order();
     test_monotonic_now_ms();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

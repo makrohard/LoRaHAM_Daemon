@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- TX status broadcasts now drain in the main loop instead of async TX workers.
 - CAD monitoring state now uses a dedicated broadcast latch separate from transient probes.
 - GET CHANNEL now returns immediately during active TX without probing the radio.
 - Per-band runtime CAD policy (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via CONF SET commands and reported in GET STATUS.
