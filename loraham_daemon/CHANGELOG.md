@@ -70,6 +70,11 @@
 - Framed DATA TX execution failures now emit ERROR and keep the parser/client alive.
 - CAD/TX rework guardrail: add expected-failing framed TX failure characterization.
 
+* CAD/TX was comprehensively reworked: MANAGED TX now uses bounded CAD/LBT with `CHANNEL_BUSY` on timeout by default, while RAW TX performs an immediate CAD probe.
+* Per-band CAD policy is configurable via CONF and visible in `GET STATUS`; queued TX, final `TX_RESULT`, status counters, and statistics were hardened.
+* Radio access, RX recovery, shutdown handling, TX LEDs, documentation, and regression coverage were improved for safe asynchronous TX operation.
+
+
 - Framed DATA `RX_PACKET` now prepends RSSI/SNR metadata before RF bytes.
 
 ## loraham_daemon 109a
