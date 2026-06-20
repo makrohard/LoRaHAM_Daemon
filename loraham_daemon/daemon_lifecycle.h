@@ -8,6 +8,7 @@ void daemon_lifecycle_request_stop(int signal_number);
 int daemon_lifecycle_stop_requested(void);
 int daemon_lifecycle_install_signal_handlers(void);
 void daemon_lifecycle_ignore_sigpipe(void);
+int daemon_lifecycle_redirect_stdio(const char *log_path);
 void daemon_lifecycle_enter_background(void);
 
 #endif
