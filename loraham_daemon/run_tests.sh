@@ -7,10 +7,13 @@ TEST_DIR="$SCRIPT_DIR/tests"
 DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
 tx_tests=false
+strict_build=false
 rx_seconds="${RX_SECONDS:-15}"
+test_timeout_seconds="${TEST_TIMEOUT_SECONDS:-60}"
 
 cc="${CC:-gcc}"
 cxx="${CXX:-g++}"
+strict_flags=()
 
 test_binaries=(
   "$TEST_DIR/test_data_tx"
@@ -151,10 +154,10 @@ try_source_radiolib_dir() {
   [[ -f "$dir/build/libRadioLib.a" ]] || return 1
 
   radiolib_cflags=(
-    -I"$dir/src"
-    -I"$dir/src/hal"
-    -I"$dir/src/modules"
-    -I"$dir/src/protocols/PhysicalLayer"
+    -isystem "$dir/src"
+    -isystem "$dir/src/hal"
+    -isystem "$dir/src/modules"
+    -isystem "$dir/src/protocols/PhysicalLayer"
   )
 
   radiolib_libs=(
@@ -185,7 +188,7 @@ try_installed_radiolib_prefix() {
   elif [[ -f "$prefix/lib/aarch64-linux-gnu/libRadioLib.a" ]]; then
     lib="$prefix/lib/aarch64-linux-gnu/libRadioLib.a"
   elif [[ -f "$prefix/lib/libRadioLib.so" || -f "$prefix/lib/aarch64-linux-gnu/libRadioLib.so" ]]; then
-    radiolib_cflags=(-I"$inc")
+    radiolib_cflags=(-isystem "$inc")
     radiolib_libs=(-L"$prefix/lib" -L"$prefix/lib/aarch64-linux-gnu" -lRadioLib)
     echo "Using installed RadioLib: $prefix"
     return 0
@@ -193,7 +196,7 @@ try_installed_radiolib_prefix() {
     return 1
   fi
 
-  radiolib_cflags=(-I"$inc")
+  radiolib_cflags=(-isystem "$inc")
   radiolib_libs=("$lib")
 
   echo "Using installed RadioLib: $prefix"
@@ -237,6 +240,7 @@ build_one_test() {
     -std=c11 \
     -Wall \
     -Wextra \
+    "${strict_flags[@]}" \
     -O2 \
     -I"$TEST_DIR" \
     -o "$out" \
@@ -250,10 +254,11 @@ build_one_cpp_sources() {
   shift
 
   "$cxx" \
-    -std=c++11 \
+    -std=c++20 \
     -pthread \
     -Wall \
     -Wextra \
+    "${strict_flags[@]}" \
     -O2 \
     -I"$TEST_DIR" \
     -I"$SCRIPT_DIR" \
@@ -734,14 +739,16 @@ build_tests() {
 
 usage() {
   cat <<EOF_HELP
-Usage: run_tests.sh [--TX] [--rx-seconds N]
+Usage: run_tests.sh [--TX] [--strict] [--rx-seconds N] [--timeout-seconds N]
 
 Builds the daemon, builds test binaries, then runs each test with its own daemon.
 
 Options:
-  --TX             Run RF transmit tests too
-  --rx-seconds N   RX observation time for --TX, default: 15
-  -h, --help       Show this help
+  --TX                 Run RF transmit tests too
+  --strict             Build with -Werror
+  --rx-seconds N       RX observation time for --TX, default: 15
+  --timeout-seconds N  Timeout per test, default: 60
+  -h, --help           Show this help
 EOF_HELP
 }
 
@@ -751,12 +758,24 @@ while [[ $# -gt 0 ]]; do
       tx_tests=true
       shift
       ;;
+    --strict)
+      strict_build=true
+      shift
+      ;;
     --rx-seconds)
       if [[ $# -lt 2 ]]; then
         echo "ERROR: --rx-seconds needs a value." >&2
         exit 2
       fi
       rx_seconds="$2"
+      shift 2
+      ;;
+    --timeout-seconds)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: --timeout-seconds needs a value." >&2
+        exit 2
+      fi
+      test_timeout_seconds="$2"
       shift 2
       ;;
     -h|--help)
@@ -773,6 +792,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 require_positive_int "$rx_seconds" "rx-seconds"
+require_positive_int "$test_timeout_seconds" "timeout-seconds"
+
+if [[ "$strict_build" == true ]]; then
+  strict_flags=(-Werror)
+fi
 
 section "Pre-flight"
 require_command "$cc"
@@ -784,6 +808,7 @@ require_command grep
 require_command tail
 require_command mktemp
 require_command rm
+require_command timeout
 
 if pgrep -x loraham_daemon >/dev/null; then
   echo "ERROR: loraham_daemon is already running:"
@@ -796,7 +821,11 @@ fi
 suite_start_seconds=$SECONDS
 
 section "Build daemon"
-"$SCRIPT_DIR/build.sh"
+build_args=()
+if [[ "$strict_build" == true ]]; then
+  build_args+=(--strict)
+fi
+"$SCRIPT_DIR/build.sh" "${build_args[@]}"
 
 section "Build tests"
 build_tests
@@ -1007,11 +1036,16 @@ run_one_test() {
     cmd+=(--rf-tx --rx-seconds "$rx_seconds")
   fi
 
-  if "${cmd[@]}" >"$output_file" 2>&1; then
+  if timeout --signal=TERM --kill-after=5s "${test_timeout_seconds}s" \
+      "${cmd[@]}" >"$output_file" 2>&1; then
     rc=0
   else
     rc=$?
-    reason="rc=$rc"
+    if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+      reason="timeout=${test_timeout_seconds}s"
+    else
+      reason="rc=$rc"
+    fi
   fi
 
   cat "$output_file"

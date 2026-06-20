@@ -10,10 +10,13 @@ DAEMON_OUT="$SCRIPT_DIR/loraham_daemon"
 
 cxx="${CXX:-g++}"
 build_mode="release"
+strict_build=false
 clean_only=false
+hardening_active=false
 
 radiolib_cflags=()
 radiolib_libs=()
+hardening_ldflags=()
 
 event_loop_sources=(
   "$SCRIPT_DIR/event_loop.cpp"
@@ -68,6 +71,7 @@ Options:
   --output PATH        Output binary path, default: ./loraham_daemon next to build.sh
   --radiolib-dir DIR   RadioLib source tree with src/ and build/libRadioLib.a
   --debug             Build with -O0 -g instead of release defaults
+  --strict            Build with -Werror
   --clean             Remove the daemon binary and exit
   -h, --help          Show this help
 
@@ -97,6 +101,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug)
       build_mode="debug"
+      shift
+      ;;
+    --strict)
+      strict_build=true
       shift
       ;;
     --clean|clean)
@@ -138,10 +146,10 @@ try_source_radiolib_dir() {
   [[ -f "$dir/build/libRadioLib.a" ]] || return 1
 
   radiolib_cflags=(
-    -I"$dir/src"
-    -I"$dir/src/hal"
-    -I"$dir/src/modules"
-    -I"$dir/src/protocols/PhysicalLayer"
+    -isystem "$dir/src"
+    -isystem "$dir/src/hal"
+    -isystem "$dir/src/modules"
+    -isystem "$dir/src/protocols/PhysicalLayer"
   )
 
   radiolib_libs=(
@@ -172,7 +180,7 @@ try_installed_radiolib_prefix() {
   elif [[ -f "$prefix/lib/aarch64-linux-gnu/libRadioLib.a" ]]; then
     lib="$prefix/lib/aarch64-linux-gnu/libRadioLib.a"
   elif [[ -f "$prefix/lib/libRadioLib.so" || -f "$prefix/lib/aarch64-linux-gnu/libRadioLib.so" ]]; then
-    radiolib_cflags=(-I"$inc")
+    radiolib_cflags=(-isystem "$inc")
     radiolib_libs=(-L"$prefix/lib" -L"$prefix/lib/aarch64-linux-gnu" -lRadioLib)
     echo "Using installed RadioLib: $prefix"
     return 0
@@ -180,7 +188,7 @@ try_installed_radiolib_prefix() {
     return 1
   fi
 
-  radiolib_cflags=(-I"$inc")
+  radiolib_cflags=(-isystem "$inc")
   radiolib_libs=("$lib")
 
   echo "Using installed RadioLib: $prefix"
@@ -216,13 +224,47 @@ find_radiolib() {
 }
 
 compiler_flags() {
+  local warning_flags=(
+    -Wall
+    -Wextra
+    -Wpedantic
+    -Wformat=2
+    -Wformat-security
+    -Werror=format-security
+  )
+  local release_hardening_flags=(
+    -D_FORTIFY_SOURCE=2
+    -fstack-protector-strong
+    -fPIE
+    -D_GLIBCXX_ASSERTIONS
+  )
+
+  hardening_active=false
+  hardening_ldflags=()
+
   if [[ -n "${CXXFLAGS:-}" ]]; then
     # shellcheck disable=SC2206
     cxxflags=($CXXFLAGS)
   elif [[ "$build_mode" == "debug" ]]; then
-    cxxflags=(-std=c++11 -O0 -g -Wall -Wextra -pthread)
+    cxxflags=(-std=c++20 -O0 -g "${warning_flags[@]}" -pthread)
   else
-    cxxflags=(-std=c++11 -O2 -pthread)
+    cxxflags=(
+      -std=c++20
+      -O2
+      -g
+      "${warning_flags[@]}"
+      "${release_hardening_flags[@]}"
+      -pthread
+    )
+    hardening_ldflags=(
+      -pie
+      -Wl,-z,relro,-z,now,-z,noexecstack
+    )
+    hardening_active=true
+  fi
+
+  if [[ "$strict_build" == true ]]; then
+    cxxflags+=(-Werror)
   fi
 
   if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then
@@ -244,6 +286,48 @@ print_build_config() {
   echo "Build target: $DAEMON_OUT"
   echo "Build mode:   $build_mode"
   echo "Compiler:     $cxx"
+  echo "Strict build: $strict_build"
+
+  if [[ "$hardening_active" == true ]]; then
+    echo "Hardening:   enabled"
+  else
+    echo "Hardening:   custom or debug"
+  fi
+}
+
+verify_daemon_hardening() {
+  local binary="$1"
+  local stack_flags=""
+
+  [[ "$hardening_active" == true ]] || return 0
+
+  require_command readelf
+  require_command grep
+  require_command awk
+
+  if ! readelf -h "$binary" | grep -Eq 'Type:[[:space:]]+DYN'; then
+    echo "ERROR: hardening check failed: PIE missing." >&2
+    return 1
+  fi
+
+  if ! readelf -W -l "$binary" | grep -q 'GNU_RELRO'; then
+    echo "ERROR: hardening check failed: RELRO missing." >&2
+    return 1
+  fi
+
+  if ! readelf -d "$binary" | grep -Eq 'BIND_NOW|FLAGS_1.*NOW'; then
+    echo "ERROR: hardening check failed: BIND_NOW missing." >&2
+    return 1
+  fi
+
+  stack_flags="$(readelf -W -l "$binary" |
+    awk '$1 == "GNU_STACK" { print $(NF - 1); exit }')"
+  if [[ "$stack_flags" != "RW" ]]; then
+    echo "ERROR: hardening check failed: executable stack." >&2
+    return 1
+  fi
+
+  echo "Hardening checks: OK"
 }
 
 clean_daemon() {
@@ -299,9 +383,11 @@ build_daemon() {
     "${event_loop_sources[@]}" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
+    "${hardening_ldflags[@]}" \
     "${extra_ldflags[@]}" \
     -llgpio
 
+  verify_daemon_hardening "$tmp_out"
   chmod 755 "$tmp_out"
   mv -f -- "$tmp_out" "$DAEMON_OUT"
   trap - EXIT

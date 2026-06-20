@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- Release builds now use hardening; tests support strict bounded runs.
 - Daemon sockets now use 0660 permissions with a restrictive daemon umask.
 - Monotonic deadline timers and stats start time now use 64-bit milliseconds.
 - Daemon logs now share one append-mode file with prompt line output.

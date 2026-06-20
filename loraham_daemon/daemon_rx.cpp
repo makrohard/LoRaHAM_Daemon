@@ -101,7 +101,7 @@ static void daemon_print_raw_rx_packet(const char *rx_ctx,
 {
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\e[%s%s%s\e[0m] %d Bytes ASCII: ",
+    printf("[\033[%s%s%s\033[0m] %d Bytes ASCII: ",
            color, band, suffix ? suffix : "", len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
@@ -138,7 +138,7 @@ static void daemon_print_lora_packet(const char *rx_ctx,
                      hdrFlags, chHash, nextHop, rlyNodes, rssi);
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\e[%s%s\e[0m] %d Bytes ASCII: ", color, band, len);
+    printf("[\033[%s%s\033[0m] %d Bytes ASCII: ", color, band, len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
 }
@@ -152,7 +152,7 @@ static void daemon_print_fsk_packet(const char *rx_ctx,
 {
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\e[%s%s-FSK\e[0m] %d Bytes ASCII: ", color, band, len);
+    printf("[\033[%s%s-FSK\033[0m] %d Bytes ASCII: ", color, band, len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
 }
