@@ -7,19 +7,11 @@
 
 #include <RadioLib.h>
 
-#include "client_slot.h"
 #include "daemon_log.h"
-#include "daemon_protocol.h"
 #include "daemon_radio_runtime.h"
-#include "radio_channel.h"
 #include "radio_controller.h"
 #include "radio_health.h"
 #include "rf_packet.h"
-
-/* --- External daemon socket state --------------------------------------- */
-
-extern RadioChannelIo channel_433;
-extern RadioChannelIo channel_868;
 
 /* --- LoRa TX ------------------------------------------------------------- */
 static bool lora_send_valid_band(int band)
@@ -54,31 +46,24 @@ static const char *lora_tx_log_ctx(int band)
     return band == 433 ? "TX433" : "TX868";
 }
 
-/* --- TX status ----------------------------------------------------------- */
-// Broadcast local TX state on the matching CONF socket.
-static void daemon_broadcast_tx_status(RadioBand_t band, bool busy)
-{
-    RadioChannelIo *channel = (band == RADIO_BAND_433) ? &channel_433 : &channel_868;
-
-    client_slot_broadcast_queued(channel->conf_slots,
-                                 MAX_CLIENTS,
-                                 busy ? "TX=1\n" : "TX=0\n");
-}
-
 template<typename RadioT>
 static bool lora_send_acquire_controller_tx(RadioController<RadioT> *ctrl)
 {
     if (!ctrl)
         return false;
 
-    return !ctrl->tx_busy.exchange(true);
+    if (ctrl->tx_busy.exchange(true))
+        return false;
+
+    ctrl->tx_status_generation.fetch_add(1u);
+    return true;
 }
 
 template<typename RadioT>
 static void lora_send_release_controller_tx(RadioController<RadioT> *ctrl)
 {
     ctrl->tx_busy.store(false);
-    daemon_broadcast_tx_status(ctrl->band, false);
+    ctrl->tx_status_generation.fetch_add(1u);
 }
 
 static void lora_print_tx_preview(const char *ctx,
@@ -142,7 +127,6 @@ template<typename RadioT>
 static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
 {
     // TX ownership was acquired before payload copy/logging.
-    daemon_broadcast_tx_status(ctrl->band, true);
 
     // Clear RX state before switching the radio to TX.
     ctrl->received.store(false);

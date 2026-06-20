@@ -224,6 +224,7 @@ Rules:
 - `SET TXMODE=MANAGED` and `SET TXMODE=RAW` select per-band TX mode; default is `MANAGED`.
 - `SET TXQUEUE=1` routes DATA TX through the per-band bounded async TX queue; `SET TXQUEUE=0` keeps direct DATA TX.
 - `GET STATUS` reports `TXRESULT`, `TXMODE`, `TXQUEUE`, queue counters, last queued TX result, and last queued TX sequence.
+- `TX=1` and `TX=0` CONF broadcasts are emitted by the main loop; async TX workers do not access client slots.
 - `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE`.
 - `STATUS CAD` reflects monitoring activity; transient TX and on-demand CAD probes do not change it.
 - During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio.

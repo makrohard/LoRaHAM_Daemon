@@ -1,6 +1,8 @@
 #ifndef LORAHAM_DAEMON_MONITORING_H
 #define LORAHAM_DAEMON_MONITORING_H
 
+#include <stdint.h>
+
 #include "daemon_timing.h"
 
 /* --- CAD/RSSI/stats monitoring ----------------------------------------- */
@@ -24,6 +26,12 @@ static inline int daemon_monitoring_cad_broadcast_edge(
         return 0;
 
     return hardware_active ? 1 : -1;
+}
+
+static inline int daemon_monitoring_tx_status_next_busy(
+    uint32_t observed_generation)
+{
+    return (observed_generation & 1u) == 0u;
 }
 
 void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,

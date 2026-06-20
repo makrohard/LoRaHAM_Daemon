@@ -34,6 +34,44 @@ static const char *daemon_rssi_log_ctx(RadioController<RadioT> *ctrl)
 
 
 
+/* --- TX status ----------------------------------------------------------- */
+template<typename RadioT>
+static void daemon_process_tx_status(RadioController<RadioT> *ctrl,
+                                     RadioChannelIo *io)
+{
+    uint32_t observed;
+    uint32_t current;
+
+    if (!ctrl || !io)
+        return;
+
+    observed = ctrl->tx_status_broadcast_generation;
+    current = ctrl->tx_status_generation.load();
+
+    while (observed != current) {
+        int busy = daemon_monitoring_tx_status_next_busy(observed);
+
+        observed++;
+        ctrl->tx_status_broadcast_generation = observed;
+
+        if (client_slot_has_clients(io->conf_slots, MAX_CLIENTS)) {
+            client_slot_broadcast_queued(
+                io->conf_slots,
+                MAX_CLIENTS,
+                busy ? "TX=1\n" : "TX=0\n");
+        }
+    }
+}
+
+static void daemon_process_tx_status_all(void)
+{
+    if (daemon_radio_433_enabled())
+        daemon_process_tx_status(&radio_controller_433, &channel_433);
+
+    if (daemon_radio_868_enabled())
+        daemon_process_tx_status(&radio_controller_868, &channel_868);
+}
+
 /* --- CAD status ---------------------------------------------------------- */
 template<typename RadioT>
 static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
@@ -212,6 +250,7 @@ void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
                                 DaemonDeadlineTimer *rssi_timer,
                                 DaemonDeadlineTimer *stats_timer)
 {
+    daemon_process_tx_status_all();
     daemon_process_cad_rssi(cad_timer, rssi_timer);
     daemon_process_periodic_stats(stats_timer);
 }
