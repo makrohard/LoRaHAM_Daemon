@@ -377,6 +377,25 @@ static void test_dispatch_ignores_not_ready_client(void)
 }
 
 
+
+static void test_status_uses_cad_broadcast_latch(void)
+{
+    RadioController<FakeRadio> ctrl;
+    char status[384];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    ctrl.cad_active.store(true);
+    ctrl.cad_broadcast_active.store(false);
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status ignores transient CAD", status, " CAD=0 ");
+
+    ctrl.cad_active.store(false);
+    ctrl.cad_broadcast_active.store(true);
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status reports broadcast CAD", status, " CAD=1 ");
+}
+
 static void test_dispatch_get_channel_restores_rx(void)
 {
     int sv[2];
@@ -1011,6 +1030,7 @@ int main(int argc, char **argv)
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();
+    test_status_uses_cad_broadcast_latch();
     test_dispatch_get_channel_restores_rx();
     test_dispatch_get_channel_during_tx_skips_scan();
     test_dispatch_set_txresult();

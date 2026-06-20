@@ -2,6 +2,7 @@
 
 ## loraham_daemon 110
 
+- CAD monitoring state now uses a dedicated broadcast latch separate from transient probes.
 - GET CHANNEL now returns immediately during active TX without probing the radio.
 - Per-band runtime CAD policy (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via CONF SET commands and reported in GET STATUS.
 - MANAGED CAD now defaults to a 1.5 s bounded wait and returns CHANNEL_BUSY instead of transmitting on timeout.
