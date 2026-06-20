@@ -1,13 +1,21 @@
 #include "daemon_tx_async_runtime.h"
 
+#include <atomic>
+
 #include "daemon_log.h"
 
 /* --- TX-Async-Runtime ---------------------------------------------------- */
 
-typedef struct {
+struct DaemonTxAsyncCompletionRecordCtx {
     DaemonTxCompletionQueue *completion_queue;
-    DaemonRadioStats *stats;
-} DaemonTxAsyncCompletionRecordCtx;
+    std::atomic<DaemonRadioStats *> stats;
+
+    DaemonTxAsyncCompletionRecordCtx() :
+        completion_queue(NULL),
+        stats(NULL)
+    {
+    }
+};
 
 DaemonTxAsyncWorker daemon_tx_async_worker_433;
 DaemonTxAsyncWorker daemon_tx_async_worker_868;
@@ -28,10 +36,12 @@ void daemon_tx_async_runtime_init(void)
     daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue_868);
     daemon_tx_async_completion_record_433.completion_queue =
         &daemon_tx_async_completion_queue_433;
-    daemon_tx_async_completion_record_433.stats = NULL;
+    daemon_tx_async_completion_record_433.stats.store(
+        NULL, std::memory_order_release);
     daemon_tx_async_completion_record_868.completion_queue =
         &daemon_tx_async_completion_queue_868;
-    daemon_tx_async_completion_record_868.stats = NULL;
+    daemon_tx_async_completion_record_868.stats.store(
+        NULL, std::memory_order_release);
     daemon_tx_async_completion_stale_433 = 0;
     daemon_tx_async_completion_stale_868 = 0;
 }
@@ -45,8 +55,10 @@ void daemon_tx_async_runtime_shutdown(void)
 
     daemon_tx_async_worker_init(&daemon_tx_async_worker_433);
     daemon_tx_async_worker_init(&daemon_tx_async_worker_868);
-    daemon_tx_async_completion_record_433.stats = NULL;
-    daemon_tx_async_completion_record_868.stats = NULL;
+    daemon_tx_async_completion_record_433.stats.store(
+        NULL, std::memory_order_release);
+    daemon_tx_async_completion_record_868.stats.store(
+        NULL, std::memory_order_release);
 }
 
 DaemonTxAsyncWorker *daemon_tx_async_runtime_worker_for_band(int band)
@@ -89,7 +101,7 @@ void daemon_tx_async_runtime_set_stats_for_band(int band, DaemonRadioStats *stat
         daemon_tx_async_runtime_record_ctx_for_band(band);
 
     if (record)
-        record->stats = stats;
+        record->stats.store(stats, std::memory_order_release);
 }
 
 void *daemon_tx_async_runtime_completion_record_ctx_for_band(int band)
@@ -132,11 +144,14 @@ void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result,
     if (!record || !result)
         return;
 
-    if (record->stats) {
-        daemon_radio_stats_record_tx_result(record->stats, result->tx_result);
+    DaemonRadioStats *stats =
+        record->stats.load(std::memory_order_acquire);
+
+    if (stats) {
+        daemon_radio_stats_record_tx_result(stats, result->tx_result);
         if ((result->flags & FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT) &&
             result->tx_result == TX_RESULT_OK) {
-            daemon_radio_stats_record_cad_timeout_send(record->stats);
+            daemon_radio_stats_record_cad_timeout_send(stats);
         }
     }
 
