@@ -91,7 +91,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
     if(config_status_is_get_status(line)) {
-        char status[192];
+        char status[280];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,
@@ -163,6 +163,42 @@ static void config_dispatch_apply_line(const char *line, void *user)
         if(ctx->ctrl)
             ctx->ctrl->tx_mode = txmode;
         printf("[%s] TXMODE=%s\n", ctx->tag, radio_tx_mode_name(txmode));
+        fflush(stdout);
+        return;
+    }
+
+    uint32_t cadwait_ms = 0;
+    if(config_status_is_set_cadwait(line, &cadwait_ms)) {
+        if(ctx->ctrl)
+            ctx->ctrl->cad_wait_timeout_ms.store(cadwait_ms);
+        printf("[%s] CADWAIT=%u\n", ctx->tag, (unsigned)cadwait_ms);
+        fflush(stdout);
+        return;
+    }
+
+    uint32_t cadidle_ms = 0;
+    if(config_status_is_set_cadidle(line, &cadidle_ms)) {
+        if(ctx->ctrl)
+            ctx->ctrl->cad_idle_stable_ms.store(cadidle_ms);
+        printf("[%s] CADIDLE=%u\n", ctx->tag, (unsigned)cadidle_ms);
+        fflush(stdout);
+        return;
+    }
+
+    uint32_t cadpoll_ms = 0;
+    if(config_status_is_set_cadpoll(line, &cadpoll_ms)) {
+        if(ctx->ctrl)
+            ctx->ctrl->cad_poll_interval_ms.store(cadpoll_ms);
+        printf("[%s] CADPOLL=%u\n", ctx->tag, (unsigned)cadpoll_ms);
+        fflush(stdout);
+        return;
+    }
+
+    int cadtx_val = 0;
+    if(config_status_is_set_cadtxaftertimeout(line, &cadtx_val)) {
+        if(ctx->ctrl)
+            ctx->ctrl->cad_send_after_timeout.store(cadtx_val != 0);
+        printf("[%s] CADTXAFTERTIMEOUT=%d\n", ctx->tag, cadtx_val ? 1 : 0);
         fflush(stdout);
         return;
     }

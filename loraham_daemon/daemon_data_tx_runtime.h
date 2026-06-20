@@ -90,6 +90,38 @@ static void daemon_data_tx_set_completion_target(void *ctx,
     tx->completion_seq = seq;
 }
 
+struct DataTxCadPolicy {
+    uint32_t   cad_wait_ticks;
+    uint32_t   cad_idle_stable_ticks;
+    useconds_t cad_sleep_usec;
+    bool       send_after_timeout;
+};
+
+template<typename RadioT>
+static DataTxCadPolicy data_tx_snapshot_cad_policy(
+    const RadioController<RadioT> *ctrl)
+{
+    DataTxCadPolicy p;
+
+    if (!ctrl) {
+        p.cad_wait_ticks        = daemon_tx_policy_cad_wait_ticks();
+        p.cad_idle_stable_ticks = daemon_tx_policy_cad_idle_stable_ticks();
+        p.cad_sleep_usec        = (useconds_t)daemon_tx_policy_poll_interval_usec();
+        p.send_after_timeout    = DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT ? true : false;
+        return p;
+    }
+
+    uint32_t wait_ms = ctrl->cad_wait_timeout_ms.load();
+    uint32_t idle_ms = ctrl->cad_idle_stable_ms.load();
+    uint32_t poll_ms = ctrl->cad_poll_interval_ms.load();
+
+    p.cad_wait_ticks        = daemon_tx_policy_ticks_for_ms(wait_ms, poll_ms);
+    p.cad_idle_stable_ticks = daemon_tx_policy_ticks_for_ms(idle_ms, poll_ms);
+    p.cad_sleep_usec        = (useconds_t)(poll_ms * 1000u);
+    p.send_after_timeout    = ctrl->cad_send_after_timeout.load();
+    return p;
+}
+
 template<typename RadioT>
 static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
 {
@@ -104,10 +136,12 @@ static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
 }
 
 template<typename RadioT>
-static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx,
-                                                 uint32_t max_ticks,
-                                                 uint32_t stable_idle_ticks,
-                                                 useconds_t sleep_usec)
+static int data_tx_wait_channel_free_with_limits_ex(
+    DataTxDaemonContext<RadioT> *tx,
+    uint32_t max_ticks,
+    uint32_t stable_idle_ticks,
+    useconds_t sleep_usec,
+    bool send_after_timeout)
 {
     RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
     uint32_t cad_wait = 0;
@@ -137,19 +171,29 @@ static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx
             usleep(sleep_usec);
     }
 
-    return daemon_tx_policy_send_after_cad_timeout() ?
+    return send_after_timeout ?
            DATA_TX_CAD_WAIT_TIMEOUT_SEND :
            DATA_TX_CAD_WAIT_BLOCK;
 }
 
 template<typename RadioT>
+static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx,
+                                                 uint32_t max_ticks,
+                                                 uint32_t stable_idle_ticks,
+                                                 useconds_t sleep_usec)
+{
+    return data_tx_wait_channel_free_with_limits_ex(
+        tx, max_ticks, stable_idle_ticks, sleep_usec, false);
+}
+
+template<typename RadioT>
 static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
 {
-    return data_tx_wait_channel_free_with_limits(
-        tx,
-        daemon_tx_policy_cad_wait_ticks(),
-        daemon_tx_policy_cad_idle_stable_ticks(),
-        (useconds_t)daemon_tx_policy_poll_interval_usec());
+    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    DataTxCadPolicy p = data_tx_snapshot_cad_policy(ctrl);
+    return data_tx_wait_channel_free_with_limits_ex(
+        tx, p.cad_wait_ticks, p.cad_idle_stable_ticks,
+        p.cad_sleep_usec, p.send_after_timeout);
 }
 
 template<typename RadioT>
@@ -284,12 +328,13 @@ static void data_tx_configure_job_cad_policy(DataTxDaemonContext<RadioT> *tx,
         return;
     }
 
+    DataTxCadPolicy cad_p = data_tx_snapshot_cad_policy(ctrl);
     daemon_tx_job_configure_cad_policy(job,
                                        1,
-                                       tx->cad_wait_ticks,
-                                       tx->cad_idle_stable_ticks,
-                                       (uint32_t)tx->cad_sleep_usec,
-                                       daemon_tx_policy_send_after_cad_timeout());
+                                       cad_p.cad_wait_ticks,
+                                       cad_p.cad_idle_stable_ticks,
+                                       (uint32_t)cad_p.cad_sleep_usec,
+                                       cad_p.send_after_timeout ? 1 : 0);
 }
 
 template<typename RadioT>
