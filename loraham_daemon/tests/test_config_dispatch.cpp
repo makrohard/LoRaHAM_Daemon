@@ -427,7 +427,7 @@ static void test_dispatch_get_channel_restores_rx(void)
     n = read(sv[0], out, sizeof(out) - 1);
     if (n < 0)
         n = 0;
-    out[n] = ' ';
+    out[n] = '\0';
 
     expect_int("get channel apply count", g_apply_state.calls, 0);
     expect_int("get channel scan count", ctrl.radio->scan_count, 1);

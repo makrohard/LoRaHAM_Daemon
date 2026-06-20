@@ -121,7 +121,7 @@ static void test_completion_queue_push_pop(void)
     DaemonTxCompletionQueue queue;
     DaemonTxJob job = make_job(11, FRAMED_DATA_TX_RESULT_FLAG_MANAGED);
     DaemonTxJobResult result;
-    DaemonTxJobResult out;
+    DaemonTxJobResult out = {};
 
     daemon_tx_completion_queue_init(&queue);
     daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
@@ -145,7 +145,7 @@ static void test_completion_queue_push_pop(void)
 static void test_completion_queue_drops_oldest_when_full(void)
 {
     DaemonTxCompletionQueue queue;
-    DaemonTxJobResult out;
+    DaemonTxJobResult out = {};
 
     daemon_tx_completion_queue_init(&queue);
 

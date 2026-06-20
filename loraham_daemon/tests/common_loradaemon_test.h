@@ -336,8 +336,13 @@ static TEST_UNUSED int wait_for_matching_line(int fd, const char *pattern,
 
                     if (line_matches_regex(line, pattern)) {
                         if (out && out_size > 0) {
-                            strncpy(out, line, out_size - 1);
-                            out[out_size - 1] = '\0';
+                            size_t copy_len = strlen(line);
+
+                            if (copy_len >= out_size)
+                                copy_len = out_size - 1;
+
+                            memcpy(out, line, copy_len);
+                            out[copy_len] = '\0';
                         }
                         return 0;
                     }

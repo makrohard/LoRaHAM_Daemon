@@ -178,7 +178,7 @@ static void test_accept_sets_nonblocking(void)
 
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
 
     if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
         listen(listen_fd, 1) != 0 ||
