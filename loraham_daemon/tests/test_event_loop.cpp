@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 /*
@@ -292,6 +293,215 @@ static void test_registration_failure_is_not_silent(void)
     event_loop_close(&set);
 }
 
+static void test_reconcile_keeps_read_watch(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    const char owner = 'r';
+    char ch = 'x';
+    char received;
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] reconcile read pipe setup\n");
+        return;
+    }
+
+    if (event_loop_init(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] reconcile read init\n");
+        return;
+    }
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    (void)write(fds[1], &ch, 1);
+    expect_int("reconcile first read wait",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("reconcile first read ready",
+               event_loop_ready_fd_read(&ready, fds[0]), 1);
+    (void)read(fds[0], &received, 1);
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    (void)write(fds[1], &ch, 1);
+    expect_int("reconcile repeated read wait",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("reconcile repeated read ready",
+               event_loop_ready_fd_read(&ready, fds[0]), 1);
+
+    event_loop_close(&set);
+    close(fds[0]);
+    close(fds[1]);
+}
+
+static void test_reconcile_updates_write_interest(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    const char owner = 'w';
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+        g_fail++;
+        printf("[FAIL] reconcile write socketpair\n");
+        return;
+    }
+
+    if (event_loop_init(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] reconcile write init\n");
+        return;
+    }
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
+                            EVENT_LOOP_EVENT_WRITE);
+    event_loop_reconcile_end(&set);
+
+    expect_int("reconcile write ready",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("reconcile write event",
+               event_loop_ready_fd_write(&ready, fds[0]), 1);
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    expect_int("reconcile write removed",
+               event_loop_wait(&set, &ready, 1000), 0);
+
+    event_loop_close(&set);
+    close(fds[0]);
+    close(fds[1]);
+}
+
+static void test_reconcile_removes_stale_watch(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int fds[2];
+    const char owner = 's';
+    char ch = 'x';
+
+    if (pipe(fds) != 0) {
+        g_fail++;
+        printf("[FAIL] reconcile stale pipe setup\n");
+        return;
+    }
+
+    if (event_loop_init(&set) != 0) {
+        close(fds[0]);
+        close(fds[1]);
+        g_fail++;
+        printf("[FAIL] reconcile stale init\n");
+        return;
+    }
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_end(&set);
+
+    expect_int("reconcile stale removed",
+               event_loop_has_registered_fds(&set), 0);
+
+    (void)write(fds[1], &ch, 1);
+    expect_int("reconcile stale wait timeout",
+               event_loop_wait(&set, &ready, 1000), 0);
+
+    event_loop_close(&set);
+    close(fds[0]);
+    close(fds[1]);
+}
+
+static void test_reconcile_reuses_closed_fd(void)
+{
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int first[2];
+    int replacement[2];
+    const char owner = 'u';
+    char ch = 'x';
+    int old_fd;
+
+    if (pipe(first) != 0) {
+        g_fail++;
+        printf("[FAIL] reconcile reuse first pipe\n");
+        return;
+    }
+
+    if (event_loop_init(&set) != 0) {
+        close(first[0]);
+        close(first[1]);
+        g_fail++;
+        printf("[FAIL] reconcile reuse init\n");
+        return;
+    }
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 1u, first[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    old_fd = first[0];
+    close(first[0]);
+
+    if (pipe(replacement) != 0) {
+        event_loop_close(&set);
+        close(first[1]);
+        g_fail++;
+        printf("[FAIL] reconcile reuse replacement pipe\n");
+        return;
+    }
+
+    if (replacement[0] != old_fd) {
+        if (dup2(replacement[0], old_fd) < 0) {
+            event_loop_close(&set);
+            close(first[1]);
+            close(replacement[0]);
+            close(replacement[1]);
+            g_fail++;
+            printf("[FAIL] reconcile reuse dup2\n");
+            return;
+        }
+
+        close(replacement[0]);
+        replacement[0] = old_fd;
+    }
+
+    event_loop_reconcile_begin(&set);
+    event_loop_reconcile_fd(&set, &owner, 2u, replacement[0],
+                            EVENT_LOOP_EVENT_READ);
+    event_loop_reconcile_end(&set);
+
+    (void)write(replacement[1], &ch, 1);
+    expect_int("reconcile reused fd wait",
+               event_loop_wait(&set, &ready, 100000), 1);
+    expect_int("reconcile reused fd ready",
+               event_loop_ready_fd_read(&ready, replacement[0]), 1);
+
+    event_loop_close(&set);
+    close(first[1]);
+    close(replacement[0]);
+    close(replacement[1]);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -319,6 +529,10 @@ int main(int argc, char **argv)
     test_reset_clears_registered_fds();
     test_registration_capacity();
     test_registration_failure_is_not_silent();
+    test_reconcile_keeps_read_watch();
+    test_reconcile_updates_write_interest();
+    test_reconcile_removes_stale_watch();
+    test_reconcile_reuses_closed_fd();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

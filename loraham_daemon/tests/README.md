@@ -92,7 +92,7 @@ Client/socket/runtime:
 Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection`
-- `test_event_loop`
+- `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
