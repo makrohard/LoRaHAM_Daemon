@@ -112,7 +112,7 @@ static void test_full_rejects_and_counts(void)
     expect_size("worker accepted capacity", daemon_tx_worker_accepted(&worker),
                 DAEMON_TX_QUEUE_CAPACITY);
     expect_size("worker rejected one", daemon_tx_worker_rejected(&worker), 1);
-    expect_size("worker dropped one", daemon_tx_worker_dropped(&worker), 1);
+    expect_size("worker dropped zero", daemon_tx_worker_dropped(&worker), 0);
 }
 
 static void test_drain_updates_worker_state(void)

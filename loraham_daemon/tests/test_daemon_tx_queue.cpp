@@ -133,7 +133,7 @@ static void test_full_rejects_newest(void)
 
     DaemonTxJob extra = make_job(868, 99, 0x99);
     expect_int("full rejects newest", daemon_tx_queue_push(&queue, &extra), -1);
-    expect_size("dropped incremented", daemon_tx_queue_dropped(&queue), 1);
+    expect_size("dropped stays zero", daemon_tx_queue_dropped(&queue), 0);
     expect_size("count unchanged after reject", daemon_tx_queue_count(&queue),
                 DAEMON_TX_QUEUE_CAPACITY);
 

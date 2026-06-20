@@ -206,9 +206,12 @@ static void test_default_direct_path(void)
                0);
     expect_int("direct sender calls", sender.calls, 1);
     expect_int("direct frontdoor led untouched", g_led_set_count, 0);
-    expect_size("direct queue accepted", daemon_tx_worker_accepted(&ctrl.tx_worker), 0);
-    expect_size("direct queue processed", daemon_tx_worker_processed(&ctrl.tx_worker), 0);
-    expect_size("direct queue pending", daemon_tx_worker_pending(&ctrl.tx_worker), 0);
+    expect_size("direct async accepted",
+                daemon_tx_async_runtime_accepted_for_band(433), 0);
+    expect_size("direct async processed",
+                daemon_tx_async_runtime_processed_for_band(433), 0);
+    expect_size("direct async pending",
+                daemon_tx_async_runtime_pending_for_band(433), 0);
 }
 
 static void test_txqueue_optin_path(void)
@@ -285,7 +288,7 @@ static void test_txqueue_direct_full_rejects_newest(void)
                daemon_tx_async_worker_submit(worker, &extra),
                -1);
     expect_size("queue full rejected", daemon_tx_async_runtime_rejected_for_band(433), 1);
-    expect_size("queue full dropped", daemon_tx_async_runtime_dropped_for_band(433), 1);
+    expect_size("queue full dropped", daemon_tx_async_runtime_dropped_for_band(433), 0);
     expect_size("queue full still pending", daemon_tx_async_runtime_pending_for_band(433),
                 DAEMON_TX_QUEUE_CAPACITY);
 

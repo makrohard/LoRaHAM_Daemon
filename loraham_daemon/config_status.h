@@ -241,25 +241,31 @@ static inline int config_status_is_set_cadtxaftertimeout(const char *line, int *
 template<typename RadioT>
 static inline size_t config_status_txq_pending(const RadioController<RadioT> *ctrl)
 {
-    if (!ctrl)
+    if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
 
-    if (ctrl->tx_queue_active.load())
-        return daemon_tx_async_runtime_pending_for_band(radio_controller_band_number(ctrl));
-
-    return daemon_tx_worker_pending(&ctrl->tx_worker);
+    return daemon_tx_async_runtime_pending_for_band(
+        radio_controller_band_number(ctrl));
 }
 
 template<typename RadioT>
 static inline size_t config_status_txq_dropped(const RadioController<RadioT> *ctrl)
 {
-    if (!ctrl)
+    if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
 
-    if (ctrl->tx_queue_active.load())
-        return daemon_tx_async_runtime_dropped_for_band(radio_controller_band_number(ctrl));
+    return daemon_tx_async_runtime_dropped_for_band(
+        radio_controller_band_number(ctrl));
+}
 
-    return daemon_tx_worker_dropped(&ctrl->tx_worker);
+template<typename RadioT>
+static inline size_t config_status_txq_rejected(const RadioController<RadioT> *ctrl)
+{
+    if (!ctrl || !ctrl->tx_queue_active.load())
+        return 0;
+
+    return daemon_tx_async_runtime_rejected_for_band(
+        radio_controller_band_number(ctrl));
 }
 
 template<typename RadioT>
@@ -288,13 +294,11 @@ static inline size_t config_status_txq_result_dropped(
 template<typename RadioT>
 static inline size_t config_status_txq_processed(const RadioController<RadioT> *ctrl)
 {
-    if (!ctrl)
+    if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
 
-    if (ctrl->tx_queue_active.load())
-        return daemon_tx_async_runtime_processed_for_band(radio_controller_band_number(ctrl));
-
-    return daemon_tx_worker_processed(&ctrl->tx_worker);
+    return daemon_tx_async_runtime_processed_for_band(
+        radio_controller_band_number(ctrl));
 }
 
 
@@ -341,7 +345,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -351,6 +355,7 @@ static inline void config_status_format(char *buf,
              (ctrl && ctrl->tx_queue_active.load()) ? 1 : 0,
              config_status_txq_pending(ctrl),
              config_status_txq_dropped(ctrl),
+             config_status_txq_rejected(ctrl),
              config_status_txq_stale(ctrl),
              config_status_txq_result_dropped(ctrl),
              config_status_txq_processed(ctrl),

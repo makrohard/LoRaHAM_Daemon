@@ -154,11 +154,22 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
                                      uint8_t *buf,
                                      size_t len)
 {
-    int band = radio_controller_band_number(ctrl);
-    const char *tag = radio_controller_tag(ctrl);
-    const char *tx_ctx = lora_tx_log_ctx(band);
+    int band;
+    const char *tag;
+    const char *tx_ctx;
 
-    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl)) {
+    if (!ctrl) {
+        printf("[SEND 0] radio not ready: %s\n",
+               radio_health_name(RADIO_HEALTH_FAILED));
+        fflush(stdout);
+        return TX_RESULT_RADIO_NOT_READY;
+    }
+
+    band = radio_controller_band_number(ctrl);
+    tag = radio_controller_tag(ctrl);
+    tx_ctx = lora_tx_log_ctx(band);
+
+    if (!ctrl->radio || !radio_controller_ready(ctrl)) {
         printf("[SEND %d] radio not ready: %s\n",
                band, radio_health_name(radio_controller_health(ctrl)));
         fflush(stdout);
