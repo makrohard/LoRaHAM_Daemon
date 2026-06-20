@@ -4,7 +4,6 @@
 
 #include "daemon_protocol.h"
 #include "unix_socket.h"
-#include "client_set.h"
 #include "client_slot.h"
 #include "event_loop.h"
 
@@ -36,21 +35,62 @@ void radio_channel_io_init(RadioChannelIo *ch,
 }
 
 
-void radio_channel_add_fds(RadioChannelIo *ch, EventLoopSet *set)
+static void radio_channel_reconcile_slots(ClientSlot *slots,
+                                                EventLoopSet *set)
 {
-    event_loop_add_fd(set, *ch->data_listen_fd);
-    event_loop_add_fd(set, *ch->framed_data_listen_fd);
-    event_loop_add_fd(set, *ch->conf_listen_fd);
+    if (!slots)
+        return;
 
-    client_slot_add_to_event_loop_with_output(ch->data_slots,
-                                                  MAX_CLIENTS,
-                                                  set);
-    client_slot_add_to_event_loop_with_output(ch->framed_data_slots,
-                                                  MAX_CLIENTS,
-                                                  set);
-    client_slot_add_to_event_loop_with_output(ch->conf_slots,
-                                                  MAX_CLIENTS,
-                                                  set);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        uint32_t events;
+
+        if (!client_slot_has_client(&slots[i]))
+            continue;
+
+        events = EVENT_LOOP_EVENT_READ;
+        if (client_output_queue_pending(&slots[i].output) > 0)
+            events |= EVENT_LOOP_EVENT_WRITE;
+
+        event_loop_reconcile_fd(set,
+                                &slots[i],
+                                client_slot_generation(&slots[i]),
+                                client_slot_fd(&slots[i]),
+                                events);
+    }
+}
+
+void radio_channel_reconcile_fds(RadioChannelIo *ch, EventLoopSet *set)
+{
+    if (!ch)
+        return;
+
+    if (ch->data_listen_fd && *ch->data_listen_fd >= 0) {
+        event_loop_reconcile_fd(set,
+                                ch->data_listen_fd,
+                                1u,
+                                *ch->data_listen_fd,
+                                EVENT_LOOP_EVENT_READ);
+    }
+
+    if (ch->framed_data_listen_fd && *ch->framed_data_listen_fd >= 0) {
+        event_loop_reconcile_fd(set,
+                                ch->framed_data_listen_fd,
+                                1u,
+                                *ch->framed_data_listen_fd,
+                                EVENT_LOOP_EVENT_READ);
+    }
+
+    if (ch->conf_listen_fd && *ch->conf_listen_fd >= 0) {
+        event_loop_reconcile_fd(set,
+                                ch->conf_listen_fd,
+                                1u,
+                                *ch->conf_listen_fd,
+                                EVENT_LOOP_EVENT_READ);
+    }
+
+    radio_channel_reconcile_slots(ch->data_slots, set);
+    radio_channel_reconcile_slots(ch->framed_data_slots, set);
+    radio_channel_reconcile_slots(ch->conf_slots, set);
 }
 
 void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *ready)

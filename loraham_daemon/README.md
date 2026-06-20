@@ -41,9 +41,9 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, framed client state, per-band channel state, I/O startup/cleanup, and event-fd registration |
+| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, framed client state, per-band channel state, I/O startup/cleanup, and persistent event-watch reconciliation |
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket descriptors, socket setup/open helpers, client accept/flush flow, and live RSSI helper |
-| Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus current epoll implementation for socket readiness |
+| Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus persistent epoll watch reconciliation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Socket runtime | `daemon_socket_runtime.cpp`, `daemon_socket_runtime.h` | Logged per-channel accept/flush helpers around socket client slots |
 | Socket dispatch | `daemon_socket_dispatch.cpp`, `daemon_socket_dispatch.h` | Per-band ready-socket orchestration for raw DATA, framed DATA, CONFIG, accept, and flush flow |

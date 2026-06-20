@@ -154,24 +154,7 @@ int client_slot_output_ready(const ClientSlot *slot, const EventLoopReadySet *re
            event_loop_ready_fd_write(ready, slot->fd);
 }
 
-void client_slot_add_to_event_loop_with_output(ClientSlot *slots,
-                                               int max_clients,
-                                               EventLoopSet *set)
-{
-    if (!slots)
-        return;
 
-    for (int i = 0; i < max_clients; i++) {
-        if (client_slot_has_client(&slots[i])) {
-            uint32_t events = EVENT_LOOP_EVENT_READ;
-
-            if (client_output_queue_pending(&slots[i].output) > 0)
-                events |= EVENT_LOOP_EVENT_WRITE;
-
-            event_loop_add_fd_events(set, slots[i].fd, events);
-        }
-    }
-}
 
 void client_slot_flush_output(ClientSlot *slot)
 {

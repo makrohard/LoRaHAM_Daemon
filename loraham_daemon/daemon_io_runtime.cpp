@@ -163,11 +163,20 @@ void daemon_io_init(void)
 }
 
 
-void daemon_io_add_event_fds(EventLoopSet *event_set)
+void daemon_io_sync_event_fds(EventLoopSet *event_set)
 {
+    if (!event_set)
+        return;
+
+    event_loop_reconcile_begin(event_set);
+    if (event_loop_registration_failed(event_set))
+        return;
+
     if (daemon_radio_433_enabled())
-        radio_channel_add_fds(&channel_433, event_set);
+        radio_channel_reconcile_fds(&channel_433, event_set);
 
     if (daemon_radio_868_enabled())
-        radio_channel_add_fds(&channel_868, event_set);
+        radio_channel_reconcile_fds(&channel_868, event_set);
+
+    event_loop_reconcile_end(event_set);
 }

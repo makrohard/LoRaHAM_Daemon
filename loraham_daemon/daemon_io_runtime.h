@@ -33,6 +33,6 @@ extern RadioChannelIo channel_868;
 void daemon_io_startup_cleanup(void);
 void daemon_io_shutdown_cleanup(void);
 void daemon_io_init(void);
-void daemon_io_add_event_fds(EventLoopSet *event_set);
+void daemon_io_sync_event_fds(EventLoopSet *event_set);
 
 #endif
