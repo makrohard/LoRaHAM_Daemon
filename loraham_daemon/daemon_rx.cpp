@@ -261,6 +261,13 @@ static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
     if (ctrl->band == RADIO_BAND_868)
         memset(buf, 0, buf_len);
 
+    // Symmetric LoRa IRQ clearing: clear RxDone *after* readData() and before
+    // re-arming, so the just-read packet cannot be re-delivered on the next
+    // startReceive (standard SX127x order: readData -> clearIrq -> startReceive).
+    // FSK clears in daemon_clear_irq_after_rx_read and stays unchanged.
+    if (ctrl->mode == RADIO_MODE_LORA)
+        ctrl->radio->clearIrq(0xFFFFFFFF);
+
     ctrl->radio->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit");
 }

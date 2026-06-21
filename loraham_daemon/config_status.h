@@ -137,6 +137,29 @@ static inline int config_status_is_set_txqueue(const char *line,
     return 0;
 }
 
+static inline int config_status_is_set_cadmonitor(const char *line,
+                                                  int *enabled)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+
+    if (strcmp(cmd, "SET CADMONITOR=1") == 0) {
+        if (enabled)
+            *enabled = 1;
+        return 1;
+    }
+
+    if (strcmp(cmd, "SET CADMONITOR=0") == 0) {
+        if (enabled)
+            *enabled = 0;
+        return 1;
+    }
+
+    return 0;
+}
+
 static inline int config_status_is_set_txmode(const char *line,
                                              RadioTxMode_t *mode)
 {
@@ -345,7 +368,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -367,7 +390,8 @@ static inline void config_status_format(char *buf,
                   : DAEMON_TX_POLICY_CAD_IDLE_STABLE_MS,
              ctrl ? (unsigned)ctrl->cad_poll_interval_ms.load()
                   : DAEMON_TX_POLICY_POLL_INTERVAL_MS,
-             (ctrl && ctrl->cad_send_after_timeout.load()) ? 1 : 0);
+             (ctrl && ctrl->cad_send_after_timeout.load()) ? 1 : 0,
+             (ctrl && ctrl->cad_monitor_active.load()) ? 1 : 0);
 }
 
 static inline const char *config_status_cad_state_name(RadioCadProbeStatus status)

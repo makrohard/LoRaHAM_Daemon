@@ -5,6 +5,11 @@
 
 /* --- Radio CAD probe helper --------------------------------------------- */
 
+// RSSI threshold (dBm) above which the passive monitoring probe reports the
+// channel busy. This is environment dependent and tunable; it is only used for
+// the non-destructive CAD=0/1 monitoring indicator, never for TX gating.
+#define RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM (-90.0f)
+
 typedef enum {
     RADIO_CAD_PROBE_UNAVAILABLE = 0,
     RADIO_CAD_PROBE_FREE = 1,
@@ -86,8 +91,42 @@ static inline void radio_cad_restore_rx_after_probe(RadioController<RadioT> *ctr
     if (ctrl->mode != RADIO_MODE_LORA)
         return;
 
+    // A CAD/scanChannel may have left an RxDone/preamble IRQ pending. Clear it
+    // and the received flag before re-arming so the probe never surfaces as a
+    // (re-delivered) RX packet. Order mirrors the TX-end restore in daemon_tx.
+    ctrl->radio->clearIrq(0xFFFFFFFF);
+    ctrl->received.store(false);
     ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
     ctrl->radio->startReceive();
+}
+
+// Non-destructive monitoring probe: derives channel busy/free from a plain RSSI
+// register read only. It never changes radio mode, never calls scanChannel, and
+// never re-arms RX, so it cannot disturb the continuous-RX steady state. Use
+// this for the periodic CAD=0/1 monitoring indicator. (scanChannel-based CAD
+// remains for the deliberate, bounded TX-gating and GET CHANNEL paths.)
+template<typename RadioT>
+static inline RadioCadProbeResult radio_cad_probe_passive(RadioController<RadioT> *ctrl)
+{
+    RadioCadProbeResult result = radio_cad_probe_unavailable();
+
+    if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
+        return result;
+
+    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
+    // Live channel RSSI: packet=false reads the instant RSSI register (current
+    // channel energy, not the stale last-packet RSSI), skipReceive=true avoids
+    // re-entering RX. Non-destructive, same source as the GETRSSI live stream.
+    result.rssi_dbm = ctrl->radio->getRSSI(false, true);
+
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return result; // UNAVAILABLE for non-LoRa, like the active probe.
+
+    result.scan_ran = 0;
+    result.status = (result.rssi_dbm >= RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM)
+                        ? RADIO_CAD_PROBE_BUSY
+                        : RADIO_CAD_PROBE_FREE;
+    return result;
 }
 
 template<typename RadioT>

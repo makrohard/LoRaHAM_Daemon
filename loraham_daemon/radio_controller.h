@@ -49,6 +49,7 @@ struct RadioController {
     uint32_t tx_status_broadcast_generation;
     std::atomic<bool> cad_active;
     std::atomic<bool> cad_broadcast_active;
+    std::atomic<bool> cad_monitor_active;
     std::atomic<bool> getrssi_active;
     std::atomic<bool> tx_result_active;
     std::atomic<bool> tx_queue_active;
@@ -96,6 +97,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->tx_status_broadcast_generation = 0u;
     ctrl->cad_active.store(false);
     ctrl->cad_broadcast_active.store(false);
+    ctrl->cad_monitor_active.store(false);
     ctrl->getrssi_active.store(false);
     ctrl->tx_result_active.store(false);
     ctrl->tx_queue_active.store(true);

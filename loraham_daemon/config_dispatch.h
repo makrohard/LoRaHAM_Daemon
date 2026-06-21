@@ -160,6 +160,18 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    int cadmonitor_enabled = 0;
+    if(config_status_is_set_cadmonitor(line, &cadmonitor_enabled)) {
+        if(ctx->ctrl) {
+            ctx->ctrl->cad_monitor_active.store(cadmonitor_enabled != 0);
+            if(!cadmonitor_enabled)
+                ctx->ctrl->cad_broadcast_active.store(false);
+        }
+        printf("[%s] CADMONITOR=%d\n", ctx->tag, cadmonitor_enabled ? 1 : 0);
+        fflush(stdout);
+        return;
+    }
+
     uint32_t cadwait_ms = 0;
     if(config_status_is_set_cadwait(line, &cadwait_ms)) {
         if(ctx->ctrl)

@@ -17,11 +17,13 @@ struct FakeRadio {
     int scan_count;
     int callback_count;
     int start_receive_count;
+    int clear_irq_count;
     float rssi;
     void (*last_callback)(void);
 
     FakeRadio() : scan_result(0), scan_count(0), callback_count(0),
-                  start_receive_count(0), rssi(-91.5f), last_callback(NULL) {}
+                  start_receive_count(0), clear_irq_count(0),
+                  rssi(-91.5f), last_callback(NULL) {}
 
     void setPacketReceivedAction(void (*cb)(void))
     {
@@ -34,6 +36,11 @@ struct FakeRadio {
         start_receive_count++;
     }
 
+    void clearIrq(uint32_t)
+    {
+        clear_irq_count++;
+    }
+
     int scanChannel()
     {
         scan_count++;
@@ -41,6 +48,11 @@ struct FakeRadio {
     }
 
     float getRSSI()
+    {
+        return rssi;
+    }
+
+    float getRSSI(bool, bool)
     {
         return rssi;
     }
@@ -300,6 +312,77 @@ static void test_tx_wait_fsk_skips_cad(void)
     expect_int("fsk tx wait no scan", ctrl.radio->scan_count, 0);
 }
 
+static void test_passive_probe_is_non_destructive(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+
+    // RSSI below threshold (-90) -> FREE, above -> BUSY, never scanning.
+    ctrl.radio->rssi = -95.0f;
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive free status", result.status, RADIO_CAD_PROBE_FREE);
+    expect_int("passive free scan not ran", result.scan_ran, 0);
+
+    ctrl.radio->rssi = -80.0f;
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive busy status", result.status, RADIO_CAD_PROBE_BUSY);
+
+    // The whole point: monitoring must never touch RX.
+    expect_int("passive no scanChannel", ctrl.radio->scan_count, 0);
+    expect_int("passive no startReceive", ctrl.radio->start_receive_count, 0);
+    expect_int("passive no setPacketReceivedAction", ctrl.radio->callback_count, 0);
+    expect_int("passive no clearIrq", ctrl.radio->clear_irq_count, 0);
+}
+
+static void test_passive_probe_non_lora_unavailable(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    ctrl.radio->rssi = -50.0f; // would be "busy" if it mismeasured
+
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive fsk unavailable", result.status, RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("passive fsk no scan", ctrl.radio->scan_count, 0);
+    expect_int("passive fsk no startReceive", ctrl.radio->start_receive_count, 0);
+}
+
+static void test_restore_clears_received_and_irq(void)
+{
+    RadioController<FakeRadio> ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.received.store(true);
+
+    radio_cad_restore_rx_after_probe(&ctrl);
+
+    expect_int("restore clears received", ctrl.received.load() ? 1 : 0, 0);
+    expect_int("restore clears irq", ctrl.radio->clear_irq_count >= 1 ? 1 : 0, 1);
+    expect_int("restore re-attaches callback", ctrl.radio->callback_count, 1);
+    expect_int("restore re-arms rx", ctrl.radio->start_receive_count, 1);
+}
+
+static void test_active_probe_leaves_no_spurious_received(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.radio->scan_result = 0;
+    ctrl.received.store(true); // simulate a stale flag set during the probe
+
+    result = radio_cad_probe(&ctrl);
+
+    expect_int("active probe scanned once", ctrl.radio->scan_count, 1);
+    expect_int("active probe restore cleared received",
+               ctrl.received.load() ? 1 : 0, 0);
+    expect_int("active probe cleared irq",
+               ctrl.radio->clear_irq_count >= 1 ? 1 : 0, 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -329,6 +412,10 @@ int main(int argc, char **argv)
     test_try_probe_skips_active_tx();
     test_tx_wait_direct_mode_skips_cad();
     test_tx_wait_fsk_skips_cad();
+    test_passive_probe_is_non_destructive();
+    test_passive_probe_non_lora_unavailable();
+    test_restore_clears_received_and_irq();
+    test_active_probe_leaves_no_spurious_received();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
