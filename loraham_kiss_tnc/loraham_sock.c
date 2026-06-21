@@ -238,6 +238,35 @@ int loraham_framed_decode_byte(loraham_framed_rx_state_t *state,
     return 1;
 }
 
+int loraham_tx_result_status_valid(uint8_t status)
+{
+    return status <= LORAHAM_TX_STATUS_INVALID_BAND;
+}
+
+int loraham_decode_tx_result(const loraham_frame_t *frame,
+                             loraham_tx_result_t *out)
+{
+    if (!frame || !out) {
+        return LHKT_ERR;
+    }
+
+    if (frame->type != LORAHAM_FRAME_TX_RESULT ||
+        frame->payload_len != LORAHAM_TX_RESULT_LEN) {
+        return LHKT_ERR_FORMAT;
+    }
+
+    if (!loraham_tx_result_status_valid(frame->payload[0])) {
+        return LHKT_ERR_FORMAT;
+    }
+
+    out->status = frame->payload[0];
+    out->flags = frame->payload[1];
+    out->seq = (uint16_t)frame->payload[2] |
+               ((uint16_t)frame->payload[3] << 8);
+
+    return LHKT_OK;
+}
+
 int loraham_send_framed_tx_packet(int fd,
                                   const uint8_t *payload,
                                   size_t payload_len)
@@ -623,6 +652,21 @@ int loraham_send_config_freq(int conf_fd,
     }
 
     return loraham_send_config_line(conf_fd, cfg, freq, 1);
+}
+
+int loraham_send_txresult_enable(int conf_fd)
+{
+    static const uint8_t cmd[] = "SET TXRESULT=1\n";
+
+    if (conf_fd < 0) {
+        return LHKT_ERR;
+    }
+
+    if (loraham_sock_write(conf_fd, cmd, sizeof(cmd) - 1) < 0) {
+        return LHKT_ERR;
+    }
+
+    return LHKT_OK;
 }
 
 /*

@@ -383,6 +383,75 @@ static void test_framed_decode_oversize_recovers(void)
     assert(frame.payload[0] == 'X');
 }
 
+static void test_framed_decode_tx_result(void)
+{
+    loraham_framed_rx_state_t state;
+    loraham_frame_t frame;
+    loraham_tx_result_t result;
+    const uint8_t data[] = {
+        LORAHAM_FRAME_TX_RESULT, LORAHAM_TX_RESULT_LEN, 0,
+        LORAHAM_TX_STATUS_CHANNEL_BUSY,
+        LORAHAM_TX_RESULT_FLAG_MANAGED | LORAHAM_TX_RESULT_FLAG_DEFERRED,
+        0x34, 0x12
+    };
+    size_t i;
+
+    loraham_framed_rx_state_init(&state);
+
+    for (i = 0; i + 1 < sizeof(data); i++) {
+        assert(loraham_framed_decode_byte(&state, data[i], &frame) == 0);
+    }
+
+    assert(loraham_framed_decode_byte(&state, data[i], &frame) == 1);
+    assert(frame.type == LORAHAM_FRAME_TX_RESULT);
+    assert(frame.payload_len == LORAHAM_TX_RESULT_LEN);
+    assert(loraham_decode_tx_result(&frame, &result) == LHKT_OK);
+    assert(result.status == LORAHAM_TX_STATUS_CHANNEL_BUSY);
+    assert(result.flags == (LORAHAM_TX_RESULT_FLAG_MANAGED |
+                            LORAHAM_TX_RESULT_FLAG_DEFERRED));
+    assert(result.seq == 0x1234);
+}
+
+static void test_tx_result_rejects_invalid_frame(void)
+{
+    loraham_frame_t frame;
+    loraham_tx_result_t result;
+
+    memset(&frame, 0, sizeof(frame));
+    frame.type = LORAHAM_FRAME_TX_RESULT;
+    frame.payload_len = LORAHAM_TX_RESULT_LEN - 1;
+    assert(loraham_decode_tx_result(&frame, &result) == LHKT_ERR_FORMAT);
+
+    frame.payload_len = LORAHAM_TX_RESULT_LEN;
+    frame.payload[0] = LORAHAM_TX_STATUS_INVALID_BAND + 1;
+    assert(loraham_decode_tx_result(&frame, &result) == LHKT_ERR_FORMAT);
+
+    frame.payload[0] = LORAHAM_TX_STATUS_OK;
+    frame.type = LORAHAM_FRAME_ERROR;
+    assert(loraham_decode_tx_result(&frame, &result) == LHKT_ERR_FORMAT);
+
+    assert(loraham_decode_tx_result(NULL, &result) == LHKT_ERR);
+    assert(loraham_decode_tx_result(&frame, NULL) == LHKT_ERR);
+}
+
+static void test_txresult_enable_socketpair(void)
+{
+    int sv[2];
+    char buf[32];
+    ssize_t n;
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    assert(loraham_send_txresult_enable(sv[0]) == LHKT_OK);
+    n = read(sv[1], buf, sizeof(buf) - 1);
+    assert(n == (ssize_t)strlen("SET TXRESULT=1\n"));
+    buf[n] = '\0';
+    assert(strcmp(buf, "SET TXRESULT=1\n") == 0);
+    assert(loraham_send_txresult_enable(-1) == LHKT_ERR);
+
+    close(sv[0]);
+    close(sv[1]);
+}
+
 int main(void)
 {
     test_sock_write_socketpair();
@@ -403,6 +472,9 @@ int main(void)
     test_framed_send_tx_packet_socketpair();
     test_framed_decode_split_rx_packet();
     test_framed_decode_oversize_recovers();
+    test_framed_decode_tx_result();
+    test_tx_result_rejects_invalid_frame();
+    test_txresult_enable_socketpair();
 
     puts("test_loraham_sock: OK");
     return 0;

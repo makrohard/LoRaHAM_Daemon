@@ -21,6 +21,10 @@ int bridge_rx_handle_loraham_chunk(int client_fd,
                                    size_t len,
                                    lhkt_stats_t *stats);
 
+int bridge_rx_handle_framed_frame(int client_fd,
+                                   const loraham_frame_t *frame,
+                                   lhkt_stats_t *stats);
+
 int bridge_rx_handle_framed_chunk(int client_fd,
                                   loraham_framed_rx_state_t *frame_state,
                                   const uint8_t *buf,

@@ -20,6 +20,13 @@ void bridge_conf_state_init(bridge_conf_state_t *state)
     memset(state, 0, sizeof(*state));
 }
 
+int bridge_conf_txresult_enabled(const bridge_conf_state_t *state)
+{
+    return state &&
+           state->txresult_known &&
+           state->txresult_enabled;
+}
+
 static int bridge_parse_flag_line(const char *line,
                                   const char *prefix,
                                   int *out)
@@ -127,6 +134,11 @@ static void bridge_conf_handle_line(bridge_conf_state_t *state,
 
         if (bridge_status_flag_token(line, "CAD=", &value)) {
             state->cad_busy = value;
+        }
+
+        if (bridge_status_flag_token(line, "TXRESULT=", &value)) {
+            state->txresult_known = 1;
+            state->txresult_enabled = value;
         }
 
         printf("[CONF] %s\n", line);

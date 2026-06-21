@@ -291,11 +291,57 @@ static int bridge_rx_send_loraham_packet_to_kiss_client(int client_fd,
     return LHKT_OK;
 }
 
+int bridge_rx_handle_framed_frame(int client_fd,
+                                   const loraham_frame_t *frame,
+                                   lhkt_stats_t *stats)
+{
+    if (!frame) {
+        return LHKT_ERR;
+    }
+
+    if (frame->type == LORAHAM_FRAME_RX_PACKET) {
+        if (frame->payload_len < BRIDGE_RX_LORAHAM_META_LEN) {
+            if (stats) {
+                stats->loraham_drop++;
+            }
+
+            printf("[LoRaHAM] Framed RX drop: short metadata len=%zu\n",
+                   frame->payload_len);
+            return LHKT_OK;
+        }
+
+        return bridge_rx_send_loraham_packet_to_kiss_client(
+            client_fd,
+            frame->payload + BRIDGE_RX_LORAHAM_META_LEN,
+            frame->payload_len - BRIDGE_RX_LORAHAM_META_LEN,
+            stats);
+    }
+
+    if (frame->type == LORAHAM_FRAME_ERROR) {
+        if (stats) {
+            stats->loraham_framed_errors++;
+        }
+
+        printf("[LoRaHAM] Framed ERROR: %.*s\n",
+               (int)frame->payload_len,
+               (const char *)frame->payload);
+        return LHKT_OK;
+    }
+
+    if (stats) {
+        stats->loraham_drop++;
+    }
+
+    printf("[LoRaHAM] Framed RX drop: unsupported type=0x%02X\n",
+           frame->type);
+    return LHKT_OK;
+}
+
 int bridge_rx_handle_framed_chunk(int client_fd,
-                                  loraham_framed_rx_state_t *frame_state,
-                                  const uint8_t *buf,
-                                  size_t len,
-                                  lhkt_stats_t *stats)
+                                   loraham_framed_rx_state_t *frame_state,
+                                   const uint8_t *buf,
+                                   size_t len,
+                                   lhkt_stats_t *stats)
 {
     loraham_frame_t frame;
     size_t i;
@@ -309,40 +355,9 @@ int bridge_rx_handle_framed_chunk(int client_fd,
         ret = loraham_framed_decode_byte(frame_state, buf[i], &frame);
 
         if (ret == 1) {
-            if (frame.type == LORAHAM_FRAME_RX_PACKET) {
-                if (frame.payload_len < BRIDGE_RX_LORAHAM_META_LEN) {
-                    if (stats) {
-                        stats->loraham_drop++;
-                    }
-
-                    printf("[LoRaHAM] Framed RX drop: short metadata len=%zu\n",
-                           frame.payload_len);
-                    continue;
-                }
-
-                ret = bridge_rx_send_loraham_packet_to_kiss_client(
-                    client_fd,
-                    frame.payload + BRIDGE_RX_LORAHAM_META_LEN,
-                    frame.payload_len - BRIDGE_RX_LORAHAM_META_LEN,
-                    stats);
-                if (ret != LHKT_OK) {
-                    return ret;
-                }
-            } else if (frame.type == LORAHAM_FRAME_ERROR) {
-                if (stats) {
-                    stats->loraham_framed_errors++;
-                }
-
-                printf("[LoRaHAM] Framed ERROR: %.*s\n",
-                       (int)frame.payload_len,
-                       (const char *)frame.payload);
-            } else {
-                if (stats) {
-                    stats->loraham_drop++;
-                }
-
-                printf("[LoRaHAM] Framed RX drop: unsupported type=0x%02X\n",
-                       frame.type);
+            ret = bridge_rx_handle_framed_frame(client_fd, &frame, stats);
+            if (ret != LHKT_OK) {
+                return ret;
             }
         } else if (ret < 0) {
             if (stats) {

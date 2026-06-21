@@ -13,6 +13,8 @@ typedef struct {
     int cad_busy;
     int radio_ready;
     int have_status;
+    int txresult_known;
+    int txresult_enabled;
     unsigned long tx_seq;
     unsigned long tx_busy_seq;
     unsigned long tx_idle_seq;
@@ -28,6 +30,8 @@ void bridge_conf_state_init(bridge_conf_state_t *state);
 void bridge_conf_feed(bridge_conf_state_t *state,
                       const uint8_t *buf,
                       size_t len);
+
+int bridge_conf_txresult_enabled(const bridge_conf_state_t *state);
 
 int bridge_conf_read_available(int conf_fd,
                                bridge_conf_state_t *state);

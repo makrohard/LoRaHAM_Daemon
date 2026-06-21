@@ -155,7 +155,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                 cfg->conf_socket);
     }
 
-    if (bridge_loraham_send_initial_config(cfg, conf_fd) == LHKT_OK) {
+    if (bridge_loraham_send_initial_config_with_state(cfg, conf_fd, &conf_state) == LHKT_OK) {
         config_ok = 1;
     }
 
@@ -186,12 +186,15 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
     while (!bridge_runtime_should_stop()) {
         print_stats_if_due(cfg, stats, &next_stats);
 
-        ret = bridge_loraham_tx_queue_drain(cfg,
-                                    stats,
-                                    &tx_queue,
-                                    data_fd,
-                                    conf_fd,
-                                    &conf_state);
+        ret = bridge_loraham_tx_queue_drain_with_client(
+            cfg,
+            stats,
+            &tx_queue,
+            client_fd,
+            data_fd,
+            conf_fd,
+            &conf_state,
+            &lora_framed_rx);
         if (bridge_loraham_should_reconnect_data_socket(ret)) {
             bridge_loraham_disconnect_data_socket(&data_fd,
                                            &lora_rx,
@@ -205,6 +208,15 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                                            stats,
                                            "write failed");
             config_ok = 0;
+        } else if (should_disconnect_kiss_client(ret)) {
+            printf("[KISS] Client write failed, disconnecting\n");
+            lhkt_tcp_server_close(client_fd);
+            client_fd = -1;
+            kiss_decoder_init(&kiss_dec);
+            kiss_params_init(&kiss_params);
+            loraham_rx_state_init(&lora_rx);
+            loraham_framed_rx_state_init(&lora_framed_rx);
+            printf("[KISS] Waiting for client...\n");
         }
 
         bridge_conf_collect_cad_stats(&conf_state,
@@ -305,7 +317,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
                         stats->socket_reconnects++;
                     }
 
-                    if (bridge_loraham_send_initial_config(cfg, conf_fd) == LHKT_OK) {
+                    if (bridge_loraham_send_initial_config_with_state(cfg, conf_fd, &conf_state) == LHKT_OK) {
                         config_ok = 1;
                     } else {
                         config_ok = 0;
@@ -315,7 +327,7 @@ int lhkt_bridge_run(const lhkt_config_t *cfg, lhkt_stats_t *stats)
             }
 
             if (!config_ok) {
-                if (bridge_loraham_send_initial_config(cfg, conf_fd) == LHKT_OK) {
+                if (bridge_loraham_send_initial_config_with_state(cfg, conf_fd, &conf_state) == LHKT_OK) {
                     config_ok = 1;
                 }
                 continue;

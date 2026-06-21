@@ -32,7 +32,7 @@
 #define LHKT_ERR_TX_SOCKET     -7
 #define LHKT_ERR_CLIENT_SOCKET -8
 #define LHKT_ERR_CONF_SOCKET   -9
-#define LHKT_ERR_CONF_SOCKET   -9
+#define LHKT_ERR_TX_RESULT    -10
 
 typedef struct {
     char kiss_host[LHKT_HOST_MAX];

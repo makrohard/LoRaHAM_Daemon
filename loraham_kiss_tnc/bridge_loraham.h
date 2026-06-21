@@ -19,12 +19,27 @@ int bridge_loraham_connect_data_socket(const lhkt_config_t *cfg);
 int bridge_loraham_send_initial_config(const lhkt_config_t *cfg,
                                        int conf_fd);
 
+int bridge_loraham_send_initial_config_with_state(
+    const lhkt_config_t *cfg,
+    int conf_fd,
+    bridge_conf_state_t *conf_state);
+
 int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
                                   lhkt_stats_t *stats,
                                   bridge_tx_queue_t *queue,
                                   int data_fd,
                                   int conf_fd,
                                   bridge_conf_state_t *conf_state);
+
+int bridge_loraham_tx_queue_drain_with_client(
+    const lhkt_config_t *cfg,
+    lhkt_stats_t *stats,
+    bridge_tx_queue_t *queue,
+    int client_fd,
+    int data_fd,
+    int conf_fd,
+    bridge_conf_state_t *conf_state,
+    loraham_framed_rx_state_t *frame_state);
 
 int bridge_loraham_should_reconnect_data_socket(int ret);
 int bridge_loraham_should_reconnect_conf_socket(int ret);

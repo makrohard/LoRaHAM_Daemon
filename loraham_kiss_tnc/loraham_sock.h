@@ -19,6 +19,22 @@ extern "C" {
 #define LORAHAM_FRAME_RX_PACKET 0x01
 #define LORAHAM_FRAME_TX_PACKET 0x02
 #define LORAHAM_FRAME_ERROR     0x03
+#define LORAHAM_FRAME_TX_RESULT 0x04
+
+#define LORAHAM_TX_RESULT_LEN 4
+
+#define LORAHAM_TX_STATUS_OK              0
+#define LORAHAM_TX_STATUS_BUSY            1
+#define LORAHAM_TX_STATUS_CHANNEL_BUSY    2
+#define LORAHAM_TX_STATUS_RADIO_NOT_READY 3
+#define LORAHAM_TX_STATUS_RADIO_ERROR     4
+#define LORAHAM_TX_STATUS_INVALID_PACKET  5
+#define LORAHAM_TX_STATUS_INVALID_BAND    6
+
+#define LORAHAM_TX_RESULT_FLAG_MANAGED     0x01
+#define LORAHAM_TX_RESULT_FLAG_DEFERRED    0x02
+#define LORAHAM_TX_RESULT_FLAG_CAD_TIMEOUT 0x04
+
 
 typedef struct {
     uint8_t buf[LHKT_TNC2_MAX_LINE];
@@ -44,6 +60,13 @@ typedef struct {
     uint8_t payload[LHKT_FRAMED_MAX_PAYLOAD];
 } loraham_framed_rx_state_t;
 
+typedef struct {
+    uint8_t status;
+    uint8_t flags;
+    uint16_t seq;
+} loraham_tx_result_t;
+
+
 void loraham_rx_state_init(loraham_rx_state_t *state);
 
 int loraham_sock_connect(const char *path);
@@ -61,6 +84,11 @@ void loraham_framed_rx_state_init(loraham_framed_rx_state_t *state);
 int loraham_framed_decode_byte(loraham_framed_rx_state_t *state,
                                uint8_t byte,
                                loraham_frame_t *frame);
+
+int loraham_tx_result_status_valid(uint8_t status);
+int loraham_decode_tx_result(const loraham_frame_t *frame,
+                             loraham_tx_result_t *out);
+
 
 int loraham_send_framed_tx_packet(int fd,
                                   const uint8_t *payload,
@@ -84,6 +112,9 @@ int loraham_send_config(int conf_fd,
 int loraham_send_config_freq(int conf_fd,
                              const lhkt_config_t *cfg,
                              double freq);
+
+int loraham_send_txresult_enable(int conf_fd);
+
 
 #ifdef __cplusplus
 }

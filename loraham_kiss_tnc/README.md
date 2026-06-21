@@ -15,6 +15,8 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - uses framed DATA sockets for daemon packet I/O
 - daemon 110 `RX_PACKET` RSSI/SNR metadata is stripped before KISS output
 - `TX_PACKET` payloads are still sent as RF bytes without metadata
+- daemon 111 `TX_RESULT` is used internally after `STATUS` confirms `TXRESULT=1`
+- KISS remains fire-and-forget; TX result frames are never forwarded
 
 ## Limitations
 - single KISS/TCP client
@@ -25,7 +27,8 @@ APRS client <-> KISS/TCP <-> loraham_kiss_tnc <-> /tmp/lora433f.sock <-> loraham
 - framed DATA socket only for daemon packet I/O
 - requires `loraham_daemon` 110+ framed RX metadata layout
 - RX RSSI/SNR metadata is ignored and not forwarded to KISS clients
-- uses CONF events (`TX=`, `CAD=`, `STATUS`) for TX lifecycle/status visibility
+- daemon 110 uses CONF events (`TX=`, `CAD=`, `STATUS`) as legacy TX fallback
+- daemon 111 waits for terminal `TX_RESULT` before RX frequency restore
 
 ## TX policy
 

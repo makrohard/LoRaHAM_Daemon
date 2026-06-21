@@ -2,12 +2,15 @@
 #include "bridge_loraham.h"
 
 #include "bridge_kiss.h"
+#include "bridge_rx.h"
 #include "bridge_runtime.h"
 #include "tcp_server.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -109,7 +112,7 @@ static int bridge_loraham_send_status_request(int conf_fd)
 }
 
 int bridge_loraham_connect_conf_socket(const lhkt_config_t *cfg,
-                                       bridge_conf_state_t *state)
+                                        bridge_conf_state_t *state)
 {
     int fd;
 
@@ -128,11 +131,6 @@ int bridge_loraham_connect_conf_socket(const lhkt_config_t *cfg,
     }
 
     bridge_conf_state_init(state);
-
-    if (bridge_loraham_send_status_request(fd) != LHKT_OK) {
-        lhkt_tcp_server_close(fd);
-        return LHKT_ERR;
-    }
 
     printf("[LoRaHAM] CONF socket connected: %s\n", cfg->conf_socket);
     return fd;
@@ -178,8 +176,10 @@ static int bridge_loraham_send_config_freq(const lhkt_config_t *cfg,
     return LHKT_OK;
 }
 
-int bridge_loraham_send_initial_config(const lhkt_config_t *cfg,
-                                       int conf_fd)
+int bridge_loraham_send_initial_config_with_state(
+    const lhkt_config_t *cfg,
+    int conf_fd,
+    bridge_conf_state_t *conf_state)
 {
     int ret;
 
@@ -188,7 +188,7 @@ int bridge_loraham_send_initial_config(const lhkt_config_t *cfg,
     }
 
 #ifdef LHKT_TEST
-    if (cfg->have_rx_freq) {
+    if (conf_fd < 0 && cfg->have_rx_freq) {
         return bridge_loraham_send_config_freq(cfg, conf_fd, cfg->rx_freq);
     }
 #endif
@@ -198,14 +198,39 @@ int bridge_loraham_send_initial_config(const lhkt_config_t *cfg,
         return LHKT_ERR_CONF_SOCKET;
     }
 
+    if (conf_state) {
+        conf_state->have_status = 0;
+        conf_state->txresult_known = 0;
+        conf_state->txresult_enabled = 0;
+    }
+
     ret = loraham_send_config(conf_fd, cfg);
     if (ret != LHKT_OK) {
         printf("[LoRaHAM] Config send failed: %s\n", cfg->conf_socket);
         return LHKT_ERR_CONF_SOCKET;
     }
 
+    /* TX_RESULT vor STATUS aktivieren. */
+    ret = loraham_send_txresult_enable(conf_fd);
+    if (ret != LHKT_OK) {
+        printf("[LoRaHAM] TXRESULT enable failed: %s\n", cfg->conf_socket);
+        return LHKT_ERR_CONF_SOCKET;
+    }
+
+    ret = bridge_loraham_send_status_request(conf_fd);
+    if (ret != LHKT_OK) {
+        printf("[LoRaHAM] STATUS request failed: %s\n", cfg->conf_socket);
+        return LHKT_ERR_CONF_SOCKET;
+    }
+
     printf("[LoRaHAM] Config sent: %s\n", cfg->conf_socket);
     return LHKT_OK;
+}
+
+int bridge_loraham_send_initial_config(const lhkt_config_t *cfg,
+                                        int conf_fd)
+{
+    return bridge_loraham_send_initial_config_with_state(cfg, conf_fd, NULL);
 }
 
 #ifdef LHKT_TEST
@@ -290,7 +315,8 @@ static int bridge_loraham_restore_rx_freq(const lhkt_config_t *cfg,
 
 int bridge_loraham_should_reconnect_data_socket(int ret)
 {
-    return ret == LHKT_ERR_TX_SOCKET;
+    return ret == LHKT_ERR_TX_SOCKET ||
+           ret == LHKT_ERR_TX_RESULT;
 }
 
 int bridge_loraham_should_reconnect_conf_socket(int ret)
@@ -479,17 +505,169 @@ int lhkt_test_bridge_wait_tx_complete_events(const char *events)
 }
 #endif
 
-static int bridge_loraham_send_packet(const lhkt_config_t *cfg,
-                                      lhkt_stats_t *stats,
-                                      int data_fd,
-                                      int conf_fd,
-                                      bridge_conf_state_t *conf_state,
-                                      const uint8_t *packet,
-                                      size_t packet_len,
-                                      int *packet_written)
+static int bridge_loraham_wait_tx_result(
+    int data_fd,
+    int client_fd,
+    loraham_framed_rx_state_t *frame_state,
+    const lhkt_config_t *cfg,
+    lhkt_stats_t *stats,
+    loraham_tx_result_t *result,
+    int *client_error)
+{
+    uint8_t buf[512];
+    loraham_frame_t frame;
+    long deadline;
+    long now;
+    ssize_t n;
+    size_t i;
+    int ret;
+    int frame_ret;
+    fd_set rfds;
+    struct timeval tv;
+
+    if (client_error) {
+        *client_error = LHKT_OK;
+    }
+
+    if (data_fd < 0 || data_fd >= FD_SETSIZE ||
+        !frame_state || !cfg || !result) {
+        return LHKT_ERR_TX_RESULT;
+    }
+
+    deadline = bridge_runtime_now_ms() + cfg->tx_busy_timeout_ms;
+
+    for (;;) {
+        if (bridge_runtime_should_stop()) {
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        now = bridge_runtime_now_ms();
+        if (now >= deadline) {
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        FD_ZERO(&rfds);
+        FD_SET(data_fd, &rfds);
+        tv.tv_sec = (deadline - now) / 1000;
+        tv.tv_usec = ((deadline - now) % 1000) * 1000;
+
+        ret = select(data_fd + 1, &rfds, NULL, NULL, &tv);
+        if (ret < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        if (ret == 0) {
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        n = loraham_sock_read(data_fd, buf, sizeof(buf));
+        if (n < 0) {
+            if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+                continue;
+            }
+
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        if (n == 0) {
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        for (i = 0; i < (size_t)n; i++) {
+            frame_ret = loraham_framed_decode_byte(frame_state, buf[i], &frame);
+            if (frame_ret == 1) {
+                if (frame.type == LORAHAM_FRAME_TX_RESULT) {
+                    if (loraham_decode_tx_result(&frame, result) != LHKT_OK) {
+                        return LHKT_ERR_TX_RESULT;
+                    }
+
+                    /* Restpuffer bewahren. */
+                    for (i++; i < (size_t)n; i++) {
+                        frame_ret = loraham_framed_decode_byte(
+                            frame_state, buf[i], &frame);
+                        if (frame_ret == 1) {
+                            if (frame.type == LORAHAM_FRAME_TX_RESULT) {
+                                if (stats) {
+                                    stats->loraham_drop++;
+                                }
+                                continue;
+                            }
+
+                            if (client_fd >= 0) {
+                                ret = bridge_rx_handle_framed_frame(
+                                    client_fd, &frame, stats);
+                                if (ret == LHKT_ERR_CLIENT_SOCKET) {
+                                    if (client_error) {
+                                        *client_error = ret;
+                                    }
+                                    client_fd = -1;
+                                }
+                            } else if (frame.type == LORAHAM_FRAME_RX_PACKET) {
+                                if (stats) {
+                                    stats->loraham_drop++;
+                                }
+                            } else {
+                                (void)bridge_rx_handle_framed_frame(
+                                    -1, &frame, stats);
+                            }
+                        } else if (frame_ret < 0) {
+                            if (stats) {
+                                stats->loraham_drop++;
+                            }
+                            return LHKT_ERR_TX_RESULT;
+                        }
+                    }
+
+                    return LHKT_OK;
+                }
+
+                if (client_fd >= 0) {
+                    ret = bridge_rx_handle_framed_frame(client_fd,
+                                                        &frame,
+                                                        stats);
+                    if (ret == LHKT_ERR_CLIENT_SOCKET) {
+                        if (client_error) {
+                            *client_error = ret;
+                        }
+                        client_fd = -1;
+                    }
+                } else if (frame.type == LORAHAM_FRAME_RX_PACKET) {
+                    if (stats) {
+                        stats->loraham_drop++;
+                    }
+                } else {
+                    (void)bridge_rx_handle_framed_frame(-1, &frame, stats);
+                }
+            } else if (frame_ret < 0) {
+                if (stats) {
+                    stats->loraham_drop++;
+                }
+                return LHKT_ERR_TX_RESULT;
+            }
+        }
+    }
+}
+
+static int bridge_loraham_send_packet_with_client(
+    const lhkt_config_t *cfg,
+    lhkt_stats_t *stats,
+    int client_fd,
+    int data_fd,
+    int conf_fd,
+    bridge_conf_state_t *conf_state,
+    loraham_framed_rx_state_t *frame_state,
+    const uint8_t *packet,
+    size_t packet_len,
+    int *packet_written)
 {
     int ret;
     int confirm_ret;
+    int client_error;
+    loraham_tx_result_t tx_result;
 
     if (packet_written) {
         *packet_written = 0;
@@ -557,6 +735,56 @@ static int bridge_loraham_send_packet(const lhkt_config_t *cfg,
         *packet_written = 1;
     }
 
+    if (bridge_conf_txresult_enabled(conf_state)) {
+        if (!frame_state) {
+            if (stats) {
+                stats->tx_unconfirmed++;
+            }
+
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        client_error = LHKT_OK;
+        ret = bridge_loraham_wait_tx_result(data_fd,
+                                            client_fd,
+                                            frame_state,
+                                            cfg,
+                                            stats,
+                                            &tx_result,
+                                            &client_error);
+        if (ret != LHKT_OK) {
+            if (stats) {
+                stats->tx_unconfirmed++;
+            }
+
+            /* Auftrag kann noch laufen. */
+            printf("[LoRaHAM] TX_RESULT missing or invalid\n");
+            return LHKT_ERR_TX_RESULT;
+        }
+
+        ret = bridge_loraham_restore_rx_freq(cfg, stats, conf_fd);
+        if (ret != LHKT_OK) {
+            return ret;
+        }
+
+        if (tx_result.status != LORAHAM_TX_STATUS_OK) {
+            if (stats) {
+                stats->loraham_drop++;
+            }
+
+            printf("[LoRaHAM] TX_RESULT status=%u seq=%u\n",
+                   tx_result.status,
+                   tx_result.seq);
+            return client_error;
+        }
+
+        if (stats) {
+            stats->loraham_tx++;
+        }
+
+        return client_error;
+    }
+
     confirm_ret = bridge_loraham_wait_tx_complete(conf_fd, conf_state, cfg);
     if (confirm_ret != LHKT_OK) {
         if (stats) {
@@ -585,12 +813,38 @@ static int bridge_loraham_send_packet(const lhkt_config_t *cfg,
     return LHKT_OK;
 }
 
-int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
-                                  lhkt_stats_t *stats,
-                                  bridge_tx_queue_t *queue,
-                                  int data_fd,
-                                  int conf_fd,
-                                  bridge_conf_state_t *conf_state)
+#ifdef LHKT_TEST
+static int bridge_loraham_send_packet(const lhkt_config_t *cfg,
+                                       lhkt_stats_t *stats,
+                                       int data_fd,
+                                       int conf_fd,
+                                       bridge_conf_state_t *conf_state,
+                                       const uint8_t *packet,
+                                       size_t packet_len,
+                                       int *packet_written)
+{
+    return bridge_loraham_send_packet_with_client(cfg,
+                                                   stats,
+                                                   -1,
+                                                   data_fd,
+                                                   conf_fd,
+                                                   conf_state,
+                                                   NULL,
+                                                   packet,
+                                                   packet_len,
+                                                   packet_written);
+}
+#endif
+
+int bridge_loraham_tx_queue_drain_with_client(
+    const lhkt_config_t *cfg,
+    lhkt_stats_t *stats,
+    bridge_tx_queue_t *queue,
+    int client_fd,
+    int data_fd,
+    int conf_fd,
+    bridge_conf_state_t *conf_state,
+    loraham_framed_rx_state_t *frame_state)
 {
     bridge_tx_item_t *item;
     long now;
@@ -611,16 +865,18 @@ int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
         if (conf_fd >= 0 && conf_state) {
             ret = bridge_conf_read_available(conf_fd, conf_state);
             if (ret != LHKT_OK) {
-                /*
-                 * The main select loop owns CONF reconnect handling. Keep the
-                 * queued packet and let the loop observe/close the socket.
-                 */
                 return LHKT_OK;
             }
         }
 
         if (conf_fd >= 0 && conf_state && !conf_state->have_status) {
             return LHKT_OK;
+        }
+
+        if (conf_state &&
+            conf_state->txresult_known &&
+            !conf_state->txresult_enabled) {
+            return LHKT_ERR_CONF_SOCKET;
         }
 
         now = bridge_runtime_now_ms();
@@ -650,19 +906,17 @@ int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
         }
 
         packet_written = 0;
-        ret = bridge_loraham_send_packet(cfg,
-                                         stats,
-                                         data_fd,
-                                         conf_fd,
-                                         conf_state,
-                                         item->packet,
-                                         item->packet_len,
-                                         &packet_written);
+        ret = bridge_loraham_send_packet_with_client(cfg,
+                                                      stats,
+                                                      client_fd,
+                                                      data_fd,
+                                                      conf_fd,
+                                                      conf_state,
+                                                      frame_state,
+                                                      item->packet,
+                                                      item->packet_len,
+                                                      &packet_written);
         if (packet_written || ret == LHKT_OK) {
-            /*
-             * Once the framed DATA TX packet was accepted by the daemon
-             * socket, never retransmit it because later RX restore failed.
-             */
             bridge_tx_queue_pop(queue);
         }
 
@@ -672,6 +926,23 @@ int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
 
         return LHKT_OK;
     }
+}
+
+int bridge_loraham_tx_queue_drain(const lhkt_config_t *cfg,
+                                   lhkt_stats_t *stats,
+                                   bridge_tx_queue_t *queue,
+                                   int data_fd,
+                                   int conf_fd,
+                                   bridge_conf_state_t *conf_state)
+{
+    return bridge_loraham_tx_queue_drain_with_client(cfg,
+                                                      stats,
+                                                      queue,
+                                                      -1,
+                                                      data_fd,
+                                                      conf_fd,
+                                                      conf_state,
+                                                      NULL);
 }
 
 #ifdef LHKT_TEST
