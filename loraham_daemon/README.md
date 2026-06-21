@@ -35,7 +35,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
-| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED blink helpers |
+| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control |
 
 ### I/O, sockets, and clients
 
@@ -156,7 +156,7 @@ The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so 
 
 The TX mode can be selected at boot with `--tx-mode MODE` (both bands) and overridden per band with `--tx-mode-433 MODE` / `--tx-mode-868 MODE`, where `MODE` is `direct` or `managed` (default `managed`). Per-band flags always win over `--tx-mode` regardless of argument order. The mode can also be changed at runtime per band with `SET TXMODE=DIRECT|MANAGED`.
 
-Clients that already implement CSMA/backoff, such as MeshCom, should use `DIRECT` mode (via `--tx-mode-…=direct` or `SET TXMODE=DIRECT`): the daemon transmits immediately with no CAD gating.
+Older/raw clients simply open a DATA socket and write, expecting the bytes to go out immediately, and never issue `SET TXMODE`. Under the `MANAGED` default their packets can be delayed or dropped by CAD/LBT. For backward compatibility with such clients, start the daemon in `DIRECT` on the affected band(s) via `--tx-mode`, `--tx-mode-433`, or `--tx-mode-868` so the legacy send-when-told behavior is active from boot. Clients that already implement CSMA/backoff (such as MeshCom) likewise want `DIRECT`.
 
 ## DATA sockets
 
@@ -229,7 +229,7 @@ Rules:
 - `SET TXQUEUE=1` routes DATA TX through the per-band bounded async TX queue; `SET TXQUEUE=0` keeps direct DATA TX.
 - `GET STATUS` reports `TXRESULT`, `TXMODE`, `TXQUEUE`, queue counters, last queued TX result, and last queued TX sequence.
 - `TX=1` and `TX=0` CONF broadcasts are emitted by the main loop; async TX workers do not access client slots.
-- `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE`.
+- `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `CADSCAN`, `CADSTATE`, `RSSI`, `PACKETRSSI`, `LIVERSSI`, `MODE`, and `TXMODE`.
 - `STATUS CAD` reflects monitoring activity; transient TX and on-demand CAD probes do not change it.
 - During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio.
 - `DIRECT` TX mode transmits immediately with no CAD gating and never returns `CHANNEL_BUSY`.
@@ -314,10 +314,10 @@ GET CHANNEL
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQREJECT=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1
 ```
 
-`TXQDROP` counts full-queue rejections and pending jobs discarded at shutdown. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
+`TXQDROP` counts pending jobs discarded at shutdown. `TXQREJECT` counts jobs rejected because the queue was full (reject-newest) or submitted after shutdown began. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
 
 
 DATA and framed DATA sockets are payload-only. Status/config messages are never
@@ -396,7 +396,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
 | `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, explicit live-register `LIVERSSI`, current modem mode, and TX mode |
 
@@ -412,9 +412,9 @@ The daemon also prints one compact operator stats line per selected radio every
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
-| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=... CADWAIT=... CADIDLE=... CADPOLL=... CADTXAFTERTIMEOUT=...\n` | requesting CONF socket | Reply to `GET STATUS` |
+| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQREJECT=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=... CADWAIT=... CADIDLE=... CADPOLL=... CADTXAFTERTIMEOUT=...\n` | requesting CONF socket | Reply to `GET STATUS` |
 | `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=...\n` | requesting CONF socket | Reply to `GET STATS` |
-| `CHANNEL RADIO=... BUSY=... CAD=... RSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
+| `CHANNEL RADIO=... BUSY=... CAD=... CADSCAN=... CADSTATE=... RSSI=... PACKETRSSI=... LIVERSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
