@@ -87,7 +87,10 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
         return;
 
     bool was_active = ctrl->cad_broadcast_active.load();
-    RadioCadProbeResult probe = radio_cad_probe(ctrl);
+    // Non-destructive RSSI probe only: the continuous monitoring tick must never
+    // touch RX (no scanChannel, no startReceive). scanChannel-based CAD stays
+    // for TX gating and GET CHANNEL.
+    RadioCadProbeResult probe = radio_cad_probe_passive(ctrl);
     const char *ctx = daemon_cad_log_ctx(ctrl);
 
     if (probe.status == RADIO_CAD_PROBE_UNAVAILABLE)
@@ -100,18 +103,18 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
 
     if (hardware_active) {
         if (edge > 0) {
-            daemon_debug_ctx(ctx, "Aktiv cad=%s scan=%d",
+            daemon_debug_ctx(ctx, "Aktiv cad=%s rssi=%.1f",
                              radio_cad_probe_status_name(probe.status),
-                             probe.scan_state);
+                             probe.rssi_dbm);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
         }
 
         ctrl->cad_broadcast_active.store(true);
     } else {
         if (edge < 0 && !ctrl->received.load()) {
-            daemon_debug_ctx(ctx, "Inaktiv cad=%s scan=%d",
+            daemon_debug_ctx(ctx, "Inaktiv cad=%s rssi=%.1f",
                              radio_cad_probe_status_name(probe.status),
-                             probe.scan_state);
+                             probe.rssi_dbm);
             client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
         }
 
@@ -224,10 +227,15 @@ static void daemon_process_periodic_stats(DaemonDeadlineTimer *stats_timer)
 static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
                                     DaemonDeadlineTimer *rssi_timer)
 {
+    // Monitoring runs only on explicit opt-in (SET CADMONITOR=1). A merely
+    // connected CONF client (e.g. a config-only MeshCom client) must not trigger
+    // it, so it can never disturb RX.
     bool cad_433_subscribed = daemon_radio_433_enabled() &&
-        client_slot_has_clients(channel_433.conf_slots, MAX_CLIENTS);
+        client_slot_has_clients(channel_433.conf_slots, MAX_CLIENTS) &&
+        radio_controller_433.cad_monitor_active.load();
     bool cad_868_subscribed = daemon_radio_868_enabled() &&
-        client_slot_has_clients(channel_868.conf_slots, MAX_CLIENTS);
+        client_slot_has_clients(channel_868.conf_slots, MAX_CLIENTS) &&
+        radio_controller_868.cad_monitor_active.load();
 
     if (daemon_monitoring_cad_probe_due(cad_timer,
                                         daemon_now_ms(),

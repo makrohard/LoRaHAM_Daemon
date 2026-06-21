@@ -76,6 +76,10 @@ struct FakeRadio {
         start_receive_count++;
     }
 
+    void clearIrq(uint32_t)
+    {
+    }
+
     int scanChannel()
     {
         int idx = scan_count;

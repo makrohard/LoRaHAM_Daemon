@@ -41,6 +41,10 @@ struct FakeRadio {
         start_receive_count++;
     }
 
+    void clearIrq(uint32_t)
+    {
+    }
+
     int scanChannel()
     {
         scan_count++;
@@ -705,6 +709,66 @@ static void test_dispatch_sets_txmode_without_radio(void)
     client_slot_close(&slots[0]);
 }
 
+static void test_dispatch_sets_cadmonitor_optin(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController<FakeRadio> ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config dispatch cadmonitor init\n");
+        return;
+    }
+
+    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+
+    // Default: monitoring off.
+    expect_int("cadmonitor default off", ctrl.cad_monitor_active.load() ? 1 : 0, 0);
+
+    // SET CADMONITOR=1 enables the opt-in.
+    const char *on = "SET CADMONITOR=1\n";
+    write(sv[0], on, strlen(on));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadmonitor on wait", event_loop_wait(&set, &readfds, 100000), 1);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    expect_int("cadmonitor enabled", ctrl.cad_monitor_active.load() ? 1 : 0, 1);
+
+    // SET CADMONITOR=0 disables it and resets the broadcast latch.
+    ctrl.cad_broadcast_active.store(true);
+    const char *off = "SET CADMONITOR=0\n";
+    write(sv[0], off, strlen(off));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("cadmonitor off wait", event_loop_wait(&set, &readfds, 100000), 1);
+    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    expect_int("cadmonitor disabled", ctrl.cad_monitor_active.load() ? 1 : 0, 0);
+    expect_int("cadmonitor reset broadcast latch",
+               ctrl.cad_broadcast_active.load() ? 1 : 0, 0);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 static void test_dispatch_closes_eof_client(void)
 {
     int sv[2];
@@ -1046,6 +1110,7 @@ int main(int argc, char **argv)
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();
+    test_dispatch_sets_cadmonitor_optin();
     test_status_uses_cad_broadcast_latch();
     test_dispatch_get_channel_restores_rx();
     test_dispatch_get_channel_during_tx_skips_scan();
