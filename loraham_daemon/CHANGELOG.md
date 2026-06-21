@@ -4,9 +4,12 @@
 
 - CAD/TX was reworked: MANAGED TX now performs bounded CAD/LBT with a stable
   idle window and returns `CHANNEL_BUSY` on timeout (default 1.5 s) instead of
-  transmitting, while RAW TX performs an immediate single CAD probe. Per-band
-  CAD policy (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via
-  CONF and reported in `GET STATUS`.
+  transmitting, while DIRECT TX transmits immediately with no CAD gating
+  (selectable at boot per band via `--tx-mode`/`--tx-mode-433`/`--tx-mode-868`
+  or at runtime via `SET TXMODE`); legacy/raw clients need `DIRECT` for
+  backward compatibility. Per-band CAD policy
+  (CADWAIT/CADIDLE/CADPOLL/CADTXAFTERTIMEOUT) is now configurable via CONF and
+  reported in `GET STATUS`.
 - DATA TX now runs through a bounded async queue, enabled by default
   (`SET TXQUEUE=0` keeps the direct path). Daemon-owned worker threads own the
   CAD/LBT decision, queued jobs retain their CAD callback, and completions are
@@ -28,9 +31,10 @@
 - Build, test, and operational hardening: release builds are hardened and CI
   runs pinned-RadioLib normal/strict/ASan-UBSan/TSan suites with TX-worker
   stress coverage; sockets use 0660 with a restrictive daemon umask; epoll
-  supports 128 FDs and stops cleanly on registration errors; DATA TX LEDs
-  reflect actual RF transmit with partial-claim cleanup. README documents the
-  current TX/CAD/queue/completion/CONF interfaces.
+  supports 128 FDs and stops cleanly on registration errors; the per-band
+  activity LED is driven by a single derived-state writer (transmit or
+  CAD/channel busy) so it can no longer latch on, with partial-claim cleanup.
+  README documents the current TX/CAD/queue/completion/CONF interfaces.
 - Replaced per-loop epoll reset/re-registration with persistent watch
   reconciliation, dynamic EPOLLOUT interest, stale-watch cleanup, FD-reuse
   protection, and regression coverage.
