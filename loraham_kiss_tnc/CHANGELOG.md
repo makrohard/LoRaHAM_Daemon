@@ -1,3 +1,7 @@
+# 0.4.0
+- Add v111 TX_RESULT lifecycle with KISS client recovery.
+- Rely on loraham_daemon version >= 111
+
 # 0.3.0
 - Add CAD status counters to stats output and set default stats interval to 900s
 - Remove deprecated bridge-side CAD configuration options
