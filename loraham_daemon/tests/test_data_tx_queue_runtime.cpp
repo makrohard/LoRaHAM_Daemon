@@ -351,7 +351,7 @@ static void test_tx_busy_wait_clears(void)
 }
 
 
-static void test_raw_busy_probe_blocks_immediately(void)
+static void test_direct_transmits_on_busy_channel_sync(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> ctx;
@@ -361,15 +361,16 @@ static void test_raw_busy_probe_blocks_immediately(void)
     init_context(&ctrl, &ctx, &sender);
     ctrl.tx_queue_active.store(false);
     ctrl.mode = RADIO_MODE_LORA;
-    ctrl.tx_mode = RADIO_TX_MODE_RAW;
-    ctrl.radio->scan_state = 1;
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
+    ctrl.radio->scan_state = 1; // channel busy
 
-    expect_int("raw busy tx result",
+    // DIRECT transmits immediately even on a busy LoRa channel: no CAD probe,
+    // no busy/timeout drop.
+    expect_int("direct busy tx result",
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
-               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
-    expect_int("raw busy no send", sender.calls, 0);
-    expect_int("raw busy one cad probe", ctrl.radio->scan_count, 1);
-    expect_int("raw busy rx restarted", ctrl.radio->start_receive_count, 1);
+               0);
+    expect_int("direct busy sends", sender.calls, 1);
+    expect_int("direct busy no cad probe", ctrl.radio->scan_count, 0);
 }
 
 static void test_managed_busy_timeout_policy_blocks_by_default(void)
@@ -571,37 +572,70 @@ static void test_queued_managed_cad_timeout_blocks_in_worker(void)
                0);
 }
 
-static void test_queued_raw_cad_busy_blocks_in_worker(void)
+static void test_direct_transmits_on_busy_channel_queued(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> ctx;
     FakeSender sender;
+    DaemonTxJob job;
     uint8_t payload[] = { 8 };
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
-    ctrl.tx_mode = RADIO_TX_MODE_RAW;
-    ctrl.radio->scan_state = 1;
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
+    ctrl.radio->scan_state = 1; // channel busy
     ctx.completion_seq = 56;
 
-    expect_int("queued raw cad accepted",
+    // DIRECT disables CAD on the queued job, so the worker transmits immediately
+    // without probing the busy channel.
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_DIRECT, 56);
+    data_tx_configure_job_cad_policy(&ctx, &job);
+    expect_int("queued direct cad disabled", (int)job.cad_enabled, 0);
+
+    expect_int("queued direct accepted",
                send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
                0);
-    expect_int("queued raw processed wait", wait_async_processed(433, 1), 1);
-    expect_int("queued raw cad one worker probe", ctrl.radio->scan_count, 1);
-    expect_int("queued raw cad no send", sender.calls, 0);
-    expect_int("queued raw cad rx restarted", ctrl.radio->start_receive_count, 1);
-    expect_size("queued raw stats no tx ok", ctrl.stats.tx_ok, 0);
-    expect_size("queued raw stats cadtimeout", ctrl.stats.cad_timeouts, 1);
+    expect_int("queued direct processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued direct no worker probe", ctrl.radio->scan_count, 0);
+    expect_int("queued direct sends", sender.calls, 1);
+    expect_size("queued direct stats tx ok", ctrl.stats.tx_ok, 1);
+    expect_size("queued direct stats no cadtimeout", ctrl.stats.cad_timeouts, 0);
 
     DaemonTxJobResult completion;
-    expect_int("queued raw completion pop",
+    expect_int("queued direct completion pop",
                daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
                0);
-    expect_int("queued raw completion result", completion.tx_result, TX_RESULT_CAD_TIMEOUT);
-    expect_int("queued raw completion framed", completion.framed_status,
-               FRAMED_DATA_TX_STATUS_CHANNEL_BUSY);
+    expect_int("queued direct completion result", completion.tx_result, TX_RESULT_OK);
+}
+
+static void test_runtime_switch_direct_then_managed(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 7 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.radio->scan_state = 1; // channel busy throughout
+
+    // Runtime switch to DIRECT: send transmits immediately on a busy channel.
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
+    expect_int("switch direct transmits",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               0);
+    expect_int("switch direct sent once", sender.calls, 1);
+    expect_int("switch direct no probe", ctrl.radio->scan_count, 0);
+
+    // Runtime switch back to MANAGED: gating returns, busy channel drops the TX.
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    expect_int("switch managed blocks",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("switch managed no extra send", sender.calls, 1);
+    expect_int("switch managed probed", ctrl.radio->scan_count > 0 ? 1 : 0, 1);
 }
 
 
@@ -749,7 +783,7 @@ int main(int argc, char **argv)
     test_direct_tx_busy_timeout_blocks_send();
     test_queued_tx_skips_frontdoor_tx_busy_wait();
     test_tx_busy_wait_clears();
-    test_raw_busy_probe_blocks_immediately();
+    test_direct_transmits_on_busy_channel_sync();
     test_managed_busy_timeout_policy_blocks_by_default();
     test_managed_free_waits_for_stable_idle();
     test_managed_busy_resets_stable_idle();
@@ -758,7 +792,8 @@ int main(int argc, char **argv)
     test_worker_cad_mode_check_uses_radio_lock();
     test_queued_cad_callback_survives_later_non_cad_config();
     test_queued_managed_cad_timeout_blocks_in_worker();
-    test_queued_raw_cad_busy_blocks_in_worker();
+    test_direct_transmits_on_busy_channel_queued();
+    test_runtime_switch_direct_then_managed();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();
     test_managed_busy_timeout_send_when_opt_in();

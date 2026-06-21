@@ -40,6 +40,7 @@
 #include "daemon_stats.h"
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
+#include "daemon_tx_mode_boot.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -275,6 +276,9 @@ static void daemon_print_usage(const char *argv0)
     printf("  -v, --version    Version anzeigen und beenden\n");
     printf("      --debug      Debug-Log aktivieren\n");
     printf("      --radio MODE Radio wählen: both, 433, 868 (Standard: both)\n");
+    printf("      --tx-mode MODE      TX-Modus beide Bänder: direct, managed (Standard: managed)\n");
+    printf("      --tx-mode-433 MODE  TX-Modus nur 433 (überschreibt --tx-mode)\n");
+    printf("      --tx-mode-868 MODE  TX-Modus nur 868 (überschreibt --tx-mode)\n");
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets:\n");
@@ -302,11 +306,14 @@ static bool daemon_parse_args(int argc, char *argv[])
     int opt;
     bool is_daemon = false;
     static const struct option long_options[] = {
-        {"daemon",  no_argument, 0, 'd'},
-        {"version", no_argument, 0, 'v'},
-        {"debug",   no_argument, 0, 1000},
-        {"radio",   required_argument, 0, 1001},
-        {"help",    no_argument, 0, 'h'},
+        {"daemon",      no_argument, 0, 'd'},
+        {"version",     no_argument, 0, 'v'},
+        {"debug",       no_argument, 0, 1000},
+        {"radio",       required_argument, 0, 1001},
+        {"tx-mode",     required_argument, 0, 1002},
+        {"tx-mode-433", required_argument, 0, 1003},
+        {"tx-mode-868", required_argument, 0, 1004},
+        {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
@@ -334,6 +341,33 @@ static bool daemon_parse_args(int argc, char *argv[])
                 daemon_debug_ctx("STARTUP", "Option --radio erkannt: %s",
                                  daemon_radio_selection_name(daemon_radio_selection));
                 break;
+            case 1002:
+                if (!daemon_set_tx_mode_boot_global(optarg)) {
+                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: direct, managed\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --tx-mode erkannt: %s", optarg);
+                break;
+            case 1003:
+                if (!daemon_set_tx_mode_boot_433(optarg)) {
+                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: direct, managed\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --tx-mode-433 erkannt: %s", optarg);
+                break;
+            case 1004:
+                if (!daemon_set_tx_mode_boot_868(optarg)) {
+                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: direct, managed\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --tx-mode-868 erkannt: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -350,6 +384,30 @@ static bool daemon_parse_args(int argc, char *argv[])
     }
 
     return is_daemon;
+}
+
+/* --- Boot TX mode application -------------------------------------------- */
+static RadioTxMode_t daemon_boot_tx_mode_to_radio(DaemonTxModeBoot mode)
+{
+    return mode == DAEMON_TX_MODE_BOOT_DIRECT ? RADIO_TX_MODE_DIRECT
+                                              : RADIO_TX_MODE_MANAGED;
+}
+
+// Startup-only: override the MANAGED default set by radio_controller_init with
+// the CLI-resolved per-band mode. Single-threaded; runs after daemon_io_init().
+static void daemon_apply_boot_tx_modes(void)
+{
+    RadioTxMode_t mode_433 =
+        daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective_433());
+    RadioTxMode_t mode_868 =
+        daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective_868());
+
+    radio_controller_433.tx_mode = mode_433;
+    radio_controller_868.tx_mode = mode_868;
+
+    daemon_debug_ctx("STARTUP", "TX-Modus 433=%s 868=%s",
+                     radio_tx_mode_name(mode_433),
+                     radio_tx_mode_name(mode_868));
 }
 
 /* --- Startup sequence ---------------------------------------------------- */
@@ -374,6 +432,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
 
     daemon_debug_ctx("STARTUP", "Starte Radio- und Socket-Init");
     daemon_io_init();
+    daemon_apply_boot_tx_modes();
     daemon_debug_ctx("STARTUP", "Startup abgeschlossen");
 }
 

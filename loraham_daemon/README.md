@@ -98,6 +98,9 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `-v`, `--version` | - | `-v`, `--version` | Print daemon version and exit |
 | `--debug` | off | `--debug` | Enable debug log output |
 | `--radio MODE` | `both` | `both`, `433`, `868` | Select active radio backend: both radios, 433 MHz only, or 868 MHz only |
+| `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for both bands |
+| `--tx-mode-433 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 433 only; overrides `--tx-mode` regardless of argument order |
+| `--tx-mode-868 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 868 only; overrides `--tx-mode` regardless of argument order |
 | `-h`, `--help` | - | `-h`, `--help` | Print usage and exit |
 
 ## UNIX socket interface
@@ -149,10 +152,11 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 ## Current TX/CAD behavior
 
-The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `RAW` mode performs one CAD probe before TX and blocks when the channel is busy. `MANAGED` mode waits for the stable-idle CAD window and returns `CHANNEL_BUSY` when the CAD wait timeout expires. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
+The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `DIRECT` mode transmits immediately with no CAD gating and never drops, reproducing the legacy send-when-told behavior. `MANAGED` mode waits for the stable-idle CAD window and returns `CHANNEL_BUSY` when the CAD wait timeout expires. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
 
+The TX mode can be selected at boot with `--tx-mode MODE` (both bands) and overridden per band with `--tx-mode-433 MODE` / `--tx-mode-868 MODE`, where `MODE` is `direct` or `managed` (default `managed`). Per-band flags always win over `--tx-mode` regardless of argument order. The mode can also be changed at runtime per band with `SET TXMODE=DIRECT|MANAGED`.
 
-Clients that already implement CSMA/backoff, such as MeshCom, should use `SET TXMODE=RAW`: the daemon performs one CAD probe and returns an immediate result.
+Clients that already implement CSMA/backoff, such as MeshCom, should use `DIRECT` mode (via `--tx-mode-…=direct` or `SET TXMODE=DIRECT`): the daemon transmits immediately with no CAD gating.
 
 ## DATA sockets
 
@@ -221,14 +225,14 @@ Rules:
 - `TX_PACKET` payloads must be at most `255` RF bytes and contain no metadata.
 - `TX_RESULT` payload length is exactly `4` bytes.
 - `SET TXRESULT=1` and `SET TXRESULT=0` on the matching CONF socket enable or disable per-band `TX_RESULT` emission.
-- `SET TXMODE=MANAGED` and `SET TXMODE=RAW` select per-band TX mode; default is `MANAGED`.
+- `SET TXMODE=MANAGED` and `SET TXMODE=DIRECT` select per-band TX mode; default is `MANAGED`.
 - `SET TXQUEUE=1` routes DATA TX through the per-band bounded async TX queue; `SET TXQUEUE=0` keeps direct DATA TX.
 - `GET STATUS` reports `TXRESULT`, `TXMODE`, `TXQUEUE`, queue counters, last queued TX result, and last queued TX sequence.
 - `TX=1` and `TX=0` CONF broadcasts are emitted by the main loop; async TX workers do not access client slots.
 - `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `RSSI`, `MODE`, and `TXMODE`.
 - `STATUS CAD` reflects monitoring activity; transient TX and on-demand CAD probes do not change it.
 - During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio.
-- `RAW` TX mode performs one CAD probe and returns `CHANNEL_BUSY` when the channel is busy.
+- `DIRECT` TX mode transmits immediately with no CAD gating and never returns `CHANNEL_BUSY`.
 - `MANAGED` TX mode waits for stable CAD idle before TX and returns `CHANNEL_BUSY` when the CAD wait timeout expires.
 - Final framed `TX_RESULT` flags include managed/deferred/CAD-timeout context.
 - Queued framed TX suppresses the immediate success `TX_RESULT`; final async completion is delivered later to the originating framed client.
@@ -296,7 +300,7 @@ CONF sockets accept text commands:
 ```text
 SET KEY=VALUE KEY=VALUE ...
 SET TXRESULT=0|1
-SET TXMODE=MANAGED|RAW
+SET TXMODE=MANAGED|DIRECT
 SET TXQUEUE=0|1
 SET CADWAIT=<milliseconds>
 SET CADIDLE=<milliseconds>
@@ -310,7 +314,7 @@ GET CHANNEL
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|RAW TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1
 ```
 
 `TXQDROP` counts full-queue rejections and pending jobs discarded at shutdown. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
@@ -332,7 +336,7 @@ Important behavior:
 - LoRa-only keys are ignored in FSK mode.
 - FSK-only keys are ignored in LoRa mode.
 - `GET STATUS`, `GET STATS`, and `GET CHANNEL` return stable one-line responses on the requesting CONF socket.
-- `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|RAW`, and `SET TXQUEUE=0|1` are stable per-band control commands.
+- `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|DIRECT`, and `SET TXQUEUE=0|1` are stable per-band control commands.
 - `SET CADWAIT=N`, `SET CADIDLE=N`, `SET CADPOLL=N`, and `SET CADTXAFTERTIMEOUT=0|1` set the per-band CAD policy; accepted ranges are `CADWAIT` 50–5000 ms, `CADIDLE` 0–2000 ms, `CADPOLL` 10–500 ms. Out-of-range values are rejected and leave the previous policy unchanged. Policy changes apply to future TX attempts and queued jobs; each queued job snapshots the policy at creation time.
 - `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
 - `MODE=LORA` calls RadioLib `begin()`.

@@ -151,10 +151,9 @@ static int data_tx_wait_channel_free_with_limits_ex(
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
         return DATA_TX_CAD_WAIT_FREE;
 
-    if (ctrl->tx_mode == RADIO_TX_MODE_RAW) {
-        return data_tx_probe_channel_busy(tx) ?
-               DATA_TX_CAD_WAIT_BLOCK :
-               DATA_TX_CAD_WAIT_FREE;
+    if (ctrl->tx_mode == RADIO_TX_MODE_DIRECT) {
+        // DIRECT: transmit immediately, no CAD probe, no wait, no block.
+        return DATA_TX_CAD_WAIT_FREE;
     }
 
     while (cad_wait < max_ticks) {
@@ -318,13 +317,9 @@ static void data_tx_configure_job_cad_policy(DataTxDaemonContext<RadioT> *tx,
         return;
     }
 
-    if (ctrl->tx_mode == RADIO_TX_MODE_RAW) {
-        daemon_tx_job_configure_cad_policy(job,
-                                           1,
-                                           1,
-                                           1,
-                                           0,
-                                           0);
+    if (ctrl->tx_mode == RADIO_TX_MODE_DIRECT) {
+        // DIRECT: disable CAD entirely so the worker transmits immediately.
+        daemon_tx_job_configure_cad_policy(job, 0, 0, 0, 0, 0);
         return;
     }
 
@@ -431,8 +426,8 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         cad_decision = data_tx_wait_channel_free(tx);
 
         if (data_tx_cad_wait_blocks_tx(cad_decision)) {
-            TxResult busy_result = ctrl->tx_mode == RADIO_TX_MODE_RAW ?
-                                   TX_RESULT_BUSY : TX_RESULT_CAD_TIMEOUT;
+            // Only MANAGED can block now; DIRECT never reaches this path.
+            TxResult busy_result = TX_RESULT_CAD_TIMEOUT;
             daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
             daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
             printf("[%s] Kanal belegt, Paket verworfen\n", tag);
