@@ -709,6 +709,41 @@ static void test_dispatch_sets_txmode_without_radio(void)
     client_slot_close(&slots[0]);
 }
 
+static void test_get_channel_pending_rx_guard(void)
+{
+    RadioController<FakeRadio> ctrl;
+    char ch[256];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    // Idle: GET CHANNEL runs the active scan.
+    ctrl.received.store(false);
+    config_status_format_channel(ch, sizeof(ch), &ctrl);
+    expect_int("get channel scans when idle", ctrl.radio->scan_count >= 1 ? 1 : 0, 1);
+
+    // Pending RX: must NOT scan (would discard the packet) and report PENDING.
+    int before = ctrl.radio->scan_count;
+    ctrl.received.store(true);
+    config_status_format_channel(ch, sizeof(ch), &ctrl);
+    expect_int("get channel pending no scan", ctrl.radio->scan_count, before);
+    expect_int("get channel pending state",
+               strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
+    expect_int("get channel pending cadscan 0",
+               strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+}
+
+static void test_set_cadrssi_parser(void)
+{
+    int dbm = 0;
+
+    expect_int("cadrssi parse -85", config_status_is_set_cadrssi("SET CADRSSI=-85", &dbm), 1);
+    expect_int("cadrssi value -85", dbm, -85);
+    expect_int("cadrssi parse 0", config_status_is_set_cadrssi("SET CADRSSI=0", &dbm), 1);
+    expect_int("cadrssi reject too low", config_status_is_set_cadrssi("SET CADRSSI=-131", &dbm), 0);
+    expect_int("cadrssi reject positive", config_status_is_set_cadrssi("SET CADRSSI=5", &dbm), 0);
+    expect_int("cadrssi reject junk", config_status_is_set_cadrssi("SET CADRSSI=-90x", &dbm), 0);
+}
+
 static void test_dispatch_sets_cadmonitor_optin(void)
 {
     int sv[2];
@@ -1110,6 +1145,8 @@ int main(int argc, char **argv)
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();
+    test_get_channel_pending_rx_guard();
+    test_set_cadrssi_parser();
     test_dispatch_sets_cadmonitor_optin();
     test_status_uses_cad_broadcast_latch();
     test_dispatch_get_channel_restores_rx();

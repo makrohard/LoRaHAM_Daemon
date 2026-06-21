@@ -41,6 +41,7 @@ test_binaries=(
   "$TEST_DIR/test_daemon_radio_selection"
   "$TEST_DIR/test_tx_mode_boot"
   "$TEST_DIR/test_cad_monitor_boot"
+  "$TEST_DIR/test_cad_rssi_boot"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
@@ -637,6 +638,16 @@ build_one_cad_monitor_boot_test() {
     "$SCRIPT_DIR/daemon_cad_monitor_boot.cpp"
 }
 
+build_one_cad_rssi_boot_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_cad_rssi_boot.cpp"
+}
+
 
 
 build_one_config_apply_transactional_test() {
@@ -743,6 +754,7 @@ build_tests() {
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
   build_one_tx_mode_boot_test "$TEST_DIR/test_tx_mode_boot.cpp" "$TEST_DIR/test_tx_mode_boot"
   build_one_cad_monitor_boot_test "$TEST_DIR/test_cad_monitor_boot.cpp" "$TEST_DIR/test_cad_monitor_boot"
+  build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"

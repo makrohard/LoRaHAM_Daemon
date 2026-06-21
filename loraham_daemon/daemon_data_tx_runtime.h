@@ -235,6 +235,20 @@ static int daemon_data_tx_result_enabled(void *ctx)
     return tx && tx->ctrl && tx->ctrl->tx_result_active.load();
 }
 
+// Managed flag for an immediate framed TX_RESULT: set only in MANAGED mode
+// (DIRECT sends without CAD/LBT and must not advertise the managed flag).
+template<typename RadioT>
+static uint8_t daemon_data_tx_managed_flag(void *ctx)
+{
+    DataTxDaemonContext<RadioT> *tx =
+        (DataTxDaemonContext<RadioT> *)ctx;
+
+    if (tx && tx->ctrl && tx->ctrl->tx_mode == RADIO_TX_MODE_MANAGED)
+        return FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+
+    return 0;
+}
+
 template<typename RadioT>
 static uint16_t daemon_data_tx_next_result_seq(void *ctx)
 {
@@ -453,7 +467,11 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     daemon_tx_job_init(&job, band, ctrl->tx_mode, tx->completion_seq);
     job.completion_slot = tx->completion_slot;
     job.completion_generation = tx->completion_generation;
-    job.flags = FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
+    // Only MANAGED performs CAD/LBT; DIRECT sends immediately, so its result
+    // must not advertise the managed flag.
+    job.flags = (ctrl->tx_mode == RADIO_TX_MODE_MANAGED)
+                    ? FRAMED_DATA_TX_RESULT_FLAG_MANAGED
+                    : 0;
     if (queued_tx)
         data_tx_configure_job_cad_policy(tx, &job);
     data_tx_apply_cad_decision_flags(&job, cad_decision);

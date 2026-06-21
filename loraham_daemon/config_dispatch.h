@@ -91,7 +91,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
     if(config_status_is_get_status(line)) {
-        char status[320];
+        char status[384];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,
@@ -156,6 +156,15 @@ static void config_dispatch_apply_line(const char *line, void *user)
         if(ctx->ctrl)
             ctx->ctrl->tx_mode = txmode;
         printf("[%s] TXMODE=%s\n", ctx->tag, radio_tx_mode_name(txmode));
+        fflush(stdout);
+        return;
+    }
+
+    int cadrssi_dbm = 0;
+    if(config_status_is_set_cadrssi(line, &cadrssi_dbm)) {
+        if(ctx->ctrl)
+            ctx->ctrl->cad_rssi_threshold_dbm.store((float)cadrssi_dbm);
+        printf("[%s] CADRSSI=%d\n", ctx->tag, cadrssi_dbm);
         fflush(stdout);
         return;
     }

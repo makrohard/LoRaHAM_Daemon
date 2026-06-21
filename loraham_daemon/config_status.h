@@ -212,6 +212,49 @@ static inline int config_status_parse_set_uval(const char *cmd,
     return 1;
 }
 
+static inline int config_status_parse_set_ival(const char *cmd,
+                                               const char *prefix,
+                                               long lo, long hi,
+                                               long *out)
+{
+    size_t plen;
+    char *endptr;
+    long v;
+
+    if (!cmd || !prefix || cmd[0] == '\0' || prefix[0] == '\0')
+        return 0;
+
+    plen = strlen(prefix);
+    if (strncmp(cmd, prefix, plen) != 0)
+        return 0;
+
+    if (cmd[plen] == '\0')
+        return 0;
+
+    v = strtol(cmd + plen, &endptr, 10);
+    if (*endptr != '\0' || v < lo || v > hi)
+        return 0;
+
+    if (out)
+        *out = v;
+    return 1;
+}
+
+static inline int config_status_is_set_cadrssi(const char *line, int *dbm)
+{
+    char cmd[64];
+    long v = 0;
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+    if (!config_status_parse_set_ival(cmd, "SET CADRSSI=", -130, 0, &v))
+        return 0;
+
+    if (dbm)
+        *dbm = (int)v;
+    return 1;
+}
+
 static inline int config_status_is_set_cadwait(const char *line, uint32_t *ms)
 {
     char cmd[64];
@@ -368,7 +411,7 @@ static inline void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -391,7 +434,9 @@ static inline void config_status_format(char *buf,
              ctrl ? (unsigned)ctrl->cad_poll_interval_ms.load()
                   : DAEMON_TX_POLICY_POLL_INTERVAL_MS,
              (ctrl && ctrl->cad_send_after_timeout.load()) ? 1 : 0,
-             (ctrl && ctrl->cad_monitor_active.load()) ? 1 : 0);
+             (ctrl && ctrl->cad_monitor_active.load()) ? 1 : 0,
+             (double)(ctrl ? ctrl->cad_rssi_threshold_dbm.load()
+                           : RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM));
 }
 
 static inline const char *config_status_cad_state_name(RadioCadProbeStatus status)
@@ -434,8 +479,31 @@ static inline void config_status_format_channel(char *buf,
                                                 RadioController<RadioT> *ctrl)
 {
     int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
-    RadioCadProbeResult probe = radio_cad_try_probe(ctrl);
     float live_rssi = config_status_live_rssi_dbm(ctrl);
+
+    // Pending RX guard: a just-arrived RX packet is waiting to be read. The
+    // active scanChannel probe + RX re-arm would discard it, so answer
+    // non-destructively (no scanChannel) with CADSTATE=PENDING and a live-RSSI
+    // based busy hint.
+    if (ctrl && ctrl->received.load()) {
+        float thr = ctrl->cad_rssi_threshold_dbm.load();
+        int busy = (tx_busy || live_rssi >= thr) ? 1 : 0;
+
+        snprintf(buf,
+                 buf_size,
+                 "CHANNEL RADIO=%s BUSY=%d CAD=0 CADSCAN=0 CADSTATE=PENDING "
+                 "RSSI=%.2f PACKETRSSI=%.2f LIVERSSI=%.2f MODE=%s TXMODE=%s\n",
+                 radio_health_name(radio_controller_health(ctrl)),
+                 busy,
+                 live_rssi,
+                 live_rssi,
+                 live_rssi,
+                 radio_mode_name(radio_controller_mode(ctrl)),
+                 radio_tx_mode_name(ctrl->tx_mode));
+        return;
+    }
+
+    RadioCadProbeResult probe = radio_cad_try_probe(ctrl);
 
     snprintf(buf,
              buf_size,

@@ -611,6 +611,37 @@ static void test_direct_transmits_on_busy_channel_queued(void)
                daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
                0);
     expect_int("queued direct completion result", completion.tx_result, TX_RESULT_OK);
+    // P1: DIRECT must not advertise the managed flag.
+    expect_int("queued direct managed flag clear",
+               completion.flags & FRAMED_DATA_TX_RESULT_FLAG_MANAGED, 0);
+}
+
+static void test_managed_completion_sets_managed_flag(void)
+{
+    RadioController<FakeRadio> ctrl;
+    DataTxDaemonContext<FakeRadio> ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 7 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(true);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.radio->scan_state = 0; // channel free -> transmits
+
+    expect_int("queued managed accepted",
+               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               0);
+    expect_int("queued managed processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued managed sends", sender.calls, 1);
+
+    DaemonTxJobResult completion;
+    expect_int("queued managed completion pop",
+               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               0);
+    // P1: MANAGED advertises the managed flag.
+    expect_int("queued managed managed flag set",
+               completion.flags & FRAMED_DATA_TX_RESULT_FLAG_MANAGED ? 1 : 0, 1);
 }
 
 static void test_runtime_switch_direct_then_managed(void)
@@ -797,6 +828,7 @@ int main(int argc, char **argv)
     test_queued_cad_callback_survives_later_non_cad_config();
     test_queued_managed_cad_timeout_blocks_in_worker();
     test_direct_transmits_on_busy_channel_queued();
+    test_managed_completion_sets_managed_flag();
     test_runtime_switch_direct_then_managed();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();

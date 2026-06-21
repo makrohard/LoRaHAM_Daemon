@@ -312,6 +312,12 @@ static void daemon_print_rx_packet(RadioController<RadioT> *ctrl,
                                    int len,
                                    float rssi)
 {
+    // Console/log RX dump is debug-only: in normal operation it would grow the
+    // -d logfile unbounded with every received packet. RX forwarding to the
+    // raw/framed sockets is independent and stays unconditional.
+    if (!daemon_debug_enabled())
+        return;
+
     const char *tag = radio_controller_tag(ctrl);
     const char *color = daemon_controller_color(ctrl);
 
