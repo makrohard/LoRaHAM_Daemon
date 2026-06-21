@@ -247,6 +247,20 @@ static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
             daemon_process_cad_status(&radio_controller_868, &channel_868);
     }
 
+    // A band that is not (or no longer) subscribed must not keep a stale busy
+    // latch: the falling edge in daemon_process_cad_status only runs while
+    // subscribed, so a last CONF disconnect in the busy state would otherwise
+    // leave cad_broadcast_active=true (LED latched, stale CAD=1). Clear it and
+    // reconcile the LED; cad_monitor_active stays armed for a reconnect.
+    if (daemon_radio_433_enabled() && !cad_433_subscribed) {
+        radio_controller_433.cad_broadcast_active.store(false);
+        daemon_radio_runtime_sync_led(&radio_controller_433);
+    }
+    if (daemon_radio_868_enabled() && !cad_868_subscribed) {
+        radio_controller_868.cad_broadcast_active.store(false);
+        daemon_radio_runtime_sync_led(&radio_controller_868);
+    }
+
     daemon_process_rssi_stream(rssi_timer);
 }
 

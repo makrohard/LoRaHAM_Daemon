@@ -336,6 +336,27 @@ static void test_passive_probe_is_non_destructive(void)
     expect_int("passive no clearIrq", ctrl.radio->clear_irq_count, 0);
 }
 
+static void test_passive_probe_uses_per_band_threshold(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+
+    // Lower the threshold: -98 dBm is now above -100 -> BUSY.
+    ctrl.cad_rssi_threshold_dbm.store(-100.0f);
+    ctrl.radio->rssi = -98.0f;
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("low threshold busy", result.status, RADIO_CAD_PROBE_BUSY);
+
+    // Raise the threshold: -98 dBm is now below -70 -> FREE.
+    ctrl.cad_rssi_threshold_dbm.store(-70.0f);
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("high threshold free", result.status, RADIO_CAD_PROBE_FREE);
+
+    expect_int("threshold test no scan", ctrl.radio->scan_count, 0);
+}
+
 static void test_passive_probe_non_lora_unavailable(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -413,6 +434,7 @@ int main(int argc, char **argv)
     test_tx_wait_direct_mode_skips_cad();
     test_tx_wait_fsk_skips_cad();
     test_passive_probe_is_non_destructive();
+    test_passive_probe_uses_per_band_threshold();
     test_passive_probe_non_lora_unavailable();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();

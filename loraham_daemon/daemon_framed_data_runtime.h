@@ -20,6 +20,7 @@ typedef int (*DaemonFramedTxResultEnabledFn)(void *ctx);
 typedef uint16_t (*DaemonFramedTxNextSeqFn)(void *ctx);
 typedef int (*DaemonFramedTxResultDeferredFn)(void *ctx);
 typedef void (*DaemonFramedTxTargetFn)(void *ctx, int slot_index, uint32_t generation, uint16_t seq);
+typedef uint8_t (*DaemonFramedTxManagedFlagFn)(void *ctx);
 
 template<typename RadioT>
 static int send_framed_data_packet(uint8_t *payload,
@@ -39,7 +40,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       DaemonFramedTxResultEnabledFn result_enabled,
                                       DaemonFramedTxNextSeqFn next_seq,
                                       DaemonFramedTxResultDeferredFn result_deferred,
-                                      DaemonFramedTxTargetFn set_target);
+                                      DaemonFramedTxTargetFn set_target,
+                                      DaemonFramedTxManagedFlagFn managed_flag);
 
 void daemon_drain_framed_tx_completions(const char *tag,
                                         int band,

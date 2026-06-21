@@ -104,6 +104,9 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for both bands; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
 | `--cad-monitor-433 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 433 only; overrides `--cad-monitor` regardless of argument order |
 | `--cad-monitor-868 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 868 only; overrides `--cad-monitor` regardless of argument order |
+| `--cad-rssi DBM` | `-90` | integer dBm `-130`..`0` | CAD busy RSSI threshold for both bands (environment dependent) |
+| `--cad-rssi-433 DBM` | (uses `--cad-rssi`) | integer dBm `-130`..`0` | CAD threshold for 433 only; overrides `--cad-rssi` regardless of argument order |
+| `--cad-rssi-868 DBM` | (uses `--cad-rssi`) | integer dBm `-130`..`0` | CAD threshold for 868 only; overrides `--cad-rssi` regardless of argument order |
 | `-h`, `--help` | - | `-h`, `--help` | Print usage and exit |
 
 ## UNIX socket interface
@@ -147,13 +150,14 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | TX/CAD policy poll interval | `50 ms` | Poll interval used by TX-busy and CAD wait loops |
 | Send after CAD timeout | disabled | MANAGED TX returns `CHANNEL_BUSY` after the CAD wait timeout |
 | `SET CADMONITOR` | `0`/`1`, default `0` | Per-band opt-in for the `CAD=0/1` monitoring indicator; off means a connected CONF client never triggers monitoring |
+| `SET CADRSSI` | integer dBm `-130`..`0`, default `-90` | Per-band busy threshold for the RSSI-based CAD indicator (environment dependent) |
 | `SET CADWAIT` range | 50–5000 ms | Per-band runtime CAD wait timeout; defaults to `1500 ms` |
 | `SET CADIDLE` range | 0–2000 ms | Per-band runtime stable-idle window; defaults to `250 ms` |
 | `SET CADPOLL` range | 10–500 ms | Per-band runtime CAD poll interval; defaults to `50 ms` |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD monitor poll interval | `200 ms` | CONF `CAD=1/0` RSSI-probe cadence; only while opted in (`SET CADMONITOR=1`) with a matching CONF client |
-| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator above this live RSSI (environment dependent) |
+| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator above this live RSSI; tunable per band via `SET CADRSSI` / `--cad-rssi` (environment dependent) |
 
 ## Current TX/CAD behavior
 
@@ -308,6 +312,7 @@ SET TXRESULT=0|1
 SET TXMODE=MANAGED|DIRECT
 SET TXQUEUE=0|1
 SET CADMONITOR=0|1
+SET CADRSSI=<dbm>
 SET CADWAIT=<milliseconds>
 SET CADIDLE=<milliseconds>
 SET CADPOLL=<milliseconds>
@@ -320,7 +325,7 @@ GET CHANNEL
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQREJECT=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1 CADMONITOR=0|1
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQREJECT=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1 CADMONITOR=0|1 CADRSSI=<dbm>
 ```
 
 `TXQDROP` counts pending jobs discarded at shutdown. `TXQREJECT` counts jobs rejected because the queue was full (reject-newest) or submitted after shutdown began. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
@@ -402,7 +407,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
 | `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, explicit live-register `LIVERSSI`, current modem mode, and TX mode |
 
@@ -418,7 +423,7 @@ The daemon also prints one compact operator stats line per selected radio every
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
-| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQREJECT=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=... CADWAIT=... CADIDLE=... CADPOLL=... CADTXAFTERTIMEOUT=... CADMONITOR=...\n` | requesting CONF socket | Reply to `GET STATUS` |
+| `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQREJECT=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=... CADWAIT=... CADIDLE=... CADPOLL=... CADTXAFTERTIMEOUT=... CADMONITOR=... CADRSSI=...\n` | requesting CONF socket | Reply to `GET STATUS` |
 | `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=...\n` | requesting CONF socket | Reply to `GET STATS` |
 | `CHANNEL RADIO=... BUSY=... CAD=... CADSCAN=... CADSTATE=... RSSI=... PACKETRSSI=... LIVERSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |

@@ -99,6 +99,7 @@ typedef struct {
     DaemonFramedTxNextSeqFn next_seq;
     DaemonFramedTxResultDeferredFn result_deferred;
     DaemonFramedTxTargetFn set_target;
+    DaemonFramedTxManagedFlagFn managed_flag;
     int slot_index;
 } DaemonFramedTxContext;
 
@@ -137,10 +138,13 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
                                                         deferred_result,
                                                         result)) {
         uint8_t status = daemon_framed_tx_status_from_handler_result(result);
+        uint8_t flags = tx->managed_flag
+                            ? tx->managed_flag(tx->handler_ctx)
+                            : FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
 
         if (daemon_queue_framed_tx_result(tx->slot,
                                           status,
-                                          FRAMED_DATA_TX_RESULT_FLAG_MANAGED,
+                                          flags,
                                           seq) != 0) {
             daemon_debug_ctx(tx->tag ? tx->tag : "TXF",
                              "TX_RESULT queue failed, Client zu");
@@ -180,7 +184,8 @@ void daemon_process_framed_data_slots(const char *tag,
                                       DaemonFramedTxResultEnabledFn result_enabled,
                                       DaemonFramedTxNextSeqFn next_seq,
                                       DaemonFramedTxResultDeferredFn result_deferred,
-                                      DaemonFramedTxTargetFn set_target)
+                                      DaemonFramedTxTargetFn set_target,
+                                      DaemonFramedTxManagedFlagFn managed_flag)
 {
     if (!slots || !states)
         return;
@@ -230,6 +235,7 @@ void daemon_process_framed_data_slots(const char *tag,
             next_seq,
             result_deferred,
             set_target,
+            managed_flag,
             i
         };
 

@@ -42,6 +42,7 @@
 #include "daemon_radio_selection.h"
 #include "daemon_tx_mode_boot.h"
 #include "daemon_cad_monitor_boot.h"
+#include "daemon_cad_rssi_boot.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -283,6 +284,9 @@ static void daemon_print_usage(const char *argv0)
     printf("      --cad-monitor VAL      CAD=0/1-Monitor beide Bänder: on, off (Standard: off)\n");
     printf("      --cad-monitor-433 VAL  CAD-Monitor nur 433 (überschreibt --cad-monitor)\n");
     printf("      --cad-monitor-868 VAL  CAD-Monitor nur 868 (überschreibt --cad-monitor)\n");
+    printf("      --cad-rssi DBM         CAD-Busy-Schwelle beide Bänder, Ganzzahl dBm -130..0 (Standard: -90)\n");
+    printf("      --cad-rssi-433 DBM     CAD-Busy-Schwelle nur 433 (überschreibt --cad-rssi)\n");
+    printf("      --cad-rssi-868 DBM     CAD-Busy-Schwelle nur 868 (überschreibt --cad-rssi)\n");
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets:\n");
@@ -320,6 +324,9 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"cad-monitor",     required_argument, 0, 1005},
         {"cad-monitor-433", required_argument, 0, 1006},
         {"cad-monitor-868", required_argument, 0, 1007},
+        {"cad-rssi",        required_argument, 0, 1008},
+        {"cad-rssi-433",    required_argument, 0, 1009},
+        {"cad-rssi-868",    required_argument, 0, 1010},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -402,6 +409,33 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --cad-monitor-868 erkannt: %s", optarg);
                 break;
+            case 1008:
+                if (!daemon_set_cad_rssi_boot_global(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-rssi erkannt: %s", optarg);
+                break;
+            case 1009:
+                if (!daemon_set_cad_rssi_boot_433(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-rssi-433 erkannt: %s", optarg);
+                break;
+            case 1010:
+                if (!daemon_set_cad_rssi_boot_868(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-rssi-868 erkannt: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -458,6 +492,18 @@ static void daemon_apply_boot_cad_monitor(void)
 
     daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d 868=%d",
                      mon_433 ? 1 : 0, mon_868 ? 1 : 0);
+
+    // CAD RSSI threshold override (per band ?? global; unset keeps the default).
+    float rssi_433 = 0.0f;
+    float rssi_868 = 0.0f;
+    if (daemon_cad_rssi_boot_effective_433(&rssi_433)) {
+        radio_controller_433.cad_rssi_threshold_dbm.store(rssi_433);
+        daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi_433);
+    }
+    if (daemon_cad_rssi_boot_effective_868(&rssi_868)) {
+        radio_controller_868.cad_rssi_threshold_dbm.store(rssi_868);
+        daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi_868);
+    }
 }
 
 /* --- Startup sequence ---------------------------------------------------- */

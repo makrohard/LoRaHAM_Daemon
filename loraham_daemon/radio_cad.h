@@ -5,10 +5,8 @@
 
 /* --- Radio CAD probe helper --------------------------------------------- */
 
-// RSSI threshold (dBm) above which the passive monitoring probe reports the
-// channel busy. This is environment dependent and tunable; it is only used for
-// the non-destructive CAD=0/1 monitoring indicator, never for TX gating.
-#define RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM (-90.0f)
+// RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM (default) lives in radio_controller.h; the
+// effective threshold is the per-band ctrl->cad_rssi_threshold_dbm atomic.
 
 typedef enum {
     RADIO_CAD_PROBE_UNAVAILABLE = 0,
@@ -123,7 +121,7 @@ static inline RadioCadProbeResult radio_cad_probe_passive(RadioController<RadioT
         return result; // UNAVAILABLE for non-LoRa, like the active probe.
 
     result.scan_ran = 0;
-    result.status = (result.rssi_dbm >= RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM)
+    result.status = (result.rssi_dbm >= ctrl->cad_rssi_threshold_dbm.load())
                         ? RADIO_CAD_PROBE_BUSY
                         : RADIO_CAD_PROBE_FREE;
     return result;
