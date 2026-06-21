@@ -101,6 +101,9 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for both bands |
 | `--tx-mode-433 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 433 only; overrides `--tx-mode` regardless of argument order |
 | `--tx-mode-868 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 868 only; overrides `--tx-mode` regardless of argument order |
+| `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for both bands; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
+| `--cad-monitor-433 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 433 only; overrides `--cad-monitor` regardless of argument order |
+| `--cad-monitor-868 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 868 only; overrides `--cad-monitor` regardless of argument order |
 | `-h`, `--help` | - | `-h`, `--help` | Print usage and exit |
 
 ## UNIX socket interface
@@ -422,7 +425,7 @@ The daemon also prints one compact operator stats line per selected radio every
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
 
-`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off). When enabled and a CONF client is connected, the daemon derives busy/free from a non-destructive live-RSSI read (threshold `-90 dBm`) at most every `200 ms`. It never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
+`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor`/`--cad-monitor-433`/`--cad-monitor-868` for legacy CONF clients that expect CAD broadcasts but cannot send the command. When enabled and a CONF client is connected, the daemon derives busy/free from a non-destructive live-RSSI read (threshold `-90 dBm`) at most every `200 ms`. It never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
 
 ## Examples
 
