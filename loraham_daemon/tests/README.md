@@ -93,6 +93,7 @@ Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection`
 - `test_tx_mode_boot` (`--tx-mode` / `--tx-mode-433` / `--tx-mode-868` parsing and per-band precedence)
+- `test_cad_monitor_boot` (`--cad-monitor` / `--cad-monitor-433` / `--cad-monitor-868` parsing and per-band precedence)
 - `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
 - `test_daemon_timing`
 - `test_daemon_lifecycle`

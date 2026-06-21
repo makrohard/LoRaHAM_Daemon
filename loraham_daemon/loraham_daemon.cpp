@@ -41,6 +41,7 @@
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
 #include "daemon_tx_mode_boot.h"
+#include "daemon_cad_monitor_boot.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -279,6 +280,9 @@ static void daemon_print_usage(const char *argv0)
     printf("      --tx-mode MODE      TX-Modus beide Bänder: direct, managed (Standard: managed)\n");
     printf("      --tx-mode-433 MODE  TX-Modus nur 433 (überschreibt --tx-mode)\n");
     printf("      --tx-mode-868 MODE  TX-Modus nur 868 (überschreibt --tx-mode)\n");
+    printf("      --cad-monitor VAL      CAD=0/1-Monitor beide Bänder: on, off (Standard: off)\n");
+    printf("      --cad-monitor-433 VAL  CAD-Monitor nur 433 (überschreibt --cad-monitor)\n");
+    printf("      --cad-monitor-868 VAL  CAD-Monitor nur 868 (überschreibt --cad-monitor)\n");
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets:\n");
@@ -313,6 +317,9 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"tx-mode",     required_argument, 0, 1002},
         {"tx-mode-433", required_argument, 0, 1003},
         {"tx-mode-868", required_argument, 0, 1004},
+        {"cad-monitor",     required_argument, 0, 1005},
+        {"cad-monitor-433", required_argument, 0, 1006},
+        {"cad-monitor-868", required_argument, 0, 1007},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -368,6 +375,33 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --tx-mode-868 erkannt: %s", optarg);
                 break;
+            case 1005:
+                if (!daemon_set_cad_monitor_boot_global(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: on, off\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-monitor erkannt: %s", optarg);
+                break;
+            case 1006:
+                if (!daemon_set_cad_monitor_boot_433(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: on, off\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-monitor-433 erkannt: %s", optarg);
+                break;
+            case 1007:
+                if (!daemon_set_cad_monitor_boot_868(optarg)) {
+                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Erlaubt: on, off\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --cad-monitor-868 erkannt: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -410,6 +444,22 @@ static void daemon_apply_boot_tx_modes(void)
                      radio_tx_mode_name(mode_868));
 }
 
+/* --- Boot CAD monitor application ---------------------------------------- */
+// Startup-only: apply the CLI-resolved per-band CAD monitor opt-in (default
+// off). Lets legacy CONF clients get CAD=0/1 without issuing SET CADMONITOR.
+// Runtime SET CADMONITOR can still override afterwards.
+static void daemon_apply_boot_cad_monitor(void)
+{
+    bool mon_433 = daemon_cad_monitor_boot_effective_433();
+    bool mon_868 = daemon_cad_monitor_boot_effective_868();
+
+    radio_controller_433.cad_monitor_active.store(mon_433);
+    radio_controller_868.cad_monitor_active.store(mon_868);
+
+    daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d 868=%d",
+                     mon_433 ? 1 : 0, mon_868 ? 1 : 0);
+}
+
 /* --- Startup sequence ---------------------------------------------------- */
 static void daemon_startup_sequence(int argc, char *argv[])
 {
@@ -433,6 +483,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_debug_ctx("STARTUP", "Starte Radio- und Socket-Init");
     daemon_io_init();
     daemon_apply_boot_tx_modes();
+    daemon_apply_boot_cad_monitor();
     daemon_debug_ctx("STARTUP", "Startup abgeschlossen");
 }
 
