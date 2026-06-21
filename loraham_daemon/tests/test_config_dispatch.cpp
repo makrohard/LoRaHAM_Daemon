@@ -684,7 +684,7 @@ static void test_dispatch_sets_txmode_without_radio(void)
         return;
     }
 
-    const char *cmd = "SET TXMODE=RAW\n";
+    const char *cmd = "SET TXMODE=DIRECT\n";
     write(sv[0], cmd, strlen(cmd));
 
     event_loop_reset(&set);
@@ -697,7 +697,7 @@ static void test_dispatch_sets_txmode_without_radio(void)
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
 
     expect_int("txmode apply count", g_apply_state.calls, 0);
-    expect_int("txmode raw", ctrl.tx_mode == RADIO_TX_MODE_RAW, 1);
+    expect_int("txmode direct", ctrl.tx_mode == RADIO_TX_MODE_DIRECT, 1);
     expect_int("txmode client open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);

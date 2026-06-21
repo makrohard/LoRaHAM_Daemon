@@ -41,7 +41,7 @@ static int test_get_status_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|DIRECT) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -72,7 +72,7 @@ static int test_set_txresult_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|RAW) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=1 TXMODE=(MANAGED|DIRECT) TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -104,7 +104,7 @@ static int test_set_txqueue_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|RAW) TXQUEUE=1 TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=(MANAGED|DIRECT) TXQUEUE=1 TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -127,14 +127,14 @@ static int test_set_txmode_433(void)
     if (fd < 0)
         return TEST_FAIL;
 
-    if (write_all(fd, "SET TXMODE=RAW\nGET STATUS\n",
-                  strlen("SET TXMODE=RAW\nGET STATUS\n")) < 0) {
+    if (write_all(fd, "SET TXMODE=DIRECT\nGET STATUS\n",
+                  strlen("SET TXMODE=DIRECT\nGET STATUS\n")) < 0) {
         close(fd);
         return TEST_FAIL;
     }
 
     if (wait_for_matching_line(fd,
-                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=RAW TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
+                               "^STATUS RADIO=(READY|FAILED|UNINITIALIZED) TX=[01] CAD=[01] GETRSSI=[01] TXRESULT=[01] TXMODE=DIRECT TXQUEUE=[01] TXQ=[0-9]+ TXQDROP=[0-9]+ TXQREJECT=[0-9]+ TXQSTALE=[0-9]+ TXQRESULTDROP=[0-9]+ TXQDONE=[0-9]+ TXQLAST=[A-Z_]+ TXQSEQ=[0-9]+ CADWAIT=[0-9]+ CADIDLE=[0-9]+ CADPOLL=[0-9]+ CADTXAFTERTIMEOUT=[01]$",
                                2000,
                                line,
                                sizeof(line)) < 0) {
@@ -163,7 +163,7 @@ static int test_get_channel_433(void)
     }
 
     if (wait_for_matching_line(fd,
-                               "^CHANNEL RADIO=(READY|FAILED|UNINITIALIZED) BUSY=[01] CAD=[01] CADSCAN=[01] CADSTATE=(FREE|BUSY|UNAVAILABLE) RSSI=-?[0-9]+\\.[0-9][0-9] PACKETRSSI=-?[0-9]+\\.[0-9][0-9] LIVERSSI=-?[0-9]+\\.[0-9][0-9] MODE=(LORA|FSK) TXMODE=(MANAGED|RAW)$",
+                               "^CHANNEL RADIO=(READY|FAILED|UNINITIALIZED) BUSY=[01] CAD=[01] CADSCAN=[01] CADSTATE=(FREE|BUSY|UNAVAILABLE) RSSI=-?[0-9]+\\.[0-9][0-9] PACKETRSSI=-?[0-9]+\\.[0-9][0-9] LIVERSSI=-?[0-9]+\\.[0-9][0-9] MODE=(LORA|FSK) TXMODE=(MANAGED|DIRECT)$",
                                2000,
                                line,
                                sizeof(line)) < 0) {

@@ -92,6 +92,7 @@ Client/socket/runtime:
 Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection`
+- `test_tx_mode_boot` (`--tx-mode` / `--tx-mode-433` / `--tx-mode-868` parsing and per-band precedence)
 - `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
@@ -108,7 +109,7 @@ Public integration baseline:
 `test_tx_failure_keeps_client` verifies the M1 behavior: recoverable RF/TX execution failures are reported through the existing ERROR path without closing the framed client connection.
 
 - `test_conf_status` covers `TXRESULT`, `TXMODE`, and `GET CHANNEL` CONF state reporting.
-- `test_radio_cad_probe` verifies the real-CAD helper and the M3c RAW-mode one-probe TX guard behavior.
+- `test_radio_cad_probe` verifies the real-CAD helper and the DIRECT-mode immediate (no-CAD) TX behavior.
 
 - `test_daemon_tx_outcome` verifies internal TX outcome to framed TX_RESULT status mapping.
 

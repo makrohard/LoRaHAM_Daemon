@@ -266,23 +266,24 @@ static void test_try_probe_skips_active_tx(void)
                0);
 }
 
-static void test_tx_wait_raw_mode_uses_single_cad_probe(void)
+static void test_tx_wait_direct_mode_skips_cad(void)
 {
     RadioController<FakeRadio> ctrl;
     DataTxDaemonContext<FakeRadio> tx;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
-    ctrl.tx_mode = RADIO_TX_MODE_RAW;
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
     tx.ctrl = &ctrl;
     tx.log_ctx = "TEST";
 
+    // DIRECT transmits immediately even on a busy channel: FREE, no CAD probe.
     ctrl.radio->scan_result = 1;
-    expect_int("raw tx busy wait result", data_tx_wait_channel_free(&tx), 1);
-    expect_int("raw tx busy one scan", ctrl.radio->scan_count, 1);
+    expect_int("direct tx busy wait result", data_tx_wait_channel_free(&tx), 0);
+    expect_int("direct tx busy no scan", ctrl.radio->scan_count, 0);
 
     ctrl.radio->scan_result = 0;
-    expect_int("raw tx free wait result", data_tx_wait_channel_free(&tx), 0);
-    expect_int("raw tx free second scan", ctrl.radio->scan_count, 2);
+    expect_int("direct tx free wait result", data_tx_wait_channel_free(&tx), 0);
+    expect_int("direct tx free still no scan", ctrl.radio->scan_count, 0);
 }
 
 static void test_tx_wait_fsk_skips_cad(void)
@@ -326,7 +327,7 @@ int main(int argc, char **argv)
     test_probe_preserves_broadcast_latch();
     test_probe_waits_for_radio_access_guard();
     test_try_probe_skips_active_tx();
-    test_tx_wait_raw_mode_uses_single_cad_probe();
+    test_tx_wait_direct_mode_skips_cad();
     test_tx_wait_fsk_skips_cad();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

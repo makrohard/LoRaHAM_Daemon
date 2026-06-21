@@ -17,12 +17,12 @@
 
 typedef enum {
     RADIO_TX_MODE_MANAGED = 0,
-    RADIO_TX_MODE_RAW = 1
+    RADIO_TX_MODE_DIRECT = 1
 } RadioTxMode_t;
 
 static inline const char *radio_tx_mode_name(RadioTxMode_t mode)
 {
-    return mode == RADIO_TX_MODE_RAW ? "RAW" : "MANAGED";
+    return mode == RADIO_TX_MODE_DIRECT ? "DIRECT" : "MANAGED";
 }
 
 static inline const char *radio_mode_name(RadioMode_t mode)

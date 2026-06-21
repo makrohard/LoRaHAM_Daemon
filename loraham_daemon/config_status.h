@@ -151,9 +151,9 @@ static inline int config_status_is_set_txmode(const char *line,
         return 1;
     }
 
-    if (strcmp(cmd, "SET TXMODE=RAW") == 0) {
+    if (strcmp(cmd, "SET TXMODE=DIRECT") == 0) {
         if (mode)
-            *mode = RADIO_TX_MODE_RAW;
+            *mode = RADIO_TX_MODE_DIRECT;
         return 1;
     }
 
