@@ -44,6 +44,7 @@ test_binaries=(
   "$TEST_DIR/test_cad_rssi_boot"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
+  "$TEST_DIR/test_instance_lock"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
   "$TEST_DIR/test_rf_packet"
@@ -523,6 +524,18 @@ build_one_radio_health_test() {
     "$SCRIPT_DIR/radio_health.cpp"
 }
 
+build_one_instance_lock_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_instance_lock.cpp" \
+    "$SCRIPT_DIR/daemon_radio_selection.cpp" \
+    "$SCRIPT_DIR/daemon_log.cpp"
+}
+
 build_one_locking_pihal_test() {
   local src="$1"
   local out="$2"
@@ -781,6 +794,7 @@ build_tests() {
   build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
+  build_one_instance_lock_test "$TEST_DIR/test_instance_lock.cpp" "$TEST_DIR/test_instance_lock"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"

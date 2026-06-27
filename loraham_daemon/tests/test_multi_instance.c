@@ -229,6 +229,8 @@ static int test_multi_instance(void)
 
 int main(int argc, char *argv[])
 {
+    char runtime_dir[128];
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--bin") == 0 && i + 1 < argc)
             g_bin = argv[++i];
@@ -238,6 +240,14 @@ int main(int argc, char *argv[])
         usage_common(argv[0]);
         return 2;
     }
+
+    /* Point the spawned daemons at a writable shared lock dir (the production
+     * default /run/lock/loraham fails closed for a non-root test runner). Both
+     * children inherit this via the environment. */
+    snprintf(runtime_dir, sizeof(runtime_dir),
+             "/tmp/loraham-mi-%d", (int)getpid());
+    mkdir(runtime_dir, 0755);
+    setenv("LORAHAM_RUNTIME_DIR", runtime_dir, 1);
 
     run_test("multi_instance split per-band", test_multi_instance);
 

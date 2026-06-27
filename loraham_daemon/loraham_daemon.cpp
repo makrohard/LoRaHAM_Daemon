@@ -49,6 +49,7 @@
 #include "daemon_rx.h"
 #include "daemon_monitoring.h"
 #include "daemon_io_runtime.h"
+#include "daemon_instance_lock.h"
 #include "event_loop.h"
 #include "daemon_socket_dispatch.h"
 #include "radio_controller.h"
@@ -68,6 +69,11 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     daemon_io_shutdown_cleanup();
 
     daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
+
+    /* Release per-band ownership only after all sockets are closed/unlinked, so
+     * a same-band restart cannot bind sockets that this instance then deletes. */
+    daemon_debug_ctx("LIFE", "Gebe Instanz-Sperre frei");
+    daemon_instance_lock_release();
 }
 
 /* --- Event wait/runtime -------------------------------------------------- */

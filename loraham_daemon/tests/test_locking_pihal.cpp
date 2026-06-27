@@ -38,12 +38,8 @@ static void expect_int(const char *name, int actual, int expected)
 static const char *lock_path(void)
 {
     static char path[320];
-    const char *dir = getenv("LORAHAM_RUNTIME_DIR");
 
-    if (!dir || !*dir)
-        dir = "/run/loraham";
-
-    snprintf(path, sizeof(path), "%s/spi0.lock", dir);
+    snprintf(path, sizeof(path), "%s/spi0.lock", loraham_runtime_dir());
     return path;
 }
 
@@ -145,6 +141,95 @@ static void test_cross_process_exclusion(void)
                (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 1 : 0, 1);
 }
 
+/* --- fail-closed behavior ------------------------------------------------ */
+
+/* When the trusted lock directory cannot be used, the HAL must report
+ * not-ready (so the daemon refuses to start the radio) and must NOT silently
+ * fall back to /tmp. */
+static void test_fail_closed_when_dir_unusable(void)
+{
+    /* /proc is not writable: mkdir + open both fail, no fallback. */
+    setenv("LORAHAM_RUNTIME_DIR", "/proc/loraham_nonexistent", 1);
+
+    {
+        LockingPiHal hal(0);
+        expect_int("lock dir unusable -> not ready", hal.spi_lock_ready() ? 1 : 0, 0);
+    }
+
+    setenv("LORAHAM_RUNTIME_DIR", g_tmpdir, 1);
+    {
+        LockingPiHal hal(0);
+        expect_int("trusted dir usable -> ready", hal.spi_lock_ready() ? 1 : 0, 1);
+    }
+}
+
+/* No SPI transaction may begin without the lock: with no lock established,
+ * spiBeginTransaction() must fail closed (controlled fatal), never proceed. */
+static void test_no_transaction_without_lock(void)
+{
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        setenv("LORAHAM_RUNTIME_DIR", "/proc/loraham_nonexistent", 1);
+        LockingPiHal hal(0);          /* not lock-ready */
+        hal.spiBeginTransaction();    /* must _exit(LORAHAM_EXIT_LOCK_ERROR) */
+        _exit(0);                     /* reaching here = FAILED (proceeded) */
+    }
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    expect_int("spiBeginTransaction without lock is fatal",
+               (WIFEXITED(status) && WEXITSTATUS(status) == LORAHAM_EXIT_LOCK_ERROR)
+                   ? 1 : 0, 1);
+}
+
+/* --- flock acquire helper (EINTR retry vs hard failure) ------------------ */
+
+static int g_fake_calls = 0;
+static int g_fake_eintr_remaining = 0;
+
+static int fake_flock_eintr(int fd, int op)
+{
+    (void)fd;
+    (void)op;
+    g_fake_calls++;
+    if (g_fake_eintr_remaining-- > 0) {
+        errno = EINTR;
+        return -1;
+    }
+    return 0;
+}
+
+static int fake_flock_hardfail(int fd, int op)
+{
+    (void)fd;
+    (void)op;
+    g_fake_calls++;
+    errno = EIO;
+    return -1;
+}
+
+static void test_flock_eintr_retry(void)
+{
+    g_fake_calls = 0;
+    g_fake_eintr_remaining = 2;   /* two EINTRs then success */
+
+    int rc = loraham_flock_acquire_ex(3, fake_flock_eintr);
+
+    expect_int("EINTR retried until success", rc, 0);
+    expect_int("EINTR retried exactly 3 calls", g_fake_calls, 3);
+}
+
+static void test_flock_hard_failure(void)
+{
+    g_fake_calls = 0;
+
+    int rc = loraham_flock_acquire_ex(3, fake_flock_hardfail);
+
+    expect_int("hard flock failure reported (-1)", rc, -1);
+    expect_int("hard flock failure not retried", g_fake_calls, 1);
+}
+
 int main(void)
 {
     /* Isolate the lock file in a private temp dir. */
@@ -156,6 +241,10 @@ int main(void)
     test_recursion_guard();
     test_two_instances_share_one_lock();
     test_cross_process_exclusion();
+    test_fail_closed_when_dir_unusable();
+    test_no_transaction_without_lock();
+    test_flock_eintr_retry();
+    test_flock_hard_failure();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

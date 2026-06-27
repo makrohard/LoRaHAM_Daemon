@@ -34,7 +34,9 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
-| SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock` (see Multi-instance operation) |
+| SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock`; fails closed if the lock cannot be established (see Multi-instance operation) |
+| Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
+| Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution (`/run/lock/loraham`, `LORAHAM_RUNTIME_DIR` override), stable exit codes, and the EINTR-only `flock` acquire helper |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
 | LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the per-band LED claim also acts as the per-band instance-ownership token (see Multi-instance operation) |
 
@@ -384,29 +386,45 @@ loraham_daemon --radio 868     # owns the 868 MHz radio
 
 `--radio both` remains fully supported as the legacy single-process mode; it
 owns both bands and is therefore mutually exclusive with the split per-band
-services (it needs both LED GPIOs — see below).
+services (it acquires both instance locks — see below).
 
-### Per-band ownership (LED GPIO claim)
+### Per-band ownership (instance lock)
 
-Each band's status-LED GPIO doubles as that band's **ownership token**:
+Same-band ownership is enforced by a dedicated per-band advisory lock
+(`daemon_instance_lock.cpp`), held by an open descriptor for the **entire
+process lifetime**:
+
+```
+/run/lock/loraham/instance-433.lock
+/run/lock/loraham/instance-868.lock
+```
+
+- Acquired with `flock(LOCK_EX | LOCK_NB)` **before** sockets, GPIO, SPI, or
+  radio setup. A second daemon for an already-owned band fails fast and exits
+  with code **3** (`LORAHAM_EXIT_INSTANCE_BUSY`) and a clear journal message.
+- Released **only after all sockets have been closed and unlinked**. This closes
+  the shutdown/restart race: a same-band restart cannot bind new sockets (and
+  then have them deleted by the old instance) while the old instance is still
+  finishing shutdown — the new process cannot take the lock until the old one
+  has fully cleaned up.
+- The kernel drops the lock when the owning process dies, so there is **no stale
+  lock file** to clean up after a crash.
+- `--radio both` acquires both locks in deterministic order (433 → 868) and rolls
+  back the first if the second is unavailable, so there is never split ownership
+  with a `--radio 433` or `--radio 868` peer.
+- Lock-ordering contract (deadlock-free): `instance-433 → instance-868 → spi0`;
+  the SPI lock is only taken inside a transaction, never during instance setup.
+
+Each band's status LED (GPIO 13 for 433, GPIO 19 for 868) is also claimed only
+for the selected band(s) and serves as a physical activity **indicator** and a
+secondary hardware-exclusivity check; it is **not** relied on as the ownership
+barrier (it is released during radio shutdown, before sockets). Radio control
+GPIOs per band:
 
 | Band | LED GPIO | Radio control GPIOs (CS / IRQ / RST / BUSY) |
 |---|---:|---|
 | 433 | 13 | 8 / 25 / 5 / 24 |
 | 868 | 19 | 7 / 16 / 6 / 12 |
-
-- A `--radio 433` process claims **only** GPIO 13; `--radio 868` claims **only**
-  GPIO 19; `--radio both` claims both.
-- A Linux GPIO line can be held by only one process at a time and is released by
-  the kernel automatically when that process dies. This makes the LED claim a
-  **crash-safe per-band instance lock with no stale lock files**: a second
-  daemon for an already-owned band fails its claim and exits non-zero with a
-  clear message, e.g.
-  `LED/Funk für Band 433 bereits in Benutzung (GPIO 13 belegt)`.
-- The ownership claim happens **before** any socket file is created, so a
-  rejected duplicate can never unlink or take over the live instance's sockets.
-- Failing to claim a selected band's LED is **fatal** for that startup (for
-  `--radio both`, failing either band is fatal).
 
 ### Shared SPI serialization
 
@@ -420,66 +438,102 @@ between transactions. The lock is held only for one short transfer, never for
 the daemon lifetime, and is released automatically by the kernel on process
 death.
 
-- Lock file: `/run/loraham/spi0.lock` (created via the systemd
-  `RuntimeDirectory`), with a deterministic `/tmp/loraham` fallback so two
-  non-root dev/test instances still share one lock file.
-- Override the directory with the `LORAHAM_RUNTIME_DIR` environment variable.
+- Lock file: `/run/lock/loraham/spi0.lock`, in a **durable shared directory**
+  provisioned root-owned by `tmpfiles.d` (see below) whose lifetime is
+  independent of any single instance.
+- **Fail closed:** if the lock file cannot be established the radio does **not**
+  start (the daemon exits with code **4**, `LORAHAM_EXIT_LOCK_ERROR`); there is
+  no `/tmp` fallback and no unlocked transfer. A hard (non-`EINTR`) `flock`
+  failure or any transfer attempt without the lock held is a controlled fatal.
+  The lock file is opened `O_NOFOLLOW` to reject a symlink planted at the path.
+- Override the directory with the `LORAHAM_RUNTIME_DIR` environment variable
+  (for non-root dev/test; production uses the trusted default).
 - Lock ordering is deadlock-free: the in-process per-band `radio_mutex` is always
   taken before the low-level SPI `flock`, never the reverse.
 
-### systemd reference unit (template)
+### systemd deployment
 
-Not installed by the daemon; provided here as a starting point. Save as
-`/etc/systemd/system/loraham-daemon@.service`:
+Deployable artifacts are provided under `systemd/` (no developer-specific paths):
 
-```ini
-[Unit]
-Description=LoRaHAM Daemon (%i MHz)
-After=local-fs.target
-ConditionPathExists=/dev/gpiochip0
+- `systemd/loraham-daemon@.service` — per-band template unit.
+- `systemd/tmpfiles.d/loraham.conf` — provisions the durable shared lock
+  directory `/run/lock/loraham` (root-owned, 0755).
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/home/makro/src/loraham-daemon-hardening/loraham_daemon
-RuntimeDirectory=loraham
-RuntimeDirectoryMode=0755
-ExecStart=/home/makro/src/loraham-daemon-hardening/loraham_daemon/loraham_daemon --radio %i
-Restart=on-failure
-RestartSec=2
-KillSignal=SIGTERM
-TimeoutStopSec=30
-PrivateTmp=no
+> **Important (shared lock directory):** the SPI lock must live in a directory
+> whose lifetime is independent of either instance. Do **not** use a per-unit
+> `RuntimeDirectory` for it — systemd removes a unit's `RuntimeDirectory` when
+> that unit stops, which would unlink the shared lock inode out from under the
+> still-running peer and silently break SPI serialization (the survivor keeps an
+> fd to the old inode while the restarted peer creates a new one). The
+> `tmpfiles.d` directory avoids this; the lock inode stays stable across one
+> band stopping/restarting while the other runs.
 
-[Install]
-WantedBy=multi-user.target
-```
-
-Use the legacy foreground process under systemd (`Type=simple`) — do **not** use
-the daemon's `-d` double-fork mode, which writes a single shared
-`/tmp/lora_daemon.log` and is unnecessary under a supervisor. Then:
+Install (VS Code terminal or any shell):
 
 ```bash
-systemctl enable --now loraham-daemon@433.service
-systemctl enable --now loraham-daemon@868.service
-systemctl restart loraham-daemon@868.service
-systemctl is-active loraham-daemon@433.service
+sudo install -m0755 loraham_daemon /usr/local/bin/loraham_daemon
+sudo install -m0644 systemd/tmpfiles.d/loraham.conf /etc/tmpfiles.d/loraham.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/loraham.conf
+sudo install -m0644 systemd/loraham-daemon@.service \
+  /etc/systemd/system/loraham-daemon@.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now loraham-daemon@433.service loraham-daemon@868.service
 ```
 
-`RuntimeDirectory=loraham` creates `/run/loraham` (mode 0755) for the SPI lock
-and removes it on stop. Root is required for GPIO/SPI access; socket paths under
-`/tmp` are unchanged, so existing clients keep working.
+The unit uses the foreground model (`Type=simple`) — do **not** use the daemon's
+`-d` double-fork mode, which writes a single shared `/tmp/lora_daemon.log` and is
+unnecessary under a supervisor. To run the binary from a different path, drop in
+an override with `sudo systemctl edit loraham-daemon@.service` instead of editing
+the shipped unit.
 
-### Acceptance checklist
+The unit sets `RestartPreventExitStatus=3 4`: a duplicate-instance exit (3) or a
+lock-infrastructure exit (4) is not fixed by restarting, so systemd does not
+restart-spin on them; a genuine radio/runtime failure (exit 1) still restarts.
 
-1. `systemctl start loraham-daemon@433` and `…@868`; both become active.
-2. Query each CONF socket (`/tmp/loraconf433.sock`, `/tmp/loraconf868.sock`) and
-   confirm each instance reports only its own band.
-3. Stop 433 while 868 keeps running; restart 433; 868 stays unaffected.
-4. A duplicate same-band start is rejected with a clear journal message and does
-   not disturb the running instance's sockets.
-5. Perform controlled RX on both bands using only legal frequency, power, and
-   duty-cycle settings (≤20 dBm).
+**Readiness / health:** the unit is `Type=simple`, so systemd reports it active
+as soon as the process starts, before the radio is confirmed ready. An
+orchestrator should treat a service as healthy only after it can connect to that
+band's CONF socket (`/tmp/loraconf433.sock` / `/tmp/loraconf868.sock`) and get a
+`GET STATUS` response. (`Type=notify` with `sd_notify` is a possible future
+enhancement and is intentionally not used today.)
+
+Root is required for GPIO/SPI access; socket paths under `/tmp` are unchanged, so
+existing clients keep working.
+
+### Acceptance checklist (hardware / systemd)
+
+Start and verify both services:
+
+```bash
+sudo systemctl start loraham-daemon@433.service
+sudo systemctl start loraham-daemon@868.service
+systemctl is-active loraham-daemon@433.service loraham-daemon@868.service
+test -S /tmp/loraconf433.sock && test -S /tmp/loraconf868.sock && echo "both CONF sockets present"
+printf 'GET STATUS\n' | socat - UNIX-CONNECT:/tmp/loraconf433.sock   # each reports only its band
+```
+
+Confirm the shared SPI lock inode is **stable** while one band restarts (the
+core P0-3 guarantee):
+
+```bash
+stat -c '%i' /run/lock/loraham/spi0.lock        # note the inode
+sudo systemctl restart loraham-daemon@433.service
+stat -c '%i' /run/lock/loraham/spi0.lock        # must be the SAME inode
+```
+
+Independent lifecycle and duplicate rejection:
+
+```bash
+sudo systemctl stop loraham-daemon@433.service   # 868 keeps running
+systemctl is-active loraham-daemon@868.service   # active
+sudo systemctl restart loraham-daemon@433.service
+# Duplicate same-band start is rejected (exit code 3), live sockets untouched:
+sudo -u root /usr/local/bin/loraham_daemon --radio 433; echo "exit=$?"
+sudo systemctl stop loraham-daemon@868.service
+```
+
+Perform any RF exercise using only legal frequency, power, and duty-cycle
+settings (≤20 dBm).
 
 ## Startup defaults
 

@@ -43,7 +43,17 @@ void lora_init(void) {
         radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
 
         daemon_debug_band("433", "begin()");
-        int state_433 = radio_controller_433.radio->begin();
+        /* Fail closed: never call begin() (which drives SPI) unless the
+         * process-shared SPI lock was established. */
+        int state_433;
+        if (static_cast<LockingPiHal *>(radio_controller_433.hal.get())
+                ->spi_lock_ready()) {
+            state_433 = radio_controller_433.radio->begin();
+        } else {
+            state_433 = RADIOLIB_ERR_SPI_CMD_FAILED;
+            printf("[SPI] Fehler: SPI-Sperre für 433 nicht verfügbar – "
+                   "begin() übersprungen\n");
+        }
         if (state_433 == RADIOLIB_ERR_NONE) {
             radio_controller_433.health = RADIO_HEALTH_READY;
             printf("[433] Init OK\n");
@@ -124,7 +134,17 @@ void lora_init(void) {
         radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
 
         daemon_debug_band("868", "begin()");
-        int state_868 = radio_controller_868.radio->begin();
+        /* Fail closed: never call begin() (which drives SPI) unless the
+         * process-shared SPI lock was established. */
+        int state_868;
+        if (static_cast<LockingPiHal *>(radio_controller_868.hal.get())
+                ->spi_lock_ready()) {
+            state_868 = radio_controller_868.radio->begin();
+        } else {
+            state_868 = RADIOLIB_ERR_SPI_CMD_FAILED;
+            printf("[SPI] Fehler: SPI-Sperre für 868 nicht verfügbar – "
+                   "begin() übersprungen\n");
+        }
         if (state_868 == RADIOLIB_ERR_NONE) {
         radio_controller_868.health = RADIO_HEALTH_READY;
         printf("[868] Init OK\n");

@@ -32,6 +32,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_cad_rssi_boot.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
+  "$SCRIPT_DIR/daemon_instance_lock.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
   "$SCRIPT_DIR/client_output_queue.cpp"
   "$SCRIPT_DIR/client_set.cpp"
