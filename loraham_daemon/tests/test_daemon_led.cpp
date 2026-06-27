@@ -1,5 +1,6 @@
 #include "../daemon_led.h"
 #include "../daemon_radio_runtime.h"
+#include "../daemon_radio_selection.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -104,6 +105,9 @@ static void reset_fake(void)
 {
     daemon_led_shutdown();
 
+    /* Default selection for the legacy lifecycle/sync tests is both bands. */
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+
     g_open_result = 7;
     g_claim_433_result = 0;
     g_claim_868_result = 0;
@@ -197,6 +201,106 @@ static void test_chip_open_failure(void)
     expect_int("chip open failure tries once", g_open_count, 1);
     expect_int("chip open failure claims nothing", g_claim_count, 0);
     expect_int("chip open failure closes nothing", g_close_count, 0);
+}
+
+/* --- per-band ownership / selection-aware claim tests ------------------- */
+
+static void test_radio_433_only_claims_only_433(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+
+    int rc = daemon_led_init();
+
+    expect_int("433-only init succeeds", rc, 0);
+    expect_int("433-only ready", daemon_led_ready(), 1);
+    expect_int("433-only claims exactly one pin", g_claim_count, 1);
+    expect_int("433-only claims GPIO13", (int)g_claim_pins[0], DAEMON_LED_PIN_433);
+
+    daemon_led_shutdown();
+    expect_int("433-only frees exactly one pin", g_free_count, 1);
+    expect_int("433-only freed GPIO13", (int)g_free_pins[0], DAEMON_LED_PIN_433);
+}
+
+static void test_radio_868_only_claims_only_868(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+
+    int rc = daemon_led_init();
+
+    expect_int("868-only init succeeds", rc, 0);
+    expect_int("868-only ready", daemon_led_ready(), 1);
+    expect_int("868-only claims exactly one pin", g_claim_count, 1);
+    expect_int("868-only claims GPIO19", (int)g_claim_pins[0], DAEMON_LED_PIN_868);
+
+    daemon_led_shutdown();
+    expect_int("868-only frees exactly one pin", g_free_count, 1);
+    expect_int("868-only freed GPIO19", (int)g_free_pins[0], DAEMON_LED_PIN_868);
+}
+
+static void test_radio_both_claims_both(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+
+    int rc = daemon_led_init();
+
+    expect_int("both init succeeds", rc, 0);
+    expect_int("both ready", daemon_led_ready(), 1);
+    expect_int("both claims two pins", g_claim_count, 2);
+    expect_int("both claims GPIO13", (int)g_claim_pins[0], DAEMON_LED_PIN_433);
+    expect_int("both claims GPIO19", (int)g_claim_pins[1], DAEMON_LED_PIN_868);
+}
+
+// A selected band whose LED line is already owned (claim fails) must make
+// init fatal and leave the daemon not-ready -- this is the duplicate-instance
+// rejection at the unit level.
+static void test_radio_433_only_busy_is_fatal(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    g_claim_433_result = -5;            // GPIO13 already owned
+
+    int rc = daemon_led_init();
+
+    expect_int("433-only busy init fatal", rc, -1);
+    expect_int("433-only busy not ready", daemon_led_ready(), 0);
+    expect_int("433-only busy tried only 433", g_claim_count, 1);
+    expect_int("433-only busy closes chip", g_close_count, 1);
+}
+
+static void test_radio_868_only_busy_is_fatal(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+    g_claim_868_result = -5;            // GPIO19 already owned
+
+    int rc = daemon_led_init();
+
+    expect_int("868-only busy init fatal", rc, -1);
+    expect_int("868-only busy not ready", daemon_led_ready(), 0);
+    expect_int("868-only busy tried only 868", g_claim_count, 1);
+    expect_int("868-only busy claimed GPIO19", (int)g_claim_pins[0], DAEMON_LED_PIN_868);
+    expect_int("868-only busy closes chip", g_close_count, 1);
+}
+
+// --radio both with one band busy: fatal, and the band that *was* claimed is
+// cleanly released.
+static void test_radio_both_with_868_busy_is_fatal(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+    g_claim_868_result = -5;
+
+    int rc = daemon_led_init();
+
+    expect_int("both/868-busy init fatal", rc, -1);
+    expect_int("both/868-busy not ready", daemon_led_ready(), 0);
+    expect_int("both/868-busy tried both pins", g_claim_count, 2);
+    expect_int("both/868-busy freed the claimed GPIO13", g_free_count, 1);
+    expect_int("both/868-busy freed GPIO13", (int)g_free_pins[0], DAEMON_LED_PIN_433);
+    expect_int("both/868-busy closes chip", g_close_count, 1);
 }
 
 /* --- sync_led derived-state tests --------------------------------------- */
@@ -337,6 +441,12 @@ int main(void)
     test_second_claim_failure_cleans_first();
     test_first_claim_failure_stops_cleanly();
     test_chip_open_failure();
+    test_radio_433_only_claims_only_433();
+    test_radio_868_only_claims_only_868();
+    test_radio_both_claims_both();
+    test_radio_433_only_busy_is_fatal();
+    test_radio_868_only_busy_is_fatal();
+    test_radio_both_with_868_busy_is_fatal();
     test_sync_led_derived_state();
     test_sync_led_no_rx_latch();
     test_sync_led_cad_off_edge();

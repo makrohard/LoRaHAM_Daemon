@@ -6,7 +6,7 @@
 #define DAEMON_LED_PIN_433 13
 #define DAEMON_LED_PIN_868 19
 
-void daemon_led_init(void);
+int daemon_led_init(void);
 void daemon_led_shutdown(void);
 int daemon_led_ready(void);
 void daemon_led_set_pin(int pin, int state);

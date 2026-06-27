@@ -22,8 +22,9 @@ TxResult lora_send(uint8_t *buf, size_t len, int band)
     return TX_RESULT_RADIO_ERROR;
 }
 
-void daemon_led_init(void)
+int daemon_led_init(void)
 {
+    return 0;
 }
 
 int daemon_led_ready(void)

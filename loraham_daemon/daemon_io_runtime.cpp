@@ -129,6 +129,20 @@ void daemon_io_init(void)
                           client_data868_framed_slots,
                           client_conf868_slots);
 
+    /*
+     * Claim per-band LED/ownership BEFORE touching any socket files.  The LED
+     * GPIO claim is the per-band instance lock: if another daemon already owns
+     * this band the claim fails here, and we exit *before* unlinking/binding —
+     * so a duplicate same-band start can never remove the live instance's
+     * sockets.  A failed claim of a selected band is fatal.
+     */
+    daemon_debug_ctx("GPIO", "LED/Ownership initialisieren");
+    if (daemon_led_init() != 0) {
+        printf("[Daemon] LED/Ownership-Setup fehlgeschlagen "
+               "(Band evtl. von anderer Instanz belegt), beende.\n");
+        exit(EXIT_FAILURE);
+    }
+
     daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
     if (daemon_radio_433_enabled() &&
         radio_channel_open_sockets(&channel_433) != 0) {
@@ -147,9 +161,6 @@ void daemon_io_init(void)
     }
 
     daemon_radio_controller_init();
-
-    daemon_debug_ctx("GPIO", "LED initialisieren");
-    daemon_led_init();
 
     daemon_debug_ctx("RADIO", "RadioLib initialisieren");
     lora_init();
