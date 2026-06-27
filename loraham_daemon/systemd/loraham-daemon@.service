@@ -1,6 +1,5 @@
 [Unit]
 Description=LoRaHAM Daemon (%i MHz)
-Documentation=file:/usr/share/doc/loraham/README.md
 After=local-fs.target
 # Radio hardware must be present.
 ConditionPathExists=/dev/gpiochip0
@@ -10,6 +9,12 @@ RequiresMountsFor=/run/lock
 [Service]
 Type=simple
 User=root
+
+# Force the production shared lock namespace: the daemon honours
+# LORAHAM_RUNTIME_DIR for direct test/developer runs, but an installed service
+# must always use /run/lock/loraham. Clearing any inherited manager-level value
+# guarantees both band services share one instance/SPI lock namespace.
+UnsetEnvironment=LORAHAM_RUNTIME_DIR
 
 # Deployable default: install the built binary to /usr/local/bin/loraham_daemon
 # (e.g. `sudo install -m0755 loraham_daemon /usr/local/bin/`). To run from a
