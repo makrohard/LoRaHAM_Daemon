@@ -1,5 +1,8 @@
 # Changelog
 
+## loraham_daemon 111a
+- loraham_daemon can now safely run multiple instances
+
 ## loraham_daemon 111
 
 - CAD/TX was reworked: MANAGED TX now performs bounded CAD/LBT with a stable
