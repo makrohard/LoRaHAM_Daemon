@@ -102,14 +102,8 @@ static void daemon_runtime_init(EventLoopSet *event_set)
     printf("[Daemon] Event-Backend: %s\n",
            event_loop_backend_name(event_loop_backend(event_set)));
 
-    // Install stop signal handlers.
-    daemon_lifecycle_reset_stop();
-    if (daemon_lifecycle_install_signal_handlers() != 0) {
-        perror("sigaction");
-        printf("[Daemon] Signal-Handler konnten nicht gesetzt werden, beende.\n");
-        daemon_shutdown_cleanup(event_set);
-        exit(EXIT_FAILURE);
-    }
+    /* Stop-signal handlers are installed earlier, in daemon_io_init(), right
+     * after the instance lock is acquired (see M4-P2). */
 }
 
 /* --- Loop context --------------------------------------------------------- */

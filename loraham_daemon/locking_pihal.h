@@ -48,15 +48,18 @@
  */
 class LockingPiHal : public PiHal {
   public:
+    /* flock_fn is injectable for tests; production uses the real flock(). */
     LockingPiHal(uint8_t spiChannel, uint32_t spiSpeed = 2000000,
-                 uint8_t spiDevice = 0, uint8_t gpioDevice = 0)
-      : PiHal(spiChannel, spiSpeed, spiDevice, gpioDevice) {
+                 uint8_t spiDevice = 0, uint8_t gpioDevice = 0,
+                 loraham_flock_fn flock_fn = flock)
+      : PiHal(spiChannel, spiSpeed, spiDevice, gpioDevice), _flock(flock_fn) {
         open_lock();
     }
 
     ~LockingPiHal() override {
         if (_lockFd >= 0) {
-            flock(_lockFd, LOCK_UN);
+            /* Best-effort at teardown; the kernel releases the lock on close. */
+            _flock(_lockFd, LOCK_UN);
             close(_lockFd);
             _lockFd = -1;
         }
@@ -78,7 +81,7 @@ class LockingPiHal : public PiHal {
             if (_lockFd < 0)
                 fatal("SPI-Sperre nicht verfuegbar (fail-closed)");
 
-            if (loraham_flock_acquire_ex(_lockFd, flock) != 0)
+            if (loraham_flock_acquire_ex(_lockFd, _flock) != 0)
                 fatal("flock(LOCK_EX) hart fehlgeschlagen");
 
             _held = true;
@@ -95,9 +98,16 @@ class LockingPiHal : public PiHal {
 
     void spiEndTransaction() override {
         if (_depth > 0 && --_depth == 0) {
+            /* Bookkeeping first so state stays consistent on the fatal path. */
             _held = false;
-            if (_lockFd >= 0)
-                flock(_lockFd, LOCK_UN);
+            if (_lockFd >= 0 &&
+                loraham_flock_release(_lockFd, _flock) != 0) {
+                /* A failed unlock would leave the kernel lock held while we
+                 * believe it released -- that could wedge the peer band. Treat
+                 * it as fatal: exit via the lock-error path so process teardown
+                 * closes the fd and the kernel releases the lock. */
+                fatal("flock(LOCK_UN) hart fehlgeschlagen");
+            }
         }
     }
 
@@ -111,35 +121,23 @@ class LockingPiHal : public PiHal {
     }
 
     void open_lock() {
-        const char *dir = loraham_runtime_dir();
-        char path[256];
-        int n;
-        int fd;
-
-        /* Idempotent; in production the directory is pre-created root-owned by
-         * tmpfiles.d. No insecure /tmp fallback: if the trusted path cannot be
-         * used we fail closed (spi_lock_ready() stays false). */
-        mkdir(dir, 0755);
-
-        n = snprintf(path, sizeof(path), "%s/spi0.lock", dir);
-        if (n <= 0 || (size_t)n >= sizeof(path)) {
-            fprintf(stderr, "[SPI] Fehler: SPI-Sperrpfad zu lang\n");
+        /* Validate the trusted lock directory, then create spi0.lock relative to
+         * it. No insecure /tmp fallback and no silent creation of an untrusted
+         * production directory: if the trusted path cannot be used we fail closed
+         * (spi_lock_ready() stays false). */
+        int dirfd = loraham_open_runtime_dir();
+        if (dirfd < 0)
             return;
-        }
 
-        /* O_NOFOLLOW refuses a symlink planted at the lock path. */
-        fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0660);
-        if (fd < 0) {
-            fprintf(stderr,
-                    "[SPI] Fehler: SPI-Sperrdatei %s nicht nutzbar: %s\n",
-                    path, strerror(errno));
-            return;
-        }
+        _lockFd = loraham_open_lock_file_at(dirfd, "spi0.lock");
+        close(dirfd);
 
-        _lockFd = fd;
-        fprintf(stderr, "[SPI] SPI-Sperrdatei: %s\n", path);
+        if (_lockFd >= 0)
+            fprintf(stderr, "[SPI] SPI-Sperrdatei: %s/spi0.lock\n",
+                    loraham_runtime_dir());
     }
 
+    loraham_flock_fn _flock;
     int _lockFd = -1;
     int _depth = 0;
     bool _held = false;

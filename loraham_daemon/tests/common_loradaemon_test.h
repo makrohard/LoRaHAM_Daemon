@@ -397,9 +397,38 @@ static TEST_UNUSED int assert_getrssi_stream(int band)
 
 /* --- Daemon lifecycle helpers --- */
 
+/*
+ * Point the spawned daemon at a writable, trusted (0700, owned by the test user)
+ * lock directory via LORAHAM_RUNTIME_DIR. The production default
+ * /run/lock/loraham requires a root-owned directory, which a non-root test
+ * runner cannot satisfy; the dev override relaxes the root-owner requirement
+ * while still validating against symlink and group/world-writable directories.
+ * Set in the parent so the value is inherited across execl().
+ */
+static TEST_UNUSED void ensure_test_runtime_dir(void)
+{
+    static int done = 0;
+    char dir[128];
+
+    if (done)
+        return;
+
+    if (!getenv("LORAHAM_RUNTIME_DIR")) {
+        snprintf(dir, sizeof(dir), "/tmp/loraham-test-%d", (int)getpid());
+        mkdir(dir, 0700);
+        setenv("LORAHAM_RUNTIME_DIR", dir, 1);
+    }
+
+    done = 1;
+}
+
 static TEST_UNUSED int start_daemon(const char *bin)
 {
-    pid_t pid = fork();
+    pid_t pid;
+
+    ensure_test_runtime_dir();
+
+    pid = fork();
 
     if (pid < 0)
         return TEST_FAIL;

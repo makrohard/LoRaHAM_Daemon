@@ -16,6 +16,10 @@
 *.log
 core
 core.*
+# The *.d rule above (compiler dependency files) also matches the systemd
+# tmpfiles.d deployment directory -- keep that directory and its rules tracked.
+!/systemd/tmpfiles.d/
+!/systemd/tmpfiles.d/*.conf
 # Local editor/temp files
 *~
 *.swp

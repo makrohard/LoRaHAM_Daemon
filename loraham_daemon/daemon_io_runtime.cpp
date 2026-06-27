@@ -5,6 +5,7 @@
 
 #include "daemon_instance_lock.h"
 #include "daemon_led.h"
+#include "daemon_lifecycle.h"
 #include "daemon_log.h"
 #include "daemon_radio_init.h"
 #include "daemon_radio_runtime.h"
@@ -103,6 +104,20 @@ void daemon_io_init(void)
     int lock_rc = daemon_instance_lock_acquire();
     if (lock_rc != 0)
         exit(lock_rc);
+
+    /*
+     * Install stop-signal handlers immediately after taking ownership and before
+     * sockets/GPIO/SPI/radio setup, so a SIGTERM/SIGINT arriving during the rest
+     * of startup triggers a clean lifecycle exit (the main loop observes the stop
+     * flag) instead of the default-disposition kill (exit 143).
+     */
+    daemon_lifecycle_reset_stop();
+    if (daemon_lifecycle_install_signal_handlers() != 0) {
+        perror("sigaction");
+        printf("[Daemon] Signal-Handler konnten nicht gesetzt werden, beende.\n");
+        daemon_instance_lock_release();
+        exit(EXIT_FAILURE);
+    }
 
     daemon_debug_ctx("CLIENT", "Slots initialisieren");
     if (daemon_radio_433_enabled()) {

@@ -2,8 +2,15 @@
 #define LORAHAM_RUNTIME_H
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /*
  * Shared trusted runtime directory for LoRaHAM process-shared locks: the
@@ -15,9 +22,18 @@
  * unit stops, which would pull the shared lock inode out from under a still
  * running peer and silently break cross-process SPI serialization.
  *
- * Override with the LORAHAM_RUNTIME_DIR environment variable for non-root
- * dev/test runs. There is deliberately no implicit /tmp fallback: a lock that
- * cannot be established in the trusted location must fail closed, never open.
+ * The directory is validated before use (see loraham_open_lock_dir): it must be
+ * a real directory (not a symlink), not group- or world-writable, and -- for the
+ * production default path -- owned by root. The daemon never silently creates
+ * the production directory; it must be pre-provisioned by tmpfiles.d. There is
+ * deliberately no implicit /tmp fallback: a lock that cannot be established in
+ * the trusted location must fail closed, never open.
+ *
+ * LORAHAM_RUNTIME_DIR overrides the directory for non-root dev/test runs only.
+ * In override mode the directory is created if missing (0700) and the root-owner
+ * requirement is relaxed, but it is still validated against symlink and
+ * group/world-writable attacks. The production systemd unit does NOT pass this
+ * variable (no EnvironmentFile), so it cannot redirect the shared namespace.
  */
 #define LORAHAM_RUNTIME_DIR_DEFAULT "/run/lock/loraham"
 
@@ -32,13 +48,110 @@ static inline const char *loraham_runtime_dir(void)
     return (d && *d) ? d : LORAHAM_RUNTIME_DIR_DEFAULT;
 }
 
+/* True when the runtime directory has been overridden (dev/test mode). */
+static inline int loraham_runtime_dir_is_override(void)
+{
+    const char *d = getenv("LORAHAM_RUNTIME_DIR");
+
+    return (d && *d) ? 1 : 0;
+}
+
 /*
- * Acquire an exclusive advisory lock, retrying ONLY on EINTR. `fn` is the
- * flock implementation (real flock() in production; a fake in tests).
+ * Open and validate the trusted lock directory, returning a directory fd.
  *
- * Returns 0 only when the lock is confirmed held, or -1 on a hard (non-EINTR)
- * failure with errno preserved. It never returns 0 without the lock held, so
- * callers can treat a non-zero return as "must not proceed".
+ * Opened O_NOFOLLOW so a symlinked directory is rejected. Requires a real
+ * directory that is not group- or world-writable; when require_root is set
+ * (the production default path) it must also be owned by root. Returns -1 on any
+ * failure, with a diagnostic on stderr.
+ */
+static inline int loraham_open_lock_dir(const char *dir, int require_root)
+{
+    struct stat st;
+    int fd = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+
+    if (fd < 0) {
+        fprintf(stderr, "[LOCK] Fehler: Sperrverzeichnis %s nicht nutzbar: %s\n",
+                dir, strerror(errno));
+        return -1;
+    }
+
+    if (fstat(fd, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        fprintf(stderr, "[LOCK] Fehler: %s ist kein Verzeichnis\n", dir);
+        close(fd);
+        return -1;
+    }
+
+    if (require_root && st.st_uid != 0) {
+        fprintf(stderr,
+                "[LOCK] Fehler: Sperrverzeichnis %s nicht root-eigen (uid=%u)\n",
+                dir, (unsigned)st.st_uid);
+        close(fd);
+        return -1;
+    }
+
+    if (st.st_mode & (S_IWGRP | S_IWOTH)) {
+        fprintf(stderr,
+                "[LOCK] Fehler: Sperrverzeichnis %s gruppen-/weltbeschreibbar "
+                "(mode=%04o)\n", dir, (unsigned)(st.st_mode & 07777));
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+/*
+ * Resolve and validate the runtime lock directory, returning a directory fd.
+ *
+ * Production (default path): the directory must already exist, root-owned and
+ * not group/world-writable -- it is never silently created here. Dev/test
+ * (LORAHAM_RUNTIME_DIR set): the directory is created 0700 if missing and the
+ * root-owner requirement is relaxed, but symlink and group/world-writable checks
+ * still apply. Returns -1 on failure.
+ */
+static inline int loraham_open_runtime_dir(void)
+{
+    const char *dir = loraham_runtime_dir();
+    int override = loraham_runtime_dir_is_override();
+
+    if (override)
+        mkdir(dir, 0700);   /* best-effort for dev; EEXIST is fine */
+
+    return loraham_open_lock_dir(dir, /*require_root=*/!override);
+}
+
+/*
+ * Create/open a lock file inside the validated directory fd. O_NOFOLLOW rejects
+ * a symlink planted at the name, and the result must be a regular file. Returns
+ * the fd or -1 with a diagnostic.
+ */
+static inline int loraham_open_lock_file_at(int dirfd, const char *name)
+{
+    struct stat st;
+    int fd = openat(dirfd, name, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0660);
+
+    if (fd < 0) {
+        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht nutzbar: %s\n",
+                name, strerror(errno));
+        return -1;
+    }
+
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s ist keine regulaere Datei\n",
+                name);
+        close(fd);
+        return -1;
+    }
+
+    return fd;
+}
+
+/*
+ * Advisory-lock helpers. `fn` is the flock implementation (real flock() in
+ * production; a fake in tests). Each retries ONLY on EINTR and returns 0 when
+ * the operation is confirmed, or -1 on a hard (non-EINTR) failure with errno
+ * preserved. They never report success without the operation having taken
+ * effect, so callers treat a non-zero return as "must not proceed".
  */
 typedef int (*loraham_flock_fn)(int fd, int operation);
 
@@ -48,6 +161,17 @@ static inline int loraham_flock_acquire_ex(int fd, loraham_flock_fn fn)
 
     do {
         rc = fn(fd, LOCK_EX);
+    } while (rc < 0 && errno == EINTR);
+
+    return rc < 0 ? -1 : 0;
+}
+
+static inline int loraham_flock_release(int fd, loraham_flock_fn fn)
+{
+    int rc;
+
+    do {
+        rc = fn(fd, LOCK_UN);
     } while (rc < 0 && errno == EINTR);
 
     return rc < 0 ? -1 : 0;
