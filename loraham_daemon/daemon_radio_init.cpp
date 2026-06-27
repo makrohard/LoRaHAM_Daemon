@@ -5,6 +5,8 @@
 #include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
 
+#include "locking_pihal.h"
+
 #include "daemon_led.h"
 #include "daemon_log.h"
 #include "daemon_radio_runtime.h"
@@ -36,7 +38,7 @@ void lora_init(void) {
         daemon_radio_runtime_led(&radio_controller_433, 1);
 
         daemon_debug_band("433", "Objekte anlegen");
-        radio_controller_433.hal.reset(new PiHal(0));
+        radio_controller_433.hal.reset(new LockingPiHal(0));
         radio_controller_433.mod.reset(new Module(radio_controller_433.hal.get(), 8, 25, 5, 24));
         radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
 
@@ -117,7 +119,7 @@ void lora_init(void) {
         daemon_radio_runtime_led(&radio_controller_868, 1);
 
         daemon_debug_band("868", "Objekte anlegen");
-        radio_controller_868.hal.reset(new PiHal(0));
+        radio_controller_868.hal.reset(new LockingPiHal(0));
         radio_controller_868.mod.reset(new Module(radio_controller_868.hal.get(), 7, 16, 6, 12));
         radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
 

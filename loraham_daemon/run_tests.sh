@@ -43,6 +43,7 @@ test_binaries=(
   "$TEST_DIR/test_cad_monitor_boot"
   "$TEST_DIR/test_cad_rssi_boot"
   "$TEST_DIR/test_daemon_led"
+  "$TEST_DIR/test_locking_pihal"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
   "$TEST_DIR/test_rf_packet"
@@ -69,6 +70,7 @@ test_binaries=(
   "$TEST_DIR/test_conf_status"
   "$TEST_DIR/test_conf_stats"
   "$TEST_DIR/test_client_lifecycle"
+  "$TEST_DIR/test_multi_instance"
 )
 
 cleanup_test_binaries() {
@@ -505,6 +507,7 @@ build_one_daemon_led_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/daemon_led.cpp" \
+    "$SCRIPT_DIR/daemon_radio_selection.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}"
@@ -518,6 +521,27 @@ build_one_radio_health_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/radio_health.cpp"
+}
+
+build_one_locking_pihal_test() {
+  local src="$1"
+  local out="$2"
+
+  # LockingPiHal subclasses RadioLib's PiHal, so RadioLib headers + lgpio are
+  # needed for the vtable; no radio hardware is touched by the test itself.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for locking PiHal test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "${radiolib_libs[@]}" \
+    -llgpio
 }
 
 build_one_radio_cad_probe_test() {
@@ -756,6 +780,7 @@ build_tests() {
   build_one_cad_monitor_boot_test "$TEST_DIR/test_cad_monitor_boot.cpp" "$TEST_DIR/test_cad_monitor_boot"
   build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
+  build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
@@ -782,6 +807,7 @@ build_tests() {
   build_one_test "$TEST_DIR/test_interface_baseline.c" "$TEST_DIR/test_interface_baseline"
   build_one_test "$TEST_DIR/test_config_stream.c" "$TEST_DIR/test_config_stream"
   build_one_test "$TEST_DIR/test_client_lifecycle.c" "$TEST_DIR/test_client_lifecycle"
+  build_one_test "$TEST_DIR/test_multi_instance.c" "$TEST_DIR/test_multi_instance"
 }
 
 usage() {

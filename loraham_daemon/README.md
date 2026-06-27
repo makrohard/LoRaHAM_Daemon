@@ -34,8 +34,9 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
+| SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock` (see Multi-instance operation) |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
-| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control |
+| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the per-band LED claim also acts as the per-band instance-ownership token (see Multi-instance operation) |
 
 ### I/O, sockets, and clients
 
@@ -369,6 +370,116 @@ Startup is selected-radio aware:
 - on shutdown, only selected/created radio sockets and client slots are cleaned up
 
 Normal logs report the active radios once during startup. Debug logs contain more detailed selected-radio decisions.
+
+## Multi-instance (split per-band) operation
+
+The daemon can run as **two independent processes**, one per band, so that each
+radio-backed service can be started, stopped, restarted, and observed on its own
+(for example under `systemd`):
+
+```
+loraham_daemon --radio 433     # owns the 433 MHz radio
+loraham_daemon --radio 868     # owns the 868 MHz radio
+```
+
+`--radio both` remains fully supported as the legacy single-process mode; it
+owns both bands and is therefore mutually exclusive with the split per-band
+services (it needs both LED GPIOs — see below).
+
+### Per-band ownership (LED GPIO claim)
+
+Each band's status-LED GPIO doubles as that band's **ownership token**:
+
+| Band | LED GPIO | Radio control GPIOs (CS / IRQ / RST / BUSY) |
+|---|---:|---|
+| 433 | 13 | 8 / 25 / 5 / 24 |
+| 868 | 19 | 7 / 16 / 6 / 12 |
+
+- A `--radio 433` process claims **only** GPIO 13; `--radio 868` claims **only**
+  GPIO 19; `--radio both` claims both.
+- A Linux GPIO line can be held by only one process at a time and is released by
+  the kernel automatically when that process dies. This makes the LED claim a
+  **crash-safe per-band instance lock with no stale lock files**: a second
+  daemon for an already-owned band fails its claim and exits non-zero with a
+  clear message, e.g.
+  `LED/Funk für Band 433 bereits in Benutzung (GPIO 13 belegt)`.
+- The ownership claim happens **before** any socket file is created, so a
+  rejected duplicate can never unlink or take over the live instance's sockets.
+- Failing to claim a selected band's LED is **fatal** for that startup (for
+  `--radio both`, failing either band is fatal).
+
+### Shared SPI serialization
+
+Both radios share one SPI bus (`/dev/spidev0.0`). `LockingPiHal`
+(`locking_pihal.h`) subclasses RadioLib's `PiHal` and takes a process-shared
+advisory `flock` around each complete SPI transaction
+(`spiBeginTransaction()` → `LOCK_EX`, `spiEndTransaction()` → `LOCK_UN`). This
+serializes the full CS-low → transfer → CS-high window **across processes** (and
+across both bands of a `--radio both` process), while leaving the bus free
+between transactions. The lock is held only for one short transfer, never for
+the daemon lifetime, and is released automatically by the kernel on process
+death.
+
+- Lock file: `/run/loraham/spi0.lock` (created via the systemd
+  `RuntimeDirectory`), with a deterministic `/tmp/loraham` fallback so two
+  non-root dev/test instances still share one lock file.
+- Override the directory with the `LORAHAM_RUNTIME_DIR` environment variable.
+- Lock ordering is deadlock-free: the in-process per-band `radio_mutex` is always
+  taken before the low-level SPI `flock`, never the reverse.
+
+### systemd reference unit (template)
+
+Not installed by the daemon; provided here as a starting point. Save as
+`/etc/systemd/system/loraham-daemon@.service`:
+
+```ini
+[Unit]
+Description=LoRaHAM Daemon (%i MHz)
+After=local-fs.target
+ConditionPathExists=/dev/gpiochip0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/makro/src/loraham-daemon-hardening/loraham_daemon
+RuntimeDirectory=loraham
+RuntimeDirectoryMode=0755
+ExecStart=/home/makro/src/loraham-daemon-hardening/loraham_daemon/loraham_daemon --radio %i
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+PrivateTmp=no
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Use the legacy foreground process under systemd (`Type=simple`) — do **not** use
+the daemon's `-d` double-fork mode, which writes a single shared
+`/tmp/lora_daemon.log` and is unnecessary under a supervisor. Then:
+
+```bash
+systemctl enable --now loraham-daemon@433.service
+systemctl enable --now loraham-daemon@868.service
+systemctl restart loraham-daemon@868.service
+systemctl is-active loraham-daemon@433.service
+```
+
+`RuntimeDirectory=loraham` creates `/run/loraham` (mode 0755) for the SPI lock
+and removes it on stop. Root is required for GPIO/SPI access; socket paths under
+`/tmp` are unchanged, so existing clients keep working.
+
+### Acceptance checklist
+
+1. `systemctl start loraham-daemon@433` and `…@868`; both become active.
+2. Query each CONF socket (`/tmp/loraconf433.sock`, `/tmp/loraconf868.sock`) and
+   confirm each instance reports only its own band.
+3. Stop 433 while 868 keeps running; restart 433; 868 stays unaffected.
+4. A duplicate same-band start is rejected with a clear journal message and does
+   not disturb the running instance's sockets.
+5. Perform controlled RX on both bands using only legal frequency, power, and
+   duty-cycle settings (≤20 dBm).
 
 ## Startup defaults
 

@@ -100,6 +100,12 @@ Lifecycle/helper behavior:
 - `test_radio_health`
 - `test_radio_cad_probe`
 
+Multi-instance (split per-band) operation:
+
+- `test_daemon_led` (selection-aware per-band LED ownership: 433-only / 868-only / both claims, and duplicate-band rejection is fatal)
+- `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion and recursion guard; no radio hardware needed)
+- `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware and reports `SKIP` without it)
+
 Public integration baseline:
 
 - `test_interface_baseline`
