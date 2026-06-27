@@ -1,0 +1,38 @@
+[Unit]
+Description=LoRaHAM Daemon (%i MHz)
+Documentation=file:/usr/share/doc/loraham/README.md
+After=local-fs.target
+# Radio hardware must be present.
+ConditionPathExists=/dev/gpiochip0
+# Shared lock directory is provisioned by tmpfiles.d under /run/lock.
+RequiresMountsFor=/run/lock
+
+[Service]
+Type=simple
+User=root
+
+# Deployable default: install the built binary to /usr/local/bin/loraham_daemon
+# (e.g. `sudo install -m0755 loraham_daemon /usr/local/bin/`). To run from a
+# different path without editing this unit, drop an override in:
+#   sudo systemctl edit loraham-daemon@.service
+# and set [Service] ExecStart= (empty) followed by your ExecStart= line, or set
+# LORAHAM_BIN/LORAHAM_RUNTIME_DIR via the EnvironmentFile below.
+EnvironmentFile=-/etc/default/loraham-daemon
+ExecStart=/usr/local/bin/loraham_daemon --radio %i
+
+Restart=on-failure
+RestartSec=2
+# Stable exit codes (see loraham_runtime.h):
+#   3 = same-band instance already running (duplicate)
+#   4 = lock infrastructure unavailable (fail closed)
+# Neither is fixed by restarting, so do not restart-spin on them.
+RestartPreventExitStatus=3 4
+
+KillSignal=SIGTERM
+TimeoutStopSec=30
+# The SPI/instance locks live in the shared /run/lock/loraham, not a private
+# tmp; keep the global namespace so both per-band services share one lock inode.
+PrivateTmp=no
+
+[Install]
+WantedBy=multi-user.target

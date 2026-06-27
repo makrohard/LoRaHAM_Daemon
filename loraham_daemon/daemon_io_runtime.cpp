@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "daemon_instance_lock.h"
 #include "daemon_led.h"
 #include "daemon_log.h"
 #include "daemon_radio_init.h"
@@ -76,6 +77,9 @@ void daemon_io_startup_cleanup(void)
         close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
         close_unix_socket(&conf868_fd, CONF868_SOCKET);
     }
+
+    /* Release instance ownership only after sockets are gone. */
+    daemon_instance_lock_release();
 }
 
 
@@ -90,6 +94,16 @@ void daemon_io_shutdown_cleanup(void)
 
 void daemon_io_init(void)
 {
+    /*
+     * Take per-band instance-ownership locks FIRST -- before sockets, GPIO, SPI,
+     * or radio setup. This is the authoritative same-band ownership barrier and
+     * is held (via an open descriptor) until after socket cleanup, so a same-band
+     * restart cannot bind sockets while this instance is still shutting down.
+     */
+    int lock_rc = daemon_instance_lock_acquire();
+    if (lock_rc != 0)
+        exit(lock_rc);
+
     daemon_debug_ctx("CLIENT", "Slots initialisieren");
     if (daemon_radio_433_enabled()) {
         client_slot_init_all(client_data433_slots, MAX_CLIENTS);
