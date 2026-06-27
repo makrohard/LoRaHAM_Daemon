@@ -38,7 +38,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
 | Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, root-owned + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
-| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the per-band LED claim also acts as the per-band instance-ownership token (see Multi-instance operation) |
+| LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the LED is a per-band hardware/activity resource, not the instance-ownership lock (that is `daemon_instance_lock`; see Multi-instance operation) |
 
 ### I/O, sockets, and clients
 
@@ -455,9 +455,12 @@ death.
   transfer attempt without the lock held, is a controlled fatal.
 - **Override (dev/test only):** `LORAHAM_RUNTIME_DIR` redirects the directory and
   relaxes the root-owner requirement (still rejecting symlinks and group/world
-  writability), creating the directory `0700` if missing. The production systemd
-  unit sources **no** `EnvironmentFile`, so this variable cannot redirect or
-  split the shared lock namespace in production.
+  writability), creating the directory `0700` if missing. This is supported for
+  direct test/developer invocation. The installed systemd service is pinned to
+  the production directory: it sources **no** `EnvironmentFile` and additionally
+  sets `UnsetEnvironment=LORAHAM_RUNTIME_DIR`, so even an inherited manager-level
+  value cannot redirect or split the shared lock namespace between the two band
+  services.
 - Lock ordering is deadlock-free: the in-process per-band `radio_mutex` is always
   taken before the low-level SPI `flock`, never the reverse;
   `instance-433 → instance-868 → spi0`, and `spi0` is only taken inside a

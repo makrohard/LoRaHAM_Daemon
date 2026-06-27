@@ -159,16 +159,14 @@ void daemon_io_init(void)
                           client_conf868_slots);
 
     /*
-     * Claim per-band LED/ownership BEFORE touching any socket files.  The LED
-     * GPIO claim is the per-band instance lock: if another daemon already owns
-     * this band the claim fails here, and we exit *before* unlinking/binding —
-     * so a duplicate same-band start can never remove the live instance's
-     * sockets.  A failed claim of a selected band is fatal.
+     * Claim the per-band status LED (a hardware resource). Same-band ownership
+     * was already secured above by the instance FD lock; this only initialises
+     * the LED line for the selected band(s). A failed claim of a selected band
+     * is fatal because the LED is a required hardware resource for that band.
      */
-    daemon_debug_ctx("GPIO", "LED/Ownership initialisieren");
+    daemon_debug_ctx("GPIO", "LED initialisieren");
     if (daemon_led_init() != 0) {
-        printf("[Daemon] LED/Ownership-Setup fehlgeschlagen "
-               "(Band evtl. von anderer Instanz belegt), beende.\n");
+        printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
         exit(EXIT_FAILURE);
     }
 

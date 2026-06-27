@@ -89,6 +89,14 @@ int main(void)
            strstr(buf, "RuntimeDirectory=") == NULL);
     expect("unit has no EnvironmentFile= directive",
            strstr(buf, "EnvironmentFile=") == NULL);
+    /* Production must be pinned to /run/lock/loraham: clear any inherited
+     * manager-level LORAHAM_RUNTIME_DIR so the two band services cannot end up
+     * with split lock namespaces. */
+    expect("unit pins lock namespace (UnsetEnvironment=LORAHAM_RUNTIME_DIR)",
+           strstr(buf, "UnsetEnvironment=LORAHAM_RUNTIME_DIR") != NULL);
+    /* No dangling Documentation= path that the install steps do not provide. */
+    expect("unit has no Documentation= directive",
+           strstr(buf, "Documentation=") == NULL);
     expect("unit documents stable exit codes via RestartPreventExitStatus",
            strstr(buf, "RestartPreventExitStatus") != NULL);
     expect("unit runs foreground (Type=simple)",

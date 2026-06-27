@@ -8,12 +8,14 @@
 
 /* --- LED/GPIO helpers ---------------------------------------------------- */
 /*
- * The per-band LED GPIO claim doubles as the per-band instance-ownership
- * token: a kernel GPIO line can be claimed by only one process at a time and
- * is auto-released when that process dies, so a second daemon for the same
- * band fails its LED claim and exits.  LED ownership is therefore claimed only
- * for the band(s) selected via --radio, and a failed claim of a *selected*
- * band is fatal (handled by the caller).
+ * The status LED is a per-band hardware resource (a GPIO line) and an activity
+ * indicator -- it is NOT the process-instance ownership lock. Same-band
+ * ownership and duplicate-instance rejection are handled by the per-band FD
+ * locks in daemon_instance_lock (instance-433.lock / instance-868.lock).
+ *
+ * The LED line is claimed only for the band(s) selected via --radio, and a
+ * failed claim of a *selected* band is treated as fatal by the caller because
+ * the LED is a required hardware resource for that band.
  */
 
 static int daemon_led_chip = -1;
@@ -87,7 +89,7 @@ int daemon_led_init(void)
         return -1;
     }
 
-    /* Claim only the selected band(s); this is the per-band ownership guard. */
+    /* Claim the LED line only for the selected band(s). */
     if (daemon_led_claim_band(daemon_radio_433_enabled(),
                               DAEMON_LED_PIN_433,
                               &daemon_led_433_claimed, "433") < 0 ||
