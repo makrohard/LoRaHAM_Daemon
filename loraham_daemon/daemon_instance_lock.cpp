@@ -30,28 +30,23 @@ static int g_lock_fd_868 = -1;
 
 static int instance_lock_claim(const char *band, int *out_fd)
 {
-    const char *dir = loraham_runtime_dir();
-    char path[256];
-    int n;
+    char name[64];
+    int dirfd;
     int fd;
 
-    /* Idempotent; in production the directory is pre-created root-owned by
-     * tmpfiles.d. */
-    mkdir(dir, 0755);
-
-    n = snprintf(path, sizeof(path), "%s/instance-%s.lock", dir, band);
-    if (n <= 0 || (size_t)n >= sizeof(path)) {
-        printf("[LOCK] Fehler: Sperrpfad zu lang für Band %s\n", band);
-        return LORAHAM_EXIT_LOCK_ERROR;
-    }
-
-    /* O_NOFOLLOW refuses a symlink planted at the lock path. */
-    fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0660);
-    if (fd < 0) {
-        printf("[LOCK] Fehler: Instanz-Sperrdatei %s nicht nutzbar: %s\n",
-               path, strerror(errno));
+    /* Validate the trusted lock directory (root-owned in production, no symlink,
+     * not group/world-writable), then create the lock file relative to it. The
+     * directory is never silently created in production. */
+    dirfd = loraham_open_runtime_dir();
+    if (dirfd < 0)
         return LORAHAM_EXIT_LOCK_ERROR;   /* fail closed */
-    }
+
+    snprintf(name, sizeof(name), "instance-%s.lock", band);
+
+    fd = loraham_open_lock_file_at(dirfd, name);
+    close(dirfd);
+    if (fd < 0)
+        return LORAHAM_EXIT_LOCK_ERROR;   /* fail closed */
 
     if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
         int err = errno;
@@ -64,13 +59,14 @@ static int instance_lock_claim(const char *band, int *out_fd)
             return LORAHAM_EXIT_INSTANCE_BUSY;
         }
 
-        printf("[LOCK] Fehler: flock(%s) fehlgeschlagen: %s\n",
-               path, strerror(err));
+        printf("[LOCK] Fehler: flock(instance-%s) fehlgeschlagen: %s\n",
+               band, strerror(err));
         return LORAHAM_EXIT_LOCK_ERROR;   /* fail closed */
     }
 
     *out_fd = fd;
-    daemon_log("Instanz-Sperre erworben: %s", path);
+    daemon_log("Instanz-Sperre erworben: %s/instance-%s.lock",
+               loraham_runtime_dir(), band);
     return 0;
 }
 

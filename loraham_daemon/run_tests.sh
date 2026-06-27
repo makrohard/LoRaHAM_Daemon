@@ -6,6 +6,14 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 TEST_DIR="$SCRIPT_DIR/tests"
 DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
+# Tests run as a non-root user, so point every spawned daemon at a writable,
+# trusted lock directory via the dev override. The production default
+# (/run/lock/loraham) requires a root-owned directory provisioned by tmpfiles.d.
+# 0700 keeps it non-group/world-writable so it still passes lock-dir validation.
+export LORAHAM_RUNTIME_DIR="${LORAHAM_RUNTIME_DIR:-/tmp/loraham-test-$$}"
+mkdir -p "$LORAHAM_RUNTIME_DIR"
+chmod 700 "$LORAHAM_RUNTIME_DIR"
+
 tx_tests=false
 strict_build=false
 sanitizer_mode=""
@@ -45,6 +53,8 @@ test_binaries=(
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
   "$TEST_DIR/test_instance_lock"
+  "$TEST_DIR/test_runtime_lockdir"
+  "$TEST_DIR/test_packaging"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
   "$TEST_DIR/test_rf_packet"
@@ -795,6 +805,8 @@ build_tests() {
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
   build_one_instance_lock_test "$TEST_DIR/test_instance_lock.cpp" "$TEST_DIR/test_instance_lock"
+  build_one_cpp_sources "$TEST_DIR/test_runtime_lockdir" "$TEST_DIR/test_runtime_lockdir.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"

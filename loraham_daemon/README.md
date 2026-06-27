@@ -36,7 +36,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
 | SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock`; fails closed if the lock cannot be established (see Multi-instance operation) |
 | Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
-| Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution (`/run/lock/loraham`, `LORAHAM_RUNTIME_DIR` override), stable exit codes, and the EINTR-only `flock` acquire helper |
+| Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, root-owned + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
 | LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the per-band LED claim also acts as the per-band instance-ownership token (see Multi-instance operation) |
 
@@ -441,15 +441,36 @@ death.
 - Lock file: `/run/lock/loraham/spi0.lock`, in a **durable shared directory**
   provisioned root-owned by `tmpfiles.d` (see below) whose lifetime is
   independent of any single instance.
-- **Fail closed:** if the lock file cannot be established the radio does **not**
-  start (the daemon exits with code **4**, `LORAHAM_EXIT_LOCK_ERROR`); there is
-  no `/tmp` fallback and no unlocked transfer. A hard (non-`EINTR`) `flock`
-  failure or any transfer attempt without the lock held is a controlled fatal.
-  The lock file is opened `O_NOFOLLOW` to reject a symlink planted at the path.
-- Override the directory with the `LORAHAM_RUNTIME_DIR` environment variable
-  (for non-root dev/test; production uses the trusted default).
+- **Trusted directory:** before any lock file is opened, the directory is
+  validated (`loraham_runtime.h`): opened `O_DIRECTORY | O_NOFOLLOW` (rejects a
+  symlinked directory), and required to be a real directory that is not group- or
+  world-writable and — for the production default path — owned by root. The
+  daemon never silently creates the production directory; it must be
+  pre-provisioned by `tmpfiles.d`. Lock files are then created with `openat()`
+  relative to the validated directory fd, `O_NOFOLLOW`, and must be regular files.
+- **Fail closed:** if the directory or lock file cannot be validated/established
+  the radio does **not** start (the daemon exits with code **4**,
+  `LORAHAM_EXIT_LOCK_ERROR`); there is no `/tmp` fallback and no unlocked
+  transfer. A hard (non-`EINTR`) `flock` failure on lock **or unlock**, or any
+  transfer attempt without the lock held, is a controlled fatal.
+- **Override (dev/test only):** `LORAHAM_RUNTIME_DIR` redirects the directory and
+  relaxes the root-owner requirement (still rejecting symlinks and group/world
+  writability), creating the directory `0700` if missing. The production systemd
+  unit sources **no** `EnvironmentFile`, so this variable cannot redirect or
+  split the shared lock namespace in production.
 - Lock ordering is deadlock-free: the in-process per-band `radio_mutex` is always
-  taken before the low-level SPI `flock`, never the reverse.
+  taken before the low-level SPI `flock`, never the reverse;
+  `instance-433 → instance-868 → spi0`, and `spi0` is only taken inside a
+  transaction.
+- **Bounded wait — current decision:** the per-transaction `flock(LOCK_EX)` is
+  *blocking* (EINTR-retried). This is intentional: a transaction is a single
+  short RadioLib transfer, so contention is sub-millisecond; a crashed peer is
+  released by the kernel; and a timeout could only *fatal* (never proceed
+  unlocked), which would kill a healthy band because its peer stalled — and a
+  peer wedged mid-transfer already makes the shared bus unusable. A bounded
+  monotonic deadline that fatals on expiry is the natural next step if field data
+  shows real stalls; it is deferred pending measured hardware data rather than
+  added blindly.
 
 ### systemd deployment
 
@@ -471,13 +492,16 @@ Deployable artifacts are provided under `systemd/` (no developer-specific paths)
 Install (VS Code terminal or any shell):
 
 ```bash
-sudo install -m0755 loraham_daemon /usr/local/bin/loraham_daemon
-sudo install -m0644 systemd/tmpfiles.d/loraham.conf /etc/tmpfiles.d/loraham.conf
+sudo install -D -m0755 loraham_daemon /usr/local/bin/loraham_daemon
+sudo install -D -m0644 systemd/tmpfiles.d/loraham.conf /etc/tmpfiles.d/loraham.conf
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/loraham.conf
-sudo install -m0644 systemd/loraham-daemon@.service \
+sudo install -D -m0644 systemd/loraham-daemon@.service \
   /etc/systemd/system/loraham-daemon@.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now loraham-daemon@433.service loraham-daemon@868.service
+
+# Verify the shared lock directory is trusted (root-owned, not group/world-writable):
+sudo stat -c '%U:%G %a %n' /run/lock/loraham   # expect: root:root 755 /run/lock/loraham
 ```
 
 The unit uses the foreground model (`Type=simple`) — do **not** use the daemon's
@@ -507,18 +531,23 @@ Start and verify both services:
 ```bash
 sudo systemctl start loraham-daemon@433.service
 sudo systemctl start loraham-daemon@868.service
+sudo systemctl status loraham-daemon@433.service
+sudo systemctl status loraham-daemon@868.service
 systemctl is-active loraham-daemon@433.service loraham-daemon@868.service
 test -S /tmp/loraconf433.sock && test -S /tmp/loraconf868.sock && echo "both CONF sockets present"
 printf 'GET STATUS\n' | socat - UNIX-CONNECT:/tmp/loraconf433.sock   # each reports only its band
+
+# The shared lock directory must be trusted:
+sudo stat -c '%U:%G %a %n' /run/lock/loraham    # expect: root:root 755 /run/lock/loraham
 ```
 
-Confirm the shared SPI lock inode is **stable** while one band restarts (the
-core P0-3 guarantee):
+Confirm the shared SPI lock file remains the **same file** while one band
+restarts (the core P0-3 guarantee — device:inode must not change):
 
 ```bash
-stat -c '%i' /run/lock/loraham/spi0.lock        # note the inode
+sudo stat -c '%d:%i %n' /run/lock/loraham/spi0.lock   # note device:inode
 sudo systemctl restart loraham-daemon@433.service
-stat -c '%i' /run/lock/loraham/spi0.lock        # must be the SAME inode
+sudo stat -c '%d:%i %n' /run/lock/loraham/spi0.lock   # must be the SAME device:inode
 ```
 
 Independent lifecycle and duplicate rejection:

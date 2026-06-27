@@ -104,7 +104,9 @@ Multi-instance (split per-band) operation:
 
 - `test_daemon_led` (selection-aware per-band LED ownership: 433-only / 868-only / both claims, and duplicate-band rejection is fatal)
 - `test_instance_lock` (per-band instance-ownership locks: 433/868 ownership, duplicate rejection, `--radio both` atomic acquire + rollback, release-unblocks-restart, and shared-lock inode stability)
-- `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion, recursion guard, fail-closed when the lock dir is unusable, no transfer without the lock, and EINTR-retry vs hard-failure handling; no radio hardware needed)
+- `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion, recursion guard, fail-closed when the lock dir is unusable, no transfer without the lock, EINTR-retry vs hard-failure on both lock and unlock, and fatal-on-hard-unlock; no radio hardware needed)
+- `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)
+- `test_packaging` (deployment artifacts: `systemd/tmpfiles.d/loraham.conf` exists and documents `/run/lock/loraham`; the unit has no `RuntimeDirectory`/`EnvironmentFile` and keeps `RestartPreventExitStatus`)
 - `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware and reports `SKIP` without it)
 
 Public integration baseline:

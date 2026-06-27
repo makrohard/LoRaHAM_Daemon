@@ -13,11 +13,12 @@ User=root
 
 # Deployable default: install the built binary to /usr/local/bin/loraham_daemon
 # (e.g. `sudo install -m0755 loraham_daemon /usr/local/bin/`). To run from a
-# different path without editing this unit, drop an override in:
-#   sudo systemctl edit loraham-daemon@.service
-# and set [Service] ExecStart= (empty) followed by your ExecStart= line, or set
-# LORAHAM_BIN/LORAHAM_RUNTIME_DIR via the EnvironmentFile below.
-EnvironmentFile=-/etc/default/loraham-daemon
+# different path, drop in an override with `sudo systemctl edit
+# loraham-daemon@.service`: set `ExecStart=` (empty) then your `ExecStart=` line.
+#
+# No EnvironmentFile is sourced on purpose: nothing may redirect the shared lock
+# namespace (LORAHAM_RUNTIME_DIR) in production -- that would split the SPI/
+# instance lock namespace between the two band services.
 ExecStart=/usr/local/bin/loraham_daemon --radio %i
 
 Restart=on-failure
