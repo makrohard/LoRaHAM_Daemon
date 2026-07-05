@@ -99,6 +99,7 @@ Lifecycle/helper behavior:
 - `test_daemon_lifecycle`
 - `test_radio_health`
 - `test_radio_cad_probe`
+- `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:
 

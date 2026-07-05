@@ -57,6 +57,7 @@ test_binaries=(
   "$TEST_DIR/test_packaging"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
   "$TEST_DIR/test_framed_data"
   "$TEST_DIR/test_framed_rx_contract"
@@ -586,6 +587,25 @@ build_one_radio_cad_probe_test() {
     "$SCRIPT_DIR/daemon_stats.cpp"
 }
 
+build_one_cad_monitor_state_test() {
+  local src="$1"
+  local out="$2"
+
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for CAD monitor state test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp"
+}
+
 build_one_tx_result_test() {
   local src="$1"
   local out="$2"
@@ -809,6 +829,7 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
+  build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
   build_one_framed_data_test "$TEST_DIR/test_framed_data.cpp" "$TEST_DIR/test_framed_data"
   build_one_framed_data_test "$TEST_DIR/test_framed_rx_contract.cpp" "$TEST_DIR/test_framed_rx_contract"

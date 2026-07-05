@@ -56,6 +56,7 @@ struct RadioController {
     std::atomic<bool> cad_active;
     std::atomic<bool> cad_broadcast_active;
     std::atomic<bool> cad_monitor_active;
+    std::atomic<int> cad_monitor_free_streak;
     std::atomic<float> cad_rssi_threshold_dbm;
     std::atomic<bool> getrssi_active;
     std::atomic<bool> tx_result_active;
@@ -105,6 +106,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_active.store(false);
     ctrl->cad_broadcast_active.store(false);
     ctrl->cad_monitor_active.store(false);
+    ctrl->cad_monitor_free_streak.store(0);
     ctrl->cad_rssi_threshold_dbm.store(RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM);
     ctrl->getrssi_active.store(false);
     ctrl->tx_result_active.store(false);
