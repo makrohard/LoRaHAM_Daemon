@@ -2,6 +2,7 @@
 
 ## loraham_daemon 111a
 - loraham_daemon can now safely run multiple instances
+- CAD monitor: fixed lost `CAD=0` when RX was pending; free now confirms after 2 samples 3 dB below `CADRSSI`
 
 ## loraham_daemon 111
 

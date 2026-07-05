@@ -173,6 +173,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
     if(config_status_is_set_cadmonitor(line, &cadmonitor_enabled)) {
         if(ctx->ctrl) {
             ctx->ctrl->cad_monitor_active.store(cadmonitor_enabled != 0);
+            ctx->ctrl->cad_monitor_free_streak.store(0);
             if(!cadmonitor_enabled)
                 ctx->ctrl->cad_broadcast_active.store(false);
         }

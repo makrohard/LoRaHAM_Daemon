@@ -152,15 +152,16 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 | CAD stable-idle window | `250 ms` | MANAGED TX requires this much continuous idle CAD time before TX |
 | TX/CAD policy poll interval | `50 ms` | Poll interval used by TX-busy and CAD wait loops |
 | Send after CAD timeout | disabled | MANAGED TX returns `CHANNEL_BUSY` after the CAD wait timeout |
-| `SET CADMONITOR` | `0`/`1`, default `0` | Per-band opt-in for the `CAD=0/1` monitoring indicator; off means a connected CONF client never triggers monitoring |
-| `SET CADRSSI` | integer dBm `-130`..`0`, default `-90` | Per-band busy threshold for the RSSI-based CAD indicator (environment dependent) |
+| `SET CADMONITOR` | `0`/`1`, default `0` | Per-band opt-in for the smoothed RSSI-based `CAD=0/1` indicator (not scan-based CAD); off means a connected CONF client never triggers monitoring |
+| `SET CADRSSI` | integer dBm `-130`..`0`, default `-90` | Per-band busy threshold for the RSSI-based CAD indicator; `CAD=0` needs two consecutive samples at least 3 dB below it (environment dependent) |
 | `SET CADWAIT` range | 50–5000 ms | Per-band runtime CAD wait timeout; defaults to `1500 ms` |
 | `SET CADIDLE` range | 0–2000 ms | Per-band runtime stable-idle window; defaults to `250 ms` |
 | `SET CADPOLL` range | 10–500 ms | Per-band runtime CAD poll interval; defaults to `50 ms` |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD monitor poll interval | `200 ms` | CONF `CAD=1/0` RSSI-probe cadence; only while opted in (`SET CADMONITOR=1`) with a matching CONF client |
-| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator above this live RSSI; tunable per band via `SET CADRSSI` / `--cad-rssi` (environment dependent) |
+| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator at or above this live RSSI; tunable per band via `SET CADRSSI` / `--cad-rssi` (environment dependent) |
+| CAD monitor free confirmation | `2` samples, `3 dB` | `CAD=0` requires two consecutive samples at least 3 dB below the threshold (about 400 ms at the 200 ms cadence); dead-band values keep the current state |
 
 ## Current TX/CAD behavior
 
@@ -615,8 +616,8 @@ The daemon also prints one compact operator stats line per selected radio every
 
 | Message | Socket | Meaning |
 |---|---|---|
-| `CAD=1\n` | matching CONF socket | LoRa channel busy by live-RSSI threshold (only when `CADMONITOR=1`) |
-| `CAD=0\n` | matching CONF socket | LoRa channel no longer active |
+| `CAD=1\n` | matching CONF socket | LoRa channel busy: live RSSI at or above the `CADRSSI` threshold (only when `CADMONITOR=1`) |
+| `CAD=0\n` | matching CONF socket | LoRa channel confirmed free: two consecutive samples at least 3 dB below the threshold |
 | `RSSI=-87.50\n` | matching CONF socket | Live RSSI while `GETRSSI=1` is active |
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
@@ -627,7 +628,7 @@ The daemon also prints one compact operator stats line per selected radio every
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
 
-`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor`/`--cad-monitor-433`/`--cad-monitor-868` for legacy CONF clients that expect CAD broadcasts but cannot send the command. When enabled and a CONF client is connected, the daemon derives busy/free from a non-destructive live-RSSI read (threshold `-90 dBm`) at most every `200 ms`. It never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
+`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor`/`--cad-monitor-433`/`--cad-monitor-868` for legacy CONF clients that expect CAD broadcasts but cannot send the command. It is a smoothed live-RSSI busy indication, not true scan-based CAD: when enabled and a CONF client is connected, the daemon samples a non-destructive live-RSSI read at most every `200 ms`. Busy (`CAD=1`) asserts immediately when the sample is at or above the `CADRSSI` threshold (default `-90 dBm`); free (`CAD=0`) is published only after two consecutive samples at least `3 dB` below the threshold (about `400 ms` of clearly-free channel), while values in the dead band keep the current state. Each transition is broadcast exactly once, and a pending or newly received RF packet never suppresses or delays the `CAD=0`. The monitor never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
 
 ## Examples
 

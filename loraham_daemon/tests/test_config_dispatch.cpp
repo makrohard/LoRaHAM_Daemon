@@ -787,8 +787,10 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
     expect_int("cadmonitor enabled", ctrl.cad_monitor_active.load() ? 1 : 0, 1);
 
-    // SET CADMONITOR=0 disables it and resets the broadcast latch.
+    // SET CADMONITOR=0 disables it and resets the broadcast latch and the
+    // free-confirmation streak.
     ctrl.cad_broadcast_active.store(true);
+    ctrl.cad_monitor_free_streak.store(1);
     const char *off = "SET CADMONITOR=0\n";
     write(sv[0], off, strlen(off));
     event_loop_reset(&set);
@@ -798,6 +800,8 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     expect_int("cadmonitor disabled", ctrl.cad_monitor_active.load() ? 1 : 0, 0);
     expect_int("cadmonitor reset broadcast latch",
                ctrl.cad_broadcast_active.load() ? 1 : 0, 0);
+    expect_int("cadmonitor reset free streak",
+               ctrl.cad_monitor_free_streak.load(), 0);
 
     event_loop_close(&set);
     close(sv[0]);

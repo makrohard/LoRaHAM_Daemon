@@ -12,6 +12,7 @@
 #include "radio_channel.h"
 #include "radio_controller.h"
 #include "radio_cad.h"
+#include "daemon_cad_monitor.h"
 #include "radio_health.h"
 
 /* --- External daemon channel state -------------------------------------- */
@@ -86,39 +87,22 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
     if (ctrl->mode != RADIO_MODE_LORA)
         return;
 
-    bool was_active = ctrl->cad_broadcast_active.load();
     // Non-destructive RSSI probe only: the continuous monitoring tick must never
     // touch RX (no scanChannel, no startReceive). scanChannel-based CAD stays
-    // for TX gating and GET CHANNEL.
-    RadioCadProbeResult probe = radio_cad_probe_passive(ctrl);
+    // for TX gating and GET CHANNEL. A pending RX packet must never suppress
+    // the falling CAD=0 edge, so the tick ignores the received flag.
+    DaemonCadMonitorTick tick = daemon_cad_monitor_tick(ctrl);
     const char *ctx = daemon_cad_log_ctx(ctrl);
 
-    if (probe.status == RADIO_CAD_PROBE_UNAVAILABLE)
+    if (!tick.sampled)
         return;
 
-    bool hardware_active = probe.status == RADIO_CAD_PROBE_BUSY;
-    int edge = daemon_monitoring_cad_broadcast_edge(
-        was_active,
-        hardware_active);
-
-    if (hardware_active) {
-        if (edge > 0) {
-            daemon_debug_ctx(ctx, "Aktiv cad=%s rssi=%.1f",
-                             radio_cad_probe_status_name(probe.status),
-                             probe.rssi_dbm);
-            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
-        }
-
-        ctrl->cad_broadcast_active.store(true);
-    } else {
-        if (edge < 0 && !ctrl->received.load()) {
-            daemon_debug_ctx(ctx, "Inaktiv cad=%s rssi=%.1f",
-                             radio_cad_probe_status_name(probe.status),
-                             probe.rssi_dbm);
-            client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
-        }
-
-        ctrl->cad_broadcast_active.store(false);
+    if (tick.edge > 0) {
+        daemon_debug_ctx(ctx, "Aktiv cad=BUSY rssi=%.1f", tick.rssi_dbm);
+        client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
+    } else if (tick.edge < 0) {
+        daemon_debug_ctx(ctx, "Inaktiv cad=FREE rssi=%.1f", tick.rssi_dbm);
+        client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
     }
 
     // The LED is derived from cad_broadcast_active (and tx_busy); reconcile it
@@ -254,10 +238,12 @@ static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
     // reconcile the LED; cad_monitor_active stays armed for a reconnect.
     if (daemon_radio_433_enabled() && !cad_433_subscribed) {
         radio_controller_433.cad_broadcast_active.store(false);
+        radio_controller_433.cad_monitor_free_streak.store(0);
         daemon_radio_runtime_sync_led(&radio_controller_433);
     }
     if (daemon_radio_868_enabled() && !cad_868_subscribed) {
         radio_controller_868.cad_broadcast_active.store(false);
+        radio_controller_868.cad_monitor_free_streak.store(0);
         daemon_radio_runtime_sync_led(&radio_controller_868);
     }
 
