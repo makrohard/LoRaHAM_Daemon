@@ -1,5 +1,8 @@
 # Changelog
 
+## loraham_daemon 112
+- BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
+
 ## loraham_daemon 111a
 - loraham_daemon can now safely run multiple instances
 - CAD monitor: fixed lost `CAD=0` when RX was pending; free now confirms after 2 samples 3 dB below `CADRSSI`

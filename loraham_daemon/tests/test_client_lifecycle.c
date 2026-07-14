@@ -136,6 +136,11 @@ static int test_sigterm_shutdown_cleans_sockets(void)
     }
 
     close(client_fd);
+
+    /* The 433 instance is down; stop the 868 instance too so ALL public
+     * sockets must be gone. */
+    stop_daemon();
+
     return public_sockets_removed();
 }
 
@@ -165,9 +170,14 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    info_msg("starting daemon: %s", g_bin);
+    info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)
         return 1;
+
+    if (start_daemon_868(g_bin) < 0) {
+        stop_daemon();
+        return 1;
+    }
 
     if (wait_all_sockets(DEFAULT_SOCKET_TIMEOUT_MS) < 0) {
         stop_daemon();

@@ -105,8 +105,8 @@ static void reset_fake(void)
 {
     daemon_led_shutdown();
 
-    /* Default selection for the legacy lifecycle/sync tests is both bands. */
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+    /* Default selection for the legacy lifecycle/sync tests is 433. */
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
 
     g_open_result = 7;
     g_claim_433_result = 0;
@@ -136,58 +136,24 @@ static void test_successful_lifecycle(void)
 
     expect_int("LED ready after init", daemon_led_ready(), 1);
     expect_int("LED opens one chip", g_open_count, 1);
-    expect_int("LED claims two pins", g_claim_count, 2);
+    expect_int("LED claims one pin", g_claim_count, 1);
     expect_int("LED claims GPIO13", (int)g_claim_pins[0], DAEMON_LED_PIN_433);
-    expect_int("LED claims GPIO19", (int)g_claim_pins[1], DAEMON_LED_PIN_868);
     expect_int("LED GPIO13 initial low", g_claim_levels[0], 0);
-    expect_int("LED GPIO19 initial low", g_claim_levels[1], 0);
 
     daemon_led_set_pin(DAEMON_LED_PIN_433, 1);
-    expect_int("LED write after init", g_write_count, 3);
-    expect_int("LED write GPIO13", (int)g_write_pins[2], DAEMON_LED_PIN_433);
-    expect_int("LED write on", g_write_levels[2], 1);
+    expect_int("LED write after init", g_write_count, 2);
+    expect_int("LED write GPIO13", (int)g_write_pins[1], DAEMON_LED_PIN_433);
+    expect_int("LED write on", g_write_levels[1], 1);
 
     daemon_led_shutdown();
 
     expect_int("LED not ready after shutdown", daemon_led_ready(), 0);
-    expect_int("LED shutdown frees both", g_free_count, 2);
+    expect_int("LED shutdown frees selected pin", g_free_count, 1);
     expect_int("LED shutdown frees GPIO13", (int)g_free_pins[0], DAEMON_LED_PIN_433);
-    expect_int("LED shutdown frees GPIO19", (int)g_free_pins[1], DAEMON_LED_PIN_868);
     expect_int("LED shutdown closes chip", g_close_count, 1);
-    expect_int("LED shutdown final write count", g_write_count, 5);
-    expect_int("LED shutdown GPIO19 low", (int)g_write_pins[4], DAEMON_LED_PIN_868);
-    expect_int("LED shutdown level low", g_write_levels[4], 0);
-}
-
-static void test_second_claim_failure_cleans_first(void)
-{
-    reset_fake();
-    g_claim_868_result = -6;
-
-    daemon_led_init();
-
-    expect_int("second claim leaves LED not ready", daemon_led_ready(), 0);
-    expect_int("second claim tries both pins", g_claim_count, 2);
-    expect_int("second claim frees first pin", g_free_count, 1);
-    expect_int("second claim freed GPIO13", (int)g_free_pins[0], DAEMON_LED_PIN_433);
-    expect_int("second claim forces GPIO13 low", g_write_count, 1);
-    expect_int("second claim low GPIO13", (int)g_write_pins[0], DAEMON_LED_PIN_433);
-    expect_int("second claim low level", g_write_levels[0], 0);
-    expect_int("second claim closes chip", g_close_count, 1);
-}
-
-static void test_first_claim_failure_stops_cleanly(void)
-{
-    reset_fake();
-    g_claim_433_result = -7;
-
-    daemon_led_init();
-
-    expect_int("first claim leaves LED not ready", daemon_led_ready(), 0);
-    expect_int("first claim stops second claim", g_claim_count, 1);
-    expect_int("first claim has no pin free", g_free_count, 0);
-    expect_int("first claim has no pin write", g_write_count, 0);
-    expect_int("first claim closes chip", g_close_count, 1);
+    expect_int("LED shutdown final write count", g_write_count, 3);
+    expect_int("LED shutdown GPIO13 low", (int)g_write_pins[2], DAEMON_LED_PIN_433);
+    expect_int("LED shutdown level low", g_write_levels[2], 0);
 }
 
 static void test_chip_open_failure(void)
@@ -239,20 +205,6 @@ static void test_radio_868_only_claims_only_868(void)
     expect_int("868-only freed GPIO19", (int)g_free_pins[0], DAEMON_LED_PIN_868);
 }
 
-static void test_radio_both_claims_both(void)
-{
-    reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-
-    int rc = daemon_led_init();
-
-    expect_int("both init succeeds", rc, 0);
-    expect_int("both ready", daemon_led_ready(), 1);
-    expect_int("both claims two pins", g_claim_count, 2);
-    expect_int("both claims GPIO13", (int)g_claim_pins[0], DAEMON_LED_PIN_433);
-    expect_int("both claims GPIO19", (int)g_claim_pins[1], DAEMON_LED_PIN_868);
-}
-
 // A selected band whose LED line is already owned (claim fails) must make
 // init fatal and leave the daemon not-ready -- this is the duplicate-instance
 // rejection at the unit level.
@@ -283,24 +235,6 @@ static void test_radio_868_only_busy_is_fatal(void)
     expect_int("868-only busy tried only 868", g_claim_count, 1);
     expect_int("868-only busy claimed GPIO19", (int)g_claim_pins[0], DAEMON_LED_PIN_868);
     expect_int("868-only busy closes chip", g_close_count, 1);
-}
-
-// --radio both with one band busy: fatal, and the band that *was* claimed is
-// cleanly released.
-static void test_radio_both_with_868_busy_is_fatal(void)
-{
-    reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-    g_claim_868_result = -5;
-
-    int rc = daemon_led_init();
-
-    expect_int("both/868-busy init fatal", rc, -1);
-    expect_int("both/868-busy not ready", daemon_led_ready(), 0);
-    expect_int("both/868-busy tried both pins", g_claim_count, 2);
-    expect_int("both/868-busy freed the claimed GPIO13", g_free_count, 1);
-    expect_int("both/868-busy freed GPIO13", (int)g_free_pins[0], DAEMON_LED_PIN_433);
-    expect_int("both/868-busy closes chip", g_close_count, 1);
 }
 
 /* --- sync_led derived-state tests --------------------------------------- */
@@ -438,15 +372,11 @@ static void test_sync_led_cad_off_edge(void)
 int main(void)
 {
     test_successful_lifecycle();
-    test_second_claim_failure_cleans_first();
-    test_first_claim_failure_stops_cleanly();
     test_chip_open_failure();
     test_radio_433_only_claims_only_433();
     test_radio_868_only_claims_only_868();
-    test_radio_both_claims_both();
     test_radio_433_only_busy_is_fatal();
     test_radio_868_only_busy_is_fatal();
-    test_radio_both_with_868_busy_is_fatal();
     test_sync_led_derived_state();
     test_sync_led_no_rx_latch();
     test_sync_led_cad_off_edge();

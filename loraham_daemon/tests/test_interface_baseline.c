@@ -65,6 +65,53 @@ static int test_cli_radio_invalid(void)
     return TEST_PASS;
 }
 
+/* --radio is mandatory: a bare start must fail closed via the usage path
+ * without creating any socket. */
+static int test_cli_radio_required(void)
+{
+    char out[2048];
+    int exit_code = 0;
+    int ret = run_cli_capture(g_bin, NULL, NULL,
+                              out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+
+    if (exit_code == 0)
+        return TEST_FAIL;
+
+    if (strstr(out, "Fehlende Option: --radio") == NULL)
+        return TEST_FAIL;
+
+    if (path_exists(SOCK_DATA_433) || path_exists(SOCK_DATA_868) ||
+        path_exists(SOCK_CONF_433) || path_exists(SOCK_CONF_868)) {
+        fail_msg("sockets created despite missing --radio");
+        return TEST_FAIL;
+    }
+
+    return TEST_PASS;
+}
+
+/* "both" is no longer a valid radio selection. */
+static int test_cli_radio_both_rejected(void)
+{
+    char out[2048];
+    int exit_code = 0;
+    int ret = run_cli_capture(g_bin, "--radio=both", NULL,
+                              out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+
+    if (exit_code == 0)
+        return TEST_FAIL;
+
+    if (strstr(out, "Ungültiger Radio-Modus") == NULL)
+        return TEST_FAIL;
+
+    return TEST_PASS;
+}
+
 
 
 static int start_daemon_radio(const char *radio)
@@ -497,13 +544,20 @@ int main(int argc, char **argv)
     run_test("CLI accepts --debug", test_cli_debug_long);
     run_test("CLI accepts --radio help", test_cli_radio_help);
     run_test("CLI rejects invalid --radio", test_cli_radio_invalid);
+    run_test("CLI requires --radio", test_cli_radio_required);
+    run_test("CLI rejects --radio both", test_cli_radio_both_rejected);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);
 
-    info_msg("starting daemon: %s", g_bin);
+    info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)
         return 1;
+
+    if (start_daemon_868(g_bin) < 0) {
+        stop_daemon();
+        return 1;
+    }
 
     if (wait_all_sockets(DEFAULT_SOCKET_TIMEOUT_MS) < 0) {
         stop_daemon();
