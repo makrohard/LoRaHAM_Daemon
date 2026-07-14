@@ -31,9 +31,13 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Area | File/module | Role |
 |---|---|---|
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio band: `433` or `868`; unset until the mandatory `--radio` is given |
-| Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
+| Hardware profiles | `hardware_profile.cpp`, `hardware_profile.h` | `--hw` preset table (wiring, chip family, capabilities, LED, claimed pins); see "Hardware profiles" |
+| Radio driver interface | `radio_driver.h` | Runtime interface between the chip-agnostic daemon and one radio chip family: generic PhysicalLayer delegation + pure-virtual chip specifics (begin with RF defaults/TCXO, mode switch, CONF param apply, raw RSSI) |
+| SX127x driver | `sx127x_driver.cpp`, `sx127x_driver.h` | Concrete driver for SX1278/RFM9x (all SX127x register constants live here), incl. the D8 begin()-failure diagnosis |
+| SX1262 driver | `sx1262_driver.cpp`, `sx1262_driver.h` | Concrete driver for the SX126x family (TCXO via DIO3, DIO2-as-RF-switch + TXEN, SX126x CRC/sync/power semantics, GetRssiInst live RSSI) |
+| Radio controller state | `radio_controller.h` | Per-band HAL/Module/driver ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, hardware capability flag, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
-| Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
+| Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | Profile-driven Module construction, driver selection by chip family, per-band RF boot defaults, callback install, initial RX start, and the family-aware begin()-failure diagnosis dispatch |
 | SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock`; fails closed if the lock cannot be established (see Multi-instance operation) |
 | Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
 | Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, root-owned + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
@@ -72,7 +76,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands |
+| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands; the chip-specific per-key application lives in the radio drivers |
 | CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Build per-band CONFIG dispatch contexts and debug logging callbacks |
 | Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats |
 
