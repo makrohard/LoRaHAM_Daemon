@@ -1,6 +1,7 @@
 # Changelog
 
 ## loraham_daemon 112
+- Version bump to 112; full-suite verification against the 111a baseline (no single-band regression).
 - Docs/comments: removed all in-process dual-radio descriptions; README documents mandatory `--radio`, single-band socket exposure, and a migration note (`--radio both` → `loraham-daemon@433` + `@868`; banded flags → plain flags in per-unit overrides).
 - BREAKING: removed the band-suffixed CLI overrides `--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868` (rejected as unknown options). The plain `--tx-mode`, `--cad-monitor`, `--cad-rssi` are equivalent in a single-band process; per-band differentiation moves to per-unit systemd overrides.
 - Instance lock and LED claim reduced to single-band acquisition (no dual-lock ordering/rollback); exit codes 3/4 and LOCK_NB semantics unchanged.
