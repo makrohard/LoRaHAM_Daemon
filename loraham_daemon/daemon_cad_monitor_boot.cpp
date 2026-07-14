@@ -4,11 +4,7 @@
 
 /* --- Boot-time CAD monitor selection ------------------------------------- */
 
-DaemonCadMonitorBootState daemon_cad_monitor_boot = {
-    DAEMON_CAD_MONITOR_BOOT_UNSET,
-    DAEMON_CAD_MONITOR_BOOT_UNSET,
-    DAEMON_CAD_MONITOR_BOOT_UNSET
-};
+DaemonCadMonitorBoot daemon_cad_monitor_boot = DAEMON_CAD_MONITOR_BOOT_UNSET;
 
 bool daemon_parse_cad_monitor_boot(const char *arg, DaemonCadMonitorBoot *out)
 {
@@ -32,46 +28,15 @@ bool daemon_parse_cad_monitor_boot(const char *arg, DaemonCadMonitorBoot *out)
 
 bool daemon_set_cad_monitor_boot_global(const char *arg)
 {
-    return daemon_parse_cad_monitor_boot(arg, &daemon_cad_monitor_boot.global);
+    return daemon_parse_cad_monitor_boot(arg, &daemon_cad_monitor_boot);
 }
 
-bool daemon_set_cad_monitor_boot_433(const char *arg)
+bool daemon_cad_monitor_boot_effective(void)
 {
-    return daemon_parse_cad_monitor_boot(arg, &daemon_cad_monitor_boot.band_433);
-}
-
-bool daemon_set_cad_monitor_boot_868(const char *arg)
-{
-    return daemon_parse_cad_monitor_boot(arg, &daemon_cad_monitor_boot.band_868);
-}
-
-bool daemon_cad_monitor_boot_resolve(DaemonCadMonitorBoot band,
-                                     DaemonCadMonitorBoot global)
-{
-    if (band != DAEMON_CAD_MONITOR_BOOT_UNSET)
-        return band == DAEMON_CAD_MONITOR_BOOT_ON;
-
-    if (global != DAEMON_CAD_MONITOR_BOOT_UNSET)
-        return global == DAEMON_CAD_MONITOR_BOOT_ON;
-
-    return false;
-}
-
-bool daemon_cad_monitor_boot_effective_433(void)
-{
-    return daemon_cad_monitor_boot_resolve(daemon_cad_monitor_boot.band_433,
-                                           daemon_cad_monitor_boot.global);
-}
-
-bool daemon_cad_monitor_boot_effective_868(void)
-{
-    return daemon_cad_monitor_boot_resolve(daemon_cad_monitor_boot.band_868,
-                                           daemon_cad_monitor_boot.global);
+    return daemon_cad_monitor_boot == DAEMON_CAD_MONITOR_BOOT_ON;
 }
 
 void daemon_cad_monitor_boot_reset(void)
 {
-    daemon_cad_monitor_boot.global = DAEMON_CAD_MONITOR_BOOT_UNSET;
-    daemon_cad_monitor_boot.band_433 = DAEMON_CAD_MONITOR_BOOT_UNSET;
-    daemon_cad_monitor_boot.band_868 = DAEMON_CAD_MONITOR_BOOT_UNSET;
+    daemon_cad_monitor_boot = DAEMON_CAD_MONITOR_BOOT_UNSET;
 }

@@ -278,15 +278,9 @@ static void daemon_print_usage(const char *argv0)
     printf("  -v, --version    Version anzeigen und beenden\n");
     printf("      --debug      Debug-Log aktivieren\n");
     printf("      --radio MODE Radio wählen: 433, 868 (erforderlich)\n");
-    printf("      --tx-mode MODE      TX-Modus beide Bänder: direct, managed (Standard: managed)\n");
-    printf("      --tx-mode-433 MODE  TX-Modus nur 433 (überschreibt --tx-mode)\n");
-    printf("      --tx-mode-868 MODE  TX-Modus nur 868 (überschreibt --tx-mode)\n");
-    printf("      --cad-monitor VAL      CAD=0/1-Monitor beide Bänder: on, off (Standard: off)\n");
-    printf("      --cad-monitor-433 VAL  CAD-Monitor nur 433 (überschreibt --cad-monitor)\n");
-    printf("      --cad-monitor-868 VAL  CAD-Monitor nur 868 (überschreibt --cad-monitor)\n");
-    printf("      --cad-rssi DBM         CAD-Busy-Schwelle beide Bänder, Ganzzahl dBm -130..0 (Standard: -90)\n");
-    printf("      --cad-rssi-433 DBM     CAD-Busy-Schwelle nur 433 (überschreibt --cad-rssi)\n");
-    printf("      --cad-rssi-868 DBM     CAD-Busy-Schwelle nur 868 (überschreibt --cad-rssi)\n");
+    printf("      --tx-mode MODE      TX-Modus: direct, managed (Standard: managed)\n");
+    printf("      --cad-monitor VAL   CAD=0/1-Monitor: on, off (Standard: off)\n");
+    printf("      --cad-rssi DBM      CAD-Busy-Schwelle, Ganzzahl dBm -130..0 (Standard: -90)\n");
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets:\n");
@@ -319,14 +313,8 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"debug",       no_argument, 0, 1000},
         {"radio",       required_argument, 0, 1001},
         {"tx-mode",     required_argument, 0, 1002},
-        {"tx-mode-433", required_argument, 0, 1003},
-        {"tx-mode-868", required_argument, 0, 1004},
         {"cad-monitor",     required_argument, 0, 1005},
-        {"cad-monitor-433", required_argument, 0, 1006},
-        {"cad-monitor-868", required_argument, 0, 1007},
         {"cad-rssi",        required_argument, 0, 1008},
-        {"cad-rssi-433",    required_argument, 0, 1009},
-        {"cad-rssi-868",    required_argument, 0, 1010},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -364,24 +352,6 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --tx-mode erkannt: %s", optarg);
                 break;
-            case 1003:
-                if (!daemon_set_tx_mode_boot_433(optarg)) {
-                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: direct, managed\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --tx-mode-433 erkannt: %s", optarg);
-                break;
-            case 1004:
-                if (!daemon_set_tx_mode_boot_868(optarg)) {
-                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: direct, managed\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --tx-mode-868 erkannt: %s", optarg);
-                break;
             case 1005:
                 if (!daemon_set_cad_monitor_boot_global(optarg)) {
                     fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
@@ -391,24 +361,6 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --cad-monitor erkannt: %s", optarg);
                 break;
-            case 1006:
-                if (!daemon_set_cad_monitor_boot_433(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: on, off\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --cad-monitor-433 erkannt: %s", optarg);
-                break;
-            case 1007:
-                if (!daemon_set_cad_monitor_boot_868(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: on, off\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --cad-monitor-868 erkannt: %s", optarg);
-                break;
             case 1008:
                 if (!daemon_set_cad_rssi_boot_global(optarg)) {
                     fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
@@ -417,24 +369,6 @@ static bool daemon_parse_args(int argc, char *argv[])
                     exit(EXIT_FAILURE);
                 }
                 daemon_debug_ctx("STARTUP", "Option --cad-rssi erkannt: %s", optarg);
-                break;
-            case 1009:
-                if (!daemon_set_cad_rssi_boot_433(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --cad-rssi-433 erkannt: %s", optarg);
-                break;
-            case 1010:
-                if (!daemon_set_cad_rssi_boot_868(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
-                    daemon_print_usage(argv[0]);
-                    exit(EXIT_FAILURE);
-                }
-                daemon_debug_ctx("STARTUP", "Option --cad-rssi-868 erkannt: %s", optarg);
                 break;
             case 'h':
                 daemon_print_usage(argv[0]);
@@ -468,47 +402,41 @@ static RadioTxMode_t daemon_boot_tx_mode_to_radio(DaemonTxModeBoot mode)
 }
 
 // Startup-only: override the MANAGED default set by radio_controller_init with
-// the CLI-resolved per-band mode. Single-threaded; runs after daemon_io_init().
+// the CLI-resolved mode. Single-threaded; runs after daemon_io_init().
 static void daemon_apply_boot_tx_modes(void)
 {
-    RadioTxMode_t mode_433 =
-        daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective_433());
-    RadioTxMode_t mode_868 =
-        daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective_868());
+    RadioTxMode_t mode =
+        daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective());
 
-    radio_controller_433.tx_mode = mode_433;
-    radio_controller_868.tx_mode = mode_868;
+    radio_controller_433.tx_mode = mode;
+    radio_controller_868.tx_mode = mode;
 
     daemon_debug_ctx("STARTUP", "TX-Modus 433=%s 868=%s",
-                     radio_tx_mode_name(mode_433),
-                     radio_tx_mode_name(mode_868));
+                     radio_tx_mode_name(mode),
+                     radio_tx_mode_name(mode));
 }
 
 /* --- Boot CAD monitor application ---------------------------------------- */
-// Startup-only: apply the CLI-resolved per-band CAD monitor opt-in (default
-// off). Lets legacy CONF clients get CAD=0/1 without issuing SET CADMONITOR.
-// Runtime SET CADMONITOR can still override afterwards.
+// Startup-only: apply the CLI-resolved CAD monitor opt-in (default off). Lets
+// legacy CONF clients get CAD=0/1 without issuing SET CADMONITOR. Runtime
+// SET CADMONITOR can still override afterwards.
 static void daemon_apply_boot_cad_monitor(void)
 {
-    bool mon_433 = daemon_cad_monitor_boot_effective_433();
-    bool mon_868 = daemon_cad_monitor_boot_effective_868();
+    bool mon = daemon_cad_monitor_boot_effective();
 
-    radio_controller_433.cad_monitor_active.store(mon_433);
-    radio_controller_868.cad_monitor_active.store(mon_868);
+    radio_controller_433.cad_monitor_active.store(mon);
+    radio_controller_868.cad_monitor_active.store(mon);
 
     daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d 868=%d",
-                     mon_433 ? 1 : 0, mon_868 ? 1 : 0);
+                     mon ? 1 : 0, mon ? 1 : 0);
 
-    // CAD RSSI threshold override (per band ?? global; unset keeps the default).
-    float rssi_433 = 0.0f;
-    float rssi_868 = 0.0f;
-    if (daemon_cad_rssi_boot_effective_433(&rssi_433)) {
-        radio_controller_433.cad_rssi_threshold_dbm.store(rssi_433);
-        daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi_433);
-    }
-    if (daemon_cad_rssi_boot_effective_868(&rssi_868)) {
-        radio_controller_868.cad_rssi_threshold_dbm.store(rssi_868);
-        daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi_868);
+    // CAD RSSI threshold override (unset keeps the default).
+    float rssi = 0.0f;
+    if (daemon_cad_rssi_boot_effective(&rssi)) {
+        radio_controller_433.cad_rssi_threshold_dbm.store(rssi);
+        radio_controller_868.cad_rssi_threshold_dbm.store(rssi);
+        daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi);
+        daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi);
     }
 }
 

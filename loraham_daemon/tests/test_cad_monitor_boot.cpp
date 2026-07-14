@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-/* --- Boot CAD monitor CLI parse + precedence tests ---------------------- */
+/* --- Boot CAD monitor CLI parse + resolve tests --------------------------- */
 
 static int g_ok = 0;
 static int g_fail = 0;
@@ -44,69 +44,35 @@ static void test_default_is_off(void)
 {
     daemon_cad_monitor_boot_reset();
 
-    expect_int("default 433 off", daemon_cad_monitor_boot_effective_433() ? 1 : 0, 0);
-    expect_int("default 868 off", daemon_cad_monitor_boot_effective_868() ? 1 : 0, 0);
+    expect_int("default off", daemon_cad_monitor_boot_effective() ? 1 : 0, 0);
 }
 
-static void test_global_applies_to_both(void)
+static void test_set_applies(void)
 {
     daemon_cad_monitor_boot_reset();
 
-    expect_int("global on set ok", daemon_set_cad_monitor_boot_global("on"), 1);
-    expect_int("global on 433", daemon_cad_monitor_boot_effective_433() ? 1 : 0, 1);
-    expect_int("global on 868", daemon_cad_monitor_boot_effective_868() ? 1 : 0, 1);
-}
+    expect_int("set on ok", daemon_set_cad_monitor_boot_global("on"), 1);
+    expect_int("set on effective", daemon_cad_monitor_boot_effective() ? 1 : 0, 1);
 
-static void test_per_band_overrides_global(void)
-{
-    daemon_cad_monitor_boot_reset();
-
-    // --cad-monitor=on --cad-monitor-868=off
-    expect_int("set global on", daemon_set_cad_monitor_boot_global("on"), 1);
-    expect_int("set 868 off", daemon_set_cad_monitor_boot_868("off"), 1);
-    expect_int("override 433 on", daemon_cad_monitor_boot_effective_433() ? 1 : 0, 1);
-    expect_int("override 868 off", daemon_cad_monitor_boot_effective_868() ? 1 : 0, 0);
-}
-
-static void test_precedence_is_order_independent(void)
-{
-    daemon_cad_monitor_boot_reset();
-
-    // Reversed order: --cad-monitor-868=off --cad-monitor=on
-    expect_int("set 868 off first", daemon_set_cad_monitor_boot_868("off"), 1);
-    expect_int("set global on second", daemon_set_cad_monitor_boot_global("on"), 1);
-    expect_int("reversed 433 on", daemon_cad_monitor_boot_effective_433() ? 1 : 0, 1);
-    expect_int("reversed 868 off", daemon_cad_monitor_boot_effective_868() ? 1 : 0, 0);
-}
-
-static void test_per_band_only(void)
-{
-    daemon_cad_monitor_boot_reset();
-
-    // --cad-monitor-433=on only: 433 on, 868 default off.
-    expect_int("set 433 on only", daemon_set_cad_monitor_boot_433("on"), 1);
-    expect_int("per-band 433 on", daemon_cad_monitor_boot_effective_433() ? 1 : 0, 1);
-    expect_int("per-band 868 default off", daemon_cad_monitor_boot_effective_868() ? 1 : 0, 0);
+    expect_int("set off ok", daemon_set_cad_monitor_boot_global("off"), 1);
+    expect_int("set off effective", daemon_cad_monitor_boot_effective() ? 1 : 0, 0);
 }
 
 static void test_invalid_setter_keeps_default(void)
 {
     daemon_cad_monitor_boot_reset();
 
-    expect_int("invalid global setter fails",
+    expect_int("invalid setter fails",
                daemon_set_cad_monitor_boot_global("bogus"), 0);
-    expect_int("invalid leaves 433 default off",
-               daemon_cad_monitor_boot_effective_433() ? 1 : 0, 0);
+    expect_int("invalid leaves default off",
+               daemon_cad_monitor_boot_effective() ? 1 : 0, 0);
 }
 
 int main(void)
 {
     test_parse_values();
     test_default_is_off();
-    test_global_applies_to_both();
-    test_per_band_overrides_global();
-    test_precedence_is_order_independent();
-    test_per_band_only();
+    test_set_applies();
     test_invalid_setter_keeps_default();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
