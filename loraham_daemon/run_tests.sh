@@ -47,6 +47,7 @@ test_binaries=(
   "$TEST_DIR/test_daemon_tx_async_worker_stress"
   "$TEST_DIR/test_daemon_tx_async_runtime"
   "$TEST_DIR/test_daemon_radio_selection"
+  "$TEST_DIR/test_hardware_profile"
   "$TEST_DIR/test_tx_mode_boot"
   "$TEST_DIR/test_cad_monitor_boot"
   "$TEST_DIR/test_cad_rssi_boot"
@@ -135,6 +136,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_log.cpp"
   "$SCRIPT_DIR/daemon_led.cpp"
   "$SCRIPT_DIR/daemon_radio_selection.cpp"
+  "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
@@ -520,6 +522,7 @@ build_one_daemon_led_test() {
     "$src" \
     "$SCRIPT_DIR/daemon_led.cpp" \
     "$SCRIPT_DIR/daemon_radio_selection.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}"
@@ -685,6 +688,16 @@ build_one_daemon_radio_selection_test() {
     "$SCRIPT_DIR/daemon_radio_selection.cpp"
 }
 
+build_one_hardware_profile_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/hardware_profile.cpp"
+}
+
 build_one_tx_mode_boot_test() {
   local src="$1"
   local out="$2"
@@ -819,6 +832,7 @@ build_tests() {
   build_one_tx_async_worker_test "$TEST_DIR/test_daemon_tx_async_worker_stress.cpp" "$TEST_DIR/test_daemon_tx_async_worker_stress"
   build_one_tx_async_runtime_test "$TEST_DIR/test_daemon_tx_async_runtime.cpp" "$TEST_DIR/test_daemon_tx_async_runtime"
   build_one_daemon_radio_selection_test "$TEST_DIR/test_daemon_radio_selection.cpp" "$TEST_DIR/test_daemon_radio_selection"
+  build_one_hardware_profile_test "$TEST_DIR/test_hardware_profile.cpp" "$TEST_DIR/test_hardware_profile"
   build_one_tx_mode_boot_test "$TEST_DIR/test_tx_mode_boot.cpp" "$TEST_DIR/test_tx_mode_boot"
   build_one_cad_monitor_boot_test "$TEST_DIR/test_cad_monitor_boot.cpp" "$TEST_DIR/test_cad_monitor_boot"
   build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"

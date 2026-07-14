@@ -135,6 +135,13 @@ static inline RadioCadProbeResult radio_cad_try_probe(RadioController<RadioT> *c
     if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
         return result;
 
+    /* Wiring without DIO1 (capability flag): the blocking SX127x
+     * scanChannel() could never observe CadDetected and would report
+     * false-FREE. Degrade defined: answer from the passive RSSI probe
+     * (scan_ran stays 0, so CADSCAN=0 marks the non-scan source). */
+    if (!ctrl->cad_scan_available)
+        return radio_cad_probe_passive(ctrl);
+
     if (ctrl->tx_busy.load())
         return result;
 
@@ -169,6 +176,12 @@ static inline RadioCadProbeResult radio_cad_probe(RadioController<RadioT> *ctrl)
 
     if (!ctrl || !ctrl->radio || !radio_controller_ready(ctrl))
         return result;
+
+    /* No DIO1 → no trustworthy scanChannel (see radio_cad_try_probe).
+     * MANAGED TX gating then runs on the passive RSSI probe: BUSY/FREE by
+     * CADRSSI threshold, so LBT stays functional on such wiring. */
+    if (!ctrl->cad_scan_available)
+        return radio_cad_probe_passive(ctrl);
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);

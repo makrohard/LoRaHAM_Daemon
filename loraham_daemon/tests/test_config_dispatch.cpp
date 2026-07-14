@@ -55,6 +55,11 @@ struct FakeRadio {
     {
         return rssi;
     }
+
+    float getRSSI(bool, bool)
+    {
+        return rssi;
+    }
 };
 
 /* --- Test state --- */

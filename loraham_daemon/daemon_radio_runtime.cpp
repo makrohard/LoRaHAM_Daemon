@@ -4,6 +4,7 @@
 
 #include "daemon_log.h"
 #include "daemon_radio_selection.h"
+#include "hardware_profile.h"
 #include "daemon_stats.h"
 #include "daemon_tx_async_runtime.h"
 #include "radio_health.h"
@@ -26,7 +27,7 @@ void daemon_radio_controller_init(void)
                           "433",
                           false,
                           setFlag433,
-                          DAEMON_LED_PIN_433);
+                          daemon_led_pin_433_configured());
     daemon_debug_band("433", "Controller bereit");
 
     radio_controller_init(&radio_controller_868,
@@ -34,8 +35,17 @@ void daemon_radio_controller_init(void)
                           "868",
                           true,
                           setFlag868,
-                          DAEMON_LED_PIN_868);
+                          daemon_led_pin_868_configured());
     daemon_debug_band("868", "Controller bereit");
+
+    /* Hardware capability from the resolved profile (selected band only;
+     * the other controller stays at its default and is never used). */
+    if (daemon_radio_433_enabled())
+        radio_controller_433.cad_scan_available =
+            daemon_hw_profile.cad_scan_available;
+    if (daemon_radio_868_enabled())
+        radio_controller_868.cad_scan_available =
+            daemon_hw_profile.cad_scan_available;
 }
 
 /* --- Radio controller shutdown ------------------------------------------ */

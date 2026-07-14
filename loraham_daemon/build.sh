@@ -27,6 +27,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_log.cpp"
   "$SCRIPT_DIR/daemon_led.cpp"
   "$SCRIPT_DIR/daemon_radio_selection.cpp"
+  "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_tx_mode_boot.cpp"
   "$SCRIPT_DIR/daemon_cad_monitor_boot.cpp"
   "$SCRIPT_DIR/daemon_cad_rssi_boot.cpp"

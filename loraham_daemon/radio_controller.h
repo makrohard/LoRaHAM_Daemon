@@ -69,6 +69,12 @@ struct RadioController {
     std::atomic<uint32_t> cad_poll_interval_ms;
     std::atomic<bool>     cad_send_after_timeout;
 
+    /* Hardware capability (set once at init from the hardware profile):
+     * false = scanChannel()-based CAD is unusable on this wiring (SX127x
+     * without DIO1 would report false-FREE); probes fall back to the passive
+     * RSSI probe. */
+    bool cad_scan_available;
+
     DaemonRadioStats stats;
 
     void (*rx_callback)(void);
@@ -119,6 +125,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->cad_poll_interval_ms.store(DAEMON_TX_POLICY_POLL_INTERVAL_MS);
     ctrl->cad_send_after_timeout.store(
         DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT ? true : false);
+    ctrl->cad_scan_available = true;
 
     daemon_radio_stats_init(&ctrl->stats);
 
