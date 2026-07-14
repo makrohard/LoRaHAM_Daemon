@@ -223,7 +223,7 @@ Frame types:
 | Payload offset | Size | Type | Meaning |
 |---:|---:|---|---|
 | `0` | 1 byte | `uint8` | status: `0` OK, `1` BUSY, `2` CHANNEL_BUSY, `3` RADIO_NOT_READY, `4` RADIO_ERROR, `5` INVALID_PACKET, `6` INVALID_BAND |
-| `1` | 1 byte | bit mask | flags: bit `0` managed-mode attempt, bit `1` deferred/final queued result, bit `2` MANAGED send-after-CAD-timeout |
+| `1` | 1 byte | bit mask | flags: bit `0` managed-mode attempt, bit `1` reserved (defined for deferred/final queued results, currently never set), bit `2` MANAGED send-after-CAD-timeout |
 | `2` | 2 bytes | little-endian `uint16` | sequence number |
 
 Rules:
@@ -240,7 +240,7 @@ Rules:
 - During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio.
 - `DIRECT` TX mode transmits immediately with no CAD gating and never returns `CHANNEL_BUSY`.
 - `MANAGED` TX mode waits for stable CAD idle before TX and returns `CHANNEL_BUSY` when the CAD wait timeout expires.
-- Final framed `TX_RESULT` flags include managed/deferred/CAD-timeout context.
+- Final framed `TX_RESULT` flags include managed and CAD-timeout context (the deferred bit `1` is reserved and currently never set; deferred delivery is recognizable by the suppressed immediate result).
 - Queued framed TX suppresses the immediate success `TX_RESULT`; final async completion is delivered later to the originating framed client.
 - If the originating framed client slot has closed or been reused before completion, the stale final `TX_RESULT` is dropped and counted in `TXQSTALE`.
 - Oversized `TX_PACKET` frames and unsupported frame types are rejected with an `ERROR` frame.
