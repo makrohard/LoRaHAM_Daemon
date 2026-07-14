@@ -143,7 +143,7 @@ SX127x: `irq` = DIO0, `gpio` = DIO1 — SX1262: `irq` = DIO1, `gpio` = BUSY.
 | `legacy` (default) | SX127x | 8 / 7 | 25 / 16 | 5 / 6 | 24 / 12 | 13 / 19 | Per band (433 / 868); identical to the pre-profile hardcoded wiring |
 | `uputronics-ce0` | SX127x | 8 | 25 (DIO0) | — | — | 6 | Uputronics Pi Zero LoRa board, CE switch on CE0; DIO5 on BCM 24 (unused) |
 | `uputronics-ce1` | SX127x | 7 | 16 (DIO0) | — | — | 13 | Same board, CE switch on CE1; DIO5 on BCM 12 (unused) |
-| `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; TXEN BCM 6, RXEN via DIO2, TCXO via DIO3. SX1262 driver support arrives in a later milestone; until then init fails closed with a clear message |
+| `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; TXEN BCM 6, RXEN via DIO2 (`setDio2AsRfSwitch`), TCXO via DIO3 (voltage from the profile, applied in `begin()`) |
 
 Uputronics specifics:
 
@@ -164,6 +164,22 @@ Uputronics specifics:
 
 Two stacked Uputronics boards = two daemon processes (one per band), sharing
 SPI through the per-transaction flock and separated by disjoint GPIO claims.
+
+SX1262 specifics (chip semantics differ from SX127x; handled in
+`sx1262_driver.{h,cpp}`):
+
+- LoRa sync word: RadioLib maps the SX127x byte (`0x12`/`0x2B`) via the
+  compatibility control bits; on-air compatibility with SX127x stations is an
+  explicit bench item (see `HW-ONAIR-CHECKLIST.md`).
+- `CRC` on/off maps to SX126x CRC length 2/0; TX power range is −9…+22 dBm
+  (the CONF policy 0…20 lies within it).
+- No OOK mode: `SET OOK=…` is rejected with a clear note. The FSK `RXBW`
+  raster differs from the SX127x list; RadioLib validates the chip's own
+  raster and rejects foreign values visibly.
+- Live RSSI comes from the SX126x instantaneous-RSSI command, never from
+  SX127x register addresses.
+- Without the HAT present, `begin()` fails (`CHIP_NOT_FOUND`), one
+  profile-aware diagnosis line is printed, and the daemon exits fail-closed.
 
 ### Combination matrix (two processes on one Pi)
 

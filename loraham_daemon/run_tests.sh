@@ -153,6 +153,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_io_runtime.cpp"
   "$SCRIPT_DIR/config_apply.cpp"
   "$SCRIPT_DIR/sx127x_driver.cpp"
+  "$SCRIPT_DIR/sx1262_driver.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
   "$SCRIPT_DIR/daemon_timing.cpp"
   "$SCRIPT_DIR/daemon_stats.cpp"
