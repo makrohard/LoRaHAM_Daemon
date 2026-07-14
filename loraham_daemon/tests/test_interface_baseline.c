@@ -92,6 +92,42 @@ static int test_cli_radio_required(void)
     return TEST_PASS;
 }
 
+/* The removed band-suffixed overrides must fail closed as unknown options. */
+static int test_cli_banded_flag_rejected(void)
+{
+    static const char *flags[] = {
+        "--tx-mode-433=direct",
+        "--tx-mode-868=direct",
+        "--cad-monitor-433=on",
+        "--cad-monitor-868=on",
+        "--cad-rssi-433=-90",
+        "--cad-rssi-868=-90"
+    };
+
+    for (int i = 0; i < ARRAY_LEN(flags); i++) {
+        char out[2048];
+        int exit_code = 0;
+        int ret = run_cli_capture(g_bin, flags[i], NULL,
+                                  out, sizeof(out), &exit_code);
+
+        if (ret != TEST_PASS)
+            return ret;
+
+        if (exit_code == 0) {
+            fail_msg("banded flag accepted: %s", flags[i]);
+            return TEST_FAIL;
+        }
+
+        if (strstr(out, "unrecognized option") == NULL &&
+            strstr(out, "Nutzung:") == NULL) {
+            fail_msg("no usage-error output for: %s", flags[i]);
+            return TEST_FAIL;
+        }
+    }
+
+    return TEST_PASS;
+}
+
 /* "both" is no longer a valid radio selection. */
 static int test_cli_radio_both_rejected(void)
 {
@@ -546,6 +582,7 @@ int main(int argc, char **argv)
     run_test("CLI rejects invalid --radio", test_cli_radio_invalid);
     run_test("CLI requires --radio", test_cli_radio_required);
     run_test("CLI rejects --radio both", test_cli_radio_both_rejected);
+    run_test("CLI rejects banded flags", test_cli_banded_flag_rejected);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);

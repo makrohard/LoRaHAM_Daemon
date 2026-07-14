@@ -5,11 +5,7 @@
 
 /* --- Boot-time CAD RSSI threshold selection ------------------------------ */
 
-DaemonCadRssiBootState daemon_cad_rssi_boot = {
-    { false, 0.0f },
-    { false, 0.0f },
-    { false, 0.0f }
-};
+DaemonCadRssiBootValue daemon_cad_rssi_boot = { false, 0.0f };
 
 bool daemon_parse_cad_rssi_boot(const char *arg, float *out)
 {
@@ -28,63 +24,27 @@ bool daemon_parse_cad_rssi_boot(const char *arg, float *out)
     return true;
 }
 
-static bool daemon_set_cad_rssi_boot_slot(const char *arg,
-                                          DaemonCadRssiBootValue *slot)
+bool daemon_set_cad_rssi_boot_global(const char *arg)
 {
     float dbm = 0.0f;
 
     if (!daemon_parse_cad_rssi_boot(arg, &dbm))
         return false;
 
-    slot->set = true;
-    slot->dbm = dbm;
+    daemon_cad_rssi_boot.set = true;
+    daemon_cad_rssi_boot.dbm = dbm;
     return true;
 }
 
-bool daemon_set_cad_rssi_boot_global(const char *arg)
+bool daemon_cad_rssi_boot_effective(float *out)
 {
-    return daemon_set_cad_rssi_boot_slot(arg, &daemon_cad_rssi_boot.global);
-}
-
-bool daemon_set_cad_rssi_boot_433(const char *arg)
-{
-    return daemon_set_cad_rssi_boot_slot(arg, &daemon_cad_rssi_boot.band_433);
-}
-
-bool daemon_set_cad_rssi_boot_868(const char *arg)
-{
-    return daemon_set_cad_rssi_boot_slot(arg, &daemon_cad_rssi_boot.band_868);
-}
-
-static bool daemon_cad_rssi_boot_resolve(const DaemonCadRssiBootValue *band,
-                                         const DaemonCadRssiBootValue *global,
-                                         float *out)
-{
-    if (band->set) {
+    if (daemon_cad_rssi_boot.set) {
         if (out)
-            *out = band->dbm;
-        return true;
-    }
-
-    if (global->set) {
-        if (out)
-            *out = global->dbm;
+            *out = daemon_cad_rssi_boot.dbm;
         return true;
     }
 
     return false;
-}
-
-bool daemon_cad_rssi_boot_effective_433(float *out)
-{
-    return daemon_cad_rssi_boot_resolve(&daemon_cad_rssi_boot.band_433,
-                                        &daemon_cad_rssi_boot.global, out);
-}
-
-bool daemon_cad_rssi_boot_effective_868(float *out)
-{
-    return daemon_cad_rssi_boot_resolve(&daemon_cad_rssi_boot.band_868,
-                                        &daemon_cad_rssi_boot.global, out);
 }
 
 void daemon_cad_rssi_boot_reset(void)
