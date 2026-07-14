@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 44 test binaries. It refuses to start if a
+`run_tests.sh` currently runs 56 test binaries. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -99,7 +99,7 @@ Lifecycle/helper behavior:
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
-- `test_radio_cad_probe`
+- `test_radio_cad_probe` (incl. capability gating: profiles without DIO1 never call scanChannel and answer from the passive RSSI probe)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:
@@ -113,7 +113,7 @@ Multi-instance (split per-band) operation:
 
 Public integration baseline:
 
-- `test_interface_baseline`
+- `test_interface_baseline` (CLI incl. `--hw` preset acceptance/rejection, per-band socket exposure, waveshare-profile fail-closed without HAT, LoRa/FSK config, RF write paths)
 
 
 ## CAD/TX rework guardrail

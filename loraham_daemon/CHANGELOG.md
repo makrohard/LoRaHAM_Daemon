@@ -1,6 +1,7 @@
 # Changelog
 
 ## loraham_daemon 112
+- Multi-hardware M5: docs closure — README architecture table covers hardware profiles and both radio drivers, combination matrix final, maintainer on-air checklists (M3 A/B + M4 SX1262) collected in `HW-ONAIR-CHECKLIST.md`.
 - Multi-hardware M4: `Sx1262Driver` activates `--hw waveshare-sx1262` (LF and HF binding): TCXO via DIO3 in begin()/beginFSK(), DIO2-as-RF-switch + TXEN, SX126x CRC/sync/power/LDRO semantics, no-OOK rejected, live RSSI via GetRssiInst; without the HAT begin() fails closed with one diagnosis line (suite-tested on the bench).
 - Multi-hardware M3: chip access extracted into a runtime `RadioDriver` interface (`radio_driver.h`, `sx127x_driver.{h,cpp}`); `RadioController` and all runtime paths are chip-agnostic (no SX1278/RFM95 names or SX127x register constants outside the driver). Behavior-identical: full suite and live legacy-hardware smoke (STATUS/CHANNEL/TX) unchanged.
 - Multi-hardware M2: `--hw <preset>` hardware profiles (`legacy` default = pre-profile wiring bit-identical; `uputronics-ce0/ce1` with NC DIO1/RESET, capability-gated CAD (passive-RSSI fallback for MANAGED TX and `GET CHANNEL`, `CADSCAN=0`), slot-based LEDs, warm-start note; `waveshare-sx1262` preset resolves, init fails closed until the SX1262 driver milestone). Profile-aware `begin()` failure diagnosis (RegVersion heuristic), LED-off profiles (`led_pin` NC) run cleanly without claims, boot TX-mode/CAD apply and logs restricted to the selected band (P3-1).
