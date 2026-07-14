@@ -1,12 +1,12 @@
 # LoRaHAM_Daemon
 
-`loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. By default it initializes both the 433 MHz and 868 MHz radio modules, but it can also run either radio independently via `--radio 433` or `--radio 868`. Active radios are exposed to user programs through local UNIX sockets.
+`loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. Each process drives exactly one radio, selected with the mandatory `--radio 433` or `--radio 868` option; dual-band operation runs two processes (`loraham-daemon@433` + `loraham-daemon@868`). The active radio is exposed to user programs through local UNIX sockets.
 
 The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. External bridge/client programs can use these sockets to integrate APRS or other higher-level protocols.
 
 ## Purpose
 
-- Control the LoRaHAM radio hardware from user space, either as dual-radio daemon or as selected single-radio daemon.
+- Control the LoRaHAM radio hardware from user space as a single-radio daemon (one process per band).
 - Provide raw DATA sockets for backward-compatible stream TX/RX.
 - Provide framed DATA sockets for packet-boundary-preserving clients.
 - Provide CONF sockets for runtime radio configuration.
@@ -30,7 +30,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 
 | Area | File/module | Role |
 |---|---|---|
-| Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio mode: `both`, `433`, or `868`; default is `both` |
+| Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio band: `433` or `868`; unset until the mandatory `--radio` is given |
 | Radio controller state | `radio_controller.h` | Per-band RadioLib/HAL/Module ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | RadioLib object creation, default radio parameters, callback install, and initial RX start |
@@ -100,16 +100,10 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `-d`, `--daemon` | off | `-d`, `--daemon` | Run in background; stdout/stderr go to `/tmp/lora_daemon.log` |
 | `-v`, `--version` | - | `-v`, `--version` | Print daemon version and exit |
 | `--debug` | off | `--debug` | Enable debug log output |
-| `--radio MODE` | `both` | `both`, `433`, `868` | Select active radio backend: both radios, 433 MHz only, or 868 MHz only |
-| `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for both bands |
-| `--tx-mode-433 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 433 only; overrides `--tx-mode` regardless of argument order |
-| `--tx-mode-868 MODE` | (uses `--tx-mode`) | `direct`, `managed` | Boot TX mode for 868 only; overrides `--tx-mode` regardless of argument order |
-| `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for both bands; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
-| `--cad-monitor-433 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 433 only; overrides `--cad-monitor` regardless of argument order |
-| `--cad-monitor-868 VAL` | (uses `--cad-monitor`) | `on`, `off` | CAD monitoring for 868 only; overrides `--cad-monitor` regardless of argument order |
-| `--cad-rssi DBM` | `-90` | integer dBm `-130`..`0` | CAD busy RSSI threshold for both bands (environment dependent) |
-| `--cad-rssi-433 DBM` | (uses `--cad-rssi`) | integer dBm `-130`..`0` | CAD threshold for 433 only; overrides `--cad-rssi` regardless of argument order |
-| `--cad-rssi-868 DBM` | (uses `--cad-rssi`) | integer dBm `-130`..`0` | CAD threshold for 868 only; overrides `--cad-rssi` regardless of argument order |
+| `--radio MODE` | (required, no default) | `433`, `868` | Select the radio band this process drives; starting without `--radio` fails via the usage-error path |
+| `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for the selected band |
+| `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for the selected band; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
+| `--cad-rssi DBM` | `-90` | integer dBm `-130`..`0` | CAD busy RSSI threshold for the selected band (environment dependent) |
 | `-h`, `--help` | - | `-h`, `--help` | Print usage and exit |
 
 ## UNIX socket interface
@@ -123,11 +117,10 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CONF status/events |
 | `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CONF status/events |
 
-Socket availability depends on the selected radio mode:
+Socket availability depends on the selected radio band:
 
 | Radio mode | Created sockets |
 |---|---|
-| default / `--radio both` | all six raw DATA, framed DATA, and CONF sockets |
 | `--radio 433` | `/tmp/lora433.sock`, `/tmp/lora433f.sock`, `/tmp/loraconf433.sock` |
 | `--radio 868` | `/tmp/lora868.sock`, `/tmp/lora868f.sock`, `/tmp/loraconf868.sock` |
 
@@ -167,9 +160,9 @@ UNIX socket setup rejects existing non-socket filesystem entries at the public s
 
 The default TX mode is `MANAGED`. The default DATA TX path uses `TXQUEUE=1`, so DATA socket transmissions enter the per-band bounded async worker queue and CAD/LBT runs in that worker before RF transmit. `SET TXQUEUE=0` keeps the legacy direct DATA TX path available. `DIRECT` mode transmits immediately with no CAD gating and never drops, reproducing the legacy send-when-told behavior. `MANAGED` mode waits for the stable-idle CAD window and returns `CHANNEL_BUSY` when the CAD wait timeout expires. Deferred framed `TX_RESULT` delivery targets the originating framed client slot and is dropped if that slot was closed or reused before completion. During daemon shutdown, queued jobs that have not started are discarded, new queued submissions are rejected, and an already dequeued job is allowed to finish.
 
-The TX mode can be selected at boot with `--tx-mode MODE` (both bands) and overridden per band with `--tx-mode-433 MODE` / `--tx-mode-868 MODE`, where `MODE` is `direct` or `managed` (default `managed`). Per-band flags always win over `--tx-mode` regardless of argument order. The mode can also be changed at runtime per band with `SET TXMODE=DIRECT|MANAGED`.
+The TX mode can be selected at boot with `--tx-mode MODE`, where `MODE` is `direct` or `managed` (default `managed`); it applies to the band selected via `--radio`. The mode can also be changed at runtime with `SET TXMODE=DIRECT|MANAGED`.
 
-Older/raw clients simply open a DATA socket and write, expecting the bytes to go out immediately, and never issue `SET TXMODE`. Under the `MANAGED` default their packets can be delayed or dropped by CAD/LBT. For backward compatibility with such clients, start the daemon in `DIRECT` on the affected band(s) via `--tx-mode`, `--tx-mode-433`, or `--tx-mode-868` so the legacy send-when-told behavior is active from boot. Clients that already implement CSMA/backoff (such as MeshCom) likewise want `DIRECT`.
+Older/raw clients simply open a DATA socket and write, expecting the bytes to go out immediately, and never issue `SET TXMODE`. Under the `MANAGED` default their packets can be delayed or dropped by CAD/LBT. For backward compatibility with such clients, start the affected band's daemon in `DIRECT` via `--tx-mode` so the legacy send-when-told behavior is active from boot. Clients that already implement CSMA/backoff (such as MeshCom) likewise want `DIRECT`.
 
 ## DATA sockets
 
@@ -362,32 +355,32 @@ Important behavior:
 
 Startup is selected-radio aware:
 
-- default / `--radio both` requests both radios
-- `--radio 433` requests only the 433 MHz radio
-- `--radio 868` requests only the 868 MHz radio
-- socket setup failure for a selected radio is fatal
+- `--radio` is mandatory: `--radio 433` requests only the 433 MHz radio, `--radio 868` only the 868 MHz radio; a missing or invalid selection fails via the usage-error path before any hardware or socket setup
+- socket setup failure for the selected radio is fatal
 - event-loop setup failure is fatal
 - signal-handler setup failure is fatal
-- if no selected radio becomes ready, the daemon exits
-- in default / `--radio both` mode, the daemon may continue if one radio becomes ready and the other one fails
-- on shutdown, only selected/created radio sockets and client slots are cleaned up
+- if the selected radio does not become ready, the daemon exits
+- on shutdown, only the selected/created radio sockets and client slots are cleaned up
 
-Normal logs report the active radios once during startup. Debug logs contain more detailed selected-radio decisions.
+Normal logs report the active radio once during startup. Debug logs contain more detailed selected-radio decisions.
 
 ## Multi-instance (split per-band) operation
 
-The daemon can run as **two independent processes**, one per band, so that each
-radio-backed service can be started, stopped, restarted, and observed on its own
-(for example under `systemd`):
+The daemon runs as **two independent processes** for dual-band operation, one
+per band, so that each radio-backed service can be started, stopped, restarted,
+and observed on its own (for example under `systemd`):
 
 ```
 loraham_daemon --radio 433     # owns the 433 MHz radio
 loraham_daemon --radio 868     # owns the 868 MHz radio
 ```
 
-`--radio both` remains fully supported as the legacy single-process mode; it
-owns both bands and is therefore mutually exclusive with the split per-band
-services (it acquires both instance locks — see below).
+**Migration note (pre-112):** the legacy single-process `--radio both` mode was
+removed in version 112. Previous `--radio both` users run the two template
+units `loraham-daemon@433` + `loraham-daemon@868` instead. The removed
+band-suffixed flags (`--tx-mode-433/868`, `--cad-monitor-433/868`,
+`--cad-rssi-433/868`) map to the plain `--tx-mode`, `--cad-monitor`,
+`--cad-rssi` in per-unit overrides (`systemctl edit loraham-daemon@433`).
 
 ### Per-band ownership (instance lock)
 
@@ -410,14 +403,12 @@ process lifetime**:
   has fully cleaned up.
 - The kernel drops the lock when the owning process dies, so there is **no stale
   lock file** to clean up after a crash.
-- `--radio both` acquires both locks in deterministic order (433 → 868) and rolls
-  back the first if the second is unavailable, so there is never split ownership
-  with a `--radio 433` or `--radio 868` peer.
-- Lock-ordering contract (deadlock-free): `instance-433 → instance-868 → spi0`;
-  the SPI lock is only taken inside a transaction, never during instance setup.
+- Lock-ordering contract (deadlock-free): one instance lock per process, then
+  the per-transaction SPI lock (`spi0`); the SPI lock is only taken inside a
+  transaction, never during instance setup.
 
-Each band's status LED (GPIO 13 for 433, GPIO 19 for 868) is also claimed only
-for the selected band(s) and serves as a physical activity **indicator** and a
+Each band's status LED (GPIO 13 for 433, GPIO 19 for 868) is claimed only
+for the selected band and serves as a physical activity **indicator** and a
 secondary hardware-exclusivity check; it is **not** relied on as the ownership
 barrier (it is released during radio shutdown, before sockets). Radio control
 GPIOs per band:
@@ -433,8 +424,8 @@ Both radios share one SPI bus (`/dev/spidev0.0`). `LockingPiHal`
 (`locking_pihal.h`) subclasses RadioLib's `PiHal` and takes a process-shared
 advisory `flock` around each complete SPI transaction
 (`spiBeginTransaction()` → `LOCK_EX`, `spiEndTransaction()` → `LOCK_UN`). This
-serializes the full CS-low → transfer → CS-high window **across processes** (and
-across both bands of a `--radio both` process), while leaving the bus free
+serializes the full CS-low → transfer → CS-high window **across processes**,
+while leaving the bus free
 between transactions. The lock is held only for one short transfer, never for
 the daemon lifetime, and is released automatically by the kernel on process
 death.
@@ -462,10 +453,9 @@ death.
   sets `UnsetEnvironment=LORAHAM_RUNTIME_DIR`, so even an inherited manager-level
   value cannot redirect or split the shared lock namespace between the two band
   services.
-- Lock ordering is deadlock-free: the in-process per-band `radio_mutex` is always
-  taken before the low-level SPI `flock`, never the reverse;
-  `instance-433 → instance-868 → spi0`, and `spi0` is only taken inside a
-  transaction.
+- Lock ordering is deadlock-free: the in-process `radio_mutex` is always
+  taken before the low-level SPI `flock`, never the reverse; one instance lock
+  per process, then `spi0`, and `spi0` is only taken inside a transaction.
 - **Bounded wait — current decision:** the per-transaction `flock(LOCK_EX)` is
   *blocking* (EINTR-retried). This is intentional: a transaction is a single
   short RadioLib transfer, so contention is sub-millisecond; a crashed peer is
@@ -628,7 +618,7 @@ The daemon also prints one compact operator stats line per selected radio every
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
 
-`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor`/`--cad-monitor-433`/`--cad-monitor-868` for legacy CONF clients that expect CAD broadcasts but cannot send the command. It is a smoothed live-RSSI busy indication, not true scan-based CAD: when enabled and a CONF client is connected, the daemon samples a non-destructive live-RSSI read at most every `200 ms`. Busy (`CAD=1`) asserts immediately when the sample is at or above the `CADRSSI` threshold (default `-90 dBm`); free (`CAD=0`) is published only after two consecutive samples at least `3 dB` below the threshold (about `400 ms` of clearly-free channel), while values in the dead band keep the current state. Each transition is broadcast exactly once, and a pending or newly received RF packet never suppresses or delays the `CAD=0`. The monitor never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
+`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor` for legacy CONF clients that expect CAD broadcasts but cannot send the command. It is a smoothed live-RSSI busy indication, not true scan-based CAD: when enabled and a CONF client is connected, the daemon samples a non-destructive live-RSSI read at most every `200 ms`. Busy (`CAD=1`) asserts immediately when the sample is at or above the `CADRSSI` threshold (default `-90 dBm`); free (`CAD=0`) is published only after two consecutive samples at least `3 dB` below the threshold (about `400 ms` of clearly-free channel), while values in the dead band keep the current state. Each transition is broadcast exactly once, and a pending or newly received RF packet never suppresses or delays the `CAD=0`. The monitor never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
 
 ## Examples
 

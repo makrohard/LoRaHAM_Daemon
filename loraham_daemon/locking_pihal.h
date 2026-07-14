@@ -31,8 +31,7 @@
  * Why per-instance descriptors:
  *   Each radio constructs its own LockingPiHal with its own open descriptor on
  *   the same lock file; flock() on distinct open file descriptions is mutually
- *   exclusive even within one process, giving correct serialization both between
- *   the two bands of a --radio both process and between two separate per-band
+ *   exclusive, giving correct serialization between two separate per-band
  *   daemons sharing /dev/spidev0.0.
  *
  * FAIL CLOSED (production invariant):
