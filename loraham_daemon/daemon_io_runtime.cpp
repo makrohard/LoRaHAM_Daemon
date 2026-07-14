@@ -161,7 +161,7 @@ void daemon_io_init(void)
     /*
      * Claim the per-band status LED (a hardware resource). Same-band ownership
      * was already secured above by the instance FD lock; this only initialises
-     * the LED line for the selected band(s). A failed claim of a selected band
+     * the LED line for the selected band. A failed claim of the selected band
      * is fatal because the LED is a required hardware resource for that band.
      */
     daemon_debug_ctx("GPIO", "LED initialisieren");
