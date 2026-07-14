@@ -64,6 +64,7 @@ static TEST_UNUSED int g_xpass = 0;
 /* --- Daemon process owned by the current test binary --- */
 
 static TEST_UNUSED pid_t g_daemon_pid = -1;
+static TEST_UNUSED pid_t g_daemon_pid_868 = -1;
 
 /* --- Known-good interface configs used by multiple tests --- */
 
@@ -422,7 +423,13 @@ static TEST_UNUSED void ensure_test_runtime_dir(void)
     done = 1;
 }
 
-static TEST_UNUSED int start_daemon(const char *bin)
+/*
+ * The daemon is single-radio-per-process (--radio is mandatory), so the
+ * harness spawns one 433 instance by default; tests that exercise the 868
+ * sockets additionally start a second 868 instance, mirroring the production
+ * two-unit deployment.
+ */
+static int start_daemon_band(const char *bin, const char *band, pid_t *out_pid)
 {
     pid_t pid;
 
@@ -435,39 +442,58 @@ static TEST_UNUSED int start_daemon(const char *bin)
 
     if (pid == 0) {
         setpgid(0, 0);
-        execl(bin, bin, (char *)NULL);
+        execl(bin, bin, "--radio", band, (char *)NULL);
         _exit(127);
     }
 
-    g_daemon_pid = pid;
+    *out_pid = pid;
     return TEST_PASS;
 }
 
-static TEST_UNUSED void stop_daemon(void)
+static TEST_UNUSED int start_daemon(const char *bin)
+{
+    return start_daemon_band(bin, "433", &g_daemon_pid);
+}
+
+static TEST_UNUSED int start_daemon_868(const char *bin)
+{
+    return start_daemon_band(bin, "868", &g_daemon_pid_868);
+}
+
+static void stop_daemon_pid(pid_t *pid)
 {
     int status;
 
-    if (g_daemon_pid <= 0)
+    if (*pid <= 0)
         return;
 
-    kill(-g_daemon_pid, SIGTERM);
+    kill(-*pid, SIGTERM);
 
     for (int i = 0; i < 30; i++) {
-        pid_t r = waitpid(g_daemon_pid, &status, WNOHANG);
-        if (r == g_daemon_pid) {
-            g_daemon_pid = -1;
+        pid_t r = waitpid(*pid, &status, WNOHANG);
+        if (r == *pid) {
+            *pid = -1;
             return;
         }
         usleep(100000);
     }
 
-    kill(-g_daemon_pid, SIGKILL);
-    waitpid(g_daemon_pid, &status, 0);
-    g_daemon_pid = -1;
+    kill(-*pid, SIGKILL);
+    waitpid(*pid, &status, 0);
+    *pid = -1;
+}
+
+static TEST_UNUSED void stop_daemon(void)
+{
+    stop_daemon_pid(&g_daemon_pid_868);
+    stop_daemon_pid(&g_daemon_pid);
 }
 
 static TEST_UNUSED int daemon_alive(void)
 {
+    if (g_daemon_pid_868 > 0 && kill(g_daemon_pid_868, 0) != 0)
+        return 0;
+
     if (g_daemon_pid <= 0)
         return 1;
 

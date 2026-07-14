@@ -1,9 +1,9 @@
 /*
  * Unit tests for the per-band instance-ownership locks (daemon_instance_lock).
  *
- * Covers: 433-only / 868-only ownership, duplicate-band rejection, --radio both
- * atomic acquisition with rollback, release-ordering (the shutdown/restart race
- * barrier), release idempotency, and shared-lock inode stability.
+ * Covers: 433-only / 868-only ownership, duplicate-band rejection,
+ * release-ordering (the shutdown/restart race barrier), release idempotency,
+ * and shared-lock inode stability.
  *
  * No radio hardware is required. The lock directory is isolated via
  * LORAHAM_RUNTIME_DIR.
@@ -141,34 +141,6 @@ static void test_duplicate_868_rejected(void)
     expect_int("868 free after peer leaves", probe_free("868"), 1);
 }
 
-static void test_both_success(void)
-{
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-
-    expect_int("both acquire ok", daemon_instance_lock_acquire(), 0);
-    expect_int("both: 433 held", probe_free("433"), 0);
-    expect_int("both: 868 held", probe_free("868"), 0);
-
-    daemon_instance_lock_release();
-    expect_int("both: 433 free after release", probe_free("433"), 1);
-    expect_int("both: 868 free after release", probe_free("868"), 1);
-}
-
-static void test_both_atomic_rollback(void)
-{
-    int peer = hold_band("868");                        /* 868 already owned */
-    expect_int("peer holds 868", peer >= 0 ? 1 : 0, 1);
-
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
-    /* both must fail because 868 is taken... */
-    expect_int("both rejected when 868 busy",
-               daemon_instance_lock_acquire(), LORAHAM_EXIT_INSTANCE_BUSY);
-    /* ...and must have rolled back the 433 lock it briefly held. */
-    expect_int("both rollback released 433", probe_free("433"), 1);
-
-    unhold(peer);
-}
-
 /* The shutdown/restart race barrier: a new instance can only take the lock
  * after the old instance releases it (which the daemon does only after socket
  * cleanup). */
@@ -243,8 +215,6 @@ int main(void)
     test_868_only_ownership();
     test_duplicate_433_rejected();
     test_duplicate_868_rejected();
-    test_both_success();
-    test_both_atomic_rollback();
     test_release_unblocks_restart();
     test_release_idempotent();
     test_inode_stability();

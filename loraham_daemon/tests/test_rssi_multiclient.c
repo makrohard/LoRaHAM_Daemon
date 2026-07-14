@@ -96,7 +96,8 @@ int main(int argc, char **argv)
     if (start_daemon(g_bin) < 0)
         return 1;
 
-    if (wait_all_sockets(DEFAULT_SOCKET_TIMEOUT_MS) < 0) {
+    if (wait_for_socket(SOCK_CONF_433, DEFAULT_SOCKET_TIMEOUT_MS) < 0) {
+        fail_msg("socket not ready: %s", SOCK_CONF_433);
         stop_daemon();
         return 1;
     }

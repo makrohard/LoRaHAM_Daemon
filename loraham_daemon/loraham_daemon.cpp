@@ -277,7 +277,7 @@ static void daemon_print_usage(const char *argv0)
     printf("  -d, --daemon     Im Hintergrund starten, Log: /tmp/lora_daemon.log\n");
     printf("  -v, --version    Version anzeigen und beenden\n");
     printf("      --debug      Debug-Log aktivieren\n");
-    printf("      --radio MODE Radio wählen: both, 433, 868 (Standard: both)\n");
+    printf("      --radio MODE Radio wählen: 433, 868 (erforderlich)\n");
     printf("      --tx-mode MODE      TX-Modus beide Bänder: direct, managed (Standard: managed)\n");
     printf("      --tx-mode-433 MODE  TX-Modus nur 433 (überschreibt --tx-mode)\n");
     printf("      --tx-mode-868 MODE  TX-Modus nur 868 (überschreibt --tx-mode)\n");
@@ -348,7 +348,7 @@ static bool daemon_parse_args(int argc, char *argv[])
             case 1001:
                 if (!daemon_parse_radio_selection(optarg)) {
                     fprintf(stderr, "Ungültiger Radio-Modus: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: both, 433, 868\n");
+                    fprintf(stderr, "Erlaubt: 433, 868\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -447,6 +447,12 @@ static bool daemon_parse_args(int argc, char *argv[])
 
     if (optind < argc) {
         fprintf(stderr, "Unbekanntes Argument: %s\n", argv[optind]);
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    if (!daemon_radio_selection_is_set()) {
+        fprintf(stderr, "Fehlende Option: --radio (433 oder 868)\n");
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }

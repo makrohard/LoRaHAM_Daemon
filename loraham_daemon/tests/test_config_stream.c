@@ -269,9 +269,14 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    info_msg("starting daemon: %s", g_bin);
+    info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)
         return 1;
+
+    if (start_daemon_868(g_bin) < 0) {
+        stop_daemon();
+        return 1;
+    }
 
     if (wait_all_sockets(DEFAULT_SOCKET_TIMEOUT_MS) < 0) {
         stop_daemon();

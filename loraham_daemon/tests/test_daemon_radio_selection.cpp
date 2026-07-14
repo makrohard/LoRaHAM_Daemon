@@ -32,11 +32,12 @@ static void expect_str(const char *name, const char *actual, const char *expecte
 
 static void test_default_selection(void)
 {
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_UNSET;
 
-    expect_str("default name", daemon_radio_selection_name(daemon_radio_selection), "both");
-    expect_int("default enables 433", daemon_radio_433_enabled(), 1);
-    expect_int("default enables 868", daemon_radio_868_enabled(), 1);
+    expect_str("default name", daemon_radio_selection_name(daemon_radio_selection), "unset");
+    expect_int("default is detectably unset", daemon_radio_selection_is_set(), 0);
+    expect_int("default disables 433", daemon_radio_433_enabled(), 0);
+    expect_int("default disables 868", daemon_radio_868_enabled(), 0);
 }
 
 static void test_parse_433(void)
@@ -55,24 +56,35 @@ static void test_parse_868(void)
     expect_int("868 enables 868", daemon_radio_868_enabled(), 1);
 }
 
-static void test_parse_both(void)
+static void test_parse_both_rejected(void)
 {
-    expect_int("parse both", daemon_parse_radio_selection("both"), 1);
-    expect_str("both name", daemon_radio_selection_name(daemon_radio_selection), "both");
-    expect_int("both enables 433", daemon_radio_433_enabled(), 1);
-    expect_int("both enables 868", daemon_radio_868_enabled(), 1);
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_UNSET;
+
+    expect_int("parse both fails", daemon_parse_radio_selection("both"), 0);
+    expect_str("both leaves selection unset",
+               daemon_radio_selection_name(daemon_radio_selection), "unset");
+    expect_int("both leaves selection detectably unset",
+               daemon_radio_selection_is_set(), 0);
 }
 
 static void test_invalid_selection(void)
 {
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_BOTH;
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_UNSET;
 
     expect_int("parse null fails", daemon_parse_radio_selection(NULL), 0);
     expect_int("parse invalid fails", daemon_parse_radio_selection("915"), 0);
     expect_str("invalid keeps previous selection",
-               daemon_radio_selection_name(daemon_radio_selection), "both");
+               daemon_radio_selection_name(daemon_radio_selection), "unset");
     expect_str("unknown enum name",
                daemon_radio_selection_name((DaemonRadioSelection)99), "unknown");
+}
+
+static void test_valid_selection_is_set(void)
+{
+    expect_int("parse 433 again", daemon_parse_radio_selection("433"), 1);
+    expect_int("433 selection is set", daemon_radio_selection_is_set(), 1);
+    expect_int("parse 868 again", daemon_parse_radio_selection("868"), 1);
+    expect_int("868 selection is set", daemon_radio_selection_is_set(), 1);
 }
 
 int main(int argc, char **argv)
@@ -97,8 +109,9 @@ int main(int argc, char **argv)
     test_default_selection();
     test_parse_433();
     test_parse_868();
-    test_parse_both();
+    test_parse_both_rejected();
     test_invalid_selection();
+    test_valid_selection_is_set();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 
