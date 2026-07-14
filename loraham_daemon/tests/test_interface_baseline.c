@@ -274,6 +274,40 @@ static int test_single_radio_socket_mode_868(void)
 }
 
 
+/* The SX1262 profile on a bench without the HAT: begin() fails with
+ * CHIP_NOT_FOUND, the one-line D8 diagnosis is printed, and because no
+ * selected radio becomes ready the daemon exits fail-closed without leaving
+ * sockets behind. Exercises the Sx1262Driver construction and
+ * begin()-failure path without hardware. */
+static int test_waveshare_profile_fails_closed(void)
+{
+    pid_t pid = fork();
+
+    if (pid < 0)
+        return TEST_FAIL;
+
+    if (pid == 0) {
+        setpgid(0, 0);
+        execl(g_bin, g_bin, "--radio", "868", "--hw", "waveshare-sx1262",
+              (char *)NULL);
+        _exit(127);
+    }
+
+    g_daemon_pid = pid;
+
+    /* Fail-closed startup: no ready radio -> process exits on its own. */
+    if (wait_owned_daemon_exit(15000) != TEST_PASS) {
+        fail_msg("daemon kept running despite missing SX1262");
+        stop_daemon();
+        return TEST_FAIL;
+    }
+
+    if (public_sockets_removed() < 0)
+        return TEST_FAIL;
+
+    return TEST_PASS;
+}
+
 /* --- Socket availability --- */
 
 static int test_all_sockets(void)
@@ -628,6 +662,8 @@ int main(int argc, char **argv)
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);
+    run_test("waveshare profile fails closed without HAT",
+             test_waveshare_profile_fails_closed);
 
     info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)

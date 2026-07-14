@@ -16,12 +16,36 @@
 #include "radio_driver.h"
 #include "radio_health.h"
 #include "sx127x_driver.h"
+#include "sx1262_driver.h"
 
 /* --- Profile helpers ------------------------------------------------------ */
 
 static uint32_t hw_pin_or_nc(int pin)
 {
     return pin < 0 ? RADIOLIB_NC : (uint32_t)pin;
+}
+
+/* Driver selection by profile chip family (is_hf mirrors today's band split:
+ * 433 -> SX1278, 868 -> RFM95 within the SX127x family). */
+static RadioDriver *hw_driver_create(Module *mod, bool is_hf)
+{
+    if (daemon_hw_profile.family == DAEMON_CHIP_FAMILY_SX1262)
+        return sx1262_driver_create(mod,
+                                    daemon_hw_profile.tcxo_voltage,
+                                    daemon_hw_profile.txen);
+
+    return sx127x_driver_create(mod, is_hf);
+}
+
+/* Family-aware D8 diagnosis dispatch (one line per failed radio). */
+static void hw_diagnose_begin_failure(Module *mod, const char *band, int state)
+{
+    if (daemon_hw_profile.family == DAEMON_CHIP_FAMILY_SX1262) {
+        sx1262_diagnose_begin_failure(band, state);
+        return;
+    }
+
+    sx127x_diagnose_begin_failure(mod, band, state);
 }
 
 /* One warm-start note for wiring without a reset line: a daemon restart is a
@@ -107,14 +131,7 @@ void lora_init(void) {
         return;
     }
 
-    if (daemon_radio_433_enabled() &&
-        daemon_hw_profile.family != DAEMON_CHIP_FAMILY_SX127X) {
-        radio_controller_433.health = RADIO_HEALTH_FAILED;
-        printf("[433] Init FEHLGESCHLAGEN: Chip-Familie %s (Profil %s) wird "
-               "von diesem Build noch nicht unterstützt\n",
-               daemon_chip_family_name(daemon_hw_profile.family),
-               daemon_hw_profile.name);
-    } else if (daemon_radio_433_enabled()) {
+    if (daemon_radio_433_enabled()) {
         daemon_radio_runtime_led(&radio_controller_433, 1);
 
         daemon_debug_band("433", "Objekte anlegen");
@@ -127,7 +144,7 @@ void lora_init(void) {
             hw_pin_or_nc(daemon_hw_profile.rst),
             hw_pin_or_nc(daemon_hw_profile.gpio)));
         radio_controller_433.driver.reset(
-            sx127x_driver_create(radio_controller_433.mod.get(), false));
+            hw_driver_create(radio_controller_433.mod.get(), false));
 
         daemon_debug_band("433", "begin()");
         /* Fail closed: never call begin() (which drives SPI) unless the
@@ -152,8 +169,8 @@ void lora_init(void) {
         } else {
             radio_controller_433.health = RADIO_HEALTH_FAILED;
             printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
-            sx127x_diagnose_begin_failure(radio_controller_433.mod.get(),
-                                          "433", state_433);
+            hw_diagnose_begin_failure(radio_controller_433.mod.get(),
+                                      "433", state_433);
             daemon_debug_band("433", "begin() Fehler %d", state_433);
         }
 
@@ -162,14 +179,7 @@ void lora_init(void) {
         daemon_debug_band("433", "Nicht ausgewählt");
     }
 
-    if (daemon_radio_868_enabled() &&
-        daemon_hw_profile.family != DAEMON_CHIP_FAMILY_SX127X) {
-        radio_controller_868.health = RADIO_HEALTH_FAILED;
-        printf("[868] Init FEHLGESCHLAGEN: Chip-Familie %s (Profil %s) wird "
-               "von diesem Build noch nicht unterstützt\n",
-               daemon_chip_family_name(daemon_hw_profile.family),
-               daemon_hw_profile.name);
-    } else if (daemon_radio_868_enabled()) {
+    if (daemon_radio_868_enabled()) {
         daemon_radio_runtime_led(&radio_controller_868, 1);
 
         daemon_debug_band("868", "Objekte anlegen");
@@ -182,7 +192,7 @@ void lora_init(void) {
             hw_pin_or_nc(daemon_hw_profile.rst),
             hw_pin_or_nc(daemon_hw_profile.gpio)));
         radio_controller_868.driver.reset(
-            sx127x_driver_create(radio_controller_868.mod.get(), true));
+            hw_driver_create(radio_controller_868.mod.get(), true));
 
         daemon_debug_band("868", "begin()");
         /* Fail closed: never call begin() (which drives SPI) unless the
@@ -207,8 +217,8 @@ void lora_init(void) {
         } else {
             radio_controller_868.health = RADIO_HEALTH_FAILED;
             printf("[868] Init FEHLGESCHLAGEN: %d\n", state_868);
-            sx127x_diagnose_begin_failure(radio_controller_868.mod.get(),
-                                          "868", state_868);
+            hw_diagnose_begin_failure(radio_controller_868.mod.get(),
+                                      "868", state_868);
             daemon_debug_band("868", "begin() Fehler %d", state_868);
         }
 
