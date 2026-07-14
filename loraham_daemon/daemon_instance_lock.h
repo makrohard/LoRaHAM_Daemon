@@ -6,9 +6,9 @@ extern "C" {
 #endif
 
 /*
- * Per-band instance-ownership locks.
+ * Per-band instance-ownership lock.
  *
- * Each selected band takes an exclusive advisory flock on
+ * The selected band takes an exclusive advisory flock on
  *   <runtime-dir>/instance-433.lock / instance-868.lock
  * held by an open descriptor for the ENTIRE process lifetime. The descriptor is
  * released only after all sockets have been closed and unlinked, so a same-band
@@ -21,20 +21,19 @@ extern "C" {
  */
 
 /*
- * Acquire ownership locks for the selected radio(s) BEFORE any socket/GPIO/SPI
- * or radio setup. For --radio both, both locks are acquired in deterministic
- * order (433 -> 868); if the second cannot be taken, the first is rolled back
- * and the call fails (no split ownership).
+ * Acquire the ownership lock for the selected radio BEFORE any socket/GPIO/SPI
+ * or radio setup. One instance lock per process; the per-transaction SPI lock
+ * is taken separately inside individual SPI transactions.
  *
- * Returns 0 on success, LORAHAM_EXIT_INSTANCE_BUSY if a selected band is already
- * owned by another process, or LORAHAM_EXIT_LOCK_ERROR if the lock
+ * Returns 0 on success, LORAHAM_EXIT_INSTANCE_BUSY if the selected band is
+ * already owned by another process, or LORAHAM_EXIT_LOCK_ERROR if the lock
  * infrastructure could not be established (fail closed). A diagnostic is printed
  * on failure.
  */
 int daemon_instance_lock_acquire(void);
 
 /*
- * Release all held instance locks. Safe to call when none are held. Must be
+ * Release the held instance lock. Safe to call when none is held. Must be
  * called only AFTER all sockets have been closed/unlinked.
  */
 void daemon_instance_lock_release(void);

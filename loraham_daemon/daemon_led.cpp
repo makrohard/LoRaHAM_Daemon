@@ -13,8 +13,8 @@
  * ownership and duplicate-instance rejection are handled by the per-band FD
  * locks in daemon_instance_lock (instance-433.lock / instance-868.lock).
  *
- * The LED line is claimed only for the band(s) selected via --radio, and a
- * failed claim of a *selected* band is treated as fatal by the caller because
+ * The LED line is claimed only for the single band selected via --radio, and a
+ * failed claim of the *selected* band is treated as fatal by the caller because
  * the LED is a required hardware resource for that band.
  */
 
@@ -89,7 +89,7 @@ int daemon_led_init(void)
         return -1;
     }
 
-    /* Claim the LED line only for the selected band(s). */
+    /* Claim the LED line only for the selected band. */
     if (daemon_led_claim_band(daemon_radio_433_enabled(),
                               DAEMON_LED_PIN_433,
                               &daemon_led_433_claimed, "433") < 0 ||
@@ -113,7 +113,7 @@ int daemon_led_ready(void)
     if (daemon_led_chip < 0)
         return 0;
 
-    /* Only the selected band(s) must hold their LED line. */
+    /* Only the selected band must hold its LED line. */
     if (daemon_radio_433_enabled() && !daemon_led_433_claimed)
         return 0;
 
