@@ -29,21 +29,18 @@ extern RadioChannelIo channel_868;
 
 
 /* --- RX log context ------------------------------------------------------ */
-template<typename RadioT>
-static const char *daemon_rx_log_ctx(RadioController<RadioT> *ctrl)
+static const char *daemon_rx_log_ctx(RadioController *ctrl)
 {
     return (ctrl && ctrl->band == RADIO_BAND_433) ? "RX433" : "RX868";
 }
 
-template<typename RadioT>
-static void daemon_note_rx_flag_observed(RadioController<RadioT> *ctrl)
+static void daemon_note_rx_flag_observed(RadioController *ctrl)
 {
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Flag gesetzt");
 }
 
 /* --- RX special cases ---------------------------------------------------- */
-template<typename RadioT>
-static void daemon_discard_rx_during_tx(RadioController<RadioT> *ctrl)
+static void daemon_discard_rx_during_tx(RadioController *ctrl)
 {
     ctrl->received.store(false);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX während TX verworfen");
@@ -81,8 +78,7 @@ static void daemon_print_ascii_bytes(const uint8_t *buf, int len)
 }
 
 /* --- RX presentation metadata ------------------------------------------- */
-template<typename RadioT>
-static const char *daemon_controller_color(RadioController<RadioT> *ctrl)
+static const char *daemon_controller_color(RadioController *ctrl)
 {
     if (ctrl->band == RADIO_BAND_433)
         return "93m";
@@ -186,8 +182,7 @@ static int16_t daemon_signal_to_centi(float value)
     return (int16_t)rounded;
 }
 
-template<typename RadioT>
-static DaemonRxSignal daemon_capture_rx_signal(RadioController<RadioT> *ctrl)
+static DaemonRxSignal daemon_capture_rx_signal(RadioController *ctrl)
 {
     DaemonRxSignal signal;
 
@@ -195,14 +190,14 @@ static DaemonRxSignal daemon_capture_rx_signal(RadioController<RadioT> *ctrl)
     signal.rssi_cdbm = FRAMED_DATA_SIGNAL_UNAVAILABLE;
     signal.snr_cdb = FRAMED_DATA_SIGNAL_UNAVAILABLE;
 
-    if (!ctrl || !ctrl->radio)
+    if (!ctrl || !ctrl->driver)
         return signal;
 
-    signal.rssi_dbm = ctrl->radio->getRSSI();
+    signal.rssi_dbm = ctrl->driver->getRSSI();
     signal.rssi_cdbm = daemon_signal_to_centi(signal.rssi_dbm);
 
     if (ctrl->mode == RADIO_MODE_LORA)
-        signal.snr_cdb = daemon_signal_to_centi(ctrl->radio->getSNR());
+        signal.snr_cdb = daemon_signal_to_centi(ctrl->driver->getSNR());
 
     return signal;
 }
@@ -245,16 +240,14 @@ static void daemon_broadcast_rx_data(RadioChannelIo *io,
 }
 
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */
-template<typename RadioT>
-static void daemon_restart_receive_after_empty_rx(RadioController<RadioT> *ctrl)
+static void daemon_restart_receive_after_empty_rx(RadioController *ctrl)
 {
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Leer-IRQ, RX neu starten");
-    ctrl->radio->clearIrq(0xFFFFFFFF);
-    ctrl->radio->startReceive();
+    ctrl->driver->clearIrq(0xFFFFFFFF);
+    ctrl->driver->startReceive();
 }
 
-template<typename RadioT>
-static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
+static void daemon_finish_rx_packet(RadioController *ctrl,
                                     uint8_t *buf,
                                     size_t buf_len)
 {
@@ -266,14 +259,13 @@ static void daemon_finish_rx_packet(RadioController<RadioT> *ctrl,
     // startReceive (standard SX127x order: readData -> clearIrq -> startReceive).
     // FSK clears in daemon_clear_irq_after_rx_read and stays unchanged.
     if (ctrl->mode == RADIO_MODE_LORA)
-        ctrl->radio->clearIrq(0xFFFFFFFF);
+        ctrl->driver->clearIrq(0xFFFFFFFF);
 
-    ctrl->radio->startReceive();
+    ctrl->driver->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit");
 }
 
-template<typename RadioT>
-static void daemon_prepare_rx_packet(RadioController<RadioT> *ctrl,
+static void daemon_prepare_rx_packet(RadioController *ctrl,
                                      uint8_t *buf,
                                      size_t buf_len)
 {
@@ -284,30 +276,27 @@ static void daemon_prepare_rx_packet(RadioController<RadioT> *ctrl,
     // Writing IRQ flags here can set FifoOverrun and clear the FIFO.
     if (ctrl->mode == RADIO_MODE_LORA) {
         daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "IRQ vor Read löschen");
-        ctrl->radio->clearIrq(0xFFFFFFFF);
+        ctrl->driver->clearIrq(0xFFFFFFFF);
     }
 }
 
-template<typename RadioT>
-static int daemon_rx_packet_length(RadioController<RadioT> *ctrl)
+static int daemon_rx_packet_length(RadioController *ctrl)
 {
-    int len = ctrl->radio->getPacketLength();
+    int len = ctrl->driver->getPacketLength();
 
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Länge %d", len);
     return len;
 }
 
-template<typename RadioT>
-static void daemon_clear_irq_after_rx_read(RadioController<RadioT> *ctrl)
+static void daemon_clear_irq_after_rx_read(RadioController *ctrl)
 {
     if (ctrl->mode == RADIO_MODE_FSK) {
         daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "IRQ nach Read löschen");
-        ctrl->radio->clearIrq(0xFFFFFFFF);
+        ctrl->driver->clearIrq(0xFFFFFFFF);
     }
 }
 
-template<typename RadioT>
-static void daemon_print_rx_packet(RadioController<RadioT> *ctrl,
+static void daemon_print_rx_packet(RadioController *ctrl,
                                    uint8_t *buf,
                                    int len,
                                    float rssi)
@@ -328,12 +317,11 @@ static void daemon_print_rx_packet(RadioController<RadioT> *ctrl,
 }
 
 /* --- RX radio accessors -------------------------------------------------- */
-template<typename RadioT>
-static int16_t daemon_read_rx_data(RadioController<RadioT> *ctrl,
+static int16_t daemon_read_rx_data(RadioController *ctrl,
                                    uint8_t *buf,
                                    size_t buf_len)
 {
-    return ctrl->radio->readData(buf, buf_len);
+    return ctrl->driver->readData(buf, buf_len);
 }
 
 /* --- RX read validation -------------------------------------------------- */
@@ -343,8 +331,7 @@ static bool daemon_should_log_rx_drop(unsigned long drops)
            (RX_DROP_LOG_INTERVAL > 0 && drops % RX_DROP_LOG_INTERVAL == 0);
 }
 
-template<typename RadioT>
-static void daemon_record_rx_drop(RadioController<RadioT> *ctrl, int16_t state)
+static void daemon_record_rx_drop(RadioController *ctrl, int16_t state)
 {
     daemon_radio_stats_record_rx_drop(&ctrl->stats);
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Drop %lu Status %d",
@@ -357,8 +344,7 @@ static void daemon_record_rx_drop(RadioController<RadioT> *ctrl, int16_t state)
     }
 }
 
-template<typename RadioT>
-static bool daemon_rx_read_ok(RadioController<RadioT> *ctrl, int16_t state)
+static bool daemon_rx_read_ok(RadioController *ctrl, int16_t state)
 {
     if (state == RADIOLIB_ERR_NONE)
         return true;
@@ -367,8 +353,7 @@ static bool daemon_rx_read_ok(RadioController<RadioT> *ctrl, int16_t state)
     return false;
 }
 
-template<typename RadioT>
-static void daemon_record_rx_invalid_packet(RadioController<RadioT> *ctrl,
+static void daemon_record_rx_invalid_packet(RadioController *ctrl,
                                             const char *reason,
                                             int len)
 {
@@ -389,8 +374,7 @@ static void daemon_record_rx_invalid_packet(RadioController<RadioT> *ctrl,
     }
 }
 
-template<typename RadioT>
-static bool daemon_rx_length_ok(RadioController<RadioT> *ctrl,
+static bool daemon_rx_length_ok(RadioController *ctrl,
                                 int len,
                                 size_t buf_len)
 {
@@ -405,8 +389,7 @@ static bool daemon_rx_length_ok(RadioController<RadioT> *ctrl,
     return true;
 }
 
-template<typename RadioT>
-static bool daemon_rx_packet_ok(RadioController<RadioT> *ctrl,
+static bool daemon_rx_packet_ok(RadioController *ctrl,
                                 uint8_t *buf,
                                 int len)
 {
@@ -424,23 +407,21 @@ static bool daemon_rx_packet_ok(RadioController<RadioT> *ctrl,
     return true;
 }
 
-template<typename RadioT>
-static void daemon_drop_invalid_rx_packet(RadioController<RadioT> *ctrl)
+static void daemon_drop_invalid_rx_packet(RadioController *ctrl)
 {
     ctrl->received.store(false);
-    ctrl->radio->clearIrq(0xFFFFFFFF);
-    ctrl->radio->startReceive();
+    ctrl->driver->clearIrq(0xFFFFFFFF);
+    ctrl->driver->startReceive();
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit nach Drop");
 }
 
 
 /* --- RX band flow -------------------------------------------------------- */
-template<typename RadioT>
-static void daemon_process_radio_band(RadioController<RadioT> *ctrl,
+static void daemon_process_radio_band(RadioController *ctrl,
                                       RadioChannelIo *io,
                                       uint8_t (&rx_buf)[buf_SIZE])
 {
-    if (!radio_controller_ready(ctrl) || !ctrl->radio)
+    if (!radio_controller_ready(ctrl) || !ctrl->driver)
         return;
 
     // Shared RX flow for both bands.

@@ -9,7 +9,10 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
-struct FakeRadio {
+// Fake-Treiber: MODE-Wechsel und Parameter-Apply laufen über die virtuellen
+// RadioDriver-Methoden; die Zähler-Semantik entspricht dem alten
+// Template-Fake (begin()/beginFSK()-Zähler + Apply-Zähler).
+struct FakeRadio : public RadioDriver {
     int begin_count;
     int begin_fsk_count;
     int lora_apply_count;
@@ -18,6 +21,7 @@ struct FakeRadio {
     int begin_fsk_result;
 
     FakeRadio() :
+        RadioDriver(NULL),
         begin_count(0),
         begin_fsk_count(0),
         lora_apply_count(0),
@@ -27,42 +31,35 @@ struct FakeRadio {
     {
     }
 
-    int begin()
+    int16_t switchMode(RadioMode_t mode) override
     {
+        if (mode == RADIO_MODE_FSK) {
+            begin_fsk_count++;
+            return begin_fsk_result;
+        }
+
         begin_count++;
         return begin_result;
     }
 
-    int beginFSK()
+    void applyLoraParam(const char *, const std::string &,
+                        const std::string &) override
     {
-        begin_fsk_count++;
-        return begin_fsk_result;
+        lora_apply_count++;
     }
+
+    void applyFskParam(const char *, const std::string &,
+                       const std::string &) override
+    {
+        fsk_apply_count++;
+    }
+
+    int16_t begin(const RadioRfDefaults *) override { return begin_result; }
+    int16_t clearIrq(uint32_t) override { return 0; }
+    float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    float rssiProbe() override { return -200.0f; }
+    const char *chipName() const override { return "FAKE"; }
 };
-
-void apply_lora_param(FakeRadio &radio,
-                      const char *tag,
-                      const std::string &key,
-                      const std::string &val)
-{
-    (void)tag;
-    (void)key;
-    (void)val;
-
-    radio.lora_apply_count++;
-}
-
-void apply_fsk_param(FakeRadio &radio,
-                     const char *tag,
-                     const std::string &key,
-                     const std::string &val)
-{
-    (void)tag;
-    (void)key;
-    (void)val;
-
-    radio.fsk_apply_count++;
-}
 
 /* --- Test helpers --- */
 
@@ -83,7 +80,7 @@ static void apply_cmd(FakeRadio &radio,
                       RadioMode_t &mode,
                       std::atomic<bool> &getrssi)
 {
-    parse_and_apply_config_generic<FakeRadio>(radio, "TEST", cmd, mode, getrssi);
+    parse_and_apply_config_generic(radio, "TEST", cmd, mode, getrssi);
 }
 
 /* --- Tests --------------------------------------------------------------- */

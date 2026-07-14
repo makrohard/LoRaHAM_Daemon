@@ -304,8 +304,7 @@ static inline int config_status_is_set_cadtxaftertimeout(const char *line, int *
     return 0;
 }
 
-template<typename RadioT>
-static inline size_t config_status_txq_pending(const RadioController<RadioT> *ctrl)
+static inline size_t config_status_txq_pending(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -314,8 +313,7 @@ static inline size_t config_status_txq_pending(const RadioController<RadioT> *ct
         radio_controller_band_number(ctrl));
 }
 
-template<typename RadioT>
-static inline size_t config_status_txq_dropped(const RadioController<RadioT> *ctrl)
+static inline size_t config_status_txq_dropped(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -324,8 +322,7 @@ static inline size_t config_status_txq_dropped(const RadioController<RadioT> *ct
         radio_controller_band_number(ctrl));
 }
 
-template<typename RadioT>
-static inline size_t config_status_txq_rejected(const RadioController<RadioT> *ctrl)
+static inline size_t config_status_txq_rejected(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -334,8 +331,7 @@ static inline size_t config_status_txq_rejected(const RadioController<RadioT> *c
         radio_controller_band_number(ctrl));
 }
 
-template<typename RadioT>
-static inline size_t config_status_txq_stale(const RadioController<RadioT> *ctrl)
+static inline size_t config_status_txq_stale(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -345,9 +341,8 @@ static inline size_t config_status_txq_stale(const RadioController<RadioT> *ctrl
 }
 
 
-template<typename RadioT>
 static inline size_t config_status_txq_result_dropped(
-    const RadioController<RadioT> *ctrl)
+    const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -357,8 +352,7 @@ static inline size_t config_status_txq_result_dropped(
 }
 
 
-template<typename RadioT>
-static inline size_t config_status_txq_processed(const RadioController<RadioT> *ctrl)
+static inline size_t config_status_txq_processed(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tx_queue_active.load())
         return 0;
@@ -368,8 +362,7 @@ static inline size_t config_status_txq_processed(const RadioController<RadioT> *
 }
 
 
-template<typename RadioT>
-static inline int config_status_txq_last_result(const RadioController<RadioT> *ctrl,
+static inline int config_status_txq_last_result(const RadioController *ctrl,
                                                 DaemonTxJobResult *result)
 {
     if (!ctrl || !result)
@@ -382,8 +375,7 @@ static inline int config_status_txq_last_result(const RadioController<RadioT> *c
                                                        result);
 }
 
-template<typename RadioT>
-static inline const char *config_status_txq_last_name(const RadioController<RadioT> *ctrl)
+static inline const char *config_status_txq_last_name(const RadioController *ctrl)
 {
     DaemonTxJobResult result;
 
@@ -393,8 +385,7 @@ static inline const char *config_status_txq_last_name(const RadioController<Radi
     return tx_result_name(result.tx_result);
 }
 
-template<typename RadioT>
-static inline unsigned config_status_txq_last_seq(const RadioController<RadioT> *ctrl)
+static inline unsigned config_status_txq_last_seq(const RadioController *ctrl)
 {
     DaemonTxJobResult result;
 
@@ -404,10 +395,9 @@ static inline unsigned config_status_txq_last_seq(const RadioController<RadioT> 
     return result.seq;
 }
 
-template<typename RadioT>
 static inline void config_status_format(char *buf,
                                         size_t buf_size,
-                                        const RadioController<RadioT> *ctrl)
+                                        const RadioController *ctrl)
 {
     snprintf(buf,
              buf_size,
@@ -450,10 +440,9 @@ static inline const char *config_status_cad_state_name(RadioCadProbeStatus statu
     return "UNAVAILABLE";
 }
 
-template<typename RadioT>
-static inline float config_status_live_rssi_dbm(RadioController<RadioT> *ctrl)
+static inline float config_status_live_rssi_dbm(RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->mod || ctrl->tx_busy.load())
+    if (!ctrl || !ctrl->driver || ctrl->tx_busy.load())
         return -200.0f;
 
     std::unique_lock<std::recursive_mutex> radio_lock(
@@ -461,22 +450,13 @@ static inline float config_status_live_rssi_dbm(RadioController<RadioT> *ctrl)
     if (!radio_lock.owns_lock() || ctrl->tx_busy.load())
         return -200.0f;
 
-    uint8_t reg = (ctrl->mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
-    int16_t raw = ctrl->mod->SPIgetRegValue(reg, 7, 0);
-
-    if (raw < 0)
-        return -200.0f;
-
-    if (ctrl->mode == RADIO_MODE_LORA)
-        return (ctrl->is_hf ? -157.0f : -164.0f) + (float)raw;
-
-    return -((float)raw) / 2.0f;
+    // Chip-native raw register read; lives in the driver.
+    return ctrl->driver->readLiveRssi(ctrl->mode, ctrl->is_hf);
 }
 
-template<typename RadioT>
 static inline void config_status_format_channel(char *buf,
                                                 size_t buf_size,
-                                                RadioController<RadioT> *ctrl)
+                                                RadioController *ctrl)
 {
     int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
     float live_rssi = config_status_live_rssi_dbm(ctrl);
@@ -521,10 +501,9 @@ static inline void config_status_format_channel(char *buf,
              radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
 }
 
-template<typename RadioT>
 static inline void config_status_format_stats(char *buf,
                                              size_t buf_size,
-                                             const RadioController<RadioT> *ctrl)
+                                             const RadioController *ctrl)
 {
     long uptime = daemon_stats_uptime_seconds(daemon_now_ms());
 

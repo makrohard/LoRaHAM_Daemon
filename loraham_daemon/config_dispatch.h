@@ -64,29 +64,26 @@ static inline void config_dispatch_log_slot(const ConfigDispatchLog *log,
     config_dispatch_log_message(log, line);
 }
 
-template<typename RadioT>
 struct ConfigDispatchContext {
     ClientSlot *slots;
-    RadioController<RadioT> *ctrl;
+    RadioController *ctrl;
     const char *tag;
-    ConfigApplyFn<RadioT> apply_config;
+    ConfigApplyFn apply_config;
     ConfigDispatchLog log;
 };
 
-template<typename RadioT>
 struct ConfigLineApplyContext {
     ClientSlot *slot;
-    RadioController<RadioT> *ctrl;
+    RadioController *ctrl;
     const char *tag;
-    ConfigApplyFn<RadioT> apply_config;
+    ConfigApplyFn apply_config;
     ConfigDispatchLog log;
 };
 
-template<typename RadioT>
-static void config_dispatch_apply_line(const char *line, void *user)
+static inline void config_dispatch_apply_line(const char *line, void *user)
 {
-    ConfigLineApplyContext<RadioT> *ctx =
-        (ConfigLineApplyContext<RadioT> *)user;
+    ConfigLineApplyContext *ctx =
+        (ConfigLineApplyContext *)user;
 
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
@@ -218,7 +215,7 @@ static void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
-    if(!ctx->ctrl || !ctx->ctrl->radio ||
+    if(!ctx->ctrl || !ctx->ctrl->driver ||
        !radio_controller_ready(ctx->ctrl)) {
         config_dispatch_log_message(&ctx->log, "Radio nicht bereit");
         printf("[%s] RADIO=%s CONFIG ignored\n",
@@ -233,33 +230,32 @@ static void config_dispatch_apply_line(const char *line, void *user)
     {
         std::lock_guard<std::recursive_mutex> radio_lock(ctx->ctrl->radio_mutex);
 
-        ctx->apply_config(*ctx->ctrl->radio, ctx->tag, line,
+        ctx->apply_config(*ctx->ctrl->driver, ctx->tag, line,
                           ctx->ctrl->mode, ctx->ctrl->getrssi_active);
 
         // beginFSK()/begin() clears the IRQ callback.
-        ctx->ctrl->radio->setPacketReceivedAction(ctx->ctrl->rx_callback);
+        ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
         config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
-        ctx->ctrl->radio->startReceive();
+        ctx->ctrl->driver->startReceive();
     }
     config_dispatch_log_message(&ctx->log, "RX neu gestartet");
 }
 
-template<typename RadioT>
-static void config_dispatch_client(ClientSlot *slots,
-                                   int index,
-                                   const EventLoopReadySet *readfds,
-                                   uint8_t *buf,
-                                   RadioController<RadioT> *ctrl,
-                                   const char *tag,
-                                   ConfigApplyFn<RadioT> apply_config,
-                                   ConfigDispatchLog log)
+static inline void config_dispatch_client(ClientSlot *slots,
+                                          int index,
+                                          const EventLoopReadySet *readfds,
+                                          uint8_t *buf,
+                                          RadioController *ctrl,
+                                          const char *tag,
+                                          ConfigApplyFn apply_config,
+                                          ConfigDispatchLog log)
 {
     ClientSlot *slot = &slots[index];
 
     if(!client_slot_ready(slot, readfds))
         return;
 
-    ConfigLineApplyContext<RadioT> line_ctx = {
+    ConfigLineApplyContext line_ctx = {
         slot,
         ctrl,
         tag,
@@ -287,7 +283,7 @@ static void config_dispatch_client(ClientSlot *slots,
     if(n == 0) {
         config_dispatch_log_slot(&log, index, "EOF, Stream flush");
         if(config_stream_flush(&slot->stream,
-                               config_dispatch_apply_line<RadioT>,
+                               config_dispatch_apply_line,
                                &line_ctx) != 0) {
             config_dispatch_log_slot(&log, index, "Flush-Fehler");
             printf("[%s] CONFIG stream flush error\n", tag);
@@ -302,7 +298,7 @@ static void config_dispatch_client(ClientSlot *slots,
     config_dispatch_log_bytes(&log, n);
 
     if(config_stream_feed(&slot->stream, buf, (size_t)n,
-                          config_dispatch_apply_line<RadioT>,
+                          config_dispatch_apply_line,
                           &line_ctx) != 0) {
         config_dispatch_log_slot(&log, index, "Stream zu lang, Client zu");
         printf("[%s] CONFIG stream too long, client closed\n", tag);
@@ -312,34 +308,32 @@ static void config_dispatch_client(ClientSlot *slots,
     }
 }
 
-template<typename RadioT>
-static void config_dispatch_clients(ClientSlot *slots,
-                                    int max_clients,
-                                    const EventLoopReadySet *readfds,
-                                    uint8_t *buf,
-                                    RadioController<RadioT> *ctrl,
-                                    const char *tag,
-                                     ConfigApplyFn<RadioT> apply_config,
-                                    ConfigDispatchLog log)
+static inline void config_dispatch_clients(ClientSlot *slots,
+                                           int max_clients,
+                                           const EventLoopReadySet *readfds,
+                                           uint8_t *buf,
+                                           RadioController *ctrl,
+                                           const char *tag,
+                                           ConfigApplyFn apply_config,
+                                           ConfigDispatchLog log)
 {
     for(int i=0;i<max_clients;i++){
-        config_dispatch_client<RadioT>(slots, i, readfds, buf,
-                                       ctrl, tag,
-                                       apply_config, log);
+        config_dispatch_client(slots, i, readfds, buf,
+                               ctrl, tag,
+                               apply_config, log);
     }
 }
 
-template<typename RadioT>
-static void config_dispatch_context(ConfigDispatchContext<RadioT> *ctx,
-                                    int max_clients,
-                                    const EventLoopReadySet *readfds,
-                                    uint8_t *buf)
+static inline void config_dispatch_context(ConfigDispatchContext *ctx,
+                                           int max_clients,
+                                           const EventLoopReadySet *readfds,
+                                           uint8_t *buf)
 {
-    config_dispatch_clients<RadioT>(ctx->slots,
-                                    max_clients, readfds, buf,
-                                    ctx->ctrl, ctx->tag,
-                                    ctx->apply_config,
-                                    ctx->log);
+    config_dispatch_clients(ctx->slots,
+                            max_clients, readfds, buf,
+                            ctx->ctrl, ctx->tag,
+                            ctx->apply_config,
+                            ctx->log);
 }
 
 #endif

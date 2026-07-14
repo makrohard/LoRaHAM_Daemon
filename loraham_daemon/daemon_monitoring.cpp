@@ -21,14 +21,12 @@ extern RadioChannelIo channel_433;
 extern RadioChannelIo channel_868;
 
 /* --- CAD/RSSI log contexts ---------------------------------------------- */
-template<typename RadioT>
-static const char *daemon_cad_log_ctx(RadioController<RadioT> *ctrl)
+static const char *daemon_cad_log_ctx(RadioController *ctrl)
 {
     return (ctrl && ctrl->band == RADIO_BAND_433) ? "CAD433" : "CAD868";
 }
 
-template<typename RadioT>
-static const char *daemon_rssi_log_ctx(RadioController<RadioT> *ctrl)
+static const char *daemon_rssi_log_ctx(RadioController *ctrl)
 {
     return (ctrl && ctrl->band == RADIO_BAND_433) ? "RSSI433" : "RSSI868";
 }
@@ -36,8 +34,7 @@ static const char *daemon_rssi_log_ctx(RadioController<RadioT> *ctrl)
 
 
 /* --- TX status ----------------------------------------------------------- */
-template<typename RadioT>
-static void daemon_process_tx_status(RadioController<RadioT> *ctrl,
+static void daemon_process_tx_status(RadioController *ctrl,
                                      RadioChannelIo *io)
 {
     uint32_t observed;
@@ -74,14 +71,13 @@ static void daemon_process_tx_status_all(void)
 }
 
 /* --- CAD status ---------------------------------------------------------- */
-template<typename RadioT>
-static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
+static void daemon_process_cad_status(RadioController *ctrl,
                                       RadioChannelIo *io)
 {
     if (!io || !client_slot_has_clients(io->conf_slots, MAX_CLIENTS))
         return;
 
-    if (!radio_controller_ready(ctrl) || !ctrl->radio)
+    if (!radio_controller_ready(ctrl) || !ctrl->driver)
         return;
 
     if (ctrl->mode != RADIO_MODE_LORA)
@@ -112,14 +108,13 @@ static void daemon_process_cad_status(RadioController<RadioT> *ctrl,
 /* --- RSSI streaming ------------------------------------------------------- */
 /*
  * GETRSSI streams live RSSI on the matching CONF socket.
- * RSSI is read directly from SX127x RegRssiValue because RadioLib getRSSI()
- * reports the last packet RSSI in LoRa mode.
+ * RSSI comes from the driver's raw live-RSSI read (chip register) because
+ * RadioLib getRSSI() reports the last packet RSSI in LoRa mode.
  *
  * Skip reads during TX. Auto-stop when no CONF client remains connected.
  */
-template<typename RadioT>
 static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
-                                                     RadioController<RadioT> *ctrl)
+                                                     RadioController *ctrl)
 {
     if(!client_slot_has_clients(io->conf_slots, MAX_CLIENTS) && ctrl->getrssi_active.load()) {
         const char *ctx = daemon_rssi_log_ctx(ctrl);
@@ -129,8 +124,7 @@ static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
     }
 }
 
-template<typename RadioT>
-static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
+static void daemon_process_rssi_stream_one(RadioController *ctrl,
                                            RadioChannelIo *io)
 {
     const char *ctx = daemon_rssi_log_ctx(ctrl);
@@ -143,15 +137,13 @@ static void daemon_process_rssi_stream_one(RadioController<RadioT> *ctrl,
         return;
     }
 
-    if (!radio_controller_ready(ctrl) || !ctrl->mod) {
+    if (!radio_controller_ready(ctrl) || !ctrl->driver) {
         daemon_debug_ctx(ctx, "Radio nicht bereit");
         return;
     }
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
-    float rssi = radio_channel_read_live_rssi(ctrl->mod.get(),
-                                              ctrl->mode,
-                                              ctrl->is_hf);
+    float rssi = ctrl->driver->readLiveRssi(ctrl->mode, ctrl->is_hf);
     char rssi_msg[32];
     snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi);
     daemon_debug_ctx(ctx, "Sende %.2f dBm", rssi);
@@ -179,8 +171,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 }
 
 /* --- Periodic operator stats -------------------------------------------- */
-template<typename RadioT>
-static void daemon_print_radio_stats(RadioController<RadioT> *ctrl)
+static void daemon_print_radio_stats(RadioController *ctrl)
 {
     char fields[256];
     long uptime = daemon_stats_uptime_seconds(daemon_now_ms());

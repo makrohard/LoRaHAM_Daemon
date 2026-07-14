@@ -22,12 +22,11 @@ typedef int (*DaemonFramedTxResultDeferredFn)(void *ctx);
 typedef void (*DaemonFramedTxTargetFn)(void *ctx, int slot_index, uint32_t generation, uint16_t seq);
 typedef uint8_t (*DaemonFramedTxManagedFlagFn)(void *ctx);
 
-template<typename RadioT>
-static int send_framed_data_packet(uint8_t *payload,
-                                   size_t len,
-                                   void *ctx)
+static inline int send_framed_data_packet(uint8_t *payload,
+                                          size_t len,
+                                          void *ctx)
 {
-    return send_data_chunk<RadioT>(payload, len, 0, ctx);
+    return send_data_chunk(payload, len, 0, ctx);
 }
 
 void daemon_process_framed_data_slots(const char *tag,

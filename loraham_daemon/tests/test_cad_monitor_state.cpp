@@ -17,7 +17,9 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
-struct FakeRadio {
+// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
+// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+struct FakeRadio : public RadioDriver {
     int scan_result;
     int scan_count;
     int callback_count;
@@ -26,42 +28,59 @@ struct FakeRadio {
     float rssi;
     void (*last_callback)(void);
 
-    FakeRadio() : scan_result(0), scan_count(0), callback_count(0),
+    FakeRadio() : RadioDriver(NULL),
+                  scan_result(0), scan_count(0), callback_count(0),
                   start_receive_count(0), clear_irq_count(0),
                   rssi(-120.0f), last_callback(NULL) {}
 
-    void setPacketReceivedAction(void (*cb)(void))
+    void setPacketReceivedAction(void (*cb)(void)) override
     {
         last_callback = cb;
         callback_count++;
     }
 
-    void startReceive()
+    int16_t startReceive() override
     {
         start_receive_count++;
+        return 0;
     }
 
-    void clearIrq(uint32_t)
+    int16_t clearIrq(uint32_t) override
     {
         clear_irq_count++;
+        return 0;
     }
 
-    int scanChannel()
+    int16_t scanChannel() override
     {
         scan_count++;
         return scan_result;
     }
 
-    float getRSSI()
+    float getRSSI() override
     {
         return rssi;
     }
 
-    float getRSSI(bool, bool)
+    float rssiProbe() override
     {
         return rssi;
     }
+
+    int16_t begin(const RadioRfDefaults *) override { return 0; }
+    int16_t switchMode(RadioMode_t) override { return 0; }
+    void applyLoraParam(const char *, const std::string &,
+                        const std::string &) override {}
+    void applyFskParam(const char *, const std::string &,
+                       const std::string &) override {}
+    float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    const char *chipName() const override { return "FAKE"; }
 };
+
+static FakeRadio *fake(RadioController *ctrl)
+{
+    return static_cast<FakeRadio *>(ctrl->driver.get());
+}
 
 static void fake_rx_callback(void)
 {
@@ -78,7 +97,7 @@ static void expect_int(const char *name, int actual, int expected)
     }
 }
 
-static void init_ctrl(RadioController<FakeRadio> *ctrl,
+static void init_ctrl(RadioController *ctrl,
                       RadioHealth health,
                       RadioMode_t mode)
 {
@@ -88,14 +107,14 @@ static void init_ctrl(RadioController<FakeRadio> *ctrl,
                           false,
                           fake_rx_callback,
                           13);
-    ctrl->radio.reset(new FakeRadio());
+    ctrl->driver.reset(new FakeRadio());
     ctrl->health = health;
     ctrl->mode = mode;
 }
 
-static int tick_edge(RadioController<FakeRadio> *ctrl, float rssi)
+static int tick_edge(RadioController *ctrl, float rssi)
 {
-    ctrl->radio->rssi = rssi;
+    fake(ctrl)->rssi = rssi;
     return daemon_cad_monitor_tick(ctrl).edge;
 }
 
@@ -162,7 +181,7 @@ static void test_next_busy_dead_band_cancels(void)
 
 static void test_tick_initial_free_is_silent(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
 
@@ -174,7 +193,7 @@ static void test_tick_initial_free_is_silent(void)
 
 static void test_tick_free_to_busy_single_edge(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
 
@@ -187,7 +206,7 @@ static void test_tick_free_to_busy_single_edge(void)
 
 static void test_tick_busy_to_confirmed_free(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     tick_edge(&ctrl, -80.0f);
@@ -208,7 +227,7 @@ static void test_tick_busy_to_confirmed_free(void)
 
 static void test_tick_rx_pending_does_not_suppress_cad0(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     tick_edge(&ctrl, -80.0f);
@@ -228,7 +247,7 @@ static void test_tick_rx_pending_does_not_suppress_cad0(void)
 
 static void test_tick_dead_band_no_flicker(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
 
@@ -248,7 +267,7 @@ static void test_tick_dead_band_no_flicker(void)
 
 static void test_tick_interrupted_confirmation(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     tick_edge(&ctrl, -80.0f);
@@ -274,7 +293,7 @@ static void test_tick_interrupted_confirmation(void)
 
 static void test_tick_is_non_destructive(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
 
@@ -284,16 +303,16 @@ static void test_tick_is_non_destructive(void)
     tick_edge(&ctrl, -95.0f);
 
     // Monitoring must never touch RX or run active CAD scans.
-    expect_int("monitor no scanChannel", ctrl.radio->scan_count, 0);
-    expect_int("monitor no startReceive", ctrl.radio->start_receive_count, 0);
+    expect_int("monitor no scanChannel", fake(&ctrl)->scan_count, 0);
+    expect_int("monitor no startReceive", fake(&ctrl)->start_receive_count, 0);
     expect_int("monitor no setPacketReceivedAction",
-               ctrl.radio->callback_count, 0);
-    expect_int("monitor no clearIrq", ctrl.radio->clear_irq_count, 0);
+               fake(&ctrl)->callback_count, 0);
+    expect_int("monitor no clearIrq", fake(&ctrl)->clear_irq_count, 0);
 }
 
 static void test_tick_unavailable_keeps_state(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     DaemonCadMonitorTick tick;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
@@ -301,7 +320,7 @@ static void test_tick_unavailable_keeps_state(void)
     tick_edge(&ctrl, -95.0f);
 
     ctrl.mode = RADIO_MODE_FSK;
-    ctrl.radio->rssi = -95.0f;
+    fake(&ctrl)->rssi = -95.0f;
     tick = daemon_cad_monitor_tick(&ctrl);
     expect_int("unavailable not sampled", tick.sampled, 0);
     expect_int("unavailable no edge", tick.edge, 0);
@@ -313,7 +332,7 @@ static void test_tick_unavailable_keeps_state(void)
 
 static void test_tick_after_latch_reset(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     tick_edge(&ctrl, -80.0f);

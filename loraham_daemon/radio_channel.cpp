@@ -1,7 +1,5 @@
 #include "radio_channel.h"
 
-#include <RadioLib.h>
-
 #include "daemon_protocol.h"
 #include "unix_socket.h"
 #include "client_slot.h"
@@ -149,21 +147,6 @@ void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *read
 }
 
 /* --- Channel RSSI -------------------------------------------------------- */
-// Read live RSSI directly from the SX127x register.
-
-float radio_channel_read_live_rssi(Module *mod,
-                                   RadioMode_t mode,
-                                   bool is_hf)
-{
-    uint8_t reg = (mode == RADIO_MODE_LORA) ? 0x1B : 0x11;
-    int16_t raw = mod->SPIgetRegValue(reg, 7, 0);
-
-    if (raw < 0)
-        return -200.0f;
-
-    if (mode == RADIO_MODE_LORA)
-        return (is_hf ? -157.0f : -164.0f) + (float)raw;
-
-    return -((float)raw) / 2.0f;
-}
+// Live-RSSI liegt jetzt im chip-spezifischen Treiber
+// (RadioDriver::readLiveRssi); hier bleibt nur Socket-/Client-Logik.
 

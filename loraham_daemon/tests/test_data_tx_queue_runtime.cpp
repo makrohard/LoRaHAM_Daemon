@@ -49,7 +49,9 @@ void daemon_led_flash_pin(int pin)
 
 
 
-struct FakeRadio {
+// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
+// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+struct FakeRadio : public RadioDriver {
     int scan_count;
     int scan_state;
     int scan_pattern[16];
@@ -59,29 +61,32 @@ struct FakeRadio {
     float rssi;
     void (*last_callback)(void);
 
-    FakeRadio() : scan_count(0), scan_state(0), scan_pattern_len(0),
+    FakeRadio() : RadioDriver(NULL),
+                  scan_count(0), scan_state(0), scan_pattern_len(0),
                   callback_count(0), start_receive_count(0), rssi(-81.0f),
                   last_callback(NULL)
     {
         memset(scan_pattern, 0, sizeof(scan_pattern));
     }
 
-    void setPacketReceivedAction(void (*cb)(void))
+    void setPacketReceivedAction(void (*cb)(void)) override
     {
         last_callback = cb;
         callback_count++;
     }
 
-    void startReceive()
+    int16_t startReceive() override
     {
         start_receive_count++;
+        return 0;
     }
 
-    void clearIrq(uint32_t)
+    int16_t clearIrq(uint32_t) override
     {
+        return 0;
     }
 
-    int scanChannel()
+    int16_t scanChannel() override
     {
         int idx = scan_count;
 
@@ -92,16 +97,30 @@ struct FakeRadio {
         return scan_state;
     }
 
-    float getRSSI()
+    float getRSSI() override
     {
         return rssi;
     }
 
-    float getRSSI(bool, bool)
+    float rssiProbe() override
     {
         return rssi;
     }
+
+    int16_t begin(const RadioRfDefaults *) override { return 0; }
+    int16_t switchMode(RadioMode_t) override { return 0; }
+    void applyLoraParam(const char *, const std::string &,
+                        const std::string &) override {}
+    void applyFskParam(const char *, const std::string &,
+                       const std::string &) override {}
+    float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    const char *chipName() const override { return "FAKE"; }
 };
+
+static FakeRadio *fake(RadioController *ctrl)
+{
+    return static_cast<FakeRadio *>(ctrl->driver.get());
+}
 
 typedef struct {
     int calls;
@@ -162,8 +181,8 @@ static int wait_async_processed(int band, size_t expected)
     return 0;
 }
 
-static void init_context(RadioController<FakeRadio> *ctrl,
-                         DataTxDaemonContext<FakeRadio> *ctx,
+static void init_context(RadioController *ctrl,
+                         DataTxDaemonContext *ctx,
                          FakeSender *sender)
 {
     radio_controller_init(ctrl,
@@ -172,7 +191,7 @@ static void init_context(RadioController<FakeRadio> *ctrl,
                           false,
                           fake_rx_callback,
                           13);
-    ctrl->radio.reset(new FakeRadio());
+    ctrl->driver.reset(new FakeRadio());
     ctrl->health = RADIO_HEALTH_READY;
     ctrl->mode = RADIO_MODE_FSK;
     ctrl->cad_wait_timeout_ms.store(2u);
@@ -202,8 +221,8 @@ static void init_context(RadioController<FakeRadio> *ctrl,
 
 static void test_default_direct_path(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 1, 2, 3 };
 
@@ -212,7 +231,7 @@ static void test_default_direct_path(void)
     ctrl.tx_queue_active.store(false);
 
     expect_int("direct tx result",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("direct sender calls", sender.calls, 1);
     expect_int("direct frontdoor led untouched", g_led_set_count, 0);
@@ -226,8 +245,8 @@ static void test_default_direct_path(void)
 
 static void test_txqueue_optin_path(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 4, 5, 6, 7 };
 
@@ -238,7 +257,7 @@ static void test_txqueue_optin_path(void)
     ctx.completion_generation = 9u;
 
     expect_int("queue tx result",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("queue processed wait", wait_async_processed(433, 1), 1);
     expect_int("queue sender calls", sender.calls, 1);
@@ -308,8 +327,8 @@ static void test_txqueue_direct_full_rejects_newest(void)
 
 static void test_direct_tx_busy_timeout_blocks_send(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 1, 2 };
 
@@ -318,10 +337,10 @@ static void test_direct_tx_busy_timeout_blocks_send(void)
     ctrl.tx_busy.store(true);
 
     expect_int("direct tx busy wait times out",
-               data_tx_wait_tx_ready_with_limits<FakeRadio>(&ctrl, 2, 0),
+               data_tx_wait_tx_ready_with_limits(&ctrl, 2, 0),
                1);
     expect_int("direct tx busy no send",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                DAEMON_TX_OUTCOME_CHANNEL_BUSY);
     expect_int("direct tx busy sender calls", sender.calls, 0);
     expect_size("direct tx busy stats", ctrl.stats.tx_busy, 1);
@@ -329,8 +348,8 @@ static void test_direct_tx_busy_timeout_blocks_send(void)
 
 static void test_queued_tx_skips_frontdoor_tx_busy_wait(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 2, 3 };
 
@@ -339,7 +358,7 @@ static void test_queued_tx_skips_frontdoor_tx_busy_wait(void)
     ctrl.tx_busy.store(true);
 
     expect_int("queued tx accepted while tx busy",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("queued tx processed wait", wait_async_processed(433, 1), 1);
     expect_int("queued tx sender calls", sender.calls, 1);
@@ -348,23 +367,23 @@ static void test_queued_tx_skips_frontdoor_tx_busy_wait(void)
 
 static void test_tx_busy_wait_clears(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.tx_busy.store(false);
 
     expect_int("tx busy clear immediately",
-               data_tx_wait_tx_ready_with_limits<FakeRadio>(&ctrl, 2, 0),
+               data_tx_wait_tx_ready_with_limits(&ctrl, 2, 0),
                0);
 }
 
 
 static void test_direct_transmits_on_busy_channel_sync(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 9 };
 
@@ -372,33 +391,33 @@ static void test_direct_transmits_on_busy_channel_sync(void)
     ctrl.tx_queue_active.store(false);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
-    ctrl.radio->scan_state = 1; // channel busy
+    fake(&ctrl)->scan_state = 1; // channel busy
 
     // DIRECT transmits immediately even on a busy LoRa channel: no CAD probe,
     // no busy/timeout drop.
     expect_int("direct busy tx result",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("direct busy sends", sender.calls, 1);
-    expect_int("direct busy no cad probe", ctrl.radio->scan_count, 0);
+    expect_int("direct busy no cad probe", fake(&ctrl)->scan_count, 0);
 }
 
 static void test_managed_busy_timeout_policy_blocks_by_default(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     DaemonTxJob job;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 1;
+    fake(&ctrl)->scan_state = 1;
 
     expect_int("managed busy timeout blocks by default",
-               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 2, 3, 0),
+               data_tx_wait_channel_free_with_limits(&ctx, 2, 3, 0),
                DATA_TX_CAD_WAIT_BLOCK);
-    expect_int("managed busy timeout probe count", ctrl.radio->scan_count, 2);
+    expect_int("managed busy timeout probe count", fake(&ctrl)->scan_count, 2);
 
     daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 79);
     data_tx_configure_job_cad_policy(&ctx, &job);
@@ -409,41 +428,41 @@ static void test_managed_busy_timeout_policy_blocks_by_default(void)
 
 static void test_managed_free_waits_for_stable_idle(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 0;
+    fake(&ctrl)->scan_state = 0;
 
     expect_int("managed stable idle sends",
-               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
+               data_tx_wait_channel_free_with_limits(&ctx, 5, 3, 0),
                DATA_TX_CAD_WAIT_FREE);
-    expect_int("managed stable idle probes", ctrl.radio->scan_count, 3);
+    expect_int("managed stable idle probes", fake(&ctrl)->scan_count, 3);
 }
 
 static void test_managed_busy_resets_stable_idle(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_pattern[0] = 0;
-    ctrl.radio->scan_pattern[1] = 1;
-    ctrl.radio->scan_pattern[2] = 0;
-    ctrl.radio->scan_pattern[3] = 0;
-    ctrl.radio->scan_pattern[4] = 0;
-    ctrl.radio->scan_pattern_len = 5;
+    fake(&ctrl)->scan_pattern[0] = 0;
+    fake(&ctrl)->scan_pattern[1] = 1;
+    fake(&ctrl)->scan_pattern[2] = 0;
+    fake(&ctrl)->scan_pattern[3] = 0;
+    fake(&ctrl)->scan_pattern[4] = 0;
+    fake(&ctrl)->scan_pattern_len = 5;
 
     expect_int("managed busy resets idle sends",
-               data_tx_wait_channel_free_with_limits<FakeRadio>(&ctx, 5, 3, 0),
+               data_tx_wait_channel_free_with_limits(&ctx, 5, 3, 0),
                DATA_TX_CAD_WAIT_FREE);
-    expect_int("managed busy resets idle probes", ctrl.radio->scan_count, 5);
+    expect_int("managed busy resets idle probes", fake(&ctrl)->scan_count, 5);
 }
 
 
@@ -476,18 +495,18 @@ static void test_cad_free_does_not_set_timeout_flag(void)
 
 static void test_worker_cad_mode_check_uses_radio_lock(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_FSK;
 
     expect_int("worker FSK CAD reports free",
-               daemon_data_tx_worker_cad_probe<FakeRadio>(433, &ctrl),
+               daemon_data_tx_worker_cad_probe(433, &ctrl),
                DAEMON_TX_CAD_PROBE_FREE);
     expect_int("worker FSK CAD does not scan",
-               ctrl.radio->scan_count,
+               fake(&ctrl)->scan_count,
                0);
 
     daemon_tx_async_runtime_shutdown();
@@ -496,8 +515,8 @@ static void test_worker_cad_mode_check_uses_radio_lock(void)
 
 static void test_queued_cad_callback_survives_later_non_cad_config(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     DaemonTxAsyncWorker *worker;
     DaemonTxJob protected_job;
@@ -508,7 +527,7 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 1;
+    fake(&ctrl)->scan_state = 1;
 
     worker = daemon_tx_async_runtime_worker_for_band(433);
     daemon_tx_async_worker_configure(worker, fake_send, &sender, NULL, NULL);
@@ -530,7 +549,7 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
     expect_int("queued CAD callback processed",
                wait_async_processed(433, 1),
                1);
-    expect_int("queued CAD callback probe", ctrl.radio->scan_count, 1);
+    expect_int("queued CAD callback probe", fake(&ctrl)->scan_count, 1);
     expect_int("queued CAD callback blocks send", sender.calls, 0);
     expect_int("queued CAD callback last result",
                daemon_tx_async_runtime_last_result_for_band(433, &last),
@@ -545,8 +564,8 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
 
 static void test_queued_managed_cad_timeout_blocks_in_worker(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 6, 7 };
 
@@ -554,17 +573,17 @@ static void test_queued_managed_cad_timeout_blocks_in_worker(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 1;
+    fake(&ctrl)->scan_state = 1;
     ctx.completion_seq = 55;
 
     expect_int("queued managed cad accepted",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("queued managed cad no frontdoor scan",
-               ctrl.radio->scan_count <= 1 ? 1 : 0,
+               fake(&ctrl)->scan_count <= 1 ? 1 : 0,
                1);
     expect_int("queued managed cad processed wait", wait_async_processed(433, 1), 1);
-    expect_int("queued managed cad worker probes", ctrl.radio->scan_count, 2);
+    expect_int("queued managed cad worker probes", fake(&ctrl)->scan_count, 2);
     expect_int("queued managed cad timeout blocks send", sender.calls, 0);
     expect_size("queued managed cad stats no tx ok", ctrl.stats.tx_ok, 0);
     expect_size("queued managed cad stats no cadsend", ctrl.stats.cad_timeout_sends, 0);
@@ -584,8 +603,8 @@ static void test_queued_managed_cad_timeout_blocks_in_worker(void)
 
 static void test_direct_transmits_on_busy_channel_queued(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     DaemonTxJob job;
     uint8_t payload[] = { 8 };
@@ -594,7 +613,7 @@ static void test_direct_transmits_on_busy_channel_queued(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
-    ctrl.radio->scan_state = 1; // channel busy
+    fake(&ctrl)->scan_state = 1; // channel busy
     ctx.completion_seq = 56;
 
     // DIRECT disables CAD on the queued job, so the worker transmits immediately
@@ -604,10 +623,10 @@ static void test_direct_transmits_on_busy_channel_queued(void)
     expect_int("queued direct cad disabled", (int)job.cad_enabled, 0);
 
     expect_int("queued direct accepted",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("queued direct processed wait", wait_async_processed(433, 1), 1);
-    expect_int("queued direct no worker probe", ctrl.radio->scan_count, 0);
+    expect_int("queued direct no worker probe", fake(&ctrl)->scan_count, 0);
     expect_int("queued direct sends", sender.calls, 1);
     expect_size("queued direct stats tx ok", ctrl.stats.tx_ok, 1);
     expect_size("queued direct stats no cadtimeout", ctrl.stats.cad_timeouts, 0);
@@ -624,8 +643,8 @@ static void test_direct_transmits_on_busy_channel_queued(void)
 
 static void test_managed_completion_sets_managed_flag(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 7 };
 
@@ -633,10 +652,10 @@ static void test_managed_completion_sets_managed_flag(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 0; // channel free -> transmits
+    fake(&ctrl)->scan_state = 0; // channel free -> transmits
 
     expect_int("queued managed accepted",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("queued managed processed wait", wait_async_processed(433, 1), 1);
     expect_int("queued managed sends", sender.calls, 1);
@@ -652,38 +671,38 @@ static void test_managed_completion_sets_managed_flag(void)
 
 static void test_runtime_switch_direct_then_managed(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 7 };
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.tx_queue_active.store(false);
     ctrl.mode = RADIO_MODE_LORA;
-    ctrl.radio->scan_state = 1; // channel busy throughout
+    fake(&ctrl)->scan_state = 1; // channel busy throughout
 
     // Runtime switch to DIRECT: send transmits immediately on a busy channel.
     ctrl.tx_mode = RADIO_TX_MODE_DIRECT;
     expect_int("switch direct transmits",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
     expect_int("switch direct sent once", sender.calls, 1);
-    expect_int("switch direct no probe", ctrl.radio->scan_count, 0);
+    expect_int("switch direct no probe", fake(&ctrl)->scan_count, 0);
 
     // Runtime switch back to MANAGED: gating returns, busy channel drops the TX.
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
     expect_int("switch managed blocks",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                DAEMON_TX_OUTCOME_CHANNEL_BUSY);
     expect_int("switch managed no extra send", sender.calls, 1);
-    expect_int("switch managed probed", ctrl.radio->scan_count > 0 ? 1 : 0, 1);
+    expect_int("switch managed probed", fake(&ctrl)->scan_count > 0 ? 1 : 0, 1);
 }
 
 
 static void test_not_ready_still_short_circuits(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload[] = { 1 };
 
@@ -692,7 +711,7 @@ static void test_not_ready_still_short_circuits(void)
     ctrl.health = RADIO_HEALTH_FAILED;
 
     expect_int("not ready tx result",
-               send_data_chunk<FakeRadio>(payload, sizeof(payload), 0, &ctx),
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
                DAEMON_TX_OUTCOME_RADIO_NOT_READY);
     expect_int("not ready no send", sender.calls, 0);
     expect_size("not ready no queued", daemon_tx_async_runtime_pending_for_band(433), 0);
@@ -700,8 +719,8 @@ static void test_not_ready_still_short_circuits(void)
 
 static void test_controller_cad_policy_snapshot(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     DaemonTxJob job;
 
@@ -734,21 +753,21 @@ static void test_controller_cad_policy_snapshot(void)
 
 static void test_managed_busy_timeout_send_when_opt_in(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     DaemonTxJob job;
 
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 1;   /* Kanal bleibt belegt */
+    fake(&ctrl)->scan_state = 1;   /* Kanal bleibt belegt */
 
     /* Opt-in: nach CAD-Timeout trotzdem senden. */
     expect_int("managed busy timeout sends when opt-in",
-               data_tx_wait_channel_free_with_limits_ex<FakeRadio>(&ctx, 2, 3, 0, true),
+               data_tx_wait_channel_free_with_limits_ex(&ctx, 2, 3, 0, true),
                DATA_TX_CAD_WAIT_TIMEOUT_SEND);
-    expect_int("managed busy timeout send probe count", ctrl.radio->scan_count, 2);
+    expect_int("managed busy timeout send probe count", fake(&ctrl)->scan_count, 2);
 
     /* Queued-Snapshot traegt das Opt-in mit. */
     ctrl.cad_send_after_timeout.store(true);
@@ -762,8 +781,8 @@ static void test_managed_busy_timeout_send_when_opt_in(void)
 
 static void test_queue_long_wait_does_not_starve_later_job(void)
 {
-    RadioController<FakeRadio> ctrl;
-    DataTxDaemonContext<FakeRadio> ctx;
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
     FakeSender sender;
     uint8_t payload_a[] = { 1 };
     uint8_t payload_b[] = { 2 };
@@ -772,18 +791,18 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    ctrl.radio->scan_state = 1;   /* Kanal fuer beide Jobs belegt */
+    fake(&ctrl)->scan_state = 1;   /* Kanal fuer beide Jobs belegt */
 
     /* Job A laeuft beschraenkt in den CAD-Timeout, nicht 20 s. */
     ctx.completion_seq = 60;
     expect_int("starve guard job A accepted",
-               send_data_chunk<FakeRadio>(payload_a, sizeof(payload_a), 0, &ctx),
+               send_data_chunk(payload_a, sizeof(payload_a), 0, &ctx),
                0);
 
     /* Job B direkt dahinter. */
     ctx.completion_seq = 61;
     expect_int("starve guard job B accepted",
-               send_data_chunk<FakeRadio>(payload_b, sizeof(payload_b), 0, &ctx),
+               send_data_chunk(payload_b, sizeof(payload_b), 0, &ctx),
                0);
 
     /* Beide muessen abgearbeitet werden: A blockiert B nicht. */
@@ -793,7 +812,7 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
 
     /* Pro Job auf cad_wait_ticks (2) beschraenkt -> Gesamtprobes beschraenkt. */
     expect_int("starve guard bounded probes",
-               ctrl.radio->scan_count <= 4 ? 1 : 0, 1);
+               fake(&ctrl)->scan_count <= 4 ? 1 : 0, 1);
     expect_int("starve guard no transmit on busy", sender.calls, 0);
 
     daemon_tx_async_runtime_shutdown();

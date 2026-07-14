@@ -44,9 +44,8 @@ static inline void data_tx_apply_cad_decision_flags(DaemonTxJob *job,
         job->flags |= FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT;
 }
 
-template<typename RadioT>
 struct DataTxDaemonContext {
-    RadioController<RadioT> *ctrl;
+    RadioController *ctrl;
     const char *log_ctx;
     DaemonTxSendFn send_fn;
     void *send_ctx;
@@ -64,23 +63,21 @@ void daemon_data_tx_trace_message(void *ctx, const char *msg);
 DataTxLog daemon_data_tx_log(const char *ctx);
 
 
-template<typename RadioT>
-static int daemon_data_tx_result_deferred(void *ctx)
+static inline int daemon_data_tx_result_deferred(void *ctx)
 {
-    DataTxDaemonContext<RadioT> *tx =
-        (DataTxDaemonContext<RadioT> *)ctx;
+    DataTxDaemonContext *tx =
+        (DataTxDaemonContext *)ctx;
 
     return tx && tx->ctrl && tx->ctrl->tx_queue_active.load();
 }
 
-template<typename RadioT>
-static void daemon_data_tx_set_completion_target(void *ctx,
+static inline void daemon_data_tx_set_completion_target(void *ctx,
                                                  int slot_index,
                                                  uint32_t generation,
                                                  uint16_t seq)
 {
-    DataTxDaemonContext<RadioT> *tx =
-        (DataTxDaemonContext<RadioT> *)ctx;
+    DataTxDaemonContext *tx =
+        (DataTxDaemonContext *)ctx;
 
     if (!tx)
         return;
@@ -97,9 +94,8 @@ struct DataTxCadPolicy {
     bool       send_after_timeout;
 };
 
-template<typename RadioT>
-static DataTxCadPolicy data_tx_snapshot_cad_policy(
-    const RadioController<RadioT> *ctrl)
+static inline DataTxCadPolicy data_tx_snapshot_cad_policy(
+    const RadioController *ctrl)
 {
     DataTxCadPolicy p;
 
@@ -122,10 +118,9 @@ static DataTxCadPolicy data_tx_snapshot_cad_policy(
     return p;
 }
 
-template<typename RadioT>
-static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
+static inline int data_tx_probe_channel_busy(DataTxDaemonContext *tx)
 {
-    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    RadioController *ctrl = tx ? tx->ctrl : NULL;
     RadioCadProbeResult probe;
 
     if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
@@ -135,15 +130,14 @@ static int data_tx_probe_channel_busy(DataTxDaemonContext<RadioT> *tx)
     return probe.status == RADIO_CAD_PROBE_BUSY;
 }
 
-template<typename RadioT>
-static int data_tx_wait_channel_free_with_limits_ex(
-    DataTxDaemonContext<RadioT> *tx,
+static inline int data_tx_wait_channel_free_with_limits_ex(
+    DataTxDaemonContext *tx,
     uint32_t max_ticks,
     uint32_t stable_idle_ticks,
     useconds_t sleep_usec,
     bool send_after_timeout)
 {
-    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    RadioController *ctrl = tx ? tx->ctrl : NULL;
     uint32_t cad_wait = 0;
     uint32_t free_ticks = 0;
     uint32_t required_free_ticks = stable_idle_ticks ? stable_idle_ticks : 1u;
@@ -175,8 +169,7 @@ static int data_tx_wait_channel_free_with_limits_ex(
            DATA_TX_CAD_WAIT_BLOCK;
 }
 
-template<typename RadioT>
-static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx,
+static inline int data_tx_wait_channel_free_with_limits(DataTxDaemonContext *tx,
                                                  uint32_t max_ticks,
                                                  uint32_t stable_idle_ticks,
                                                  useconds_t sleep_usec)
@@ -185,18 +178,16 @@ static int data_tx_wait_channel_free_with_limits(DataTxDaemonContext<RadioT> *tx
         tx, max_ticks, stable_idle_ticks, sleep_usec, false);
 }
 
-template<typename RadioT>
-static int data_tx_wait_channel_free(DataTxDaemonContext<RadioT> *tx)
+static inline int data_tx_wait_channel_free(DataTxDaemonContext *tx)
 {
-    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    RadioController *ctrl = tx ? tx->ctrl : NULL;
     DataTxCadPolicy p = data_tx_snapshot_cad_policy(ctrl);
     return data_tx_wait_channel_free_with_limits_ex(
         tx, p.cad_wait_ticks, p.cad_idle_stable_ticks,
         p.cad_sleep_usec, p.send_after_timeout);
 }
 
-template<typename RadioT>
-static int data_tx_wait_tx_ready_with_limits(RadioController<RadioT> *ctrl,
+static inline int data_tx_wait_tx_ready_with_limits(RadioController *ctrl,
                                              uint32_t max_ticks,
                                              useconds_t sleep_usec)
 {
@@ -217,8 +208,7 @@ static int data_tx_wait_tx_ready_with_limits(RadioController<RadioT> *ctrl,
     return 0;
 }
 
-template<typename RadioT>
-static int data_tx_wait_tx_ready(RadioController<RadioT> *ctrl)
+static inline int data_tx_wait_tx_ready(RadioController *ctrl)
 {
     return data_tx_wait_tx_ready_with_limits(
         ctrl,
@@ -226,22 +216,20 @@ static int data_tx_wait_tx_ready(RadioController<RadioT> *ctrl)
         (useconds_t)daemon_tx_policy_poll_interval_usec());
 }
 
-template<typename RadioT>
-static int daemon_data_tx_result_enabled(void *ctx)
+static inline int daemon_data_tx_result_enabled(void *ctx)
 {
-    DataTxDaemonContext<RadioT> *tx =
-        (DataTxDaemonContext<RadioT> *)ctx;
+    DataTxDaemonContext *tx =
+        (DataTxDaemonContext *)ctx;
 
     return tx && tx->ctrl && tx->ctrl->tx_result_active.load();
 }
 
 // Managed flag for an immediate framed TX_RESULT: set only in MANAGED mode
 // (DIRECT sends without CAD/LBT and must not advertise the managed flag).
-template<typename RadioT>
-static uint8_t daemon_data_tx_managed_flag(void *ctx)
+static inline uint8_t daemon_data_tx_managed_flag(void *ctx)
 {
-    DataTxDaemonContext<RadioT> *tx =
-        (DataTxDaemonContext<RadioT> *)ctx;
+    DataTxDaemonContext *tx =
+        (DataTxDaemonContext *)ctx;
 
     if (tx && tx->ctrl && tx->ctrl->tx_mode == RADIO_TX_MODE_MANAGED)
         return FRAMED_DATA_TX_RESULT_FLAG_MANAGED;
@@ -249,11 +237,10 @@ static uint8_t daemon_data_tx_managed_flag(void *ctx)
     return 0;
 }
 
-template<typename RadioT>
-static uint16_t daemon_data_tx_next_result_seq(void *ctx)
+static inline uint16_t daemon_data_tx_next_result_seq(void *ctx)
 {
-    DataTxDaemonContext<RadioT> *tx =
-        (DataTxDaemonContext<RadioT> *)ctx;
+    DataTxDaemonContext *tx =
+        (DataTxDaemonContext *)ctx;
 
     if (!tx || !tx->ctrl)
         return 0;
@@ -263,10 +250,9 @@ static uint16_t daemon_data_tx_next_result_seq(void *ctx)
 }
 
 
-template<typename RadioT>
-static int daemon_data_tx_worker_cad_probe(int band, void *ctx)
+static inline int daemon_data_tx_worker_cad_probe(int band, void *ctx)
 {
-    RadioController<RadioT> *ctrl = (RadioController<RadioT> *)ctx;
+    RadioController *ctrl = (RadioController *)ctx;
     RadioCadProbeResult probe;
 
     if (!ctrl || band != radio_controller_band_number(ctrl))
@@ -298,9 +284,8 @@ static inline void daemon_data_tx_worker_cad_sleep(uint32_t usec, void *ctx)
         usleep((useconds_t)usec);
 }
 
-template<typename RadioT>
-static void daemon_data_tx_configure_worker_cad(DaemonTxAsyncWorker *async,
-                                                DataTxDaemonContext<RadioT> *tx,
+static inline void daemon_data_tx_configure_worker_cad(DaemonTxAsyncWorker *async,
+                                                DataTxDaemonContext *tx,
                                                 const DaemonTxJob *job)
 {
     if (!async)
@@ -314,17 +299,16 @@ static void daemon_data_tx_configure_worker_cad(DaemonTxAsyncWorker *async,
     }
 
     daemon_tx_async_worker_configure_cad(async,
-                                         daemon_data_tx_worker_cad_probe<RadioT>,
+                                         daemon_data_tx_worker_cad_probe,
                                          tx->ctrl,
                                          daemon_data_tx_worker_cad_sleep,
                                          NULL);
 }
 
-template<typename RadioT>
-static void data_tx_configure_job_cad_policy(DataTxDaemonContext<RadioT> *tx,
+static inline void data_tx_configure_job_cad_policy(DataTxDaemonContext *tx,
                                              DaemonTxJob *job)
 {
-    RadioController<RadioT> *ctrl = tx ? tx->ctrl : NULL;
+    RadioController *ctrl = tx ? tx->ctrl : NULL;
 
     if (!tx || !job || !ctrl || ctrl->mode != RADIO_MODE_LORA) {
         daemon_tx_job_configure_cad_policy(job, 0, 0, 0, 0, 0);
@@ -346,8 +330,7 @@ static void data_tx_configure_job_cad_policy(DataTxDaemonContext<RadioT> *tx,
                                        cad_p.send_after_timeout ? 1 : 0);
 }
 
-template<typename RadioT>
-static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> *tx,
+static inline DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext *tx,
                                                     const DaemonTxJob *job,
                                                     DaemonTxSendFn send_fn)
 {
@@ -400,11 +383,10 @@ static DaemonTxJobResult daemon_data_tx_execute_job(DataTxDaemonContext<RadioT> 
     return result;
 }
 
-template<typename RadioT>
-static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
+static inline int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 {
-    DataTxDaemonContext<RadioT> *tx = (DataTxDaemonContext<RadioT> *)ctx;
-    RadioController<RadioT> *ctrl = tx->ctrl;
+    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
+    RadioController *ctrl = tx->ctrl;
     const char *tag = radio_controller_tag(ctrl);
     int band = radio_controller_band_number(ctrl);
 
@@ -497,8 +479,7 @@ static int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     return 0;
 }
 
-template<typename RadioT>
-static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT> *ctrl)
+static inline DataTxDaemonContext daemon_data_tx_context(RadioController *ctrl)
 {
     const char *log_ctx = "TX?";
 
@@ -507,7 +488,7 @@ static DataTxDaemonContext<RadioT> daemon_data_tx_context(RadioController<RadioT
     else if (ctrl && ctrl->band == RADIO_BAND_868)
         log_ctx = "TX868";
 
-    DataTxDaemonContext<RadioT> ctx = {
+    DataTxDaemonContext ctx = {
         ctrl,
         log_ctx,
         daemon_tx_executor_default_send,

@@ -10,6 +10,7 @@
 
 #include "daemon_tx_policy.h"
 #include "radio_channel.h"
+#include "radio_driver.h"
 #include "daemon_stats.h"
 #include "radio_health.h"
 
@@ -36,7 +37,8 @@ static inline const char *radio_mode_name(RadioMode_t mode)
     return mode == RADIO_MODE_FSK ? "FSK" : "LORA";
 }
 
-template<typename RadioT>
+// Chip access runs through the RadioDriver runtime interface; the controller
+// itself is chip-agnostic (no template parameter anymore).
 struct RadioController {
     RadioBand_t band;
     const char *tag;
@@ -44,7 +46,7 @@ struct RadioController {
 
     std::unique_ptr<PiHal> hal;
     std::unique_ptr<Module> mod;
-    std::unique_ptr<RadioT> radio;
+    std::unique_ptr<RadioDriver> driver;
     std::recursive_mutex radio_mutex;
 
     RadioHealth health;
@@ -84,8 +86,7 @@ struct RadioController {
     int led_state;
 };
 
-template<typename RadioT>
-static inline void radio_controller_init(RadioController<RadioT> *ctrl,
+static inline void radio_controller_init(RadioController *ctrl,
                                          RadioBand_t band,
                                          const char *tag,
                                          bool is_hf,
@@ -101,7 +102,7 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
 
     ctrl->hal.reset();
     ctrl->mod.reset();
-    ctrl->radio.reset();
+    ctrl->driver.reset();
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->mode = RADIO_MODE_LORA;
@@ -134,14 +135,12 @@ static inline void radio_controller_init(RadioController<RadioT> *ctrl,
     ctrl->led_state = -1;
 }
 
-template<typename RadioT>
-static inline int radio_controller_band_number(const RadioController<RadioT> *ctrl)
+static inline int radio_controller_band_number(const RadioController *ctrl)
 {
     return ctrl ? (int)ctrl->band : 0;
 }
 
-template<typename RadioT>
-static inline const char *radio_controller_tag(const RadioController<RadioT> *ctrl)
+static inline const char *radio_controller_tag(const RadioController *ctrl)
 {
     if (!ctrl || !ctrl->tag)
         return "?";
@@ -149,38 +148,33 @@ static inline const char *radio_controller_tag(const RadioController<RadioT> *ct
     return ctrl->tag;
 }
 
-template<typename RadioT>
-static inline RadioHealth *radio_controller_health_ptr(RadioController<RadioT> *ctrl)
+static inline RadioHealth *radio_controller_health_ptr(RadioController *ctrl)
 {
     return ctrl ? &ctrl->health : nullptr;
 }
 
-template<typename RadioT>
-static inline RadioHealth radio_controller_health(const RadioController<RadioT> *ctrl)
+static inline RadioHealth radio_controller_health(const RadioController *ctrl)
 {
     return ctrl ? ctrl->health : RADIO_HEALTH_FAILED;
 }
 
-template<typename RadioT>
-static inline bool radio_controller_ready(const RadioController<RadioT> *ctrl)
+static inline bool radio_controller_ready(const RadioController *ctrl)
 {
     return radio_health_is_ready(radio_controller_health(ctrl));
 }
 
-template<typename RadioT>
-static inline RadioMode_t radio_controller_mode(const RadioController<RadioT> *ctrl)
+static inline RadioMode_t radio_controller_mode(const RadioController *ctrl)
 {
     return ctrl ? ctrl->mode : RADIO_MODE_LORA;
 }
 
-template<typename RadioT>
-static inline float radio_controller_packet_rssi(RadioController<RadioT> *ctrl)
+static inline float radio_controller_packet_rssi(RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->radio)
+    if (!ctrl || !ctrl->driver)
         return -200.0f;
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
-    return ctrl->radio->getRSSI();
+    return ctrl->driver->getRSSI();
 }
 
 #endif

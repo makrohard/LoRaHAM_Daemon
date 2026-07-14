@@ -36,26 +36,26 @@ static ConfigDispatchLog daemon_config_log(const char *ctx)
     return log;
 }
 
-ConfigDispatchContext<SX1278> daemon_config_433_context(void)
+ConfigDispatchContext daemon_config_433_context(void)
 {
-    ConfigDispatchContext<SX1278> ctx = {
+    ConfigDispatchContext ctx = {
         client_conf433_slots,
         &radio_controller_433,
         "CONF433",
-        config_apply_command<SX1278>,
+        config_apply_command,
         daemon_config_log("CONFIG433")
     };
 
     return ctx;
 }
 
-ConfigDispatchContext<RFM95> daemon_config_868_context(void)
+ConfigDispatchContext daemon_config_868_context(void)
 {
-    ConfigDispatchContext<RFM95> ctx = {
+    ConfigDispatchContext ctx = {
         client_conf868_slots,
         &radio_controller_868,
         "CONF868",
-        config_apply_command<RFM95>,
+        config_apply_command,
         daemon_config_log("CONFIG868")
     };
 

@@ -13,7 +13,9 @@
 #include "daemon_radio_selection.h"
 #include "hardware_profile.h"
 #include "radio_controller.h"
+#include "radio_driver.h"
 #include "radio_health.h"
+#include "sx127x_driver.h"
 
 /* --- Profile helpers ------------------------------------------------------ */
 
@@ -35,46 +37,55 @@ static void hw_log_reset_note(const char *band)
            band, daemon_hw_profile.name);
 }
 
+/* --- Boot-RF-Defaults ------------------------------------------------------ */
+// Per-band boot defaults, applied inside RadioDriver::begin() in the exact
+// pre-driver setter order. LDRO: 433 = autoLDRO()+forceLDRO(1), 868 = nur
+// autoLDRO() (Feld ldro: >=0 forciert, <0 auto).
+
+// LoRa-APRS:
+static const RadioRfDefaults rf_defaults_433 = {
+    433.900f,   /* freq_mhz */
+    12,         /* spreading_factor */
+    125.0f,     /* bandwidth_khz */
+    0x12,       /* sync_word */
+    8,          /* preamble_len */
+    5,          /* coding_rate */
+    true,       /* crc_on */
+    1,          /* ldro: autoLDRO() + forceLDRO(1) */
+    10          /* power_dbm */
+};
+
 /*
- * D8: exactly one profile-aware diagnosis line for a failed SX127x begin().
- * For CHIP_NOT_FOUND a raw RegVersion (0x42) read distinguishes "no response"
- * (module absent / CE switch / wrong profile) from "responds with unexpected
- * ID" (wrong chip family / wrong profile). Log-only heuristic; the
- * authoritative gate stays begin()'s return and the fail-closed health path.
- * The read goes through Module::SPIgetRegValue and thus inherits the SPI
- * flock and runs only after begin() already failed.
- */
-static void hw_diagnose_sx127x_failure(Module *mod, const char *band,
-                                       int state)
-{
-    const DaemonHardwareProfile *hw = &daemon_hw_profile;
-    char pins[96];
+*
+* // LoRa DX Cluster:
+*    433.900 / SF10 / BW125.0 / Sync 0x12 / Preamble 8 / CR5 / CRC an /
+*    autoLDRO() / 10 dBm
+*
+*
+*
+* // Meshtastic 433:
+*
+*    433.900 (DB0ARD) / SF11 / BW125.0 / Sync 0x2B / Preamble 16 / CR5 /
+*    CRC an / autoLDRO() / 10 dBm
+*
+*
+* // Meshcom:
+*
+*    433.175 / SF11 / BW250.0 / Sync 0x2B / Preamble 8 / CR6 / CRC an /
+*    (kein autoLDRO) / 10 dBm
+*/
 
-    snprintf(pins, sizeof(pins), "CS=%d DIO0=%d RST=%d DIO1=%d LED=%d",
-             hw->cs, hw->irq, hw->rst, hw->gpio, hw->led_pin);
-
-    if (state == RADIOLIB_ERR_CHIP_NOT_FOUND && mod) {
-        int16_t ver = mod->SPIgetRegValue(0x42, 7, 0);
-
-        if (ver <= 0 || ver == 0x00 || ver == 0xFF) {
-            printf("[%s] Diagnose (Profil %s): keine Antwort auf CS=BCM%d – "
-                   "Modul fehlt, CE-Schalter falsch oder falsches Profil; "
-                   "Pins laut Profil: %s (hält ein anderer Prozess eine "
-                   "dieser Leitungen?)\n",
-                   band, hw->name, hw->cs, pins);
-        } else {
-            printf("[%s] Diagnose (Profil %s): Chip antwortet mit ID 0x%02X "
-                   "(erwartet 0x12) – falsche Chip-Familie oder falsches "
-                   "Profil; Pins laut Profil: %s\n",
-                   band, hw->name, (unsigned)ver, pins);
-        }
-        return;
-    }
-
-    printf("[%s] Diagnose (Profil %s): begin() Fehler %d; Pins laut Profil: "
-           "%s (hält ein anderer Prozess eine dieser Leitungen?)\n",
-           band, hw->name, state, pins);
-}
+static const RadioRfDefaults rf_defaults_868 = {
+    869.525f,   /* freq_mhz */
+    11,         /* spreading_factor */
+    250.0f,     /* bandwidth_khz */
+    0x2B,       /* sync_word */
+    16,         /* preamble_len */
+    5,          /* coding_rate */
+    true,       /* crc_on */
+    -1,         /* ldro: nur autoLDRO() */
+    10          /* power_dbm */
+};
 
 /* --- Radio startup/init -------------------------------------------------- */
 void lora_init(void) {
@@ -115,7 +126,8 @@ void lora_init(void) {
             hw_pin_or_nc(daemon_hw_profile.irq),
             hw_pin_or_nc(daemon_hw_profile.rst),
             hw_pin_or_nc(daemon_hw_profile.gpio)));
-        radio_controller_433.radio.reset(new SX1278(radio_controller_433.mod.get()));
+        radio_controller_433.driver.reset(
+            sx127x_driver_create(radio_controller_433.mod.get(), false));
 
         daemon_debug_band("433", "begin()");
         /* Fail closed: never call begin() (which drives SPI) unless the
@@ -123,7 +135,7 @@ void lora_init(void) {
         int state_433;
         if (static_cast<LockingPiHal *>(radio_controller_433.hal.get())
                 ->spi_lock_ready()) {
-            state_433 = radio_controller_433.radio->begin();
+            state_433 = radio_controller_433.driver->begin(&rf_defaults_433);
         } else {
             state_433 = RADIOLIB_ERR_SPI_CMD_FAILED;
             printf("[SPI] Fehler: SPI-Sperre für 433 nicht verfügbar – "
@@ -134,66 +146,14 @@ void lora_init(void) {
             printf("[433] Init OK\n");
             daemon_debug_ctx("433", "Radio bereit");
 
-            // LoRa-APRS:
-            radio_controller_433.radio->setFrequency(433.900);
-            radio_controller_433.radio->setSpreadingFactor(12);
-            radio_controller_433.radio->setBandwidth(125.0);
-            radio_controller_433.radio->setSyncWord(0x12);
-            radio_controller_433.radio->setPreambleLength(8);
-            radio_controller_433.radio->setCodingRate(5);
-            radio_controller_433.radio->setCRC(true);
-            radio_controller_433.radio->autoLDRO();
-            radio_controller_433.radio->forceLDRO(1);
-            radio_controller_433.radio->setOutputPower(10);
-
-            /*
-            *
-            * // LoRa DX Cluster:
-            *    radio_controller_433.radio->setFrequency(433.900);
-            *    radio_controller_433.radio->setSpreadingFactor(10);
-            *    radio_controller_433.radio->setBandwidth(125.0);
-            *    radio_controller_433.radio->setSyncWord(0x12);
-            *    radio_controller_433.radio->setPreambleLength(8);
-            *    radio_controller_433.radio->setCodingRate(5);
-            *    radio_controller_433.radio->setCRC(true);
-            *    radio_controller_433.radio->autoLDRO();
-            *    radio_controller_433.radio->setOutputPower(10);
-            *
-            *
-            *
-            * // Meshtastic 433:
-            *
-            *    radio_controller_433.radio->setFrequency(433.900); // DB0ARD
-            *    radio_controller_433.radio->setSpreadingFactor(11);
-            *    radio_controller_433.radio->setBandwidth(125.0);
-            *    radio_controller_433.radio->setSyncWord(0x2B);
-            *    radio_controller_433.radio->setPreambleLength(16);
-            *    radio_controller_433.radio->setCodingRate(5);
-            *    radio_controller_433.radio->setCRC(true);
-            *    radio_controller_433.radio->autoLDRO();
-            *    radio_controller_433.radio->setOutputPower(10);
-            *
-            *
-            * // Meshcom:
-            *
-            *    radio_controller_433.radio->setFrequency(433.175);
-            *    radio_controller_433.radio->setSpreadingFactor(11);
-            *    radio_controller_433.radio->setBandwidth(250.0);
-            *    radio_controller_433.radio->setSyncWord(0x2B);
-            *    radio_controller_433.radio->setPreambleLength(8);
-            *    radio_controller_433.radio->setCodingRate(6);
-            *    radio_controller_433.radio->setCRC(true);
-            *    //radio_controller_433.radio->autoLDRO();
-            *    radio_controller_433.radio->setOutputPower(10);
-            */
             daemon_debug_band("433", "LoRa-Default gesetzt");
-            radio_controller_433.radio->setPacketReceivedAction(setFlag433); // Callback nutzen
+            radio_controller_433.driver->setPacketReceivedAction(setFlag433); // Callback nutzen
             daemon_debug_band("433", "Callback gesetzt");
         } else {
             radio_controller_433.health = RADIO_HEALTH_FAILED;
             printf("[433] Init FEHLGESCHLAGEN: %d\n", state_433);
-            hw_diagnose_sx127x_failure(radio_controller_433.mod.get(),
-                                       "433", state_433);
+            sx127x_diagnose_begin_failure(radio_controller_433.mod.get(),
+                                          "433", state_433);
             daemon_debug_band("433", "begin() Fehler %d", state_433);
         }
 
@@ -221,7 +181,8 @@ void lora_init(void) {
             hw_pin_or_nc(daemon_hw_profile.irq),
             hw_pin_or_nc(daemon_hw_profile.rst),
             hw_pin_or_nc(daemon_hw_profile.gpio)));
-        radio_controller_868.radio.reset(new RFM95(radio_controller_868.mod.get()));
+        radio_controller_868.driver.reset(
+            sx127x_driver_create(radio_controller_868.mod.get(), true));
 
         daemon_debug_band("868", "begin()");
         /* Fail closed: never call begin() (which drives SPI) unless the
@@ -229,7 +190,7 @@ void lora_init(void) {
         int state_868;
         if (static_cast<LockingPiHal *>(radio_controller_868.hal.get())
                 ->spi_lock_ready()) {
-            state_868 = radio_controller_868.radio->begin();
+            state_868 = radio_controller_868.driver->begin(&rf_defaults_868);
         } else {
             state_868 = RADIOLIB_ERR_SPI_CMD_FAILED;
             printf("[SPI] Fehler: SPI-Sperre für 868 nicht verfügbar – "
@@ -240,24 +201,14 @@ void lora_init(void) {
         printf("[868] Init OK\n");
         daemon_debug_ctx("868", "Radio bereit");
 
-        radio_controller_868.radio->setFrequency(869.525);
-        radio_controller_868.radio->setSpreadingFactor(11);
-        radio_controller_868.radio->setBandwidth(250.0);
-        radio_controller_868.radio->setSyncWord(0x2B);
-        radio_controller_868.radio->setPreambleLength(16);
-        radio_controller_868.radio->setCodingRate(5);
-        radio_controller_868.radio->setCRC(true);
-        radio_controller_868.radio->autoLDRO();
-        radio_controller_868.radio->setOutputPower(10);
-
         daemon_debug_band("868", "LoRa-Default gesetzt");
-        radio_controller_868.radio->setPacketReceivedAction(setFlag868); // Callback nutzen
+        radio_controller_868.driver->setPacketReceivedAction(setFlag868); // Callback nutzen
         daemon_debug_band("868", "Callback gesetzt");
         } else {
             radio_controller_868.health = RADIO_HEALTH_FAILED;
             printf("[868] Init FEHLGESCHLAGEN: %d\n", state_868);
-            hw_diagnose_sx127x_failure(radio_controller_868.mod.get(),
-                                       "868", state_868);
+            sx127x_diagnose_begin_failure(radio_controller_868.mod.get(),
+                                          "868", state_868);
             daemon_debug_band("868", "begin() Fehler %d", state_868);
         }
 
@@ -268,7 +219,7 @@ void lora_init(void) {
 
     if (daemon_radio_433_enabled() && radio_controller_ready(&radio_controller_433)) {
         daemon_debug_band("433", "RX starten");
-        radio_controller_433.radio->startReceive();
+        radio_controller_433.driver->startReceive();
     } else if (daemon_radio_433_enabled()) {
         printf("[433] RX nicht gestartet: %s\n",
                radio_health_name(radio_controller_433.health));
@@ -279,7 +230,7 @@ void lora_init(void) {
 
     if (daemon_radio_868_enabled() && radio_controller_ready(&radio_controller_868)) {
         daemon_debug_band("868", "RX starten");
-        radio_controller_868.radio->startReceive();
+        radio_controller_868.driver->startReceive();
     } else if (daemon_radio_868_enabled()) {
         printf("[868] RX nicht gestartet: %s\n",
                radio_health_name(radio_controller_868.health));

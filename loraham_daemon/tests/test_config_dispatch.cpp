@@ -18,7 +18,9 @@ static int g_fail = 0;
 
 /* --- Fake radio --- */
 
-struct FakeRadio {
+// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
+// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+struct FakeRadio : public RadioDriver {
     int callback_count;
     int start_receive_count;
     int scan_result;
@@ -26,41 +28,59 @@ struct FakeRadio {
     float rssi;
     void (*last_callback)(void);
 
-    FakeRadio() : callback_count(0), start_receive_count(0),
+    FakeRadio() : RadioDriver(NULL),
+                  callback_count(0), start_receive_count(0),
                   scan_result(0), scan_count(0), rssi(-82.5f),
                   last_callback(NULL) {}
 
-    void setPacketReceivedAction(void (*cb)(void))
+    void setPacketReceivedAction(void (*cb)(void)) override
     {
         last_callback = cb;
         callback_count++;
     }
 
-    void startReceive()
+    int16_t startReceive() override
     {
         start_receive_count++;
+        return 0;
     }
 
-    void clearIrq(uint32_t)
+    int16_t clearIrq(uint32_t) override
     {
+        return 0;
     }
 
-    int scanChannel()
+    int16_t scanChannel() override
     {
         scan_count++;
         return scan_result;
     }
 
-    float getRSSI()
+    float getRSSI() override
     {
         return rssi;
     }
 
-    float getRSSI(bool, bool)
+    float rssiProbe() override
     {
         return rssi;
     }
+
+    int16_t begin(const RadioRfDefaults *) override { return 0; }
+    int16_t switchMode(RadioMode_t) override { return 0; }
+    void applyLoraParam(const char *, const std::string &,
+                        const std::string &) override {}
+    void applyFskParam(const char *, const std::string &,
+                       const std::string &) override {}
+    // Kein Module hinter dem Fake: Live-RSSI unavailable wie zuvor (-200).
+    float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    const char *chipName() const override { return "FAKE"; }
 };
+
+static FakeRadio *fake(RadioController *ctrl)
+{
+    return static_cast<FakeRadio *>(ctrl->driver.get());
+}
 
 /* --- Test state --- */
 
@@ -183,7 +203,7 @@ static int make_socket_pair(int sv[2])
 
 /* --- Apply callback used by tests --- */
 
-static void record_apply_config(FakeRadio& radio,
+static void record_apply_config(RadioDriver& radio,
                                 const char *tag,
                                 const char *cmd,
                                 RadioMode_t& mode,
@@ -199,7 +219,7 @@ static void record_apply_config(FakeRadio& radio,
     getrssi_active.store(true);
 }
 
-static void init_fake_controller(RadioController<FakeRadio> *ctrl,
+static void init_fake_controller(RadioController *ctrl,
                                  RadioHealth health)
 {
     radio_controller_init(ctrl,
@@ -208,12 +228,12 @@ static void init_fake_controller(RadioController<FakeRadio> *ctrl,
                           false,
                           fake_rx_callback,
                           13);
-    ctrl->radio.reset(new FakeRadio());
+    ctrl->driver.reset(new FakeRadio());
     ctrl->health = health;
 }
 
-static ConfigDispatchContext<FakeRadio> make_context(ClientSlot *slots,
-                                                     RadioController<FakeRadio> *ctrl)
+static ConfigDispatchContext make_context(ClientSlot *slots,
+                                          RadioController *ctrl)
 {
     ConfigDispatchLog log = {
         NULL,
@@ -221,7 +241,7 @@ static ConfigDispatchContext<FakeRadio> make_context(ClientSlot *slots,
         NULL
     };
 
-    ConfigDispatchContext<FakeRadio> ctx = {
+    ConfigDispatchContext ctx = {
         slots,
         ctrl,
         "CONF TEST",
@@ -241,7 +261,7 @@ static void test_dispatch_ready_client(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -270,18 +290,18 @@ static void test_dispatch_ready_client(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("apply called once", g_apply_state.calls, 1);
     expect_str("apply tag", g_apply_state.tag, "CONF TEST");
     expect_str("apply cmd", g_apply_state.cmd, "SET GETRSSI=1");
     expect_int("mode updated by apply", ctrl.mode == RADIO_MODE_FSK, 1);
     expect_int("getrssi updated by apply", ctrl.getrssi_active.load() == true, 1);
-    expect_int("callback restored", ctrl.radio->callback_count, 1);
-    expect_int("startReceive called", ctrl.radio->start_receive_count, 1);
+    expect_int("callback restored", fake(&ctrl)->callback_count, 1);
+    expect_int("startReceive called", fake(&ctrl)->start_receive_count, 1);
     expect_int("client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -297,7 +317,7 @@ static void test_dispatch_ready_client_epoll(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -325,15 +345,15 @@ static void test_dispatch_ready_client_epoll(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("ready epoll wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("epoll apply called once", g_apply_state.calls, 1);
     expect_str("epoll apply cmd", g_apply_state.cmd, "SET GETRSSI=1");
-    expect_int("epoll callback restored", ctrl.radio->callback_count, 1);
-    expect_int("epoll startReceive called", ctrl.radio->start_receive_count, 1);
+    expect_int("epoll callback restored", fake(&ctrl)->callback_count, 1);
+    expect_int("epoll startReceive called", fake(&ctrl)->start_receive_count, 1);
 
     event_loop_close(&set);
     close(sv[0]);
@@ -347,7 +367,7 @@ static void test_dispatch_ignores_not_ready_client(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -376,14 +396,14 @@ static void test_dispatch_ignores_not_ready_client(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("not ready wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("not ready apply count", g_apply_state.calls, 0);
-    expect_int("not ready callback count", ctrl.radio->callback_count, 0);
-    expect_int("not ready startReceive count", ctrl.radio->start_receive_count, 0);
+    expect_int("not ready callback count", fake(&ctrl)->callback_count, 0);
+    expect_int("not ready startReceive count", fake(&ctrl)->start_receive_count, 0);
     expect_int("not ready client open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -395,7 +415,7 @@ static void test_dispatch_ignores_not_ready_client(void)
 
 static void test_status_uses_cad_broadcast_latch(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     char status[384];
 
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
@@ -419,13 +439,13 @@ static void test_dispatch_get_channel_restores_rx(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     char out[256];
     ssize_t n;
 
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
-    ctrl.radio->scan_result = 1;
-    ctrl.radio->rssi = -77.25f;
+    fake(&ctrl)->scan_result = 1;
+    fake(&ctrl)->rssi = -77.25f;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
     client_slot_init_all(slots, 2);
@@ -454,10 +474,10 @@ static void test_dispatch_get_channel_restores_rx(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("get channel wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     n = read(sv[0], out, sizeof(out) - 1);
     if (n < 0)
@@ -465,7 +485,7 @@ static void test_dispatch_get_channel_restores_rx(void)
     out[n] = '\0';
 
     expect_int("get channel apply count", g_apply_state.calls, 0);
-    expect_int("get channel scan count", ctrl.radio->scan_count, 1);
+    expect_int("get channel scan count", fake(&ctrl)->scan_count, 1);
     expect_contains("get channel prefix", out, "CHANNEL RADIO=READY");
     expect_contains("get channel busy", out, "BUSY=1");
     expect_contains("get channel cad", out, "CAD=1");
@@ -476,8 +496,8 @@ static void test_dispatch_get_channel_restores_rx(void)
     expect_contains("get channel live rssi", out, "LIVERSSI=-200.00");
     expect_contains("get channel mode", out, "MODE=LORA");
     expect_contains("get channel txmode", out, "TXMODE=MANAGED");
-    expect_int("get channel callback restored", ctrl.radio->callback_count, 1);
-    expect_int("get channel startReceive called", ctrl.radio->start_receive_count, 1);
+    expect_int("get channel callback restored", fake(&ctrl)->callback_count, 1);
+    expect_int("get channel startReceive called", fake(&ctrl)->start_receive_count, 1);
     expect_int("get channel client open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -493,7 +513,7 @@ static void test_dispatch_get_channel_during_tx_skips_scan(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     char out[256];
     ssize_t n;
 
@@ -528,10 +548,10 @@ static void test_dispatch_get_channel_during_tx_skips_scan(void)
                event_loop_wait(&set, &readfds, 100000),
                1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     n = read(sv[0], out, sizeof(out) - 1);
     if (n < 0)
@@ -539,16 +559,16 @@ static void test_dispatch_get_channel_during_tx_skips_scan(void)
     out[n] = '\0';
 
     expect_int("get channel busy apply count", g_apply_state.calls, 0);
-    expect_int("get channel busy no scan", ctrl.radio->scan_count, 0);
+    expect_int("get channel busy no scan", fake(&ctrl)->scan_count, 0);
     expect_contains("get channel busy marker", out, "BUSY=1");
     expect_contains("get channel busy CAD marker", out, "CAD=0");
     expect_contains("get channel busy scan marker", out, "CADSCAN=0");
     expect_contains("get channel busy state", out, "CADSTATE=UNAVAILABLE");
     expect_int("get channel busy callback untouched",
-               ctrl.radio->callback_count,
+               fake(&ctrl)->callback_count,
                0);
     expect_int("get channel busy RX untouched",
-               ctrl.radio->start_receive_count,
+               fake(&ctrl)->start_receive_count,
                0);
     expect_int("get channel busy client open",
                client_slot_has_client(&slots[0]),
@@ -566,7 +586,7 @@ static void test_dispatch_set_txqueue(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -595,15 +615,15 @@ static void test_dispatch_set_txqueue(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("txqueue wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("txqueue apply not called", g_apply_state.calls, 0);
     expect_int("txqueue enabled", ctrl.tx_queue_active.load() == true, 1);
-    expect_int("txqueue callback not restored", ctrl.radio->callback_count, 0);
-    expect_int("txqueue startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("txqueue callback not restored", fake(&ctrl)->callback_count, 0);
+    expect_int("txqueue startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("txqueue client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -618,7 +638,7 @@ static void test_dispatch_set_txresult(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -647,15 +667,15 @@ static void test_dispatch_set_txresult(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("txresult wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("txresult apply not called", g_apply_state.calls, 0);
     expect_int("txresult enabled", ctrl.tx_result_active.load() == true, 1);
-    expect_int("txresult callback not restored", ctrl.radio->callback_count, 0);
-    expect_int("txresult startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("txresult callback not restored", fake(&ctrl)->callback_count, 0);
+    expect_int("txresult startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("txresult client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -671,7 +691,7 @@ static void test_dispatch_sets_txmode_without_radio(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -700,10 +720,10 @@ static void test_dispatch_sets_txmode_without_radio(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("txmode wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("txmode apply count", g_apply_state.calls, 0);
     expect_int("txmode direct", ctrl.tx_mode == RADIO_TX_MODE_DIRECT, 1);
@@ -716,7 +736,7 @@ static void test_dispatch_sets_txmode_without_radio(void)
 
 static void test_get_channel_pending_rx_guard(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     char ch[256];
 
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
@@ -724,13 +744,13 @@ static void test_get_channel_pending_rx_guard(void)
     // Idle: GET CHANNEL runs the active scan.
     ctrl.received.store(false);
     config_status_format_channel(ch, sizeof(ch), &ctrl);
-    expect_int("get channel scans when idle", ctrl.radio->scan_count >= 1 ? 1 : 0, 1);
+    expect_int("get channel scans when idle", fake(&ctrl)->scan_count >= 1 ? 1 : 0, 1);
 
     // Pending RX: must NOT scan (would discard the packet) and report PENDING.
-    int before = ctrl.radio->scan_count;
+    int before = fake(&ctrl)->scan_count;
     ctrl.received.store(true);
     config_status_format_channel(ch, sizeof(ch), &ctrl);
-    expect_int("get channel pending no scan", ctrl.radio->scan_count, before);
+    expect_int("get channel pending no scan", fake(&ctrl)->scan_count, before);
     expect_int("get channel pending state",
                strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
     expect_int("get channel pending cadscan 0",
@@ -756,7 +776,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -778,7 +798,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
         return;
     }
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
 
     // Default: monitoring off.
     expect_int("cadmonitor default off", ctrl.cad_monitor_active.load() ? 1 : 0, 0);
@@ -789,7 +809,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadmonitor on wait", event_loop_wait(&set, &readfds, 100000), 1);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
     expect_int("cadmonitor enabled", ctrl.cad_monitor_active.load() ? 1 : 0, 1);
 
     // SET CADMONITOR=0 disables it and resets the broadcast latch and the
@@ -801,7 +821,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadmonitor off wait", event_loop_wait(&set, &readfds, 100000), 1);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
     expect_int("cadmonitor disabled", ctrl.cad_monitor_active.load() ? 1 : 0, 0);
     expect_int("cadmonitor reset broadcast latch",
                ctrl.cad_broadcast_active.load() ? 1 : 0, 0);
@@ -820,7 +840,7 @@ static void test_dispatch_closes_eof_client(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -849,14 +869,14 @@ static void test_dispatch_closes_eof_client(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("eof wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx =
+    ConfigDispatchContext ctx =
         make_context(slots, &ctrl);
 
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("eof apply count", g_apply_state.calls, 0);
-    expect_int("eof callback count", ctrl.radio->callback_count, 0);
-    expect_int("eof startReceive count", ctrl.radio->start_receive_count, 0);
+    expect_int("eof callback count", fake(&ctrl)->callback_count, 0);
+    expect_int("eof startReceive count", fake(&ctrl)->start_receive_count, 0);
     expect_int("eof client closed", slots[0].fd, -1);
     expect_size("eof output reset", client_output_queue_pending(&slots[0].output), 0);
     expect_size("eof stream reset", slots[0].stream.len, 0);
@@ -871,7 +891,7 @@ static void test_dispatch_set_cadwait(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -891,13 +911,13 @@ static void test_dispatch_set_cadwait(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadwait wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("cadwait apply not called",  g_apply_state.calls, 0);
     expect_int("cadwait stored", (int)ctrl.cad_wait_timeout_ms.load(), 300);
-    expect_int("cadwait callback not restored",  ctrl.radio->callback_count, 0);
-    expect_int("cadwait startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadwait callback not restored",  fake(&ctrl)->callback_count, 0);
+    expect_int("cadwait startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("cadwait client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -912,7 +932,7 @@ static void test_dispatch_set_cadidle(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -932,13 +952,13 @@ static void test_dispatch_set_cadidle(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadidle wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("cadidle apply not called",  g_apply_state.calls, 0);
     expect_int("cadidle stored", (int)ctrl.cad_idle_stable_ms.load(), 100);
-    expect_int("cadidle callback not restored",  ctrl.radio->callback_count, 0);
-    expect_int("cadidle startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadidle callback not restored",  fake(&ctrl)->callback_count, 0);
+    expect_int("cadidle startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("cadidle client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -953,7 +973,7 @@ static void test_dispatch_set_cadpoll(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -973,13 +993,13 @@ static void test_dispatch_set_cadpoll(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadpoll wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("cadpoll apply not called",  g_apply_state.calls, 0);
     expect_int("cadpoll stored", (int)ctrl.cad_poll_interval_ms.load(), 50);
-    expect_int("cadpoll callback not restored",  ctrl.radio->callback_count, 0);
-    expect_int("cadpoll startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadpoll callback not restored",  fake(&ctrl)->callback_count, 0);
+    expect_int("cadpoll startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("cadpoll client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -994,7 +1014,7 @@ static void test_dispatch_set_cadtxaftertimeout(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -1014,13 +1034,13 @@ static void test_dispatch_set_cadtxaftertimeout(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadtx wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("cadtx apply not called",  g_apply_state.calls, 0);
     expect_int("cadtx stored", ctrl.cad_send_after_timeout.load() ? 1 : 0, 1);
-    expect_int("cadtx callback not restored",  ctrl.radio->callback_count, 0);
-    expect_int("cadtx startReceive not called", ctrl.radio->start_receive_count, 0);
+    expect_int("cadtx callback not restored",  fake(&ctrl)->callback_count, 0);
+    expect_int("cadtx startReceive not called", fake(&ctrl)->start_receive_count, 0);
     expect_int("cadtx client still open", client_slot_has_client(&slots[0]), 1);
 
     event_loop_close(&set);
@@ -1035,7 +1055,7 @@ static void test_dispatch_set_cadwait_invalid_rejected(void)
     uint8_t buf[buf_SIZE];
     EventLoopSet set;
     EventLoopReadySet readfds;
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
     init_fake_controller(&ctrl, RADIO_HEALTH_FAILED);
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
@@ -1055,8 +1075,8 @@ static void test_dispatch_set_cadwait_invalid_rejected(void)
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadwait-invalid wait", event_loop_wait(&set, &readfds, 100000), 1);
 
-    ConfigDispatchContext<FakeRadio> ctx = make_context(slots, &ctrl);
-    config_dispatch_context<FakeRadio>(&ctx, 2, &readfds, buf);
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
 
     expect_int("cadwait-invalid apply not called",  g_apply_state.calls, 0);
     expect_int("cadwait-invalid value unchanged",

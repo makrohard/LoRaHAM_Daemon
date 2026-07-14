@@ -112,10 +112,10 @@ typedef struct {
     DaemonDeadlineTimer cad_timer;
     DaemonDeadlineTimer rssi_timer;
     DaemonDeadlineTimer stats_timer;
-    DataTxDaemonContext<SX1278> data_tx_433_ctx;
-    DataTxDaemonContext<RFM95> data_tx_868_ctx;
-    ConfigDispatchContext<SX1278> config_433_ctx;
-    ConfigDispatchContext<RFM95> config_868_ctx;
+    DataTxDaemonContext data_tx_433_ctx;
+    DataTxDaemonContext data_tx_868_ctx;
+    ConfigDispatchContext config_433_ctx;
+    ConfigDispatchContext config_868_ctx;
 } DaemonLoopContext;
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
