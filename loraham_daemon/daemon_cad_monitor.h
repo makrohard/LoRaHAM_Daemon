@@ -22,9 +22,8 @@ typedef struct {
     int sampled;    /* 0 if the probe was unavailable (state untouched) */
 } DaemonCadMonitorTick;
 
-template<typename RadioT>
 static inline DaemonCadMonitorTick daemon_cad_monitor_tick(
-    RadioController<RadioT> *ctrl)
+    RadioController *ctrl)
 {
     DaemonCadMonitorTick tick;
 

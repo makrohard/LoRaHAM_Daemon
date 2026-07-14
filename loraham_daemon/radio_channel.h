@@ -6,8 +6,6 @@
 #include "event_loop.h"
 #include "client_slot.h"
 
-class Module;
-
 /* --- Radio channel identity --- */
 
 typedef enum {
@@ -54,12 +52,7 @@ void radio_channel_reconcile_fds(RadioChannelIo *ch, EventLoopSet *set);
 void radio_channel_accept_ready(RadioChannelIo *ch, const EventLoopReadySet *ready);
 void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *ready);
 
-
-/* --- Radio channel RSSI --- */
-
-float radio_channel_read_live_rssi(Module *mod,
-                                   RadioMode_t mode,
-                                   bool is_hf);
-
+/* Live-RSSI reads moved into the RadioDriver (RadioDriver::readLiveRssi):
+ * the raw register access is chip-specific and lives in the driver. */
 
 #endif

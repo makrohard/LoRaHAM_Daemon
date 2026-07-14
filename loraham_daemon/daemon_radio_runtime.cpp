@@ -11,8 +11,8 @@
 
 /* --- Radio controller state --------------------------------------------- */
 
-RadioController<SX1278> radio_controller_433;
-RadioController<RFM95> radio_controller_868;
+RadioController radio_controller_433;
+RadioController radio_controller_868;
 
 /* --- Radio controller setup --------------------------------------------- */
 
@@ -50,8 +50,7 @@ void daemon_radio_controller_init(void)
 
 /* --- Radio controller shutdown ------------------------------------------ */
 
-template<typename RadioT>
-static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
+static void radio_controller_shutdown(RadioController *ctrl)
 {
     const char *tag;
 
@@ -61,20 +60,20 @@ static void radio_controller_shutdown(RadioController<RadioT> *ctrl)
     tag = radio_controller_tag(ctrl);
     daemon_debug_ctx(tag, "Radio-Shutdown");
 
-    if (ctrl->radio) {
+    if (ctrl->driver) {
         if (radio_controller_ready(ctrl)) {
             daemon_debug_band(tag, "Callback aus");
-            ctrl->radio->clearPacketReceivedAction();
+            ctrl->driver->clearPacketReceivedAction();
             daemon_debug_band(tag, "Standby");
-            ctrl->radio->standby();
+            ctrl->driver->standby();
             daemon_debug_band(tag, "IRQ löschen");
-            ctrl->radio->clearIrq(0xFFFFFFFF);
+            ctrl->driver->clearIrq(0xFFFFFFFF);
         } else {
             daemon_debug_band(tag, "Radio nicht bereit");
         }
 
         daemon_debug_band(tag, "Radio freigeben");
-        ctrl->radio.reset();
+        ctrl->driver.reset();
     } else {
         daemon_debug_band(tag, "Kein Radio-Objekt");
     }

@@ -25,7 +25,7 @@ extern "C" {
 #define DAEMON_HW_PIN_NC (-1)
 
 typedef enum {
-    DAEMON_CHIP_FAMILY_SX127X = 0,   /* SX1278/RFM9x lineage */
+    DAEMON_CHIP_FAMILY_SX127X = 0,   /* SX127x/RFM9x lineage */
     DAEMON_CHIP_FAMILY_SX1262        /* SX126x lineage */
 } DaemonChipFamily;
 

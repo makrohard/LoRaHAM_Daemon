@@ -46,8 +46,7 @@ static const char *lora_tx_log_ctx(int band)
     return band == 433 ? "TX433" : "TX868";
 }
 
-template<typename RadioT>
-static bool lora_send_acquire_controller_tx(RadioController<RadioT> *ctrl)
+static bool lora_send_acquire_controller_tx(RadioController *ctrl)
 {
     if (!ctrl)
         return false;
@@ -59,8 +58,7 @@ static bool lora_send_acquire_controller_tx(RadioController<RadioT> *ctrl)
     return true;
 }
 
-template<typename RadioT>
-static void lora_send_release_controller_tx(RadioController<RadioT> *ctrl)
+static void lora_send_release_controller_tx(RadioController *ctrl)
 {
     ctrl->tx_busy.store(false);
     ctrl->tx_status_generation.fetch_add(1u);
@@ -123,8 +121,7 @@ static void lora_debug_tx_first_bytes(const char *ctx,
     daemon_debug_ctx(ctx, "%s", msg);
 }
 
-template<typename RadioT>
-static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
+static void lora_send_prepare_controller_tx(RadioController *ctrl)
 {
     // TX ownership was acquired before payload copy/logging.
 
@@ -133,24 +130,23 @@ static void lora_send_prepare_controller_tx(RadioController<RadioT> *ctrl)
 
     // FSK uses a different receive path.
     if (ctrl->mode == RADIO_MODE_LORA)
-        ctrl->radio->clearPacketReceivedAction();
+        ctrl->driver->clearPacketReceivedAction();
 
     // Move the radio into a clean TX state.
-    ctrl->radio->standby();
-    ctrl->radio->clearIrq(0xFFFFFFFF);
+    ctrl->driver->standby();
+    ctrl->driver->clearIrq(0xFFFFFFFF);
 
     // Reset the TX FIFO only for 433/LoRa.
     // FSK sleep would reset the module configuration.
     if (ctrl->band == RADIO_BAND_433 && ctrl->mode == RADIO_MODE_LORA) {
-        ctrl->radio->sleep();
+        ctrl->driver->sleep();
         usleep(10000); // 10 ms
-        ctrl->radio->standby();
+        ctrl->driver->standby();
         usleep(10000); // 10 ms
     }
 }
 
-template<typename RadioT>
-static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
+static TxResult lora_send_controller(RadioController *ctrl,
                                      uint8_t *buf,
                                      size_t len)
 {
@@ -169,7 +165,7 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
     tag = radio_controller_tag(ctrl);
     tx_ctx = lora_tx_log_ctx(band);
 
-    if (!ctrl->radio || !radio_controller_ready(ctrl)) {
+    if (!ctrl->driver || !radio_controller_ready(ctrl)) {
         printf("[SEND %d] radio not ready: %s\n",
                band, radio_health_name(radio_controller_health(ctrl)));
         fflush(stdout);
@@ -207,14 +203,14 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
 
         if (ctrl->band == RADIO_BAND_433) {
             // Clear IRQs once more before TX.
-            ctrl->radio->clearIrq(0xFFFFFFFF);
+            ctrl->driver->clearIrq(0xFFFFFFFF);
 
             daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
             lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
         }
 
         // transmit() blocks until the packet is sent.
-        int state = ctrl->radio->transmit(send_buf, len);
+        int state = ctrl->driver->transmit(send_buf, len);
 
         if(state != RADIOLIB_ERR_NONE) {
             daemon_debug_ctx(tx_ctx, "transmit Fehler %d", state);
@@ -231,10 +227,10 @@ static TxResult lora_send_controller(RadioController<RadioT> *ctrl,
 
         // Restore IRQ handling and RX callback after TX.
         // transmit() can clear the callback.
-        ctrl->radio->clearIrq(0xFFFFFFFF);
+        ctrl->driver->clearIrq(0xFFFFFFFF);
         ctrl->received.store(false);
-        ctrl->radio->setPacketReceivedAction(ctrl->rx_callback);
-        ctrl->radio->startReceive();
+        ctrl->driver->setPacketReceivedAction(ctrl->rx_callback);
+        ctrl->driver->startReceive();
 
         result = state == RADIOLIB_ERR_NONE
             ? TX_RESULT_OK

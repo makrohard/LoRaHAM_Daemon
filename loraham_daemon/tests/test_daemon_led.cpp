@@ -262,14 +262,14 @@ static void test_led_disabled_by_profile(void)
 }
 
 /* --- sync_led derived-state tests --------------------------------------- */
-// Empty radio stand-in: sync_led never touches the radio, only the atomics.
-struct FakeRadio {};
+// sync_led never touches the radio/driver, only the atomics — the plain
+// RadioController (without driver) is enough.
 
 static void fake_rx_callback(void)
 {
 }
 
-static void init_led_ctrl(RadioController<FakeRadio> *ctrl)
+static void init_led_ctrl(RadioController *ctrl)
 {
     radio_controller_init(ctrl,
                           RADIO_BAND_433,
@@ -280,7 +280,7 @@ static void init_led_ctrl(RadioController<FakeRadio> *ctrl)
 }
 
 // Calls sync_led and asserts a write happened to the band pin at `level`.
-static void expect_sync_write(RadioController<FakeRadio> *ctrl,
+static void expect_sync_write(RadioController *ctrl,
                               const char *name,
                               int level)
 {
@@ -300,7 +300,7 @@ static void expect_sync_write(RadioController<FakeRadio> *ctrl,
 }
 
 // Calls sync_led and asserts the cache suppressed the redundant GPIO write.
-static void expect_sync_no_write(RadioController<FakeRadio> *ctrl,
+static void expect_sync_no_write(RadioController *ctrl,
                                  const char *name)
 {
     int before = g_write_count;
@@ -311,7 +311,7 @@ static void expect_sync_no_write(RadioController<FakeRadio> *ctrl,
 
 static void test_sync_led_derived_state(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     reset_fake();
     daemon_led_init();
@@ -349,7 +349,7 @@ static void test_sync_led_derived_state(void)
 
 static void test_sync_led_no_rx_latch(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     reset_fake();
     daemon_led_init();
@@ -376,7 +376,7 @@ static void test_sync_led_no_rx_latch(void)
 
 static void test_sync_led_cad_off_edge(void)
 {
-    RadioController<FakeRadio> ctrl;
+    RadioController ctrl;
 
     reset_fake();
     daemon_led_init();
