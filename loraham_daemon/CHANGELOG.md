@@ -1,6 +1,7 @@
 # Changelog
 
 ## loraham_daemon 112
+- Instance lock and LED claim reduced to single-band acquisition (no dual-lock ordering/rollback); exit codes 3/4 and LOCK_NB semantics unchanged.
 - BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
 
 ## loraham_daemon 111a

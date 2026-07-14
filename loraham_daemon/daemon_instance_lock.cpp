@@ -14,12 +14,11 @@
 #include "daemon_radio_selection.h"
 
 /*
- * Lock-ordering contract (prevents deadlock between --radio both and split
- * per-band instances):
- *     instance-433 -> instance-868 -> spi0
- * The SPI lock (spi0) is only ever taken inside a single SPI transaction, never
- * during this long-lived instance setup, so it can never be held while we block
- * on an instance lock.
+ * Lock-ordering contract: one instance lock per process (the selected band's
+ * instance-<band>.lock), then the per-transaction SPI lock (spi0). The SPI
+ * lock is only ever taken inside a single SPI transaction, never during this
+ * long-lived instance setup, so it can never be held while we block on an
+ * instance lock.
  *
  * Instance locks are non-blocking (LOCK_NB): a second same-band daemon fails
  * fast instead of queueing.
@@ -74,7 +73,7 @@ int daemon_instance_lock_acquire(void)
 {
     int rc;
 
-    /* Deterministic order: 433 before 868. */
+    /* Exactly one band is selected per process; claim only its lock. */
     if (daemon_radio_433_enabled()) {
         rc = instance_lock_claim("433", &g_lock_fd_433);
         if (rc != 0)
@@ -83,12 +82,8 @@ int daemon_instance_lock_acquire(void)
 
     if (daemon_radio_868_enabled()) {
         rc = instance_lock_claim("868", &g_lock_fd_868);
-        if (rc != 0) {
-            /* Roll back the 433 lock so --radio both never leaves split
-             * ownership behind. */
-            daemon_instance_lock_release();
+        if (rc != 0)
             return rc;
-        }
     }
 
     return 0;
