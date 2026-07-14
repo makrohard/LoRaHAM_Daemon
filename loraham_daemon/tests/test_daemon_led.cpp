@@ -237,6 +237,30 @@ static void test_radio_868_only_busy_is_fatal(void)
     expect_int("868-only busy closes chip", g_close_count, 1);
 }
 
+// Profile without an LED line (pin < 0): no claim, init healthy, writes are
+// no-ops — the LED feature is cleanly disabled instead of fatal.
+static void test_led_disabled_by_profile(void)
+{
+    reset_fake();
+    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_led_configure(-1, DAEMON_LED_PIN_868);
+
+    int rc = daemon_led_init();
+
+    expect_int("nc init succeeds", rc, 0);
+    expect_int("nc ready (feature disabled)", daemon_led_ready(), 1);
+    expect_int("nc claims nothing", g_claim_count, 0);
+
+    daemon_led_set_pin(-1, 1);
+    expect_int("nc write is no-op", g_write_count, 0);
+
+    daemon_led_shutdown();
+    expect_int("nc frees nothing", g_free_count, 0);
+
+    /* Restore the legacy default pins for the remaining tests. */
+    daemon_led_configure(DAEMON_LED_PIN_433, DAEMON_LED_PIN_868);
+}
+
 /* --- sync_led derived-state tests --------------------------------------- */
 // Empty radio stand-in: sync_led never touches the radio, only the atomics.
 struct FakeRadio {};
@@ -377,6 +401,7 @@ int main(void)
     test_radio_868_only_claims_only_868();
     test_radio_433_only_busy_is_fatal();
     test_radio_868_only_busy_is_fatal();
+    test_led_disabled_by_profile();
     test_sync_led_derived_state();
     test_sync_led_no_rx_latch();
     test_sync_led_cad_off_edge();

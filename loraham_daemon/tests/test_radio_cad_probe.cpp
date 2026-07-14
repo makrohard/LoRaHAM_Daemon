@@ -278,6 +278,35 @@ static void test_try_probe_skips_active_tx(void)
                0);
 }
 
+/* Wiring without DIO1 (cad_scan_available=false): probes must never call
+ * scanChannel and must answer from the passive RSSI probe instead. */
+static void test_probe_gated_without_dio1(void)
+{
+    RadioController<FakeRadio> ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = false;
+    ctrl.cad_rssi_threshold_dbm.store(-90.0f);
+
+    ctrl.radio->rssi = -70.0f;              /* above threshold: busy */
+    result = radio_cad_probe(&ctrl);
+    expect_int("gated probe busy", result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("gated probe no scan flag", result.scan_ran, 0);
+    expect_int("gated probe no scanChannel", ctrl.radio->scan_count, 0);
+    expect_int("gated probe no rx re-arm", ctrl.radio->start_receive_count, 0);
+
+    ctrl.radio->rssi = -110.0f;             /* below threshold: free */
+    result = radio_cad_probe(&ctrl);
+    expect_int("gated probe free", result.status, RADIO_CAD_PROBE_FREE);
+    expect_int("gated probe still no scanChannel", ctrl.radio->scan_count, 0);
+
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("gated try probe free", result.status, RADIO_CAD_PROBE_FREE);
+    expect_int("gated try probe no scan flag", result.scan_ran, 0);
+    expect_int("gated try probe no scanChannel", ctrl.radio->scan_count, 0);
+}
+
 static void test_tx_wait_direct_mode_skips_cad(void)
 {
     RadioController<FakeRadio> ctrl;
@@ -431,6 +460,7 @@ int main(int argc, char **argv)
     test_probe_preserves_broadcast_latch();
     test_probe_waits_for_radio_access_guard();
     test_try_probe_skips_active_tx();
+    test_probe_gated_without_dio1();
     test_tx_wait_direct_mode_skips_cad();
     test_tx_wait_fsk_skips_cad();
     test_passive_probe_is_non_destructive();

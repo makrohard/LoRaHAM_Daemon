@@ -92,6 +92,7 @@ Client/socket/runtime:
 Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection`
+- `test_hardware_profile` (`--hw` preset resolution: legacy per-band identity, Uputronics NC pins/capabilities/slot LEDs, Waveshare SX1262 pin set, unknown-preset rejection)
 - `test_tx_mode_boot` (`--tx-mode` parsing, default MANAGED, fail-closed on invalid values)
 - `test_cad_monitor_boot` (`--cad-monitor` parsing, default off, fail-closed on invalid values)
 - `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
@@ -103,7 +104,7 @@ Lifecycle/helper behavior:
 
 Multi-instance (split per-band) operation:
 
-- `test_daemon_led` (selection-aware LED ownership: 433-only / 868-only claims, and duplicate-band rejection is fatal)
+- `test_daemon_led` (selection-aware LED ownership: 433-only / 868-only claims, duplicate-band rejection is fatal, and profile-disabled LED (`led_pin` NC) stays healthy without claims)
 - `test_instance_lock` (per-band instance-ownership locks: 433/868 ownership, duplicate rejection, release-unblocks-restart, and shared-lock inode stability)
 - `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion, recursion guard, fail-closed when the lock dir is unusable, no transfer without the lock, EINTR-retry vs hard-failure on both lock and unlock, and fatal-on-hard-unlock; no radio hardware needed)
 - `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)

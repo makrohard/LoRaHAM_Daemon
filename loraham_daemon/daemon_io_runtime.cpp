@@ -11,6 +11,7 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_radio_selection.h"
 #include "framed_data_tx.h"
+#include "hardware_profile.h"
 #include "unix_socket.h"
 
 /* --- Daemon I/O runtime state ------------------------------------------- */
@@ -165,6 +166,13 @@ void daemon_io_init(void)
      * is fatal because the LED is a required hardware resource for that band.
      */
     daemon_debug_ctx("GPIO", "LED initialisieren");
+    /* Route the profile's LED line to the selected band; the other band's
+     * slot keeps its (unused) default. led_pin < 0 = LED disabled. */
+    daemon_led_configure(
+        daemon_radio_433_enabled() ? daemon_hw_profile.led_pin
+                                   : DAEMON_LED_PIN_433,
+        daemon_radio_868_enabled() ? daemon_hw_profile.led_pin
+                                   : DAEMON_LED_PIN_868);
     if (daemon_led_init() != 0) {
         printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
         exit(EXIT_FAILURE);

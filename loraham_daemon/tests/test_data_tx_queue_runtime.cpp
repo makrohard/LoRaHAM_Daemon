@@ -96,6 +96,11 @@ struct FakeRadio {
     {
         return rssi;
     }
+
+    float getRSSI(bool, bool)
+    {
+        return rssi;
+    }
 };
 
 typedef struct {

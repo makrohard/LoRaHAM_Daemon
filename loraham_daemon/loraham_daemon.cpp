@@ -40,6 +40,7 @@
 #include "daemon_stats.h"
 #include "daemon_lifecycle.h"
 #include "daemon_radio_selection.h"
+#include "hardware_profile.h"
 #include "daemon_tx_mode_boot.h"
 #include "daemon_cad_monitor_boot.h"
 #include "daemon_cad_rssi_boot.h"
@@ -278,6 +279,8 @@ static void daemon_print_usage(const char *argv0)
     printf("  -v, --version    Version anzeigen und beenden\n");
     printf("      --debug      Debug-Log aktivieren\n");
     printf("      --radio MODE Radio wählen: 433, 868 (erforderlich)\n");
+    printf("      --hw PRESET  Hardware-Profil: legacy, uputronics-ce0, uputronics-ce1,\n");
+    printf("                   waveshare-sx1262 (Standard: legacy)\n");
     printf("      --tx-mode MODE      TX-Modus: direct, managed (Standard: managed)\n");
     printf("      --cad-monitor VAL   CAD=0/1-Monitor: on, off (Standard: off)\n");
     printf("      --cad-rssi DBM      CAD-Busy-Schwelle, Ganzzahl dBm -130..0 (Standard: -90)\n");
@@ -315,6 +318,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"tx-mode",     required_argument, 0, 1002},
         {"cad-monitor",     required_argument, 0, 1005},
         {"cad-rssi",        required_argument, 0, 1008},
+        {"hw",          required_argument, 0, 1011},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -370,6 +374,15 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --cad-rssi erkannt: %s", optarg);
                 break;
+            case 1011:
+                if (!daemon_set_hardware_preset(optarg)) {
+                    fprintf(stderr, "Ungültiges Hardware-Profil: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "Bekannt: %s\n", daemon_hardware_profile_known());
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --hw erkannt: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -391,6 +404,20 @@ static bool daemon_parse_args(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    /* Resolve the hardware preset against the selected band; an unknown
+     * preset fails closed via the standard usage-error path. */
+    if (!daemon_hardware_profile_resolve(
+            daemon_radio_433_enabled() ? 433 : 868)) {
+        fprintf(stderr, "Ungültiges Hardware-Profil: %s\n",
+                daemon_hardware_preset_name());
+        fprintf(stderr, "Bekannt: %s\n", daemon_hardware_profile_known());
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    daemon_debug_ctx("STARTUP", "Hardware-Profil: %s (%s)",
+                     daemon_hw_profile.name,
+                     daemon_chip_family_name(daemon_hw_profile.family));
+
     return is_daemon;
 }
 
@@ -402,18 +429,24 @@ static RadioTxMode_t daemon_boot_tx_mode_to_radio(DaemonTxModeBoot mode)
 }
 
 // Startup-only: override the MANAGED default set by radio_controller_init with
-// the CLI-resolved mode. Single-threaded; runs after daemon_io_init().
+// the CLI-resolved mode. Single-threaded; runs after daemon_io_init(). Only
+// the selected band's controller is touched and logged.
 static void daemon_apply_boot_tx_modes(void)
 {
     RadioTxMode_t mode =
         daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective());
 
-    radio_controller_433.tx_mode = mode;
-    radio_controller_868.tx_mode = mode;
+    if (daemon_radio_433_enabled()) {
+        radio_controller_433.tx_mode = mode;
+        daemon_debug_ctx("STARTUP", "TX-Modus 433=%s",
+                         radio_tx_mode_name(mode));
+    }
 
-    daemon_debug_ctx("STARTUP", "TX-Modus 433=%s 868=%s",
-                     radio_tx_mode_name(mode),
-                     radio_tx_mode_name(mode));
+    if (daemon_radio_868_enabled()) {
+        radio_controller_868.tx_mode = mode;
+        daemon_debug_ctx("STARTUP", "TX-Modus 868=%s",
+                         radio_tx_mode_name(mode));
+    }
 }
 
 /* --- Boot CAD monitor application ---------------------------------------- */
@@ -423,20 +456,26 @@ static void daemon_apply_boot_tx_modes(void)
 static void daemon_apply_boot_cad_monitor(void)
 {
     bool mon = daemon_cad_monitor_boot_effective();
-
-    radio_controller_433.cad_monitor_active.store(mon);
-    radio_controller_868.cad_monitor_active.store(mon);
-
-    daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d 868=%d",
-                     mon ? 1 : 0, mon ? 1 : 0);
-
-    // CAD RSSI threshold override (unset keeps the default).
     float rssi = 0.0f;
-    if (daemon_cad_rssi_boot_effective(&rssi)) {
-        radio_controller_433.cad_rssi_threshold_dbm.store(rssi);
-        radio_controller_868.cad_rssi_threshold_dbm.store(rssi);
-        daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi);
-        daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi);
+    bool rssi_set = daemon_cad_rssi_boot_effective(&rssi);
+
+    if (daemon_radio_433_enabled()) {
+        radio_controller_433.cad_monitor_active.store(mon);
+        daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d", mon ? 1 : 0);
+        // CAD RSSI threshold override (unset keeps the default).
+        if (rssi_set) {
+            radio_controller_433.cad_rssi_threshold_dbm.store(rssi);
+            daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi);
+        }
+    }
+
+    if (daemon_radio_868_enabled()) {
+        radio_controller_868.cad_monitor_active.store(mon);
+        daemon_debug_ctx("STARTUP", "CAD-Monitor 868=%d", mon ? 1 : 0);
+        if (rssi_set) {
+            radio_controller_868.cad_rssi_threshold_dbm.store(rssi);
+            daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi);
+        }
     }
 }
 

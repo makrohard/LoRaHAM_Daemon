@@ -101,6 +101,7 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `-v`, `--version` | - | `-v`, `--version` | Print daemon version and exit |
 | `--debug` | off | `--debug` | Enable debug log output |
 | `--radio MODE` | (required, no default) | `433`, `868` | Select the radio band this process drives; starting without `--radio` fails via the usage-error path |
+| `--hw PRESET` | `legacy` | `legacy`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262` | Hardware profile (wiring + silicon) for this process's radio; see "Hardware profiles". Unknown presets fail via the usage-error path |
 | `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for the selected band |
 | `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for the selected band; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
 | `--cad-rssi DBM` | `-90` | integer dBm `-130`..`0` | CAD busy RSSI threshold for the selected band (environment dependent) |
@@ -127,6 +128,70 @@ Socket availability depends on the selected radio band:
 Inactive-radio sockets are not created. This is intentional so clients can detect which radio backend is active by checking the socket path.
 
 UNIX socket setup rejects existing non-socket filesystem entries at the public socket paths. Existing stale UNIX socket files are replaced.
+
+## Hardware profiles (`--hw`)
+
+A hardware profile describes wiring and silicon for THE one radio of a process
+(`hardware_profile.{h,cpp}`). The band stays the identity key (`--radio`); the
+profile only says which pins and which chip family serve that band.
+
+RadioLib pin semantics are family-dependent (`Module(hal, cs, irq, rst, gpio)`):
+SX127x: `irq` = DIO0, `gpio` = DIO1 — SX1262: `irq` = DIO1, `gpio` = BUSY.
+
+| Preset | Chip | CS | IRQ | RST | DIO1/BUSY | LED | Notes |
+|---|---|---:|---:|---:|---:|---:|---|
+| `legacy` (default) | SX127x | 8 / 7 | 25 / 16 | 5 / 6 | 24 / 12 | 13 / 19 | Per band (433 / 868); identical to the pre-profile hardcoded wiring |
+| `uputronics-ce0` | SX127x | 8 | 25 (DIO0) | — | — | 6 | Uputronics Pi Zero LoRa board, CE switch on CE0; DIO5 on BCM 24 (unused) |
+| `uputronics-ce1` | SX127x | 7 | 16 (DIO0) | — | — | 13 | Same board, CE switch on CE1; DIO5 on BCM 12 (unused) |
+| `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; TXEN BCM 6, RXEN via DIO2, TCXO via DIO3. SX1262 driver support arrives in a later milestone; until then init fails closed with a clear message |
+
+Uputronics specifics:
+
+- **DIO1 is not routed.** The SX127x `scanChannel()` CAD needs DIO1; without it
+  the scan would report false-FREE. These profiles therefore disable
+  scanChannel-based CAD (capability flag), and MANAGED TX gating and
+  `GET CHANNEL` degrade to the passive live-RSSI probe: `BUSY`/`FREE` come from
+  the `CADRSSI` threshold and `CADSCAN=0` marks the non-scan source. FSK
+  features needing DIO1 are unavailable as well.
+- **RESET is not routed.** A daemon restart is a warm start against the prior
+  chip state (logged once at init); recovery from a wedged chip needs a power
+  cycle.
+- The two board LEDs (BCM 6 "LAN", BCM 13 "INTERNET") are shared bus-style
+  across stacked boards. Assignment is slot-based (CE0 → 6, CE1 → 13) so two
+  processes never claim the same line; both physical boards display both
+  indicators — that is inherent to the board design.
+- LED polarity on BCM 6/13 is assumed active-high (bench-verify).
+
+Two stacked Uputronics boards = two daemon processes (one per band), sharing
+SPI through the per-transaction flock and separated by disjoint GPIO claims.
+
+### Combination matrix (two processes on one Pi)
+
+| Combination | Verdict |
+|---|---|
+| Uputronics CE0 + Uputronics CE1 | ✓ disjoint |
+| Waveshare (either band) + Uputronics CE0 | (✓) radio pins disjoint, but BCM 6 is Waveshare TXEN **and** the CE0 LED line — the CE0 process must run with its LED reassigned to BCM 13 (LED-override mechanism arrives with the SX1262 milestone; until then this pairing fails closed at LED claim time with the diagnosis line) |
+| Waveshare + Uputronics CE1 | ✗ conflict (BCM 16 IRQ on both; BCM 6) |
+| Waveshare + Waveshare | ✗ conflict (all pins identical) |
+
+Conflicts are enforced by the kernel: GPIO line claims are exclusive, the
+second process fails at claim time. The daemon's job is interpretation: a
+failed claim produces one profile-aware diagnosis line (which BCM pin, which
+function in this profile, hint that another process likely holds it) and the
+daemon fails closed.
+
+Recommended `config.txt` for manual-CS operation (all profiles drive CS as
+GPIO): `dtparam=spi=on` and `dtoverlay=spi0-0cs` (releases the kernel
+hardware-CE claim on BCM 8/7).
+
+### Adding new hardware
+
+For a board of a known chip family: add one preset row in
+`hardware_profile.cpp` (`profile_fill()`: pins, capability flags, LED,
+claimed-pin list), extend the preset list in `daemon_hardware_profile_known()`
+and `--help`, document it here — nothing else. For a new chip family a new
+driver implementation is additionally required (see the RadioDriver interface,
+later milestone).
 
 ## Public limits and timing
 
@@ -381,6 +446,16 @@ units `loraham-daemon@433` + `loraham-daemon@868` instead. The removed
 band-suffixed flags (`--tx-mode-433/868`, `--cad-monitor-433/868`,
 `--cad-rssi-433/868`) map to the plain `--tx-mode`, `--cad-monitor`,
 `--cad-rssi` in per-unit overrides (`systemctl edit loraham-daemon@433`).
+
+Per-unit hardware profiles work the same way — example for two stacked
+Uputronics boards (`systemctl edit loraham-daemon@433`, then analogously for
+`@868` with `uputronics-ce1`):
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/loraham_daemon --radio %i --hw uputronics-ce0
+```
 
 ### Per-band ownership (instance lock)
 
