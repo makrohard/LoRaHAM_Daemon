@@ -36,12 +36,16 @@ const char *Sx1262Driver::chipName() const
 
 static void sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 {
-    /* Der HAT schaltet RX/TX intern über DIO2; TXEN/ANT_SW liegt zusätzlich
-     * auf einem GPIO und wird von RadioLib als TX-Enable geführt. */
+    /* Der HAT schaltet TX intern über DIO2. Die als "TXEN" beschriftete
+     * GPIO-Leitung (BCM 6) muss laut Waveshare-Referenztreiber (LoRaRF
+     * SX126x.py) im TX LOW und im RX HIGH liegen — invers zur Beschriftung.
+     * Als rxEn registriert fährt RadioLib genau dieses Muster; als txEn
+     * registriert blockiert die Leitung den Antennenpfad während des
+     * Sendens (bench-verifiziert: TX_RESULT OK, aber keine Abstrahlung). */
     radio->setDio2AsRfSwitch(true);
 
     if (mod && txen_pin >= 0)
-        mod->setRfSwitchPins(RADIOLIB_NC, (uint32_t)txen_pin);
+        mod->setRfSwitchPins((uint32_t)txen_pin, RADIOLIB_NC);
 }
 
 /* --- Boot-Init mit RF-Defaults --------------------------------------------- */
