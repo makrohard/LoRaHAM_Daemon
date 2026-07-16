@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "config_policy.h"
+#include "driver_config_print.h"
 #include "config_value.h"
 #include "hardware_profile.h"
 
@@ -29,80 +30,7 @@ const char *Sx1262Driver::chipName() const
     return "SX1262";
 }
 
-/* --- Ausgabehelfer (Stil identisch zum SX127x-Treiber) --------------------- */
 
-static void config_print_rejected(const char *key, const std::string &val)
-{
-    printf(" %s=\033[91;5m%s\033[0m", key, val.c_str());
-}
-
-static void config_print_state_int(const char *key, int value, int state)
-{
-    if (state == RADIOLIB_ERR_NONE)
-        printf(" %s=\033[92m%d\033[0m", key, value);
-    else
-        printf(" %s=\033[91;5m%d\033[0m", key, value);
-}
-
-static void config_print_state_float(const char *key, float value, int state)
-{
-    if (state == RADIOLIB_ERR_NONE)
-        printf(" %s=\033[92m%.3f\033[0m", key, value);
-    else
-        printf(" %s=\033[91;5m%.3f\033[0m", key, value);
-}
-
-static bool parse_fsk_shaping(const std::string &val,
-                              uint8_t *shaping,
-                              const char **label)
-{
-    if (!shaping || !label)
-        return false;
-
-    std::string norm = config_value_lower_ascii(config_value_trim_ascii(val));
-
-    if (norm == "off" || norm == "none") {
-        *shaping = RADIOLIB_SHAPING_NONE;
-        *label = "0.0";
-        return true;
-    }
-
-    float value = 0.0f;
-    if (!config_value_parse_float_exact(norm, &value))
-        return false;
-
-    if (config_value_float_equal(value, 0.0f)) {
-        *shaping = RADIOLIB_SHAPING_NONE;
-        *label = "0.0";
-        return true;
-    }
-
-    if (config_value_float_equal(value, 0.3f)) {
-        *shaping = RADIOLIB_SHAPING_0_3;
-        *label = "0.3";
-        return true;
-    }
-
-    if (config_value_float_equal(value, 0.5f)) {
-        *shaping = RADIOLIB_SHAPING_0_5;
-        *label = "0.5";
-        return true;
-    }
-
-    if (config_value_float_equal(value, 0.7f)) {
-        *shaping = RADIOLIB_SHAPING_0_7;
-        *label = "0.7";
-        return true;
-    }
-
-    if (config_value_float_equal(value, 1.0f)) {
-        *shaping = RADIOLIB_SHAPING_1_0;
-        *label = "1.0";
-        return true;
-    }
-
-    return false;
-}
 
 /* --- RF-Switch-Verdrahtung nach begin()/beginFSK() ------------------------- */
 
@@ -188,9 +116,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
         int sf = 0;
         if (config_value_parse_int_exact(val, &sf) && config_policy_lora_sf_valid(sf)) {
             state = radio.setSpreadingFactor(sf);
-            config_print_state_int("SF", sf, state);
+            driver_config_print_state_int("SF", sf, state);
         } else {
-            config_print_rejected("SF", val);
+            driver_config_print_rejected("SF", val);
         }
     }
 
@@ -198,9 +126,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
         float bw = 0.0f;
         if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
             state = radio.setBandwidth(bw);
-            config_print_state_float("BW", bw, state);
+            driver_config_print_state_float("BW", bw, state);
         } else {
-            config_print_rejected("BW", val);
+            driver_config_print_rejected("BW", val);
         }
     }
 
@@ -213,7 +141,7 @@ void Sx1262Driver::applyLoraParam(const char *tag,
             else
                 printf(" FREQ=\033[91;5m%.6f\033[0m", f);
         } else {
-            config_print_rejected("FREQ", val);
+            driver_config_print_rejected("FREQ", val);
         }
     }
 
@@ -221,9 +149,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
         int cr = 0;
         if (config_value_parse_int_exact(val, &cr) && config_policy_lora_cr_valid(cr)) {
             state = radio.setCodingRate(cr);
-            config_print_state_int("CR", cr, state);
+            driver_config_print_state_int("CR", cr, state);
         } else {
-            config_print_rejected("CR", val);
+            driver_config_print_rejected("CR", val);
         }
     }
 
@@ -232,9 +160,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
         if (config_value_parse_bool01_exact(val, &crc)) {
             /* SX126x: CRC-Länge in Bytes; an == 2 (CCITT wie LoRa-Standard). */
             state = radio.setCRC(crc != 0 ? 2 : 0);
-            config_print_state_int("CRC", crc, state);
+            driver_config_print_state_int("CRC", crc, state);
         } else {
-            config_print_rejected("CRC", val);
+            driver_config_print_rejected("CRC", val);
         }
     }
 
@@ -242,9 +170,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
         int pre = 0;
         if (config_value_parse_int_exact(val, &pre) && config_policy_lora_preamble_valid(pre)) {
             state = radio.setPreambleLength(pre);
-            config_print_state_int("PREAMBLE", pre, state);
+            driver_config_print_state_int("PREAMBLE", pre, state);
         } else {
-            config_print_rejected("PREAMBLE", val);
+            driver_config_print_rejected("PREAMBLE", val);
         }
     }
 
@@ -259,7 +187,7 @@ void Sx1262Driver::applyLoraParam(const char *tag,
             else
                 printf(" SYNC=\033[91;5m0x%02X\033[0m", (unsigned)sw);
         } else {
-            config_print_rejected("SYNC", val);
+            driver_config_print_rejected("SYNC", val);
         }
     }
 
@@ -276,9 +204,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
             int ldro = 0;
             if (config_value_parse_bool01_exact(val, &ldro)) {
                 state = radio.forceLDRO(ldro != 0);
-                config_print_state_int("LDRO", ldro, state);
+                driver_config_print_state_int("LDRO", ldro, state);
             } else {
-                config_print_rejected("LDRO", val);
+                driver_config_print_rejected("LDRO", val);
             }
         }
     }
@@ -289,9 +217,9 @@ void Sx1262Driver::applyLoraParam(const char *tag,
             /* Chip-Bereich −9…+22 dBm; die CONF-Policy (0…20) liegt darin,
              * RadioLib validiert zusätzlich. */
             state = radio.setOutputPower((int8_t)p);
-            config_print_state_int("POWER", p, state);
+            driver_config_print_state_int("POWER", p, state);
         } else {
-            config_print_rejected("POWER", val);
+            driver_config_print_rejected("POWER", val);
         }
     }
 
@@ -317,7 +245,7 @@ void Sx1262Driver::applyFskParam(const char *tag,
             else
                 printf(" FREQ=\033[91;5m%.6f\033[0m", f);
         } else {
-            config_print_rejected("FREQ", val);
+            driver_config_print_rejected("FREQ", val);
         }
     }
 
@@ -325,9 +253,9 @@ void Sx1262Driver::applyFskParam(const char *tag,
         int p = 0;
         if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
             state = radio.setOutputPower((int8_t)p);
-            config_print_state_int("POWER", p, state);
+            driver_config_print_state_int("POWER", p, state);
         } else {
-            config_print_rejected("POWER", val);
+            driver_config_print_rejected("POWER", val);
         }
     }
 
@@ -335,9 +263,9 @@ void Sx1262Driver::applyFskParam(const char *tag,
         float br = 0.0f;
         if (config_value_parse_float_exact(val, &br) && config_policy_fsk_bitrate_valid(br)) {
             state = radio.setBitRate(br);
-            config_print_state_float("BR", br, state);
+            driver_config_print_state_float("BR", br, state);
         } else {
-            config_print_rejected("BR", val);
+            driver_config_print_rejected("BR", val);
         }
     }
 
@@ -345,9 +273,9 @@ void Sx1262Driver::applyFskParam(const char *tag,
         float fd = 0.0f;
         if (config_value_parse_float_exact(val, &fd) && config_policy_fsk_freqdev_valid(fd)) {
             state = radio.setFrequencyDeviation(fd);
-            config_print_state_float("FREQDEV", fd, state);
+            driver_config_print_state_float("FREQDEV", fd, state);
         } else {
-            config_print_rejected("FREQDEV", val);
+            driver_config_print_rejected("FREQDEV", val);
         }
     }
 
@@ -358,29 +286,29 @@ void Sx1262Driver::applyFskParam(const char *tag,
          * (roter Zustand statt stiller Übernahme). */
         if (config_value_parse_float_exact(val, &bw) && bw > 0.0f) {
             state = radio.setRxBandwidth(bw);
-            config_print_state_float("RXBW", bw, state);
+            driver_config_print_state_float("RXBW", bw, state);
         } else {
-            config_print_rejected("RXBW", val);
+            driver_config_print_rejected("RXBW", val);
         }
     }
 
     if (key == "OOK") {
         /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt. */
-        config_print_rejected("OOK", val);
+        driver_config_print_rejected("OOK", val);
         printf(" (SX1262: OOK nicht verfügbar)");
     }
 
     if (key == "SHAPING") {
         uint8_t sh = 0;
         const char *sh_label = NULL;
-        if (parse_fsk_shaping(val, &sh, &sh_label)) {
+        if (driver_parse_fsk_shaping(val, &sh, &sh_label)) {
             state = radio.setDataShaping(sh);
             if (state == RADIOLIB_ERR_NONE)
                 printf(" SHAPING=\033[92m%s\033[0m", sh_label);
             else
                 printf(" SHAPING=\033[91;5m%s\033[0m", sh_label);
         } else {
-            config_print_rejected("SHAPING", val);
+            driver_config_print_rejected("SHAPING", val);
         }
     }
 
@@ -388,9 +316,9 @@ void Sx1262Driver::applyFskParam(const char *tag,
         int enc = 0;
         if (config_value_parse_int_exact(val, &enc) && enc >= 0 && enc <= 2) {
             state = radio.setEncoding((uint8_t)enc);
-            config_print_state_int("ENCODING", enc, state);
+            driver_config_print_state_int("ENCODING", enc, state);
         } else {
-            config_print_rejected("ENCODING", val);
+            driver_config_print_rejected("ENCODING", val);
         }
     }
 
@@ -398,9 +326,9 @@ void Sx1262Driver::applyFskParam(const char *tag,
         int pre = 0;
         if (config_value_parse_int_exact(val, &pre) && config_policy_fsk_preamble_valid(pre)) {
             state = radio.setPreambleLength(pre);
-            config_print_state_int("PREAMBLE", pre, state);
+            driver_config_print_state_int("PREAMBLE", pre, state);
         } else {
-            config_print_rejected("PREAMBLE", val);
+            driver_config_print_rejected("PREAMBLE", val);
         }
     }
 
@@ -423,7 +351,7 @@ void Sx1262Driver::applyFskParam(const char *tag,
                     printf(" SYNC=\033[91;5m0x%04X\033[0m", (unsigned)raw);
             }
         } else {
-            config_print_rejected("SYNC", val);
+            driver_config_print_rejected("SYNC", val);
         }
     }
 
