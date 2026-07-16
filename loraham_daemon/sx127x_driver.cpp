@@ -47,9 +47,17 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     radio_->setPreambleLength(defaults->preamble_len);
     radio_->setCodingRate(defaults->coding_rate);
     radio_->setCRC(defaults->crc_on);
-    radio_->autoLDRO();
-    if (defaults->ldro >= 0)
-        radio_->forceLDRO(defaults->ldro != 0);
+    /* LDRO immer explizit ins Register schreiben: autoLDRO() setzt nur das
+     * Cache-Flag, und RadioLib schreibt nur bei Cache-Differenz. Ohne
+     * RESET-Leitung (Uputronics) überlebt ein zuvor forciertes LDRO-Bit
+     * sonst den Neustart im Chip, während der Cache vom POR-Zustand
+     * ausgeht (bench-verifiziert: korrupte Dekodierung bei SF11/BW250). */
+    bool ldro_needed = ((float)(1u << defaults->spreading_factor) /
+                        defaults->bandwidth_khz) >= 16.0f;
+    radio_->forceLDRO(defaults->ldro >= 0 ? (defaults->ldro != 0)
+                                          : ldro_needed);
+    if (defaults->ldro < 0)
+        radio_->autoLDRO();
     radio_->setOutputPower(defaults->power_dbm);
 
     return state;
@@ -62,7 +70,19 @@ int16_t Sx127xDriver::switchMode(RadioMode_t mode)
     if (mode == RADIO_MODE_FSK)
         return radio_->beginFSK();
 
-    return radio_->begin();
+    int16_t state = radio_->begin();
+
+    if (state == RADIOLIB_ERR_NONE) {
+        /* begin() geht vom POR-Zustand aus und schreibt LDRO nur bei
+         * Cache-Differenz; ohne RESET-Leitung bleibt ein altes forciertes
+         * LDRO-Bit sonst im Chip stehen. Explizit auf den begin()-Zustand
+         * (SF9/BW125 -> LDRO aus) zurückschreiben, danach Auto-Tracking
+         * für nachfolgende SF/BW-Setter. */
+        radio_->forceLDRO(false);
+        radio_->autoLDRO();
+    }
+
+    return state;
 }
 
 /* --- Live-RSSI (roher Registerzugriff) ------------------------------------ */
