@@ -171,6 +171,52 @@ static void test_handler_failure_is_reported(void)
     expect_int("handler failure error reported", ctx.error_count, 1);
 }
 
+// A rejected frame must produce exactly ONE error and the parser must
+// re-sync after the declared payload length: a valid frame following the
+// junk in the same feed is parsed normally (no per-byte error flood).
+static void test_invalid_frame_skips_declared_payload(void)
+{
+    FramedDataTxState state;
+    TestCtx ctx = {};
+    const uint8_t good_payload[] = { 0x42, 0x43 };
+    uint8_t buf[3 + 300 + FRAMED_DATA_HEADER_LEN + sizeof(good_payload)];
+
+    framed_data_tx_state_init(&state);
+
+    /* Oversized TX_PACKET: declared 300 bytes of junk payload... */
+    buf[0] = FRAMED_DATA_TYPE_TX_PACKET;
+    buf[1] = 0x2C;                      /* 300 little-endian */
+    buf[2] = 0x01;
+    memset(buf + 3, 'X', 300);
+    /* ...directly followed by a valid 2-byte TX frame. */
+    encode_tx(buf + 3 + 300, good_payload, sizeof(good_payload));
+
+    expect_int("skip feed ok",
+               framed_data_tx_feed_state(&state, buf, sizeof(buf),
+                                         on_tx, &ctx, on_error, &ctx), 0);
+    expect_int("skip exactly one error", ctx.error_count, 1);
+    expect_int("skip following frame delivered", ctx.tx_count, 1);
+    expect_int("skip following frame length", (int)ctx.last_len,
+               (int)sizeof(good_payload));
+
+    /* Unknown frame type with declared payload: same contract. */
+    TestCtx ctx2 = {};
+    framed_data_tx_state_init(&state);
+    buf[0] = 0x7F;
+    buf[1] = 0x04;
+    buf[2] = 0x00;
+    memset(buf + 3, 'A', 4);
+    encode_tx(buf + 3 + 4, good_payload, sizeof(good_payload));
+
+    expect_int("unknown-skip feed ok",
+               framed_data_tx_feed_state(&state, buf,
+                                         3 + 4 + FRAMED_DATA_HEADER_LEN +
+                                             sizeof(good_payload),
+                                         on_tx, &ctx2, on_error, &ctx2), 0);
+    expect_int("unknown-skip one error", ctx2.error_count, 1);
+    expect_int("unknown-skip following frame delivered", ctx2.tx_count, 1);
+}
+
 static void test_null_arguments(void)
 {
     FramedDataTxState state;
@@ -213,6 +259,7 @@ int main(int argc, char **argv)
     test_unsupported_client_frame_reports_error();
     test_oversized_tx_reports_error();
     test_handler_failure_is_reported();
+    test_invalid_frame_skips_declared_payload();
     test_null_arguments();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
