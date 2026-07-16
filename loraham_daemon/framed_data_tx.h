@@ -21,6 +21,10 @@ typedef struct {
     size_t payload_len;
     uint16_t expected_len;
     uint8_t frame_type;
+    /* Bytes of a rejected frame's declared payload still to swallow: an
+     * invalid header yields exactly ONE error and the parser re-syncs after
+     * the declared length instead of parsing payload bytes as headers. */
+    uint16_t skip_len;
 } FramedDataTxState;
 
 void framed_data_tx_state_init(FramedDataTxState *state);

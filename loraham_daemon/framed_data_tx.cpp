@@ -40,6 +40,7 @@ static int framed_data_tx_header_ready(FramedDataTxState *state,
     if (!framed_data_type_known(frame_type)) {
         framed_data_tx_error(on_error, error_ctx, "unknown frame type");
         framed_data_tx_state_init(state);
+        state->skip_len = payload_len;
         return 0;
     }
 
@@ -47,6 +48,7 @@ static int framed_data_tx_header_ready(FramedDataTxState *state,
         if (payload_len > FRAMED_DATA_MAX_RF_PAYLOAD) {
             framed_data_tx_error(on_error, error_ctx, "unsupported frame too large");
             framed_data_tx_state_init(state);
+            state->skip_len = payload_len;
             return 0;
         }
 
@@ -58,6 +60,7 @@ static int framed_data_tx_header_ready(FramedDataTxState *state,
     if (!framed_data_rf_payload_len_valid(payload_len)) {
         framed_data_tx_error(on_error, error_ctx, "TX payload too large");
         framed_data_tx_state_init(state);
+        state->skip_len = payload_len;
         return 0;
     }
 
@@ -102,6 +105,13 @@ int framed_data_tx_feed_state(FramedDataTxState *state,
         return -1;
 
     for (size_t i = 0; i < len; i++) {
+        /* Swallow the declared payload of a rejected frame (one error was
+         * already reported); header parsing resumes right after it. */
+        if (state->skip_len > 0) {
+            state->skip_len--;
+            continue;
+        }
+
         if (state->header_len < FRAMED_DATA_HEADER_LEN) {
             state->header[state->header_len++] = buf[i];
 

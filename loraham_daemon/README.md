@@ -328,7 +328,7 @@ Rules:
 - Final framed `TX_RESULT` flags include managed and CAD-timeout context (the deferred bit `1` is reserved and currently never set; deferred delivery is recognizable by the suppressed immediate result).
 - Queued framed TX suppresses the immediate success `TX_RESULT`; final async completion is delivered later to the originating framed client.
 - If the originating framed client slot has closed or been reused before completion, the stale final `TX_RESULT` is dropped and counted in `TXQSTALE`.
-- Oversized `TX_PACKET` frames and unsupported frame types are rejected with an `ERROR` frame.
+- Oversized `TX_PACKET` frames and unsupported frame types are rejected with exactly one `ERROR` frame; the parser re-syncs after the rejected frame's declared payload length, so a following valid frame on the same connection is parsed normally.
 - One valid `TX_PACKET` maps to one RF transmit attempt; it is not split.
 - One received RF packet is sent to framed clients as exactly one `RX_PACKET`.
 - `RX_PACKET` payload length is `4 + rf_len`; maximum complete RX frame size is `262` bytes.
