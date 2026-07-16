@@ -1,6 +1,8 @@
 # Changelog
 
 ## loraham_daemon 112
+- Framed DATA: a rejected frame (oversized TX_PACKET, unknown/oversized frame type) now yields exactly one ERROR frame; the parser skips the declared payload and re-syncs (previously each junk byte produced an "unknown frame type" ERROR).
+- Cleanup: .gitignore covers all built test binaries by pattern (+ repo-root ignore for IDE dirs), shared driver print/shaping helpers (`driver_config_print.h`), `--help` notes that only the selected band's sockets are created.
 - Multi-hardware M5: docs closure — README architecture table covers hardware profiles and both radio drivers, combination matrix final, maintainer on-air checklists (M3 A/B + M4 SX1262) collected in `HW-ONAIR-CHECKLIST.md`.
 - Multi-hardware M4: `Sx1262Driver` activates `--hw waveshare-sx1262` (LF and HF binding): TCXO via DIO3 in begin()/beginFSK(), DIO2-as-RF-switch + TXEN, SX126x CRC/sync/power/LDRO semantics, no-OOK rejected, live RSSI via GetRssiInst; without the HAT begin() fails closed with one diagnosis line (suite-tested on the bench).
 - Multi-hardware M3: chip access extracted into a runtime `RadioDriver` interface (`radio_driver.h`, `sx127x_driver.{h,cpp}`); `RadioController` and all runtime paths are chip-agnostic (no SX1278/RFM95 names or SX127x register constants outside the driver). Behavior-identical: full suite and live legacy-hardware smoke (STATUS/CHANNEL/TX) unchanged.

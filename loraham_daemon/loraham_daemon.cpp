@@ -286,7 +286,7 @@ static void daemon_print_usage(const char *argv0)
     printf("      --cad-rssi DBM      CAD-Busy-Schwelle, Ganzzahl dBm -130..0 (Standard: -90)\n");
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
-    printf("Sockets:\n");
+    printf("Sockets (erzeugt werden nur die des gewählten Bandes):\n");
     printf("  DATA  433: /tmp/lora433.sock\n");
     printf("  DATA  868: /tmp/lora868.sock\n");
     printf("  DATAF 433: /tmp/lora433f.sock\n");
