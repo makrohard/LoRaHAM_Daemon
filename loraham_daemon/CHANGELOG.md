@@ -3,10 +3,14 @@
 ## loraham_daemon 112
 
 - New Hardware Support:
-  - Raspberry Pizzero LoRa(TM) expansion Board V2.5C
-  - Waveshare SX1262 LoRaWAM/GNSS HAT
+  - Uputronics Raspberry PiZero LoRa(TM) Expansion Board V2.5C
+  - Waveshare SX1262 LoRaWAN/GNSS HAT
 
 - BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
+
+- BREAKING: the band-suffixed CLI flags `--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868` are removed (rejected as unknown options); the plain `--tx-mode`, `--cad-monitor`, `--cad-rssi` apply to the selected band.
+
+- Fixes from the hardware validation (`HW-ONAIR-CHECKLIST.md`): sx1262 RF-switch polarity (TX radiated nothing), sx127x LDRO warm-start ghost on no-RESET boards (garbled RX after reconfig), chip-family-aware FSK `RXBW` validation (RXBW was unconfigurable on SX1262); framed DATA emits one ERROR per rejected frame instead of one per junk byte.
 
 ## loraham_daemon 111a
 - loraham_daemon can now safely run multiple instances
