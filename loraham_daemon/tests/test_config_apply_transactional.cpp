@@ -16,6 +16,7 @@ static int g_fail = 0;
 struct FakeRadio : public RadioDriver {
     int begin_count;
     int begin_fsk_count;
+    int16_t lora_apply_result = 0;
     int lora_apply_count;
     int fsk_apply_count;
     int begin_result;
@@ -52,19 +53,21 @@ struct FakeRadio : public RadioDriver {
         return begin_result;
     }
 
-    void applyLoraParam(const char *, const std::string &,
-                        const std::string &) override
+    int16_t applyLoraParam(const char *, const std::string &,
+                           const std::string &) override
     {
         if (first_apply_seq < 0)
             first_apply_seq = call_seq;
         call_seq++;
         lora_apply_count++;
+        return lora_apply_result;
     }
 
-    void applyFskParam(const char *, const std::string &,
-                       const std::string &) override
+    int16_t applyFskParam(const char *, const std::string &,
+                          const std::string &) override
     {
         fsk_apply_count++;
+        return 0;
     }
 
     int16_t begin(const RadioRfDefaults *) override { return begin_result; }

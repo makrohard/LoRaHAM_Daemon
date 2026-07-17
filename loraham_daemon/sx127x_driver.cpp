@@ -184,7 +184,7 @@ void sx127x_diagnose_begin_failure(Module *mod, const char *band, int state)
 
 /* --- LoRa CONFIG apply --------------------------------------------------- */
 
-void Sx127xDriver::applyLoraParam(const char *tag,
+int16_t Sx127xDriver::applyLoraParam(const char *tag,
                                   const std::string &key,
                                   const std::string &val)
 {
@@ -299,11 +299,12 @@ void Sx127xDriver::applyLoraParam(const char *tag,
     }
 
     fflush(stdout);
+    return (int16_t)state;
 }
 
 /* --- FSK CONFIG apply ---------------------------------------------------- */
 
-void Sx127xDriver::applyFskParam(const char *tag,
+int16_t Sx127xDriver::applyFskParam(const char *tag,
                                  const std::string &key,
                                  const std::string &val)
 {
@@ -432,4 +433,5 @@ void Sx127xDriver::applyFskParam(const char *tag,
     }
 
     fflush(stdout);
+    return (int16_t)state;
 }

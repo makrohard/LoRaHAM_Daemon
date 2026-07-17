@@ -272,9 +272,12 @@ int config_status_is_set_cadtxaftertimeout(const char *line, int *val)
     return 0;
 }
 
+/* Counters report the worker's real state regardless of tx_queue_active
+ * (audit P1-5): SET TXQUEUE=0 only stops NEW submissions — hiding pending/
+ * processed work while the worker still drains would blind an operator. */
 size_t config_status_txq_pending(const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_pending();
@@ -282,7 +285,7 @@ size_t config_status_txq_pending(const RadioController *ctrl)
 
 size_t config_status_txq_dropped(const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_dropped();
@@ -290,7 +293,7 @@ size_t config_status_txq_dropped(const RadioController *ctrl)
 
 size_t config_status_txq_rejected(const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_rejected();
@@ -298,7 +301,7 @@ size_t config_status_txq_rejected(const RadioController *ctrl)
 
 size_t config_status_txq_stale(const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_completion_stale();
@@ -307,7 +310,7 @@ size_t config_status_txq_stale(const RadioController *ctrl)
 size_t config_status_txq_result_dropped(
     const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_completion_dropped();
@@ -315,7 +318,7 @@ size_t config_status_txq_result_dropped(
 
 size_t config_status_txq_processed(const RadioController *ctrl)
 {
-    if (!ctrl || !ctrl->tx_queue_active.load())
+    if (!ctrl)
         return 0;
 
     return daemon_tx_async_runtime_processed();
@@ -325,9 +328,6 @@ int config_status_txq_last_result(const RadioController *ctrl,
                                                 DaemonTxJobResult *result)
 {
     if (!ctrl || !result)
-        return 0;
-
-    if (!ctrl->tx_queue_active.load())
         return 0;
 
     return daemon_tx_async_runtime_last_result(result);
@@ -359,7 +359,7 @@ void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -384,7 +384,12 @@ void config_status_format(char *buf,
              (ctrl && ctrl->cad_send_after_timeout.load()) ? 1 : 0,
              (ctrl && ctrl->cad_monitor_active.load()) ? 1 : 0,
              (double)(ctrl ? ctrl->cad_rssi_threshold_dbm.load()
-                           : RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM));
+                           : RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM),
+             /* RXREADY (appended, audit P1-6): 1 = receiver armed; 0 = a
+              * re-arm failure is latched (retry running) or radio not
+              * READY. */
+             (radio_controller_ready(ctrl) &&
+              !(ctrl && ctrl->rx_rearm_pending.load())) ? 1 : 0);
 }
 
 const char *config_status_cad_state_name(RadioCadProbeStatus status)

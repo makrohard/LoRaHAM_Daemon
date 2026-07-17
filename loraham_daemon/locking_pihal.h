@@ -55,7 +55,9 @@ class LockingPiHal : public PiHal {
     LockingPiHal(uint8_t spiChannel, uint32_t spiSpeed = 2000000,
                  uint8_t spiDevice = 0, uint8_t gpioDevice = 0,
                  loraham_flock_fn flock_fn = flock)
-      : PiHal(spiChannel, spiSpeed, spiDevice, gpioDevice), _flock(flock_fn) {
+      : PiHal(spiChannel, spiSpeed, spiDevice, gpioDevice),
+        _ownSpiDevice(spiDevice), _ownSpiChannel(spiChannel),
+        _ownSpiSpeed(spiSpeed), _flock(flock_fn) {
         open_lock();
     }
 
@@ -99,12 +101,44 @@ class LockingPiHal : public PiHal {
         }
     }
 
+    /* SPI ownership (audit P1-1): the base PiHal prints and SWALLOWS
+     * lgSpiXfer/lgSpiOpen errors, so a RadioLib setter can report success
+     * after the bus transfer failed. This HAL owns the SPI handle itself and
+     * fails closed: an open failure leaves the handle invalid (transfers
+     * fatal), a transfer failure is fatal — silent register corruption is
+     * never an option. */
+    void spiBegin() override {
+        if (_ownSpiHandle >= 0)
+            return;
+
+        _ownSpiHandle = lgSpiOpen(_ownSpiDevice, _ownSpiChannel,
+                                  _ownSpiSpeed, 0);
+        if (_ownSpiHandle < 0)
+            fprintf(stderr, "[SPI] lgSpiOpen fehlgeschlagen: %s\n",
+                    lguErrorText(_ownSpiHandle));
+    }
+
+    void spiEnd() override {
+        if (_ownSpiHandle >= 0) {
+            lgSpiClose(_ownSpiHandle);
+            _ownSpiHandle = -1;
+        }
+    }
+
     void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override {
         /* Hard invariant: never touch the shared SPI bus without the lock. */
         if (!_held)
             fatal("SPI-Transfer ohne gehaltene Sperre");
 
-        PiHal::spiTransfer(out, len, in);
+        if (_ownSpiHandle < 0)
+            fatal("SPI-Transfer ohne offenes SPI-Handle");
+
+        int result = lgSpiXfer(_ownSpiHandle, (char *)out, (char *)in, len);
+        if (result < 0) {
+            fprintf(stderr, "[SPI] lgSpiXfer fehlgeschlagen: %s\n",
+                    lguErrorText(result));
+            fatal("SPI-Transfer fehlgeschlagen (Bus-Fehler)");
+        }
     }
 
     void spiEndTransaction() override {
@@ -130,6 +164,11 @@ class LockingPiHal : public PiHal {
         fflush(stderr);
         _exit(LORAHAM_EXIT_LOCK_ERROR);
     }
+
+    int _ownSpiHandle = -1;
+    uint8_t _ownSpiDevice;
+    uint8_t _ownSpiChannel;
+    uint32_t _ownSpiSpeed;
 
     void open_lock() {
         /* Validate the trusted lock directory, then create spi0.lock relative to

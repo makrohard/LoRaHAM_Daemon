@@ -46,7 +46,8 @@ void data_tx_process_slots(const char *tag,
                            const EventLoopReadySet *readfds,
                            DataTxChunkHandler handler,
                            void *ctx,
-                           DataTxLog log)
+                           DataTxLog log,
+                           DataTxCapacityFn capacity_bytes_fn)
 {
     (void)tag;
 
@@ -58,10 +59,20 @@ void data_tx_process_slots(const char *tag,
 
         if(client_slot_ready(slot, readfds)) {
             uint8_t large_buf[2048];
+            size_t read_limit = sizeof(large_buf);
             ssize_t n;
 
+            if (capacity_bytes_fn) {
+                size_t capacity = capacity_bytes_fn(ctx);
+
+                if (capacity == 0)
+                    continue; /* no queue capacity: leave bytes in the kernel */
+                if (capacity < read_limit)
+                    read_limit = capacity;
+            }
+
             do {
-                n = read(slot->fd, large_buf, sizeof(large_buf));
+                n = read(slot->fd, large_buf, read_limit);
             } while(n < 0 && errno == EINTR);
 
             if(n < 0) {

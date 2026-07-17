@@ -75,7 +75,10 @@ int daemon_lifecycle_redirect_stdio(const char *log_path)
      * to the stdout STREAM via /dev/fd (race-free: it names our open file
      * description, not the path) so the freopen resets FILE buffering —
      * plain dup2 would keep a stale fully-buffered stream that _exit()
-     * silently drops. */
+     * silently drops. /dev/fd is the standard /proc/self/fd symlink and
+     * requires a mounted /proc — always present on the supported Raspberry
+     * Pi OS targets; without it the redirect fails closed (daemon mode
+     * aborts) rather than logging to the wrong place. */
     int fd = open(log_path,
                   O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC,
                   0640);

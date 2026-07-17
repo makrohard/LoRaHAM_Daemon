@@ -270,14 +270,14 @@ later milestone).
 | TX/CAD policy poll interval | `50 ms` | Poll interval used by TX-busy and CAD wait loops |
 | Send after CAD timeout | disabled | MANAGED TX returns `CHANNEL_BUSY` after the CAD wait timeout |
 | `SET CADMONITOR` | `0`/`1`, default `0` | Per-band opt-in for the smoothed RSSI-based `CAD=0/1` indicator (not scan-based CAD); off means a connected CONF client never triggers monitoring |
-| `SET CADRSSI` | integer dBm `-130`..`0`, default `-90` | Per-band busy threshold for the RSSI-based CAD indicator; `CAD=0` needs two consecutive samples at least 3 dB below it (environment dependent) |
+| `SET CADRSSI` | integer dBm `-130`..`0`, default `-90` | Per-band busy threshold for the RSSI-based CAD indicator (`CAD=0` needs two consecutive samples at least 3 dB below it). On wiring without DIO1 (e.g. Uputronics), the same threshold is the passive-LBT fallback that gates MANAGED TX — changing it changes whether that hardware transmits |
 | `SET CADWAIT` range | 50–5000 ms | Per-band runtime CAD wait timeout; defaults to `1500 ms` |
 | `SET CADIDLE` range | 0–2000 ms | Per-band runtime stable-idle window; defaults to `250 ms` |
 | `SET CADPOLL` range | 10–500 ms | Per-band runtime CAD poll interval; defaults to `50 ms` |
 | Event-loop timeout | `10000 µs` / `10 ms` | Main loop socket wait timeout |
 | RSSI interval | `100 ms` | `GETRSSI=1` stream cadence, about 10 Hz |
 | CAD monitor poll interval | `200 ms` | CONF `CAD=1/0` RSSI-probe cadence; only while opted in (`SET CADMONITOR=1`) with a matching CONF client |
-| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator at or above this live RSSI; tunable per band via `SET CADRSSI` / `--cad-rssi` (environment dependent) |
+| CAD monitor RSSI threshold | `-90 dBm` | Channel counts as busy for the `CAD=1/0` indicator at or above this live RSSI; tunable per band via `SET CADRSSI` / `--cad-rssi` (environment dependent). Doubles as the MANAGED-TX passive-LBT threshold on DIO1-less wiring (Uputronics) |
 | CAD monitor free confirmation | `2` samples, `3 dB` | `CAD=0` requires two consecutive samples at least 3 dB below the threshold (about 400 ms at the 200 ms cadence); dead-band values keep the current state |
 
 ## Current TX/CAD behavior
@@ -446,7 +446,7 @@ GET CHANNEL
 `GET STATUS` returns one runtime snapshot on the same CONF socket:
 
 ```text
-STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQREJECT=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1 CADMONITOR=0|1 CADRSSI=<dbm>
+STATUS RADIO=READY|FAILED|UNINITIALIZED TX=0|1 CAD=0|1 GETRSSI=0|1 TXRESULT=0|1 TXMODE=MANAGED|DIRECT TXQUEUE=0|1 TXQ=N TXQDROP=N TXQREJECT=N TXQSTALE=N TXQRESULTDROP=N TXQDONE=N TXQLAST=NAME TXQSEQ=N CADWAIT=N CADIDLE=N CADPOLL=N CADTXAFTERTIMEOUT=0|1 CADMONITOR=0|1 CADRSSI=<dbm> RXREADY=0|1
 ```
 
 `TXQDROP` counts pending jobs discarded at shutdown. `TXQREJECT` counts jobs rejected because the queue was full (reject-newest) or submitted after shutdown began. `TXQRESULTDROP` counts completion records evicted from the bounded completion queue. `TXQSTALE` counts final framed results suppressed because their original client slot is stale.
@@ -471,6 +471,7 @@ Important behavior:
 - `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|DIRECT`, `SET TXQUEUE=0|1`, and `SET CADMONITOR=0|1` are stable per-band control commands.
 - `SET CADWAIT=N`, `SET CADIDLE=N`, `SET CADPOLL=N`, and `SET CADTXAFTERTIMEOUT=0|1` set the per-band CAD policy; accepted ranges are `CADWAIT` 50–5000 ms, `CADIDLE` 0–2000 ms, `CADPOLL` 10–500 ms. Out-of-range values are rejected and leave the previous policy unchanged. Policy changes apply to future TX attempts and queued jobs; each queued job snapshots the policy at creation time.
 - `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
+- Queued TX jobs snapshot band, TX mode, CAD policy, and payload at submission — NOT the RF configuration (modem, frequency, SF/BW/CR): a job executes against the radio configuration current at execution time, so a CONFIG change between enqueue and execution affects already-accepted jobs. `SET TXQUEUE=0` stops NEW submissions only; previously queued jobs still drain through the worker (their `TXQ*` counters keep reporting the real state). Coordinating queued jobs with reconfiguration (per-job config snapshot or drain-before-apply) is deferred to the transactional-CONFIG rework.
 - CONFIG apply is whole-command prevalidation followed by sequential apply, not a transaction: the full command is validated (syntax, ranges, band frequency policy, duplicate keys rejected) before any radio side effect, then parameters apply in order without rollback — a RadioLib-level failure mid-apply leaves earlier parameters applied.
 - `MODE=LORA` calls RadioLib `begin()`, `MODE=FSK` calls `beginFSK()` — both land on the band's boot RF defaults (frequency, modulation parameters), never on chip register defaults. Explicit parameters in the same command line are applied on top afterwards; anything not set stays at the band default.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
@@ -590,15 +591,15 @@ death.
 - Lock ordering is deadlock-free: the in-process `radio_mutex` is always
   taken before the low-level SPI `flock`, never the reverse; one instance lock
   per process, then `spi0`, and `spi0` is only taken inside a transaction.
-- **Bounded wait — current decision:** the per-transaction `flock(LOCK_EX)` is
-  *blocking* (EINTR-retried). This is intentional: a transaction is a single
-  short RadioLib transfer, so contention is sub-millisecond; a crashed peer is
-  released by the kernel; and a timeout could only *fatal* (never proceed
-  unlocked), which would kill a healthy band because its peer stalled — and a
-  peer wedged mid-transfer already makes the shared bus unusable. A bounded
-  monotonic deadline that fatals on expiry is the natural next step if field data
-  shows real stalls; it is deferred pending measured hardware data rather than
-  added blindly.
+- **Bounded wait:** per-transaction acquisition polls `flock(LOCK_EX|LOCK_NB)`
+  against a 2-second `CLOCK_MONOTONIC` deadline (1 ms poll interval) and
+  *fatals* on expiry — never proceeds unlocked. Trade-off: under contention the
+  poll adds up to ~1 ms of acquisition latency versus the previous blocking
+  wake-up; SPI transactions are sub-millisecond and contention between two
+  healthy band processes is rare, so this is noise — while the deadline turns a
+  live-but-wedged peer (which previously hung this daemon forever, invisible to
+  systemd) into a detectable fatal restart. A crashed peer is still released by
+  the kernel immediately.
 
 ### systemd deployment
 
@@ -711,15 +712,15 @@ settings (≤20 dBm).
 | `BW` | LORA | 433: `125`, 868: `250` | exact `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz | `125`, `250` | LoRa bandwidth |
 | `CR` | LORA | `5` | integer `5` to `8` | `5` | LoRa coding rate (`4/5` to `4/8`) |
 | `CRC` | LORA | `1` | exact `0`, `1` | `1` | LoRa CRC off/on |
-| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048` (airtime-bounded; the old 65535 ceiling allowed ~36 min of preamble at SF12/BW125) | `8`, `16`, `32` | Preamble length |
+| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048` (bounded ranges — NOT a full airtime policy: extreme accepted combinations like SF12/BW7.8/CR8 with max preamble and payload still reach ~8 min airtime; complete per-packet airtime validation needs effective-config tracking and is deferred to the transactional-CONFIG rework) | `8`, `16`, `32` | Preamble length |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00` to `0xFF` or decimal `0` to `255`; FSK: 1 or 2 non-zero bytes, max `0xFFFF` | `0x12`, `0x2B`, `0x2DD4` | Sync word |
 | `LDRO` | LORA | 433: `1`, 868: `AUTO` | exact `AUTO`, `auto`, `0`, `1` | `AUTO`, `1` for SF12/BW125 | Low Data Rate Optimization |
 | `BR` | FSK | RadioLib/default unset by daemon | strict number `0.5` to `300.0` kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |
-| `FREQDEV` | FSK | RadioLib/default unset by daemon | strict number `>0` to `200.0` kHz; RadioLib may reject invalid BR/FREQDEV combinations | `2.2`, `3.0`, `5.0`, `10.0` | Frequency deviation |
+| `FREQDEV` | FSK | RadioLib/default unset by daemon | strict number `>0` to `200.0` kHz (SX1262: minimum `0.6` kHz); RadioLib may reject invalid BR/FREQDEV combinations | `2.2`, `3.0`, `5.0`, `10.0` | Frequency deviation |
 | `RXBW` | FSK | RadioLib/default unset by daemon | exact `2.6`, `3.1`, `3.9`, `5.2`, `6.3`, `7.8`, `10.4`, `12.5`, `15.6`, `20.8`, `25.0`, `31.25`, `31.3`, `41.7`, `50.0`, `62.5`, `83.3`, `100.0`, `125.0`, `166.7`, `200.0`, `250.0` kHz | `6.3`, `12.5`, `20.8`, `25.0`, `250.0` | RX filter bandwidth |
-| `OOK` | FSK | RadioLib/default | exact `0`, `1` | `0` FSK, `1` OOK | Enable OOK mode |
+| `OOK` | FSK | RadioLib/default | SX127x: exact `0`, `1`; SX1262: only `0` (no OOK modulator — `OOK=1` is rejected at prevalidation) | `0` FSK, `1` OOK (SX127x only) | Enable OOK mode |
 | `SHAPING` | FSK | RadioLib/default | exact `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0` | `0.0`, `0.3`, `0.5`, `1.0` | Data shaping / Gaussian filter |
-| `ENCODING` | FSK | RadioLib/default | integer `0`, `1`, `2` | `0` NRZ, `1` Manchester, `2` Whitening | FSK encoding |
+| `ENCODING` | FSK | RadioLib/default | SX127x: `0`, `1`, `2`; SX1262: only `0`, `2` (`1` would silently enable whitening, not Manchester — rejected) | `0` NRZ, `1` Manchester (SX127x), `2` Whitening | FSK encoding |
 
 ### CONF queries and runtime stats
 
@@ -729,7 +730,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 
 | Command | Response | Meaning |
 |---|---|---|
-| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
+| `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1` | Current radio health, runtime flags, TX mode, TX queue state, CAD policy; `RXREADY` (appended field) is `0` while a failed RX re-arm is being retried — with `RADIO=READY RXREADY=0` the daemon is temporarily deaf; persistent re-arm failure escalates to `RADIO=FAILED` |
 | `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0 RXREARMFAIL=0` | Counters since daemon start; `RXREARMFAIL` (appended field) counts failed RX re-arms after TX/probe/CONFIG — non-zero means the retry path had to recover the receiver |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, explicit live-register `LIVERSSI`, current modem mode, and TX mode |
 

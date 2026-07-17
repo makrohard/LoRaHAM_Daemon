@@ -127,6 +127,29 @@ static void test_freq_band_policy(void)
                config_policy_freq_valid_band(433.9f, 0.0f, 0.0f), 0);
 }
 
+/* Audit P1-3: family capability policy — prevalidation matches the driver. */
+static void test_family_capabilities(void)
+{
+    expect_int("sx127x freqdev 0.5 ok",
+               config_policy_fsk_freqdev_valid_family(0.5f, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx1262 freqdev 0.5 rejected",
+               config_policy_fsk_freqdev_valid_family(0.5f, DAEMON_CHIP_FAMILY_SX1262), 0);
+    expect_int("sx1262 freqdev 0.6 ok",
+               config_policy_fsk_freqdev_valid_family(0.6f, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx127x OOK=1 ok",
+               config_policy_fsk_ook_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx1262 OOK=1 rejected",
+               config_policy_fsk_ook_valid_family(1, DAEMON_CHIP_FAMILY_SX1262), 0);
+    expect_int("sx1262 OOK=0 ok",
+               config_policy_fsk_ook_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx127x ENCODING=1 ok",
+               config_policy_fsk_encoding_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx1262 ENCODING=1 rejected (whitening alias)",
+               config_policy_fsk_encoding_valid_family(1, DAEMON_CHIP_FAMILY_SX1262), 0);
+    expect_int("sx1262 ENCODING=2 ok",
+               config_policy_fsk_encoding_valid_family(2, DAEMON_CHIP_FAMILY_SX1262), 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -150,6 +173,7 @@ int main(int argc, char **argv)
     test_fsk_policy();
 
     test_freq_band_policy();
+    test_family_capabilities();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

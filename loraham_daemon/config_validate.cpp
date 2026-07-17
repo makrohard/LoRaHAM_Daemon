@@ -172,7 +172,7 @@ static bool config_validate_fsk_value(const std::string &key,
     if (key == "FREQDEV") {
         float freqdev = 0.0f;
         return config_value_parse_float_exact(val, &freqdev) &&
-               config_policy_fsk_freqdev_valid(freqdev);
+               config_policy_fsk_freqdev_valid_family(freqdev, chip_family);
     }
 
     if (key == "RXBW") {
@@ -181,8 +181,14 @@ static bool config_validate_fsk_value(const std::string &key,
                config_policy_fsk_rxbw_valid_family(bw, chip_family);
     }
 
-    if (key == "OOK")
-        return config_value_parse_bool01_exact(val, NULL);
+    if (key == "OOK") {
+        int ook = 0;
+        if (!config_value_parse_bool01_exact(val, &ook))
+            return false;
+        /* SX126x has no OOK (audit P1-3): reject at prevalidation instead
+         * of switching mode first and failing the key afterwards. */
+        return config_policy_fsk_ook_valid_family(ook, chip_family);
+    }
 
     if (key == "SHAPING")
         return config_validate_fsk_shaping_value(val);
@@ -190,7 +196,7 @@ static bool config_validate_fsk_value(const std::string &key,
     if (key == "ENCODING") {
         int encoding = 0;
         return config_value_parse_int_exact(val, &encoding) &&
-               encoding >= 0 && encoding <= 2;
+               config_policy_fsk_encoding_valid_family(encoding, chip_family);
     }
 
     if (key == "PREAMBLE") {
@@ -209,6 +215,26 @@ static bool config_validate_fsk_value(const std::string &key,
 }
 
 /* --- Whole-command validation ------------------------------------------- */
+
+/* Distinct reason for band-policy hits: a client tuning an 868 process to
+ * 433.9 sent perfectly valid syntax — "invalid value" would hide that it hit
+ * the band policy, not a typo. */
+static const char *config_validate_reject_reason(const std::string &key,
+                                                 const std::string &val,
+                                                 const char *generic,
+                                                 float freq_min_mhz,
+                                                 float freq_max_mhz)
+{
+    if (key != "FREQ")
+        return generic;
+
+    float f = 0.0f;
+    if (config_value_parse_float_exact(val, &f) && f > 0.0f &&
+        !config_policy_freq_valid_band(f, freq_min_mhz, freq_max_mhz))
+        return "off-band frequency (band policy)";
+
+    return generic;
+}
 
 bool config_validate_command(const ConfigCommand &cmd,
                              RadioMode_t current_mode,
@@ -230,6 +256,12 @@ bool config_validate_command(const ConfigCommand &cmd,
     }
 
     RadioMode_t target_mode = current_mode;
+
+    if (cmd.mode_count > 1) {
+        config_validation_reject(result, "MODE", cmd.mode,
+                                 "duplicate key");
+        return false;
+    }
 
     if (!cmd.mode.empty()) {
         if (cmd.mode == "FSK") {
@@ -284,7 +316,9 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (!config_validate_fsk_value(key, val, chip_family,
                                            freq_min_mhz, freq_max_mhz)) {
                 config_validation_reject(result, key, val,
-                                         "invalid FSK value");
+                                         config_validate_reject_reason(
+                                             key, val, "invalid FSK value",
+                                             freq_min_mhz, freq_max_mhz));
                 return false;
             }
         } else {
@@ -294,7 +328,9 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (!config_validate_lora_value(key, val,
                                             freq_min_mhz, freq_max_mhz)) {
                 config_validation_reject(result, key, val,
-                                         "invalid LoRa value");
+                                         config_validate_reject_reason(
+                                             key, val, "invalid LoRa value",
+                                             freq_min_mhz, freq_max_mhz));
                 return false;
             }
         }

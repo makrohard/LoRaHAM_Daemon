@@ -164,7 +164,7 @@ static void test_process_slots_epoll(void)
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots(name, slots, 2, &ready, record_chunk, &rec,
-                          null_data_tx_log());
+                          null_data_tx_log(), NULL);
 
     expect_int("process slots call count", rec.calls, 2);
     expect_size("process slots first chunk", rec.sizes[0], 255);
@@ -219,7 +219,7 @@ static void test_process_slots_abort_on_handler_error(void)
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots(name, slots, 2, &ready, stop_on_second_chunk, &rec,
-                          null_data_tx_log());
+                          null_data_tx_log(), NULL);
 
     expect_int("process abort call count", rec.calls, 2);
     expect_size("process abort first chunk", rec.sizes[0], 255);
@@ -267,7 +267,7 @@ static void test_process_slots_eof_closes_and_resets_output(void)
     expect_int("slot eof wait", event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots("TEST", slots, 1, &ready, record_chunk, &rec,
-                          null_data_tx_log());
+                          null_data_tx_log(), NULL);
 
     expect_int("slot eof no chunks", rec.calls, 0);
     expect_int("slot eof client closed", slots[0].fd, -1);

@@ -111,6 +111,14 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
     if (ctrl->mode != RADIO_MODE_LORA)
         return result; // UNAVAILABLE for non-LoRa, like the active probe.
 
+    /* Validity gate (audit P1-4): the -200 sentinel (and anything below any
+     * physical noise floor) means "no usable reading", not "quiet channel" —
+     * report UNAVAILABLE instead of a false FREE. */
+    if (result.rssi_dbm <= -190.0f) {
+        result.status = RADIO_CAD_PROBE_UNAVAILABLE;
+        return result;
+    }
+
     result.scan_ran = 0;
     result.status = (result.rssi_dbm >= ctrl->cad_rssi_threshold_dbm.load())
                         ? RADIO_CAD_PROBE_BUSY

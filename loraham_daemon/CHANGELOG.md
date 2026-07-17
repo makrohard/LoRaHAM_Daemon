@@ -24,10 +24,16 @@
 - Robustness polish: STATS/STATUS reply buffers sized for saturated 20-digit counters (no truncation possible), RX re-arm latch transitions are atomic exchanges, the re-arm retry never runs over an undrained packet, and shutdown resets the re-arm latch.
 - BEHAVIOR: every mandatory boot setter (frequency, SF, BW, sync, preamble, CR, CRC, LDRO, power) is now checked — a rejected setter fails the boot closed (FAILED health, stage logged) instead of a READY radio with partial RF configuration.
 - BEHAVIOR: `SET FREQ` is validated against the band's operational range from the descriptor (433: 430.0–440.0 MHz, 868: 863.0–870.0 MHz) — an 868 process can no longer be tuned off its logical band.
-- BEHAVIOR: preamble ranges are airtime-bounded (LoRa 6–512, FSK 0–2048); the old 65535 ceiling allowed a single valid ~36-minute preamble at SF12/BW125. Duplicate keys in one SET command are rejected (ambiguous under sequential apply).
+- BEHAVIOR: preamble ranges are bounded (LoRa 6–512, FSK 0–2048; the old 65535 ceiling allowed one valid ~36-minute preamble at SF12/BW125 — full airtime-based validation deferred to the transactional-CONFIG rework). Duplicate keys in one SET command are rejected (ambiguous under sequential apply).
 - SPI bus lock acquisition is deadline-bounded (2 s, CLOCK_MONOTONIC): a live-but-wedged peer process now causes a controlled fatal exit instead of hanging this daemon forever.
 - Background-mode log open is symlink-safe (`O_NOFOLLOW`); a symlink planted at the fixed /tmp log path is a hard error. Fixed a signed-shift UB in the RX debug decoder; test harness now fails on missing summaries, summary assertion failures, and unexpected XPASS (fail-open guard).
 - Repo entry point: root README now presents `loraham_daemon/` as the canonical tree; the legacy single-file daemons moved to `legacy/` (archived, not buildable per instructions).
+- BEHAVIOR: CONFIG apply reports a structured status — unknown/rejected/no-op commands no longer re-arm RX (a malformed CONF line could destroy a received, undrained packet); driver parameter setters return their RadioLib state, apply aborts on the first hardware failure, and a mid-apply failure fails the radio closed (`RADIO=FAILED`).
+- BEHAVIOR: MANAGED synchronous TX treats a failed/unavailable CAD probe as an error (abort, `RADIO_ERROR`) instead of a free channel; the passive probe reports UNAVAILABLE for sentinel RSSI readings instead of a false FREE.
+- BEHAVIOR: family-aware prevalidation — SX1262 rejects `OOK=1`, `ENCODING=1` (would silently enable whitening), and `FREQDEV<0.6`; duplicate `MODE` keys are rejected like other duplicates.
+- BEHAVIOR: persistent RX re-arm failure escalates to `RADIO=FAILED` after 30 consecutive failures; retries back off to 1/s; `GET STATUS` gains the appended `RXREADY` field.
+- Raw DATA reads are bounded by free TX-queue capacity (a single 2048-byte read could exceed the 8-job queue and silently drop the tail; excess bytes now stay in the kernel buffer). `TXQ*` STATUS counters report the worker's real state even while `TXQUEUE=0`.
+- sx1262 RF-switch setup (DIO2) is checked and propagated (a failure meant TX_RESULT OK with zero radiated RF); the HAL owns the SPI handle and fails closed on transfer errors (previously printed and swallowed by the base HAL); radio health is an atomic; SPI-lock acquisition documented with its latency trade-off; CADRSSI's dual role (monitor + Uputronics passive-LBT TX gate) documented; band-policy FREQ rejections log a distinct "off-band frequency" reason.
 
 
 ## loraham_daemon 111a

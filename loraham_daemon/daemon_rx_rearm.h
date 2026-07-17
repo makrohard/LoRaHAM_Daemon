@@ -21,6 +21,12 @@
  * discipline (radio_controller.h): gated on tx_busy and try_to_lock, never
  * blocking behind the TX worker.
  */
+/* Escalation (audit P1-6): this many consecutive failed (re-)arms flip the
+ * radio to FAILED — a persistently deaf receiver must not stay READY. */
+#define DAEMON_RX_REARM_FAIL_LIMIT 30u
+/* Retry backoff: at most one SPI re-arm attempt per second. */
+#define DAEMON_RX_REARM_RETRY_MS 1000
+
 void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
                                  const char *ctx);
 bool daemon_rx_rearm_boot_result(RadioController *ctrl, int16_t state);

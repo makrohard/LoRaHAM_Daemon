@@ -73,11 +73,14 @@ public:
                                const RadioRfDefaults *defaults) = 0;
 
     /* CONFIG SET parameter application for the current mode; prints the
-     * per-key colored state exactly like the pre-driver implementation. */
-    virtual void applyLoraParam(const char *tag, const std::string &key,
-                                const std::string &val) = 0;
-    virtual void applyFskParam(const char *tag, const std::string &key,
-                               const std::string &val) = 0;
+     * per-key colored state exactly like the pre-driver implementation.
+     * Returns the RadioLib state of the applied key (audit P1-2): 0 for
+     * OK/no-op/value-rejected-before-hardware; a nonzero RadioLib error
+     * means the chip rejected the operation and the apply must abort. */
+    virtual int16_t applyLoraParam(const char *tag, const std::string &key,
+                                   const std::string &val) = 0;
+    virtual int16_t applyFskParam(const char *tag, const std::string &key,
+                                  const std::string &val) = 0;
 
     /* Raw live channel RSSI (non-destructive; chip-native mechanism). */
     virtual float readLiveRssi(RadioMode_t mode, bool is_hf) = 0;

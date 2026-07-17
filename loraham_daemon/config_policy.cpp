@@ -136,3 +136,43 @@ bool config_policy_freq_valid_band(float freq_mhz,
 
     return freq_mhz >= min_mhz && freq_mhz <= max_mhz;
 }
+
+/* Family capability policy (audit P1-3): prevalidation must reject what the
+ * concrete driver will reject, or "whole-command prevalidation" is a lie
+ * (SET MODE=FSK OOK=1 would switch mode and only then fail the key). */
+
+bool config_policy_fsk_freqdev_valid_family(float freqdev,
+                                            DaemonChipFamily family)
+{
+    if (!config_policy_fsk_freqdev_valid(freqdev))
+        return false;
+
+    /* SX126x rejects positive deviations below 0.6 kHz. */
+    if (family == DAEMON_CHIP_FAMILY_SX1262)
+        return freqdev >= 0.6f;
+
+    return true;
+}
+
+bool config_policy_fsk_ook_valid_family(int ook, DaemonChipFamily family)
+{
+    /* SX126x has no OOK modulator; only OOK=0 (off) is acceptable. */
+    if (family == DAEMON_CHIP_FAMILY_SX1262)
+        return ook == 0;
+
+    return ook == 0 || ook == 1;
+}
+
+bool config_policy_fsk_encoding_valid_family(int encoding,
+                                             DaemonChipFamily family)
+{
+    if (encoding < 0 || encoding > 2)
+        return false;
+
+    /* SX126x maps setEncoding to whitening only: 1 (Manchester) would
+     * silently enable whitening instead — accept only 0 and 2. */
+    if (family == DAEMON_CHIP_FAMILY_SX1262)
+        return encoding != 1;
+
+    return true;
+}
