@@ -35,9 +35,9 @@ void daemon_debug_band(const char *tag, const char *fmt, ...)
 
 TxResult lora_send(uint8_t *buf, size_t len, int band)
 {
+    (void)band;
     (void)buf;
     (void)len;
-    (void)band;
     return TX_RESULT_RADIO_ERROR;
 }
 
@@ -78,16 +78,13 @@ static void test_worker_lookup(void)
 {
     daemon_tx_async_runtime_init();
 
-    expect_int("lookup 433 present",
-               daemon_tx_async_runtime_worker_for_band(433) != NULL, 1);
-    expect_int("lookup 868 present",
-               daemon_tx_async_runtime_worker_for_band(868) != NULL, 1);
-    expect_int("lookup invalid absent",
-               daemon_tx_async_runtime_worker_for_band(123) == NULL, 1);
-    expect_size("pending 433 zero",
-                daemon_tx_async_runtime_pending_for_band(433), 0);
-    expect_size("pending 868 zero",
-                daemon_tx_async_runtime_pending_for_band(868), 0);
+    /* Singleton runtime: exactly one worker, always present. The former
+     * invalid-band lookup guard moved with the API — band validity is
+     * enforced at lora_send() and covered by the INVALID_BAND TX tests. */
+    expect_int("worker singleton present",
+               daemon_tx_async_runtime_worker() != NULL, 1);
+    expect_size("pending zero after init",
+                daemon_tx_async_runtime_pending(), 0);
 
     daemon_tx_async_runtime_shutdown();
 }
@@ -98,19 +95,19 @@ static void test_shutdown_resets_queue_state(void)
     DaemonTxJob job = make_job(10);
 
     daemon_tx_async_runtime_init();
-    worker = daemon_tx_async_runtime_worker_for_band(433);
+    worker = daemon_tx_async_runtime_worker();
 
     expect_int("runtime submit before shutdown",
                daemon_tx_async_worker_submit(worker, &job), 0);
     expect_size("runtime pending before shutdown",
-                daemon_tx_async_runtime_pending_for_band(433), 1);
+                daemon_tx_async_runtime_pending(), 1);
 
     daemon_tx_async_runtime_shutdown();
 
     expect_size("runtime pending after shutdown",
-                daemon_tx_async_runtime_pending_for_band(433), 0);
+                daemon_tx_async_runtime_pending(), 0);
     expect_size("runtime pending invalid",
-                daemon_tx_async_runtime_pending_for_band(123), 0);
+                daemon_tx_async_runtime_pending(), 0);
 }
 
 static void test_init_idempotent(void)
@@ -119,9 +116,9 @@ static void test_init_idempotent(void)
     daemon_tx_async_runtime_init();
 
     expect_int("runtime 433 stopped",
-               daemon_tx_async_runtime_running_for_band(433), 0);
+               daemon_tx_async_runtime_running(), 0);
     expect_int("runtime 868 stopped",
-               daemon_tx_async_runtime_running_for_band(868), 0);
+               daemon_tx_async_runtime_running(), 0);
 
     daemon_tx_async_runtime_shutdown();
 }
@@ -138,26 +135,26 @@ static void test_completion_records_selected_stats(void)
     daemon_tx_async_runtime_init();
 
     daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_OK);
-    daemon_tx_async_runtime_set_stats_for_band(433, &stats_a);
+    daemon_tx_async_runtime_set_stats(&stats_a);
     daemon_tx_async_runtime_record_completion(
         &result,
-        daemon_tx_async_runtime_completion_record_ctx_for_band(433));
+        daemon_tx_async_runtime_completion_record_ctx());
 
     expect_size("runtime first stats tx ok", stats_a.tx_ok, 1);
     expect_size("runtime first stats pending",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 1);
 
     daemon_tx_job_result_init(&result, &job, DAEMON_TX_OUTCOME_BUSY);
-    daemon_tx_async_runtime_set_stats_for_band(433, &stats_b);
+    daemon_tx_async_runtime_set_stats(&stats_b);
     daemon_tx_async_runtime_record_completion(
         &result,
-        daemon_tx_async_runtime_completion_record_ctx_for_band(433));
+        daemon_tx_async_runtime_completion_record_ctx());
 
     expect_size("runtime old stats unchanged", stats_a.tx_busy, 0);
     expect_size("runtime selected stats busy", stats_b.tx_busy, 1);
     expect_size("runtime second stats pending",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 2);
 
     daemon_tx_async_runtime_shutdown();

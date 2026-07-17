@@ -3,57 +3,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "daemon_band.h"
 #include "daemon_instance_lock.h"
 #include "daemon_led.h"
 #include "daemon_lifecycle.h"
 #include "daemon_log.h"
 #include "daemon_radio_init.h"
 #include "daemon_radio_runtime.h"
-#include "daemon_radio_selection.h"
 #include "framed_data_tx.h"
 #include "hardware_profile.h"
 #include "unix_socket.h"
 
 /* --- Daemon I/O runtime state ------------------------------------------- */
-/* Socket fd and client-slot ownership. */
-int data433_fd = -1, data868_fd = -1;
-int data433_framed_fd = -1, data868_framed_fd = -1;
-int conf433_fd = -1, conf868_fd = -1;
+/* Socket fd and client-slot ownership for the one band of this process. */
+int data_fd = -1;
+int data_framed_fd = -1;
+int conf_fd = -1;
 
-ClientSlot client_data433_slots[MAX_CLIENTS];
-ClientSlot client_data868_slots[MAX_CLIENTS];
-ClientSlot client_data433_framed_slots[MAX_CLIENTS];
-ClientSlot client_data868_framed_slots[MAX_CLIENTS];
-FramedDataTxState client_data433_framed_states[MAX_CLIENTS];
-FramedDataTxState client_data868_framed_states[MAX_CLIENTS];
-ClientSlot client_conf433_slots[MAX_CLIENTS];
-ClientSlot client_conf868_slots[MAX_CLIENTS];
+ClientSlot client_data_slots[MAX_CLIENTS];
+ClientSlot client_data_framed_slots[MAX_CLIENTS];
+FramedDataTxState client_framed_states[MAX_CLIENTS];
+ClientSlot client_conf_slots[MAX_CLIENTS];
 
-
-/* Per-band channel descriptors. */
-RadioChannelIo channel_433;
-RadioChannelIo channel_868;
-
+/* Channel descriptor of the band. */
+RadioChannelIo channel;
 
 /* --- Shared I/O cleanup -------------------------------------------------- */
-static void daemon_io_close_433(void)
+static void daemon_io_close(void)
 {
-    client_slot_close_all(client_data433_slots, MAX_CLIENTS);
-    client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
-    client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
-    close_unix_socket(&data433_fd, DATA433_SOCKET);
-    close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
-    close_unix_socket(&conf433_fd, CONF433_SOCKET);
-}
+    const DaemonBandDescriptor *band = daemon_band();
 
-static void daemon_io_close_868(void)
-{
-    client_slot_close_all(client_data868_slots, MAX_CLIENTS);
-    client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
-    client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
-    close_unix_socket(&data868_fd, DATA868_SOCKET);
-    close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
-    close_unix_socket(&conf868_fd, CONF868_SOCKET);
+    client_slot_close_all(client_data_slots, MAX_CLIENTS);
+    client_slot_close_all(client_data_framed_slots, MAX_CLIENTS);
+    client_slot_close_all(client_conf_slots, MAX_CLIENTS);
+    close_unix_socket(&data_fd, band->data_socket);
+    close_unix_socket(&data_framed_fd, band->framed_socket);
+    close_unix_socket(&conf_fd, band->conf_socket);
 }
 
 /* --- Daemon I/O lifecycle ----------------------------------------------- */
@@ -62,23 +47,7 @@ void daemon_io_startup_cleanup(void)
     daemon_debug_ctx("LIFE", "Startup-Cleanup");
     daemon_radio_shutdown_cleanup();
 
-    if (daemon_radio_433_enabled()) {
-        client_slot_close_all(client_data433_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data433_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf433_slots, MAX_CLIENTS);
-        close_unix_socket(&data433_fd, DATA433_SOCKET);
-        close_unix_socket(&data433_framed_fd, DATA433_FRAMED_SOCKET);
-        close_unix_socket(&conf433_fd, CONF433_SOCKET);
-    }
-
-    if (daemon_radio_868_enabled()) {
-        client_slot_close_all(client_data868_slots, MAX_CLIENTS);
-        client_slot_close_all(client_data868_framed_slots, MAX_CLIENTS);
-        client_slot_close_all(client_conf868_slots, MAX_CLIENTS);
-        close_unix_socket(&data868_fd, DATA868_SOCKET);
-        close_unix_socket(&data868_framed_fd, DATA868_FRAMED_SOCKET);
-        close_unix_socket(&conf868_fd, CONF868_SOCKET);
-    }
+    daemon_io_close();
 
     /* Release instance ownership only after sockets are gone. */
     daemon_instance_lock_release();
@@ -87,20 +56,19 @@ void daemon_io_startup_cleanup(void)
 
 void daemon_io_shutdown_cleanup(void)
 {
-    if (daemon_radio_433_enabled())
-        daemon_io_close_433();
-
-    if (daemon_radio_868_enabled())
-        daemon_io_close_868();
+    daemon_io_close();
 }
 
 void daemon_io_init(void)
 {
+    const DaemonBandDescriptor *band = daemon_band();
+
     /*
-     * Take per-band instance-ownership locks FIRST -- before sockets, GPIO, SPI,
-     * or radio setup. This is the authoritative same-band ownership barrier and
-     * is held (via an open descriptor) until after socket cleanup, so a same-band
-     * restart cannot bind sockets while this instance is still shutting down.
+     * Take the per-band instance-ownership lock FIRST -- before sockets, GPIO,
+     * SPI, or radio setup. This is the authoritative same-band ownership
+     * barrier and is held (via an open descriptor) until after socket cleanup,
+     * so a same-band restart cannot bind sockets while this instance is still
+     * shutting down.
      */
     int lock_rc = daemon_instance_lock_acquire();
     if (lock_rc != 0)
@@ -121,76 +89,42 @@ void daemon_io_init(void)
     }
 
     daemon_debug_ctx("CLIENT", "Slots initialisieren");
-    if (daemon_radio_433_enabled()) {
-        client_slot_init_all(client_data433_slots, MAX_CLIENTS);
-        client_slot_init_all(client_data433_framed_slots, MAX_CLIENTS);
-        framed_data_tx_state_init_all(client_data433_framed_states, MAX_CLIENTS);
-        client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
-    }
-
-    if (daemon_radio_868_enabled()) {
-        client_slot_init_all(client_data868_slots, MAX_CLIENTS);
-        client_slot_init_all(client_data868_framed_slots, MAX_CLIENTS);
-        framed_data_tx_state_init_all(client_data868_framed_states, MAX_CLIENTS);
-        client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
-    }
+    client_slot_init_all(client_data_slots, MAX_CLIENTS);
+    client_slot_init_all(client_data_framed_slots, MAX_CLIENTS);
+    framed_data_tx_state_init_all(client_framed_states, MAX_CLIENTS);
+    client_slot_init_all(client_conf_slots, MAX_CLIENTS);
 
     daemon_debug_ctx("RADIO", "Kanal-IO initialisieren");
-    radio_channel_io_init(&channel_433,
-                          RADIO_BAND_433,
-                          DATA433_SOCKET,
-                          DATA433_FRAMED_SOCKET,
-                          CONF433_SOCKET,
-                          &data433_fd,
-                          &data433_framed_fd,
-                          &conf433_fd,
-                          client_data433_slots,
-                          client_data433_framed_slots,
-                          client_conf433_slots);
-    radio_channel_io_init(&channel_868,
-                          RADIO_BAND_868,
-                          DATA868_SOCKET,
-                          DATA868_FRAMED_SOCKET,
-                          CONF868_SOCKET,
-                          &data868_fd,
-                          &data868_framed_fd,
-                          &conf868_fd,
-                          client_data868_slots,
-                          client_data868_framed_slots,
-                          client_conf868_slots);
+    radio_channel_io_init(&channel,
+                          band->band,
+                          band->data_socket,
+                          band->framed_socket,
+                          band->conf_socket,
+                          &data_fd,
+                          &data_framed_fd,
+                          &conf_fd,
+                          client_data_slots,
+                          client_data_framed_slots,
+                          client_conf_slots);
 
     /*
-     * Claim the per-band status LED (a hardware resource). Same-band ownership
+     * Claim the band's status LED (a hardware resource). Same-band ownership
      * was already secured above by the instance FD lock; this only initialises
-     * the LED line for the selected band. A failed claim of the selected band
-     * is fatal because the LED is a required hardware resource for that band.
+     * the LED line. A failed claim is fatal because the LED is a required
+     * hardware resource for the band.
      */
     daemon_debug_ctx("GPIO", "LED initialisieren");
-    /* Route the profile's LED line to the selected band; the other band's
-     * slot keeps its (unused) default. led_pin < 0 = LED disabled. */
-    daemon_led_configure(
-        daemon_radio_433_enabled() ? daemon_hw_profile.led_pin
-                                   : DAEMON_LED_PIN_433,
-        daemon_radio_868_enabled() ? daemon_hw_profile.led_pin
-                                   : DAEMON_LED_PIN_868);
+    /* Route the profile's LED line to the band; led_pin < 0 = LED disabled. */
+    daemon_led_configure(daemon_hw_profile.led_pin);
     if (daemon_led_init() != 0) {
         printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
         exit(EXIT_FAILURE);
     }
 
     daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
-    if (daemon_radio_433_enabled() &&
-        radio_channel_open_sockets(&channel_433) != 0) {
-        perror("socket 433");
-        printf("[Daemon] Socket-Setup 433 fehlgeschlagen, beende.\n");
-        daemon_io_startup_cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    if (daemon_radio_868_enabled() &&
-        radio_channel_open_sockets(&channel_868) != 0) {
-        perror("socket 868");
-        printf("[Daemon] Socket-Setup 868 fehlgeschlagen, beende.\n");
+    if (radio_channel_open_sockets(&channel) != 0) {
+        perror(band->band == RADIO_BAND_433 ? "socket 433" : "socket 868");
+        printf("[Daemon] Socket-Setup %s fehlgeschlagen, beende.\n", band->tag);
         daemon_io_startup_cleanup();
         exit(EXIT_FAILURE);
     }
@@ -218,11 +152,7 @@ void daemon_io_sync_event_fds(EventLoopSet *event_set)
     if (event_loop_registration_failed(event_set))
         return;
 
-    if (daemon_radio_433_enabled())
-        radio_channel_reconcile_fds(&channel_433, event_set);
-
-    if (daemon_radio_868_enabled())
-        radio_channel_reconcile_fds(&channel_868, event_set);
+    radio_channel_reconcile_fds(&channel, event_set);
 
     event_loop_reconcile_end(event_set);
 }

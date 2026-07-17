@@ -7,25 +7,19 @@
 
 /* --- Radio runtime helpers ---------------------------------------------- */
 
-extern RadioController radio_controller_433;
-extern RadioController radio_controller_868;
+/* The one radio of this process (one process per band, see daemon_band.h). */
+extern RadioController radio_controller;
 
 void daemon_radio_controller_init(void);
 void daemon_radio_shutdown_cleanup(void);
 bool daemon_selected_radio_ready(void);
 void daemon_log_active_radios(void);
 
-void setFlag433(void);
-void setFlag868(void);
+/* RX-complete ISR callback targeting the single controller. */
+void setFlag(void);
 
-static inline void daemon_radio_runtime_led(RadioController *ctrl,
-                                            int state)
-{
-    if (!ctrl)
-        return;
-
-    daemon_led_set_pin(ctrl->led_pin, state);
-}
+void daemon_radio_runtime_led(RadioController *ctrl,
+                                            int state);
 
 /*
  * Single source of truth for the per-band activity LED.
@@ -40,21 +34,6 @@ static inline void daemon_radio_runtime_led(RadioController *ctrl,
  * skip redundant GPIO writes. led_mutex is a leaf lock (only atomics and the
  * GPIO write happen inside it), so it introduces no lock-ordering risk.
  */
-static inline void daemon_radio_runtime_sync_led(RadioController *ctrl)
-{
-    if (!ctrl)
-        return;
-
-    std::lock_guard<std::mutex> led_lock(ctrl->led_mutex);
-
-    int desired = (ctrl->tx_busy.load() || ctrl->cad_broadcast_active.load())
-                      ? 1 : 0;
-
-    if (desired == ctrl->led_state)
-        return;
-
-    ctrl->led_state = desired;
-    daemon_led_set_pin(ctrl->led_pin, desired);
-}
+void daemon_radio_runtime_sync_led(RadioController *ctrl);
 
 #endif

@@ -1,4 +1,3 @@
-#include "../client_set.h"
 #include "../client_slot.h"
 
 #include <errno.h>
@@ -11,10 +10,10 @@
 #include <sys/un.h>
 
 /*
- * Non-blocking client socket tests.
+ * Non-blocking client socket tests (ClientSlot API).
  *
- * This locks the first behavior-preserving step toward queued writes:
- * accepted client sockets are non-blocking, and EAGAIN does not close slots.
+ * Accepted client sockets are non-blocking, EAGAIN does not close slots, and
+ * peer EOF is observable as read()==0 (the dispatchers close on that oracle).
  */
 
 static int g_ok = 0;
@@ -51,84 +50,36 @@ static void test_set_nonblocking(void)
         return;
     }
 
-    expect_int("set nonblocking result", client_set_set_nonblocking(sv[1]), 0);
+    expect_int("set nonblocking result", client_slot_set_nonblocking(sv[1]), 0);
     expect_int("set nonblocking flag", fd_is_nonblocking(sv[1]), 1);
 
     close(sv[0]);
     close(sv[1]);
 }
 
-static void test_read_slot_eagain_keeps_client(void)
+static void test_slot_init_marks_empty(void)
 {
-    int sv[2];
-    int clients[1];
-    uint8_t buf[8];
-    ssize_t n;
+    ClientSlot slots[3];
 
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
-        g_fail++;
-        printf("[FAIL] read eagain socketpair\n");
-        return;
-    }
+    client_slot_init_all(slots, 3);
 
-    client_set_init_all(clients, 1);
-    clients[0] = sv[1];
-    client_set_set_nonblocking(clients[0]);
-
-    errno = 0;
-    n = client_set_read_slot(clients, 0, buf, sizeof(buf));
-
-    expect_int("read eagain result", n < 0, 1);
-    expect_int("read eagain errno", errno == EAGAIN || errno == EWOULDBLOCK, 1);
-    expect_int("read eagain keeps slot", clients[0] >= 0, 1);
-
-    close(sv[0]);
-    client_set_close_slot(clients, 0);
+    expect_int("slot init empty 0", client_slot_fd(&slots[0]), -1);
+    expect_int("slot init empty 1", client_slot_fd(&slots[1]), -1);
+    expect_int("slot init empty 2", client_slot_fd(&slots[2]), -1);
+    expect_int("slots have no clients", client_slot_has_clients(slots, 3), 0);
 }
 
-static void test_read_slot_peer_close_closes_client(void)
+static void test_slot_add_accepts_fd_zero(void)
 {
-    int sv[2];
-    int clients[1];
-    uint8_t buf[8];
+    ClientSlot slots[1];
 
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
-        g_fail++;
-        printf("[FAIL] read close socketpair\n");
-        return;
-    }
+    client_slot_init_all(slots, 1);
 
-    client_set_init_all(clients, 1);
-    clients[0] = sv[1];
-    close(sv[0]);
+    expect_int("slot add fd0", client_slot_add(slots, 1, 0), 1);
+    expect_int("slot stores fd0", client_slot_fd(&slots[0]), 0);
+    expect_int("slot fd0 is client", client_slot_has_clients(slots, 1), 1);
 
-    expect_int("read close returns zero", (int)client_set_read_slot(clients, 0, buf, sizeof(buf)), 0);
-    expect_int("read close clears slot", clients[0], -1);
-}
-
-static void test_client_set_init_marks_empty(void)
-{
-    int clients[3] = {0, 1, 2};
-
-    client_set_init_all(clients, 3);
-
-    expect_int("client_set init empty 0", clients[0], -1);
-    expect_int("client_set init empty 1", clients[1], -1);
-    expect_int("client_set init empty 2", clients[2], -1);
-    expect_int("client_set has no clients", client_set_has_clients(clients, 3), 0);
-}
-
-static void test_client_set_accepts_fd_zero(void)
-{
-    int clients[1];
-
-    client_set_init_all(clients, 1);
-
-    expect_int("client_set add fd0", client_set_add(clients, 1, 0), 1);
-    expect_int("client_set stores fd0", clients[0], 0);
-    expect_int("client_set fd0 is client", client_set_has_clients(clients, 1), 1);
-
-    clients[0] = -1;  // Do not close stdin in the unit test.
+    slots[0].fd = -1;  // Do not close stdin in the unit test.
 }
 
 static void test_client_slot_accepts_fd_zero(void)
@@ -149,16 +100,68 @@ static void test_client_slot_accepts_fd_zero(void)
     slot.fd = -1;  // Do not close stdin in the unit test.
 }
 
-static void test_accept_sets_nonblocking(void)
+static void test_read_eagain_keeps_slot(void)
+{
+    int sv[2];
+    ClientSlot slots[1];
+    uint8_t buf[8];
+    ssize_t n;
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        g_fail++;
+        printf("[FAIL] read eagain socketpair\n");
+        return;
+    }
+
+    client_slot_init_all(slots, 1);
+    client_slot_set_fd(&slots[0], sv[1]);
+    client_slot_set_nonblocking(client_slot_fd(&slots[0]));
+
+    errno = 0;
+    n = read(client_slot_fd(&slots[0]), buf, sizeof(buf));
+
+    expect_int("read eagain result", n < 0, 1);
+    expect_int("read eagain errno", errno == EAGAIN || errno == EWOULDBLOCK, 1);
+    expect_int("read eagain keeps slot", client_slot_has_client(&slots[0]), 1);
+
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_peer_close_reads_zero(void)
+{
+    int sv[2];
+    ClientSlot slots[1];
+    uint8_t buf[8];
+
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
+        g_fail++;
+        printf("[FAIL] read close socketpair\n");
+        return;
+    }
+
+    client_slot_init_all(slots, 1);
+    client_slot_set_fd(&slots[0], sv[1]);
+    close(sv[0]);
+
+    // The dispatchers close the slot on this read()==0 oracle.
+    expect_int("read close returns zero",
+               (int)read(client_slot_fd(&slots[0]), buf, sizeof(buf)), 0);
+    client_slot_close(&slots[0]);
+    expect_int("read close clears slot", client_slot_fd(&slots[0]), -1);
+}
+
+static void test_accept_sets_nonblocking_and_emfile(void)
 {
     int listen_fd;
     int peer_fd;
+    int peer2_fd = -1;
     int accepted_fd;
-    int clients[1];
+    ClientSlot slots[1];
     struct sockaddr_un addr;
     char path[sizeof(addr.sun_path)];
 
-    client_set_init_all(clients, 1);
+    client_slot_init_all(slots, 1);
 
     snprintf(path, sizeof(path), "/tmp/loraham-nonblock-%ld.sock", (long)getpid());
     unlink(path);
@@ -181,7 +184,7 @@ static void test_accept_sets_nonblocking(void)
     snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
 
     if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
-        listen(listen_fd, 1) != 0 ||
+        listen(listen_fd, 2) != 0 ||
         connect(peer_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         g_fail++;
         printf("[FAIL] accept setup bind/listen/connect\n");
@@ -191,13 +194,30 @@ static void test_accept_sets_nonblocking(void)
         return;
     }
 
-    accepted_fd = client_set_accept(listen_fd, clients, 1);
+    accepted_fd = client_slot_accept_with_output(listen_fd, slots, 1);
 
     expect_int("accept returns fd", accepted_fd >= 0, 1);
-    expect_int("accept stores fd", clients[0], accepted_fd);
+    expect_int("accept stores fd", client_slot_fd(&slots[0]), accepted_fd);
     expect_int("accept fd nonblocking", fd_is_nonblocking(accepted_fd), 1);
 
-    client_set_close_slot(clients, 0);
+    // Slots full: the next accept must fail with EMFILE and close the fd.
+    peer2_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (peer2_fd >= 0 &&
+        connect(peer2_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+        errno = 0;
+        expect_int("accept full slots fails",
+                   client_slot_accept_with_output(listen_fd, slots, 1), -1);
+        expect_int("accept full slots errno", errno, EMFILE);
+        expect_int("accept full keeps first client",
+                   client_slot_fd(&slots[0]), accepted_fd);
+    } else {
+        g_fail++;
+        printf("[FAIL] accept EMFILE setup\n");
+    }
+
+    client_slot_close(&slots[0]);
+    if (peer2_fd >= 0)
+        close(peer2_fd);
     close(peer_fd);
     close(listen_fd);
     unlink(path);
@@ -223,12 +243,12 @@ int main(int argc, char **argv)
     }
 
     test_set_nonblocking();
-    test_client_set_init_marks_empty();
-    test_client_set_accepts_fd_zero();
+    test_slot_init_marks_empty();
+    test_slot_add_accepts_fd_zero();
     test_client_slot_accepts_fd_zero();
-    test_read_slot_eagain_keeps_client();
-    test_read_slot_peer_close_closes_client();
-    test_accept_sets_nonblocking();
+    test_read_eagain_keeps_slot();
+    test_peer_close_reads_zero();
+    test_accept_sets_nonblocking_and_emfile();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

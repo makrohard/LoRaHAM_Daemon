@@ -11,7 +11,7 @@
 
 #include "loraham_runtime.h"
 #include "daemon_log.h"
-#include "daemon_radio_selection.h"
+#include "daemon_band.h"
 
 /*
  * Lock-ordering contract: one instance lock per process (the selected band's
@@ -24,8 +24,7 @@
  * fast instead of queueing.
  */
 
-static int g_lock_fd_433 = -1;
-static int g_lock_fd_868 = -1;
+static int g_lock_fd = -1;
 
 static int instance_lock_claim(const char *band, int *out_fd)
 {
@@ -71,37 +70,17 @@ static int instance_lock_claim(const char *band, int *out_fd)
 
 int daemon_instance_lock_acquire(void)
 {
-    int rc;
-
-    /* Exactly one band is selected per process; claim only its lock. */
-    if (daemon_radio_433_enabled()) {
-        rc = instance_lock_claim("433", &g_lock_fd_433);
-        if (rc != 0)
-            return rc;
-    }
-
-    if (daemon_radio_868_enabled()) {
-        rc = instance_lock_claim("868", &g_lock_fd_868);
-        if (rc != 0)
-            return rc;
-    }
-
-    return 0;
+    /* Exactly one band per process; claim only its lock. */
+    return instance_lock_claim(daemon_band()->tag, &g_lock_fd);
 }
 
 void daemon_instance_lock_release(void)
 {
-    /* Release in reverse acquisition order. Closing the descriptor drops the
-     * advisory lock; the explicit LOCK_UN is belt-and-suspenders. */
-    if (g_lock_fd_868 >= 0) {
-        flock(g_lock_fd_868, LOCK_UN);
-        close(g_lock_fd_868);
-        g_lock_fd_868 = -1;
-    }
-
-    if (g_lock_fd_433 >= 0) {
-        flock(g_lock_fd_433, LOCK_UN);
-        close(g_lock_fd_433);
-        g_lock_fd_433 = -1;
+    /* Closing the descriptor drops the advisory lock; the explicit LOCK_UN
+     * is belt-and-suspenders. */
+    if (g_lock_fd >= 0) {
+        flock(g_lock_fd, LOCK_UN);
+        close(g_lock_fd);
+        g_lock_fd = -1;
     }
 }

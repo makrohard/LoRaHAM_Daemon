@@ -26,20 +26,7 @@
  * stays untouched (see README "Adding new hardware").
  */
 
-/* Boot RF defaults applied inside RadioDriver::begin() (chip-specific setter
- * order preserved). LDRO: <0 = autoLDRO() only, >=0 = autoLDRO() then
- * forceLDRO(value) — mirrors the pre-driver per-band init exactly. */
-typedef struct {
-    float freq_mhz;
-    int spreading_factor;
-    float bandwidth_khz;
-    uint8_t sync_word;
-    int preamble_len;
-    int coding_rate;
-    bool crc_on;
-    int ldro;                /* <0: auto; 0/1: forced value */
-    int power_dbm;
-} RadioRfDefaults;
+#include "radio_rf_defaults.h"
 
 class RadioDriver {
 public:

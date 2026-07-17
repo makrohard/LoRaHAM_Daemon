@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (v113 candidate — version constant not yet bumped)
+
+- Band-descriptor collapse (internal, no interface change): one process/one band/one radio/one worker is now the code structure, not just the deployment model. All per-band global pairs (controllers, client slots, channels, TX worker/completion queues, contexts, RX buffers, callbacks) collapsed to singletons driven by an immutable `DaemonBandDescriptor` (`daemon_band.*`) resolved once from `--radio`. Socket paths, wire protocols, CLI, log tags, instance locks, and exit codes are unchanged.
+- Removed the dead parallel-array client API (`client_set.*`); the only production helper moved to `client_slot_set_nonblocking()`. Covered behaviors (nonblocking accept, EMFILE on full slots, EOF close, queued broadcast, slow-client isolation, EPOLLOUT flush) were ported to `ClientSlot` tests.
+- Hot-path logic moved out of headers into `.cpp` files (`config_status`, `config_dispatch`, `daemon_data_tx_runtime`, `daemon_tx_{queue,worker,async_worker,completion,executor}`, `radio_cad` incl. the CAD monitor tick, LED sync): headers keep types, constants, and trivial accessors; signatures and semantics unchanged.
+- BEHAVIOR: main-loop lock discipline — monitoring, RX poll, and GETRSSI ticks now SKIP their sample instead of stalling when the TX worker holds the radio across a blocking transmit (seconds at SF12). CONFIG apply deliberately still blocks (client-initiated, must not be dropped). Contract documented in `radio_controller.h`.
+- sx1262: `begin()` without RF defaults now also applies the profile's TCXO voltage (no caller can bypass the TCXO).
+
 ## loraham_daemon 112
 
 - New Hardware Support:

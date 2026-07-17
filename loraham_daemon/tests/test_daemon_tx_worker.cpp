@@ -44,12 +44,12 @@ static void expect_size(const char *name, size_t actual, size_t expected)
 
 static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
 {
+    (void)band;
     FakeSender *sender = (FakeSender *)ctx;
     int idx = sender->calls;
 
     (void)payload;
     (void)len;
-    (void)band;
 
     sender->calls++;
     return sender->result[idx];

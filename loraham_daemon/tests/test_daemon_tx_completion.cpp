@@ -11,7 +11,6 @@
 
 
 void daemon_drain_framed_tx_completions(const char *tag,
-                                        int band,
                                         ClientSlot *slots,
                                         int max_clients);
 
@@ -294,16 +293,16 @@ static void test_drain_counts_stale_completion(void)
     client_slot_set_fd(&slots[0], new_sv[0]);
 
     daemon_tx_completion_queue_push(
-        daemon_tx_async_runtime_completion_queue_for_band(433),
+        daemon_tx_async_runtime_completion_queue(),
         &result);
 
-    daemon_drain_framed_tx_completions("TESTF", 433, slots, 1);
+    daemon_drain_framed_tx_completions("TESTF", slots, 1);
 
     expect_size("stale drain counter",
-                daemon_tx_async_runtime_completion_stale_for_band(433),
+                daemon_tx_async_runtime_completion_stale(),
                 1);
     expect_size("stale drain pending",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 0);
     expect_size("stale drain output empty",
                 client_output_queue_pending(&slots[0].output),
@@ -337,17 +336,17 @@ static void test_drain_delivers_queued_completion(void)
     result.completion_slot = 0;
     result.completion_generation = client_slot_generation(&slots[0]);
     daemon_tx_completion_queue_push(
-        daemon_tx_async_runtime_completion_queue_for_band(433),
+        daemon_tx_async_runtime_completion_queue(),
         &result);
 
     expect_size("completion drain pending before",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 1);
 
-    daemon_drain_framed_tx_completions("TESTF", 433, slots, 2);
+    daemon_drain_framed_tx_completions("TESTF", slots, 2);
 
     expect_size("completion drain pending after",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 0);
     expect_int("completion drain read frame",
                (int)read(sv[1], frame, sizeof(frame)),

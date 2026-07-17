@@ -8,25 +8,18 @@
 #include "radio_channel.h"
 
 /* --- Daemon I/O runtime state ------------------------------------------- */
+/* One band per process: one socket trio, one slot set, one channel. */
 
-extern int data433_fd;
-extern int data868_fd;
-extern int data433_framed_fd;
-extern int data868_framed_fd;
-extern int conf433_fd;
-extern int conf868_fd;
+extern int data_fd;
+extern int data_framed_fd;
+extern int conf_fd;
 
-extern ClientSlot client_data433_slots[MAX_CLIENTS];
-extern ClientSlot client_data868_slots[MAX_CLIENTS];
-extern ClientSlot client_data433_framed_slots[MAX_CLIENTS];
-extern ClientSlot client_data868_framed_slots[MAX_CLIENTS];
-extern FramedDataTxState client_data433_framed_states[MAX_CLIENTS];
-extern FramedDataTxState client_data868_framed_states[MAX_CLIENTS];
-extern ClientSlot client_conf433_slots[MAX_CLIENTS];
-extern ClientSlot client_conf868_slots[MAX_CLIENTS];
+extern ClientSlot client_data_slots[MAX_CLIENTS];
+extern ClientSlot client_data_framed_slots[MAX_CLIENTS];
+extern FramedDataTxState client_framed_states[MAX_CLIENTS];
+extern ClientSlot client_conf_slots[MAX_CLIENTS];
 
-extern RadioChannelIo channel_433;
-extern RadioChannelIo channel_868;
+extern RadioChannelIo channel;
 
 /* --- Daemon I/O lifecycle ----------------------------------------------- */
 

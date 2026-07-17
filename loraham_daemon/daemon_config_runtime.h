@@ -5,7 +5,6 @@
 
 /* --- CONFIG runtime helpers --------------------------------------------- */
 
-ConfigDispatchContext daemon_config_433_context(void);
-ConfigDispatchContext daemon_config_868_context(void);
+ConfigDispatchContext daemon_config_context(void);
 
 #endif

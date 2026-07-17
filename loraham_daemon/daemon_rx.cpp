@@ -19,8 +19,7 @@
 
 /* --- External daemon channel state -------------------------------------- */
 
-extern RadioChannelIo channel_433;
-extern RadioChannelIo channel_868;
+extern RadioChannelIo channel;
 
 /* --- RX drop logging ----------------------------------------------------- */
 // Rate-limited counters for invalid RadioLib RX reads.
@@ -424,11 +423,21 @@ static void daemon_process_radio_band(RadioController *ctrl,
     if (!radio_controller_ready(ctrl) || !ctrl->driver)
         return;
 
-    // Shared RX flow for both bands.
+    // Nothing pending?
     if (!ctrl->received.load())
         return;
 
     daemon_note_rx_flag_observed(ctrl);
+
+    /* Lock discipline (see radio_controller.h): never block the main loop on
+     * radio_mutex while a TX can be in flight — the worker holds the mutex
+     * across the blocking transmit() (seconds at SF12). Pre-check tx_busy
+     * BEFORE taking the lock; the under-lock re-check below stays for the
+     * race where TX starts between check and acquisition. */
+    if (ctrl->tx_busy.load()) {
+        daemon_discard_rx_during_tx(ctrl);
+        return;
+    }
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
 
@@ -485,15 +494,8 @@ static void daemon_process_radio_band(RadioController *ctrl,
 }
 
 
-/* --- RX band entry points ------------------------------------------------ */
-void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE])
+/* --- RX entry point ------------------------------------------------------- */
+void daemon_process_radio(uint8_t (&rx_buf)[buf_SIZE])
 {
-    // Band-specific RX entry point.
-    daemon_process_radio_band(&radio_controller_433, &channel_433, rx_buf_433);
-}
-
-void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE])
-{
-    // Band-specific RX entry point.
-    daemon_process_radio_band(&radio_controller_868, &channel_868, rx_buf_868);
+    daemon_process_radio_band(&radio_controller, &channel, rx_buf);
 }

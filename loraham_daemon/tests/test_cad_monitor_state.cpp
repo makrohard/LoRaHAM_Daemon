@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <atomic>
+#include <chrono>
+#include <mutex>
+#include <thread>
+
 /* --- CAD monitor state machine tests ------------------------------------- */
 /*
  * Covers the opt-in CAD=0/1 CONF monitor: edge emission, the lost-falling-edge
@@ -355,6 +360,56 @@ static void test_tick_after_latch_reset(void)
     expect_int("after reset no duplicate", tick_edge(&ctrl, -80.0f), 0);
 }
 
+/* --- M4 lock discipline: the monitoring tick must never block behind TX --- */
+
+static void test_tick_skips_while_tx_busy(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    tick_edge(&ctrl, -80.0f);          // latch busy first
+
+    ctrl.tx_busy.store(true);
+    fake(&ctrl)->rssi = -95.0f;        // would otherwise start free confirmation
+    DaemonCadMonitorTick tick = daemon_cad_monitor_tick(&ctrl);
+
+    expect_int("tx busy tick not sampled", tick.sampled, 0);
+    expect_int("tx busy tick no edge", tick.edge, 0);
+    expect_int("tx busy latch unchanged",
+               ctrl.cad_broadcast_active.load() ? 1 : 0, 1);
+    expect_int("tx busy streak unchanged",
+               ctrl.cad_monitor_free_streak.load(), 0);
+
+    ctrl.tx_busy.store(false);
+}
+
+static void test_tick_returns_while_mutex_held(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+
+    // Fake slow sender: hold radio_mutex like the worker does across the
+    // blocking transmit(). The tick (main-loop path) must return immediately
+    // via try_to_lock instead of stalling until release.
+    std::unique_lock<std::recursive_mutex> hold(ctrl.radio_mutex);
+    std::atomic<int> done(0);
+    std::thread main_loop([&]() {
+        DaemonCadMonitorTick tick = daemon_cad_monitor_tick(&ctrl);
+        expect_int("held mutex tick not sampled", tick.sampled, 0);
+        expect_int("held mutex tick no edge", tick.edge, 0);
+        done.store(1);
+    });
+
+    // The tick must complete while the lock is STILL held here.
+    for (int i = 0; i < 2000 && !done.load(); i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    expect_int("tick returned while mutex held", done.load(), 1);
+
+    hold.unlock();
+    main_loop.join();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -387,6 +442,8 @@ int main(int argc, char **argv)
     test_tick_is_non_destructive();
     test_tick_unavailable_keeps_state();
     test_tick_after_latch_reset();
+    test_tick_skips_while_tx_busy();
+    test_tick_returns_while_mutex_held();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

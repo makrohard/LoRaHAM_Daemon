@@ -11,7 +11,7 @@
 
 #include "../daemon_instance_lock.h"
 #include "../loraham_runtime.h"
-#include "../daemon_radio_selection.h"
+#include "../daemon_band.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -91,7 +91,7 @@ static void unhold(int fd)
 
 static void test_433_only_ownership(void)
 {
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
 
     expect_int("433-only acquire ok", daemon_instance_lock_acquire(), 0);
     expect_int("433 lock held", probe_free("433"), 0);
@@ -103,7 +103,7 @@ static void test_433_only_ownership(void)
 
 static void test_868_only_ownership(void)
 {
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+    daemon_band_resolve(RADIO_BAND_868);
 
     expect_int("868-only acquire ok", daemon_instance_lock_acquire(), 0);
     expect_int("868 lock held", probe_free("868"), 0);
@@ -118,7 +118,7 @@ static void test_duplicate_433_rejected(void)
     int peer = hold_band("433");                       /* simulate running A */
     expect_int("peer holds 433", peer >= 0 ? 1 : 0, 1);
 
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
     expect_int("duplicate 433 rejected (BUSY)",
                daemon_instance_lock_acquire(), LORAHAM_EXIT_INSTANCE_BUSY);
 
@@ -132,7 +132,7 @@ static void test_duplicate_868_rejected(void)
     int peer = hold_band("868");
     expect_int("peer holds 868", peer >= 0 ? 1 : 0, 1);
 
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+    daemon_band_resolve(RADIO_BAND_868);
     expect_int("duplicate 868 rejected (BUSY)",
                daemon_instance_lock_acquire(), LORAHAM_EXIT_INSTANCE_BUSY);
 
@@ -146,7 +146,7 @@ static void test_duplicate_868_rejected(void)
  * cleanup). */
 static void test_release_unblocks_restart(void)
 {
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
 
     expect_int("first acquire ok", daemon_instance_lock_acquire(), 0);
     expect_int("while held, restart would be blocked", probe_free("433"), 0);
@@ -162,7 +162,7 @@ static void test_release_unblocks_restart(void)
 static void test_release_idempotent(void)
 {
     daemon_instance_lock_release();   /* nothing held */
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
     expect_int("acquire ok", daemon_instance_lock_acquire(), 0);
     daemon_instance_lock_release();
     daemon_instance_lock_release();   /* double release safe */

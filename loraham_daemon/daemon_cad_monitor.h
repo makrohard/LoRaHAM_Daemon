@@ -22,41 +22,7 @@ typedef struct {
     int sampled;    /* 0 if the probe was unavailable (state untouched) */
 } DaemonCadMonitorTick;
 
-static inline DaemonCadMonitorTick daemon_cad_monitor_tick(
-    RadioController *ctrl)
-{
-    DaemonCadMonitorTick tick;
-
-    tick.edge = 0;
-    tick.rssi_dbm = -200.0f;
-    tick.sampled = 0;
-
-    if (!ctrl)
-        return tick;
-
-    RadioCadProbeResult probe = radio_cad_probe_passive(ctrl);
-
-    tick.rssi_dbm = probe.rssi_dbm;
-
-    if (probe.status == RADIO_CAD_PROBE_UNAVAILABLE)
-        return tick;
-
-    bool was_active = ctrl->cad_broadcast_active.load();
-    int free_streak = ctrl->cad_monitor_free_streak.load();
-    int now_busy = daemon_monitoring_cad_next_busy(
-        was_active ? 1 : 0,
-        probe.rssi_dbm,
-        ctrl->cad_rssi_threshold_dbm.load(),
-        &free_streak);
-
-    ctrl->cad_monitor_free_streak.store(free_streak);
-    ctrl->cad_broadcast_active.store(now_busy != 0);
-
-    tick.edge = daemon_monitoring_cad_broadcast_edge(was_active ? 1 : 0,
-                                                     now_busy);
-    tick.sampled = 1;
-
-    return tick;
-}
+DaemonCadMonitorTick daemon_cad_monitor_tick(
+    RadioController *ctrl);
 
 #endif

@@ -1,7 +1,7 @@
 #include "client_slot.h"
-#include "client_set.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -102,6 +102,19 @@ void client_slot_close_all(ClientSlot *slots, int count)
 
 /* --- ClientSlot socket helpers ------------------------------------------ */
 
+int client_slot_set_nonblocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+
+    if (flags < 0)
+        return -1;
+
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+        return -1;
+
+    return 0;
+}
+
 int client_slot_add(ClientSlot *slots, int max_clients, int fd)
 {
     if (!slots)
@@ -125,7 +138,7 @@ int client_slot_accept_with_output(int listen_fd, ClientSlot *slots, int max_cli
     if (fd < 0)
         return fd;
 
-    if (client_set_set_nonblocking(fd) != 0) {
+    if (client_slot_set_nonblocking(fd) != 0) {
         saved_errno = errno;
         close(fd);
         errno = saved_errno;

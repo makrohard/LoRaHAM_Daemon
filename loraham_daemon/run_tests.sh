@@ -136,11 +136,11 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_log.cpp"
   "$SCRIPT_DIR/daemon_led.cpp"
   "$SCRIPT_DIR/daemon_radio_selection.cpp"
+  "$SCRIPT_DIR/daemon_band.cpp"
   "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
-  "$SCRIPT_DIR/client_set.cpp"
   "$SCRIPT_DIR/client_slot.cpp"
   "$SCRIPT_DIR/config_parser.cpp"
   "$SCRIPT_DIR/config_value.cpp"
@@ -159,6 +159,14 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_stats.cpp"
   "$SCRIPT_DIR/daemon_lifecycle.cpp"
   "$SCRIPT_DIR/daemon_tx.cpp"
+  "$SCRIPT_DIR/daemon_tx_queue.cpp"
+  "$SCRIPT_DIR/daemon_tx_worker.cpp"
+  "$SCRIPT_DIR/daemon_tx_async_worker.cpp"
+  "$SCRIPT_DIR/daemon_tx_completion.cpp"
+  "$SCRIPT_DIR/daemon_tx_executor.cpp"
+  "$SCRIPT_DIR/radio_cad.cpp"
+  "$SCRIPT_DIR/config_status.cpp"
+  "$SCRIPT_DIR/config_dispatch.cpp"
   "$SCRIPT_DIR/daemon_tx_async_runtime.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx.cpp"
@@ -302,7 +310,17 @@ build_one_cpp_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
-    "$SCRIPT_DIR/config_parser.cpp"
+    "$SCRIPT_DIR/config_parser.cpp" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "${event_loop_sources[@]}"
 }
 
 build_one_config_stream_buffer_test() {
@@ -374,11 +392,13 @@ build_one_data_tx_test() {
   build_one_cpp_sources \
     "$out" \
     "$src" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/client_slot.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
     "${event_loop_sources[@]}"
 }
 
@@ -398,11 +418,28 @@ build_one_data_tx_queue_runtime_test() {
     "$out" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/config_status.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
-    "$SCRIPT_DIR/tx_result.cpp"
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/data_tx.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}" \
+    "${radiolib_libs[@]}" \
+    -llgpio
 }
 
 
@@ -425,7 +462,6 @@ build_one_client_nonblocking_test() {
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}"
 }
@@ -438,7 +474,8 @@ build_one_client_queued_broadcast_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}"
 }
 
@@ -450,7 +487,8 @@ build_one_client_slow_output_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}"
 }
 
@@ -462,7 +500,8 @@ build_one_event_loop_output_flush_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}"
 }
 
@@ -523,6 +562,7 @@ build_one_daemon_led_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/daemon_led.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/daemon_radio_selection.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
@@ -548,6 +588,7 @@ build_one_instance_lock_test() {
     "$out" \
     "$src" \
     "$SCRIPT_DIR/daemon_instance_lock.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/daemon_radio_selection.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp"
 }
@@ -588,8 +629,27 @@ build_one_radio_cad_probe_test() {
     "$out" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/data_tx.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/daemon_log.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/radio_health.cpp" \
-    "$SCRIPT_DIR/daemon_stats.cpp"
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
 }
 
 build_one_cad_monitor_state_test() {
@@ -605,10 +665,14 @@ build_one_cad_monitor_state_test() {
 
   build_one_cpp_sources \
     "$out" \
+    -pthread \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
-    "$SCRIPT_DIR/daemon_stats.cpp"
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
 }
 
 build_one_tx_result_test() {
@@ -639,9 +703,13 @@ build_one_tx_completion_test() {
     "${radiolib_cflags[@]}" \
     -pthread \
     "$src" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/config_stream.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/client_slot.cpp" \
     "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/daemon_framed_data_runtime.cpp" \
@@ -662,7 +730,17 @@ build_one_tx_async_worker_test() {
     "$out" \
     -pthread \
     "$src" \
-    "$SCRIPT_DIR/tx_result.cpp"
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}"
 }
 
 
@@ -676,7 +754,17 @@ build_one_tx_async_runtime_test() {
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
-    "$SCRIPT_DIR/tx_result.cpp"
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}"
 }
 
 
@@ -751,7 +839,9 @@ build_one_config_apply_transactional_test() {
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/config_validate.cpp" \
     "$SCRIPT_DIR/config_value.cpp" \
-    "$SCRIPT_DIR/config_policy.cpp"
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
 }
 
 build_one_config_validate_test() {
@@ -803,8 +893,10 @@ build_one_config_dispatch_test() {
     "$out" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_dispatch.cpp" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
-    "$SCRIPT_DIR/client_set.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \

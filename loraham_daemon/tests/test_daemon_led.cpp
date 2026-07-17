@@ -1,6 +1,6 @@
 #include "../daemon_led.h"
 #include "../daemon_radio_runtime.h"
-#include "../daemon_radio_selection.h"
+#include "../daemon_band.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -103,10 +103,13 @@ static void expect_int(const char *name, int actual, int expected)
 
 static void reset_fake(void)
 {
-    daemon_led_shutdown();
+    /* Resolve the band BEFORE shutdown: the pin lookup falls back to the
+     * band descriptor, which fails closed when unresolved. Default band for
+     * the legacy lifecycle/sync tests is 433. */
+    daemon_band_resolve(RADIO_BAND_433);
+    daemon_led_configure(DAEMON_LED_PIN_433);
 
-    /* Default selection for the legacy lifecycle/sync tests is 433. */
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_led_shutdown();
 
     g_open_result = 7;
     g_claim_433_result = 0;
@@ -174,7 +177,8 @@ static void test_chip_open_failure(void)
 static void test_radio_433_only_claims_only_433(void)
 {
     reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
+    daemon_led_configure(DAEMON_LED_PIN_433);
 
     int rc = daemon_led_init();
 
@@ -191,7 +195,8 @@ static void test_radio_433_only_claims_only_433(void)
 static void test_radio_868_only_claims_only_868(void)
 {
     reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+    daemon_band_resolve(RADIO_BAND_868);
+    daemon_led_configure(DAEMON_LED_PIN_868);
 
     int rc = daemon_led_init();
 
@@ -211,7 +216,8 @@ static void test_radio_868_only_claims_only_868(void)
 static void test_radio_433_only_busy_is_fatal(void)
 {
     reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
+    daemon_band_resolve(RADIO_BAND_433);
+    daemon_led_configure(DAEMON_LED_PIN_433);
     g_claim_433_result = -5;            // GPIO13 already owned
 
     int rc = daemon_led_init();
@@ -225,7 +231,8 @@ static void test_radio_433_only_busy_is_fatal(void)
 static void test_radio_868_only_busy_is_fatal(void)
 {
     reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_868;
+    daemon_band_resolve(RADIO_BAND_868);
+    daemon_led_configure(DAEMON_LED_PIN_868);
     g_claim_868_result = -5;            // GPIO19 already owned
 
     int rc = daemon_led_init();
@@ -242,8 +249,9 @@ static void test_radio_868_only_busy_is_fatal(void)
 static void test_led_disabled_by_profile(void)
 {
     reset_fake();
-    daemon_radio_selection = DAEMON_RADIO_SELECTION_433;
-    daemon_led_configure(-1, DAEMON_LED_PIN_868);
+    daemon_band_resolve(RADIO_BAND_433);
+    daemon_led_configure(DAEMON_LED_PIN_433);
+    daemon_led_configure(-1);
 
     int rc = daemon_led_init();
 
@@ -257,8 +265,8 @@ static void test_led_disabled_by_profile(void)
     daemon_led_shutdown();
     expect_int("nc frees nothing", g_free_count, 0);
 
-    /* Restore the legacy default pins for the remaining tests. */
-    daemon_led_configure(DAEMON_LED_PIN_433, DAEMON_LED_PIN_868);
+    /* Restore the legacy default pin for the remaining tests. */
+    daemon_led_configure(DAEMON_LED_PIN_433);
 }
 
 /* --- sync_led derived-state tests --------------------------------------- */
