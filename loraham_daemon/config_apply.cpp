@@ -17,19 +17,20 @@
 // RadioDriver::applyLoraParam()/applyFskParam(). The colored per-key state
 // output for the chip parameters comes from the driver.
 
-void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
-                                    const char *cmd,
-                                    RadioMode_t &mode_flag,
-                                    std::atomic<bool> &getrssi_flag) {
+ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
+                                                 const char *tag,
+                                                 const char *cmd,
+                                                 RadioMode_t &mode_flag,
+                                                 std::atomic<bool> &getrssi_flag) {
     ConfigCommand parsed = config_parse_command(cmd);
 
     if(!parsed.is_set) {
         printf("[%s] Unbekannter Befehl: %s\n", tag, parsed.text.c_str());
-        return;
+        return CONFIG_APPLY_NOOP;
     }
 
     if(!parsed.has_params)
-        return;
+        return CONFIG_APPLY_NOOP;
 
     ConfigValidationResult validation;
     if(!config_validate_command(parsed, mode_flag, &validation,
@@ -41,8 +42,10 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
                validation.key.c_str(),
                validation.value.c_str(),
                validation.reason.c_str());
-        return;
+        return CONFIG_APPLY_REJECTED;
     }
+
+    bool hardware_touched = false;
 
     bool printed = false;
 
@@ -70,11 +73,12 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
                                          daemon_band()->rf_defaults);
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_FSK;
+                hardware_touched = true;
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
 
-                return;
+                return CONFIG_APPLY_HW_ERROR;
             }
         } else if(mode_val == "LORA") {
             printf(" MODE=LORA -> begin()");
@@ -82,11 +86,12 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
                                          daemon_band()->rf_defaults);
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_LORA;
+                hardware_touched = true;
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
 
-                return;
+                return CONFIG_APPLY_HW_ERROR;
             }
         } else {
             printf(" MODE=\033[91;5m%s\033[0m (unbekannt, ignoriert)", mode_val.c_str());
@@ -118,7 +123,13 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
             if(key=="SF" || key=="BW" || key=="CR" || key=="LDRO" || key=="CRC") {
                 printf(" \033[93m%s=IGNORIERT(LoRa-Key im FSK-Modus)\033[0m", key.c_str());
             } else {
-                radio.applyFskParam(tag, key, val);
+                int16_t state = radio.applyFskParam(tag, key, val);
+                if (state != RADIOLIB_ERR_NONE) {
+                    printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                           key.c_str(), (int)state);
+                    return CONFIG_APPLY_HW_ERROR;
+                }
+                hardware_touched = true;
             }
         } else {
             // Ignore FSK-only keys while in LoRa mode.
@@ -126,9 +137,17 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
                 key=="SHAPING" || key=="ENCODING") {
                 printf(" \033[93m%s=IGNORIERT(FSK-Key im LoRa-Modus, SET MODE=FSK fehlt)\033[0m", key.c_str());
                 } else {
-                    radio.applyLoraParam(tag, key, val);
+                    int16_t state = radio.applyLoraParam(tag, key, val);
+                    if (state != RADIOLIB_ERR_NONE) {
+                        printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                               key.c_str(), (int)state);
+                        return CONFIG_APPLY_HW_ERROR;
+                    }
+                    hardware_touched = true;
                 }
         }
     }
     printf("\n");
+
+    return hardware_touched ? CONFIG_APPLY_APPLIED : CONFIG_APPLY_NOOP;
 }

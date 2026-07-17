@@ -69,10 +69,10 @@ struct FakeRadio : public RadioDriver {
     int16_t begin(const RadioRfDefaults *) override { return 0; }
     int16_t switchMode(RadioMode_t,
                        const RadioRfDefaults *) override { return 0; }
-    void applyLoraParam(const char *, const std::string &,
-                        const std::string &) override {}
-    void applyFskParam(const char *, const std::string &,
-                       const std::string &) override {}
+    int16_t applyLoraParam(const char *, const std::string &,
+                           const std::string &) override { return 0; }
+    int16_t applyFskParam(const char *, const std::string &,
+                          const std::string &) override { return 0; }
     // Kein Module hinter dem Fake: Live-RSSI unavailable wie zuvor (-200).
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
@@ -93,6 +93,9 @@ typedef struct {
     int calls;
     char tag[32];
     char cmd[128];
+    /* 0 (memset default) maps to CONFIG_APPLY_APPLIED so the existing
+     * re-arm assertions keep exercising the radio-touched path. */
+    int result_override; /* 0=APPLIED, else the ConfigApplyStatus to return */
 } ApplyState;
 
 static ApplyState g_apply_state;
@@ -200,11 +203,11 @@ static int make_socket_pair(int sv[2])
 
 /* --- Apply callback used by tests --- */
 
-static void record_apply_config(RadioDriver& radio,
-                                const char *tag,
-                                const char *cmd,
-                                RadioMode_t& mode,
-                                std::atomic<bool>& getrssi_active)
+static ConfigApplyStatus record_apply_config(RadioDriver& radio,
+                                             const char *tag,
+                                             const char *cmd,
+                                             RadioMode_t& mode,
+                                             std::atomic<bool>& getrssi_active)
 {
     (void)radio;
 
@@ -214,6 +217,11 @@ static void record_apply_config(RadioDriver& radio,
 
     mode = RADIO_MODE_FSK;
     getrssi_active.store(true);
+
+    if (g_apply_state.result_override != 0)
+        return (ConfigApplyStatus)g_apply_state.result_override;
+
+    return CONFIG_APPLY_APPLIED;
 }
 
 static void init_fake_controller(RadioController *ctrl,
@@ -1148,6 +1156,120 @@ static void test_cad_policy_value_bounds(void)
 
 /* --- CLI parsing and test sequence --- */
 
+/* Audit P1-2: rejected/no-op commands must not re-arm RX (the blind
+ * callback+startReceive destroyed a received, undrained packet), and a
+ * hardware error mid-apply fails the radio closed. */
+static void test_dispatch_rejected_no_rearm(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    g_apply_state.result_override = (int)CONFIG_APPLY_REJECTED;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    ctrl.received.store(true);
+
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] rejected-no-rearm setup\n");
+        return;
+    }
+
+    const char *cmd = "SET SF=99\n";
+    write(sv[0], cmd, strlen(cmd));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("rejected-no-rearm ready wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+
+    expect_int("rejected: apply ran", g_apply_state.calls, 1);
+    expect_int("rejected: callback untouched", fake(&ctrl)->callback_count, 0);
+    expect_int("rejected: no startReceive",
+               fake(&ctrl)->start_receive_count, 0);
+    expect_int("rejected: pending RX survives",
+               ctrl.received.load() ? 1 : 0, 1);
+    expect_int("rejected: health stays READY",
+               ctrl.health == RADIO_HEALTH_READY ? 1 : 0, 1);
+
+    g_apply_state.result_override = 0;
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_dispatch_hw_error_fails_closed(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    g_apply_state.result_override = (int)CONFIG_APPLY_HW_ERROR;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] hw-error setup\n");
+        return;
+    }
+
+    const char *cmd = "SET SF=7\n";
+    write(sv[0], cmd, strlen(cmd));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("hw-error ready wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+
+    expect_int("hw error: apply ran", g_apply_state.calls, 1);
+    expect_int("hw error: health FAILED",
+               ctrl.health == RADIO_HEALTH_FAILED ? 1 : 0, 1);
+    expect_int("hw error: no re-arm", fake(&ctrl)->start_receive_count, 0);
+
+    g_apply_state.result_override = 0;
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -1168,6 +1290,8 @@ int main(int argc, char **argv)
     }
 
     test_dispatch_ready_client();
+    test_dispatch_rejected_no_rearm();
+    test_dispatch_hw_error_fails_closed();
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();

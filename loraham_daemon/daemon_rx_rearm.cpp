@@ -4,6 +4,7 @@
 #include <mutex>
 
 #include "daemon_stats.h"
+#include "daemon_timing.h"
 #include "radio_health.h"
 
 /* --- RX re-arm robustness (audit M3) -------------------------------------- */
@@ -15,6 +16,7 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
         return;
 
     if (state == 0 /* RADIOLIB_ERR_NONE */) {
+        ctrl->rx_rearm_consecutive_failures.store(0);
         if (ctrl->rx_rearm_pending.exchange(false)) {
             printf("[%s] RX-Rearm wiederhergestellt (%s)\n",
                    radio_controller_tag(ctrl), ctx ? ctx : "?");
@@ -24,6 +26,19 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
     }
 
     daemon_radio_stats_record_rx_rearm_failure(&ctrl->stats);
+
+    /* Escalation (audit P1-6): a receiver that cannot re-arm is deaf; past
+     * the limit READY would be a lie — fail closed so GET STATUS (the
+     * documented orchestrator health probe) reports FAILED. */
+    uint32_t consecutive =
+        ctrl->rx_rearm_consecutive_failures.fetch_add(1u) + 1u;
+    if (consecutive >= DAEMON_RX_REARM_FAIL_LIMIT &&
+        radio_controller_ready(ctrl)) {
+        ctrl->health = RADIO_HEALTH_FAILED;
+        printf("[%s] RX-Rearm %u-mal in Folge fehlgeschlagen: RADIO=FAILED\n",
+               radio_controller_tag(ctrl), (unsigned)consecutive);
+        fflush(stdout);
+    }
 
     /* Latched via exchange: exactly one incident log even if two threads
      * report failures concurrently (callers hold radio_mutex today, but the
@@ -56,6 +71,12 @@ void daemon_rx_rearm_retry(RadioController *ctrl)
 {
     if (!ctrl || !ctrl->rx_rearm_pending.load() || ctrl->tx_busy.load())
         return;
+
+    /* Backoff (audit P1-6): one SPI attempt per second, not per tick. */
+    int64_t now_ms = (int64_t)daemon_now_ms();
+    if (now_ms < ctrl->rx_rearm_next_retry_ms)
+        return;
+    ctrl->rx_rearm_next_retry_ms = now_ms + DAEMON_RX_REARM_RETRY_MS;
 
     if (!radio_controller_ready(ctrl) || !ctrl->driver)
         return;

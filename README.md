@@ -44,10 +44,12 @@ Key facts (details in the daemon README):
     git clone https://github.com/LoRaHAM/LoRaHAM_Daemon ~/LoRaHAM
 
     git clone https://github.com/jgromes/RadioLib ~/RadioLib
+    git -C ~/RadioLib checkout 13b7c7cf84b191006da20f82bdb386f2efc96334
 
 RadioLib is used from its source checkout by the daemon build script (no
-`make install` required); the CI configuration in `loraham_daemon/` pins the
-tested RadioLib commit.
+`make install` required). The checkout above pins the exact RadioLib commit
+the test suite and CI run against (see `.github/ci/radiolib.lock`) — building
+against an arbitrary newer RadioLib may compile but is untested.
 
 # Configure your Raspberry Pi Hardware Interface:
 

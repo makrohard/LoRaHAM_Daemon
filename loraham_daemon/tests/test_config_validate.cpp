@@ -237,6 +237,42 @@ static void test_duplicate_key_rejected(void)
     expect_int("distinct keys accepted", ok, 1);
 }
 
+/* Audit P1-3: MODE is extracted from the token list — duplicates must fail
+ * closed like every other duplicate key, and SX1262 capability gaps reject
+ * during prevalidation (before any mode switch side effect). */
+static void test_duplicate_mode_rejected(void)
+{
+    int ok = 0;
+    ConfigValidationResult result =
+        validate("SET MODE=FSK MODE=LORA", RADIO_MODE_LORA, &ok);
+
+    expect_int("duplicate MODE rejected", ok, 0);
+    expect_str("duplicate MODE reason", result.reason, "duplicate key");
+}
+
+static void test_sx1262_capabilities_prevalidated(void)
+{
+    int ok = 0;
+    ConfigValidationResult result =
+        validate_family("SET MODE=FSK OOK=1", RADIO_MODE_LORA,
+                        DAEMON_CHIP_FAMILY_SX1262, &ok);
+
+    expect_int("sx1262 OOK=1 prevalidation reject", ok, 0);
+    expect_str("sx1262 OOK key", result.key, "OOK");
+
+    validate_family("SET MODE=FSK ENCODING=1", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, &ok);
+    expect_int("sx1262 ENCODING=1 prevalidation reject", ok, 0);
+
+    validate_family("SET MODE=FSK FREQDEV=0.1", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, &ok);
+    expect_int("sx1262 FREQDEV=0.1 prevalidation reject", ok, 0);
+
+    validate_family("SET MODE=FSK OOK=1", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX127X, &ok);
+    expect_int("sx127x OOK=1 still accepted", ok, 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -269,6 +305,8 @@ int main(int argc, char **argv)
 
     test_freq_outside_band_rejected();
     test_duplicate_key_rejected();
+    test_duplicate_mode_rejected();
+    test_sx1262_capabilities_prevalidated();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

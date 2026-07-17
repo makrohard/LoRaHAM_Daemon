@@ -1,5 +1,7 @@
 #include "daemon_data_tx_runtime.h"
 
+#include "rf_packet.h"
+
 #include "daemon_band.h"
 
 #include "daemon_log.h"
@@ -81,16 +83,33 @@ DataTxCadPolicy data_tx_snapshot_cad_policy(
     return p;
 }
 
-int data_tx_probe_channel_busy(DataTxDaemonContext *tx)
+/* Tri-state (audit P1-4): the boolean reduction mapped UNAVAILABLE (scan
+ * error) to "free" — a failed CAD operation must never gate a transmission
+ * open. */
+size_t data_tx_queue_capacity_bytes(void *ctx)
 {
+    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
     RadioController *ctrl = tx ? tx->ctrl : NULL;
-    RadioCadProbeResult probe;
 
-    if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
+    if (!ctrl || !ctrl->tx_queue_active.load())
+        return (size_t)-1; /* direct path sends synchronously: no queue bound */
+
+    size_t pending = daemon_tx_async_runtime_pending();
+
+    if (pending >= DAEMON_TX_QUEUE_CAPACITY)
         return 0;
 
-    probe = radio_cad_probe(ctrl);
-    return probe.status == RADIO_CAD_PROBE_BUSY;
+    return (DAEMON_TX_QUEUE_CAPACITY - pending) * RF_PACKET_MAX_PAYLOAD_LEN;
+}
+
+RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx)
+{
+    RadioController *ctrl = tx ? tx->ctrl : NULL;
+
+    if (!ctrl || ctrl->mode != RADIO_MODE_LORA)
+        return RADIO_CAD_PROBE_FREE;
+
+    return radio_cad_probe(ctrl).status;
 }
 
 int data_tx_wait_channel_free_with_limits_ex(
@@ -114,7 +133,12 @@ int data_tx_wait_channel_free_with_limits_ex(
     }
 
     while (cad_wait < max_ticks) {
-        if (!data_tx_probe_channel_busy(tx)) {
+        RadioCadProbeStatus probe_status = data_tx_probe_channel_state(tx);
+
+        if (probe_status == RADIO_CAD_PROBE_UNAVAILABLE)
+            return DATA_TX_CAD_WAIT_ERROR;
+
+        if (probe_status != RADIO_CAD_PROBE_BUSY) {
             free_ticks++;
             if (free_ticks >= required_free_ticks)
                 return DATA_TX_CAD_WAIT_FREE;
@@ -371,6 +395,15 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
     if (!queued_tx) {
         cad_decision = data_tx_wait_channel_free(tx);
+
+        if (cad_decision == DATA_TX_CAD_WAIT_ERROR) {
+            TxResult err_result = TX_RESULT_RADIO_ERROR;
+            daemon_radio_stats_record_tx_result(&ctrl->stats, err_result);
+            daemon_debug_ctx(tx->log_ctx, "CAD-Probe fehlgeschlagen");
+            printf("[%s] DATA-TX abgebrochen: %s (CAD UNAVAILABLE)\n", tag,
+                   tx_result_name(err_result));
+            return DAEMON_TX_OUTCOME_RADIO_ERROR;
+        }
 
         if (data_tx_cad_wait_blocks_tx(cad_decision)) {
             // Only MANAGED can block now; DIRECT never reaches this path.

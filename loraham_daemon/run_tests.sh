@@ -676,6 +676,7 @@ build_one_cad_monitor_state_test() {
     "$src" \
     "$SCRIPT_DIR/radio_cad.cpp" \
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}" \
@@ -699,6 +700,7 @@ build_one_rx_rearm_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}" \

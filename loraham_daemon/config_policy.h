@@ -26,4 +26,10 @@ bool config_policy_freq_valid_band(float freq_mhz,
                                    float min_mhz,
                                    float max_mhz);
 
+bool config_policy_fsk_freqdev_valid_family(float freqdev,
+                                            DaemonChipFamily family);
+bool config_policy_fsk_ook_valid_family(int ook, DaemonChipFamily family);
+bool config_policy_fsk_encoding_valid_family(int encoding,
+                                             DaemonChipFamily family);
+
 #endif

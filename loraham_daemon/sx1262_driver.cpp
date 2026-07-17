@@ -34,18 +34,30 @@ const char *Sx1262Driver::chipName() const
 
 /* --- RF-Switch-Verdrahtung nach begin()/beginFSK() ------------------------- */
 
-static void sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
+static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 {
     /* Der HAT schaltet TX intern über DIO2. Die als "TXEN" beschriftete
      * GPIO-Leitung (BCM 6) muss laut Waveshare-Referenztreiber (LoRaRF
      * SX126x.py) im TX LOW und im RX HIGH liegen — invers zur Beschriftung.
      * Als rxEn registriert fährt RadioLib genau dieses Muster; als txEn
      * registriert blockiert die Leitung den Antennenpfad während des
-     * Sendens (bench-verifiziert: TX_RESULT OK, aber keine Abstrahlung). */
-    radio->setDio2AsRfSwitch(true);
+     * Sendens (bench-verifiziert: TX_RESULT OK, aber keine Abstrahlung).
+     *
+     * Checked (audit P1-1): a failed DIO2 switch command means TX_RESULT OK
+     * with zero radiated RF — that must fail the boot/mode-switch closed,
+     * not be discarded. (setRfSwitchPins is void in RadioLib — nothing to
+     * check there.) */
+    int16_t state = radio->setDio2AsRfSwitch(true);
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx1262] RF-Switch (DIO2) fehlgeschlagen: %d\n", (int)state);
+        fflush(stdout);
+        return state;
+    }
 
     if (mod && txen_pin >= 0)
         mod->setRfSwitchPins((uint32_t)txen_pin, RADIOLIB_NC);
+
+    return RADIOLIB_ERR_NONE;
 }
 
 /* --- Boot-Init mit RF-Defaults --------------------------------------------- */
@@ -74,7 +86,9 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
-    sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
+    state = sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
 
     /* Fail closed (audit P1-1): the post-begin() steps are part of the
      * mandatory boot configuration — check them like begin() itself. */
@@ -115,7 +129,7 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
         state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
                                  tcxo_voltage_, false);
         if (state == RADIOLIB_ERR_NONE)
-            sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
+            state = sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
         return state;
     }
 
@@ -126,7 +140,7 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
 
 /* --- LoRa CONFIG apply ------------------------------------------------------ */
 
-void Sx1262Driver::applyLoraParam(const char *tag,
+int16_t Sx1262Driver::applyLoraParam(const char *tag,
                                   const std::string &key,
                                   const std::string &val)
 {
@@ -246,11 +260,12 @@ void Sx1262Driver::applyLoraParam(const char *tag,
     }
 
     fflush(stdout);
+    return (int16_t)state;
 }
 
 /* --- FSK CONFIG apply -------------------------------------------------------- */
 
-void Sx1262Driver::applyFskParam(const char *tag,
+int16_t Sx1262Driver::applyFskParam(const char *tag,
                                  const std::string &key,
                                  const std::string &val)
 {
@@ -378,6 +393,7 @@ void Sx1262Driver::applyFskParam(const char *tag,
     }
 
     fflush(stdout);
+    return (int16_t)state;
 }
 
 /* --- Live-RSSI (GetRssiInst-Kommando) --------------------------------------- */

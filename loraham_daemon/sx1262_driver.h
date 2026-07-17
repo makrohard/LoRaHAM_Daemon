@@ -37,9 +37,9 @@ public:
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,
                        const RadioRfDefaults *defaults) override;
-    void applyLoraParam(const char *tag, const std::string &key,
+    int16_t applyLoraParam(const char *tag, const std::string &key,
                         const std::string &val) override;
-    void applyFskParam(const char *tag, const std::string &key,
+    int16_t applyFskParam(const char *tag, const std::string &key,
                        const std::string &val) override;
     float readLiveRssi(RadioMode_t mode, bool is_hf) override;
     float rssiProbe() override;

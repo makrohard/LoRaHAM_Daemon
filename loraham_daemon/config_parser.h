@@ -12,6 +12,10 @@ struct ConfigCommand {
     bool has_params;
     std::string text;
     std::string mode;
+    /* Number of MODE tokens seen (audit P1-3): MODE is extracted from the
+     * token list, so plain duplicate-key detection never saw a second MODE
+     * and silently applied last-one-wins. */
+    int mode_count = 0;
     std::vector<std::pair<std::string, std::string>> tokens;
     std::vector<std::string> malformed_tokens;
 };

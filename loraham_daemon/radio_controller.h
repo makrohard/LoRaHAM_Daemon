@@ -18,8 +18,10 @@
 
 // Default RSSI threshold (dBm) above which the passive monitoring probe reports
 // the channel busy. Environment dependent and tunable per band at runtime
-// (SET CADRSSI) or at boot (--cad-rssi). Only used for the CAD=0/1 monitoring
-// indicator, never for TX gating.
+// (SET CADRSSI) or at boot (--cad-rssi). Used for the CAD=0/1 monitoring
+// indicator AND — on wiring without DIO1 (cad_scan_available=false, e.g. the
+// Uputronics boards) — as the passive-LBT fallback threshold that gates
+// MANAGED TX. On such hardware, changing CADRSSI changes whether TX proceeds.
 #define RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM (-90.0f)
 
 typedef enum {
@@ -65,10 +67,18 @@ struct RadioController {
      */
     std::recursive_mutex radio_mutex;
 
-    RadioHealth health;
+    /* Atomic: health is written from the main loop (boot, CONFIG fail-
+     * closed) and read/escalated from the TX worker (re-arm failures). */
+    std::atomic<RadioHealth> health;
     RadioMode_t mode;
     std::atomic<bool> received;
     std::atomic<bool> rx_rearm_pending;
+    /* Consecutive failed re-arms (P1-6): reset on success; at the threshold
+     * the radio escalates to FAILED instead of staying READY-but-deaf. */
+    std::atomic<uint32_t> rx_rearm_consecutive_failures;
+    /* Next retry time (ms, monotonic); retries back off to 1 Hz instead of
+     * hammering SPI every main-loop tick. Main-loop-only, no lock needed. */
+    int64_t rx_rearm_next_retry_ms;
     std::atomic<bool> tx_busy;
     std::atomic<uint32_t> tx_status_generation;
     uint32_t tx_status_broadcast_generation;
@@ -125,6 +135,8 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->mode = RADIO_MODE_LORA;
     ctrl->received.store(false);
     ctrl->rx_rearm_pending.store(false);
+    ctrl->rx_rearm_consecutive_failures.store(0);
+    ctrl->rx_rearm_next_retry_ms = 0;
     ctrl->tx_busy.store(false);
     ctrl->tx_status_generation.store(0u);
     ctrl->tx_status_broadcast_generation = 0u;
@@ -166,14 +178,9 @@ static inline const char *radio_controller_tag(const RadioController *ctrl)
     return ctrl->tag;
 }
 
-static inline RadioHealth *radio_controller_health_ptr(RadioController *ctrl)
-{
-    return ctrl ? &ctrl->health : nullptr;
-}
-
 static inline RadioHealth radio_controller_health(const RadioController *ctrl)
 {
-    return ctrl ? ctrl->health : RADIO_HEALTH_FAILED;
+    return ctrl ? ctrl->health.load() : RADIO_HEALTH_FAILED;
 }
 
 static inline bool radio_controller_ready(const RadioController *ctrl)

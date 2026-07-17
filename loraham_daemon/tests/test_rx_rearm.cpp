@@ -46,10 +46,10 @@ struct FakeRadio : public RadioDriver {
     int16_t begin(const RadioRfDefaults *) override { return 0; }
     int16_t switchMode(RadioMode_t,
                        const RadioRfDefaults *) override { return 0; }
-    void applyLoraParam(const char *, const std::string &,
-                        const std::string &) override {}
-    void applyFskParam(const char *, const std::string &,
-                       const std::string &) override {}
+    int16_t applyLoraParam(const char *, const std::string &,
+                           const std::string &) override { return 0; }
+    int16_t applyFskParam(const char *, const std::string &,
+                          const std::string &) override { return 0; }
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
@@ -182,8 +182,9 @@ static void test_retry_failure_keeps_latch(void)
     expect_int("failed retry counts",
                (long)ctrl.stats.rx_rearm_failures, 1);
 
-    /* Next tick retries again; recovery clears the latch. */
+    /* Next due tick retries again; recovery clears the latch. */
     fake(&ctrl)->start_receive_result = 0;
+    ctrl.rx_rearm_next_retry_ms = 0; /* fast-forward past the backoff */
     daemon_rx_rearm_retry(&ctrl);
     expect_int("next tick recovers",
                ctrl.rx_rearm_pending.load() ? 1 : 0, 0);
@@ -288,6 +289,52 @@ static void test_retry_skips_on_lock_contention(void)
     holder.join();
 }
 
+/* Audit P1-6: retries back off (1/s), and a persistently deaf receiver
+ * escalates to FAILED instead of staying READY forever. */
+static void test_retry_backoff_limits_attempts(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl);
+    ctrl.rx_rearm_pending.store(true);
+    fake(&ctrl)->start_receive_result = -707;
+
+    daemon_rx_rearm_retry(&ctrl);
+    daemon_rx_rearm_retry(&ctrl); /* immediately again: within backoff */
+    expect_int("backoff: one attempt within window",
+               fake(&ctrl)->start_receive_count, 1);
+
+    ctrl.rx_rearm_next_retry_ms = 0;
+    daemon_rx_rearm_retry(&ctrl);
+    expect_int("backoff: due retry runs",
+               fake(&ctrl)->start_receive_count, 2);
+}
+
+static void test_persistent_failure_escalates_to_failed(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl);
+
+    for (unsigned i = 0; i < DAEMON_RX_REARM_FAIL_LIMIT; i++)
+        daemon_rx_rearm_note_result(&ctrl, -707, "TEST");
+
+    expect_int("escalation: radio FAILED at limit",
+               ctrl.health == RADIO_HEALTH_FAILED ? 1 : 0, 1);
+    expect_int("escalation: counter matches",
+               (long)ctrl.stats.rx_rearm_failures,
+               (long)DAEMON_RX_REARM_FAIL_LIMIT);
+
+    /* One success below the limit resets the streak. */
+    init_ctrl(&ctrl);
+    for (unsigned i = 0; i + 1 < DAEMON_RX_REARM_FAIL_LIMIT; i++)
+        daemon_rx_rearm_note_result(&ctrl, -707, "TEST");
+    daemon_rx_rearm_note_result(&ctrl, 0, "TEST");
+    daemon_rx_rearm_note_result(&ctrl, -707, "TEST");
+    expect_int("escalation: success resets streak",
+               ctrl.health == RADIO_HEALTH_READY ? 1 : 0, 1);
+}
+
 int main(void)
 {
     test_note_failure_latches_and_counts();
@@ -300,6 +347,8 @@ int main(void)
     test_retry_skips_when_not_ready();
     test_retry_skips_while_rx_pending();
     test_retry_skips_on_lock_contention();
+    test_retry_backoff_limits_attempts();
+    test_persistent_failure_escalates_to_failed();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail == 0 ? 0 : 1;

@@ -182,20 +182,41 @@ void config_dispatch_apply_line(const char *line, void *user)
 
     config_dispatch_log_message(&ctx->log, "Apply startet");
 
+    ConfigApplyStatus apply_status;
+
     {
         std::lock_guard<std::recursive_mutex> radio_lock(ctx->ctrl->radio_mutex);
 
-        ctx->apply_config(*ctx->ctrl->driver, ctx->tag, line,
-                          ctx->ctrl->mode, ctx->ctrl->getrssi_active);
+        apply_status = ctx->apply_config(*ctx->ctrl->driver, ctx->tag, line,
+                                         ctx->ctrl->mode,
+                                         ctx->ctrl->getrssi_active);
 
-        // beginFSK()/begin() clears the IRQ callback.
-        ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
-        config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
-        daemon_rx_rearm_note_result(ctx->ctrl,
-                                    ctx->ctrl->driver->startReceive(),
-                                    "CONFIG");
+        /* Re-arm ONLY when the apply touched the radio (audit P1-2): the
+         * unconditional callback+startReceive here destroyed a received,
+         * undrained packet even for unknown/rejected/no-op commands. */
+        if (apply_status == CONFIG_APPLY_APPLIED) {
+            // beginFSK()/begin() clears the IRQ callback.
+            ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
+            config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
+            daemon_rx_rearm_note_result(ctx->ctrl,
+                                        ctx->ctrl->driver->startReceive(),
+                                        "CONFIG");
+        } else if (apply_status == CONFIG_APPLY_HW_ERROR) {
+            /* Fail closed: a mid-apply RadioLib failure leaves the RF
+             * configuration suspect — no last-known-good snapshot exists in
+             * v112, so the radio goes FAILED (TX/CONFIG gate closed, GET
+             * STATUS reports it) instead of pretending READY. */
+            ctx->ctrl->health = RADIO_HEALTH_FAILED;
+            printf("[%s] CONFIG-Hardwarefehler: RADIO=FAILED (fail-closed)\n",
+                   ctx->tag);
+            fflush(stdout);
+        }
     }
-    config_dispatch_log_message(&ctx->log, "RX neu gestartet");
+
+    if (apply_status == CONFIG_APPLY_APPLIED)
+        config_dispatch_log_message(&ctx->log, "RX neu gestartet");
+    else
+        config_dispatch_log_message(&ctx->log, "Kein RX-Neustart (kein Apply)");
 }
 
 void config_dispatch_client(ClientSlot *slots,

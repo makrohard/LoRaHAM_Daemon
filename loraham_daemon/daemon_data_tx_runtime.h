@@ -12,6 +12,7 @@
 #include "daemon_stats.h"
 #include "daemon_tx.h"
 #include "daemon_tx_async_runtime.h"
+#include "radio_cad.h"
 #include "daemon_tx_executor.h"
 #include "daemon_tx_outcome.h"
 #include "daemon_tx_policy.h"
@@ -23,6 +24,10 @@
 #define DATA_TX_CAD_WAIT_FREE 0
 #define DATA_TX_CAD_WAIT_BLOCK 1
 #define DATA_TX_CAD_WAIT_TIMEOUT_SEND 2
+/* Probe reported UNAVAILABLE (scan error / radio state untouchable): never
+ * treated as free — the TX aborts as RADIO_ERROR, mirroring the queued
+ * executor (audit P1-4). */
+#define DATA_TX_CAD_WAIT_ERROR 3
 
 static inline int data_tx_cad_wait_blocks_tx(int decision)
 {
@@ -74,6 +79,13 @@ DataTxCadPolicy data_tx_snapshot_cad_policy(
     const RadioController *ctrl);
 
 int data_tx_probe_channel_busy(DataTxDaemonContext *tx);
+
+RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx);
+
+/* Raw-DATA read budget (audit P2-1): with the async queue active, one 2048-
+ * byte read chunks into up to 9 jobs but the queue holds 8 — consumed bytes
+ * past capacity were silently dropped. */
+size_t data_tx_queue_capacity_bytes(void *ctx);
 
 int data_tx_wait_channel_free_with_limits_ex(
     DataTxDaemonContext *tx,

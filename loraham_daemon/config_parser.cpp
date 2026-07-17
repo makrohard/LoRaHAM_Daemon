@@ -54,6 +54,7 @@ ConfigCommand config_parse_command(const char *cmd)
                 if(key == "MODE") {
                     uppercase_in_place(val);
                     result.mode = val;
+                    result.mode_count++;
                 } else {
                     result.tokens.push_back({key, val});
                 }
