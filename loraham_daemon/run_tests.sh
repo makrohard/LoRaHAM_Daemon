@@ -54,6 +54,7 @@ test_binaries=(
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
   "$TEST_DIR/test_instance_lock"
+  "$TEST_DIR/test_gpio_lock"
   "$TEST_DIR/test_runtime_lockdir"
   "$TEST_DIR/test_packaging"
   "$TEST_DIR/test_radio_health"
@@ -141,6 +142,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
+  "$SCRIPT_DIR/daemon_gpio_lock.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
   "$SCRIPT_DIR/client_slot.cpp"
@@ -683,6 +685,16 @@ build_one_cad_monitor_state_test() {
     -llgpio
 }
 
+build_one_gpio_lock_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_gpio_lock.cpp"
+}
+
 build_one_rx_rearm_test() {
   local src="$1"
   local out="$2"
@@ -928,6 +940,7 @@ build_one_config_dispatch_test() {
     "$src" \
     "$SCRIPT_DIR/config_status.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \
+    "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
@@ -974,6 +987,7 @@ build_tests() {
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
+  build_one_gpio_lock_test "$TEST_DIR/test_gpio_lock.cpp" "$TEST_DIR/test_gpio_lock"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
   build_one_framed_data_test "$TEST_DIR/test_framed_data.cpp" "$TEST_DIR/test_framed_data"
   build_one_framed_data_test "$TEST_DIR/test_framed_rx_contract.cpp" "$TEST_DIR/test_framed_rx_contract"

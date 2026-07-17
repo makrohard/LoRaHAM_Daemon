@@ -68,3 +68,24 @@ ConfigCommand config_parse_command(const char *cmd)
 
     return result;
 }
+
+/* Radio-touching classification (audit P1-5): a SET with MODE or any
+ * non-GETRSSI parameter will touch RF hardware; the dispatcher defers such
+ * commands while queued TX jobs exist. Pure parser-level — no apply deps. */
+bool config_command_touches_radio(const char *line)
+{
+    ConfigCommand parsed = config_parse_command(line ? line : "");
+
+    if (!parsed.is_set || !parsed.has_params)
+        return false;
+
+    if (parsed.mode_count > 0)
+        return true;
+
+    for (const auto &kv : parsed.tokens) {
+        if (kv.first != "GETRSSI")
+            return true;
+    }
+
+    return false;
+}

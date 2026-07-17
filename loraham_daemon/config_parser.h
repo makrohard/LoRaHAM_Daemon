@@ -24,4 +24,9 @@ struct ConfigCommand {
 
 ConfigCommand config_parse_command(const char *cmd);
 
+/* True when the line is a SET that would touch RF hardware (MODE or any
+ * non-GETRSSI parameter) — the dispatcher defers such commands while queued
+ * TX jobs exist (audit P1-5). GET/flag-only/unknown lines return false. */
+bool config_command_touches_radio(const char *line);
+
 #endif

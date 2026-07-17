@@ -1,5 +1,7 @@
 #include "config_policy.h"
 
+#include <math.h>
+
 #include <stddef.h>
 
 #include "config_value.h"
@@ -175,4 +177,37 @@ bool config_policy_fsk_encoding_valid_family(int encoding,
         return encoding != 1;
 
     return true;
+}
+
+/* Standard Semtech LoRa airtime (explicit header, worst case CRC on).
+ * LDRO active when the symbol time exceeds 16 ms, matching the drivers'
+ * auto-LDRO rule. */
+double config_policy_lora_airtime_ms(int sf, float bw_khz, int cr,
+                                     int preamble, size_t payload_len)
+{
+    if (sf < 6 || bw_khz <= 0.0f || cr < 5 || preamble < 0)
+        return -1.0;
+
+    double t_sym_ms = (double)(1u << sf) / ((double)bw_khz * 1000.0) * 1000.0;
+    int de = t_sym_ms > 16.0 ? 1 : 0;
+    double num = 8.0 * (double)payload_len - 4.0 * sf + 28.0 + 16.0;
+    double den = 4.0 * (double)(sf - 2 * de);
+    double payload_sym = 8.0;
+
+    if (num > 0.0)
+        payload_sym += ceil(num / den) * (double)cr;
+
+    return ((double)preamble + 4.25 + payload_sym) * t_sym_ms;
+}
+
+/* FSK: preamble bits + payload/overhead bits at the configured bitrate. */
+double config_policy_fsk_airtime_ms(float br_kbps, int preamble_bits,
+                                    size_t payload_len)
+{
+    if (br_kbps <= 0.0f || preamble_bits < 0)
+        return -1.0;
+
+    double bits = (double)preamble_bits + 8.0 * ((double)payload_len + 10.0);
+
+    return bits / ((double)br_kbps * 1000.0) * 1000.0;
 }

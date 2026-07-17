@@ -103,9 +103,17 @@ static ApplyState g_apply_state;
 
 /* --- Async TX runtime status stubs -------------------------------------- */
 
+static size_t g_stub_pending = 0;
+static int g_stub_job_active = 0;
+
 size_t daemon_tx_async_runtime_pending()
 {
-    return 0;
+    return g_stub_pending;
+}
+
+int daemon_tx_async_runtime_job_active()
+{
+    return g_stub_job_active;
 }
 
 size_t daemon_tx_async_runtime_dropped()
@@ -1270,6 +1278,77 @@ static void test_dispatch_hw_error_fails_closed(void)
     client_slot_close(&slots[0]);
 }
 
+/* Audit P1-5: RF CONFIG is rejected while queued TX jobs exist (a job
+ * transmits with execution-time configuration; retuning pending jobs is the
+ * hazard). Status/GET queries and the drained case pass through. */
+static void test_dispatch_defers_config_while_queue_busy(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    g_stub_pending = 2;
+
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] queue-busy setup\n");
+        return;
+    }
+
+    const char *cmd = "SET SF=7\n";
+    write(sv[0], cmd, strlen(cmd));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("queue-busy ready wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext ctx = make_context(slots, &ctrl);
+
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+    expect_int("queue busy: apply not called", g_apply_state.calls, 0);
+    expect_int("queue busy: no re-arm", fake(&ctrl)->start_receive_count, 0);
+
+    /* Executing-only (pop-to-transmit window) also defers. */
+    g_stub_pending = 0;
+    g_stub_job_active = 1;
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("executing ready wait", event_loop_wait(&set, &readfds, 100000), 1);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+    expect_int("job executing: apply not called", g_apply_state.calls, 0);
+
+    /* Drained queue: the same command applies. */
+    g_stub_job_active = 0;
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("drained ready wait", event_loop_wait(&set, &readfds, 100000), 1);
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+    expect_int("queue drained: apply runs", g_apply_state.calls, 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -1292,6 +1371,7 @@ int main(int argc, char **argv)
     test_dispatch_ready_client();
     test_dispatch_rejected_no_rearm();
     test_dispatch_hw_error_fails_closed();
+    test_dispatch_defers_config_while_queue_busy();
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();

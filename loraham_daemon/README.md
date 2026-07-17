@@ -233,11 +233,15 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
 | Waveshare + Uputronics CE1 | ✗ conflict (BCM 16 IRQ on both; BCM 6) |
 | Waveshare + Waveshare | ✗ conflict (all pins identical) |
 
-Conflicts are enforced by the kernel: GPIO line claims are exclusive, the
-second process fails at claim time. The daemon's job is interpretation: a
-failed claim produces one profile-aware diagnosis line (which BCM pin, which
-function in this profile, hint that another process likely holds it) and the
-daemon fails closed.
+Conflicts are enforced twice. First, deterministically by the daemon itself
+(audit P1-1): before any hardware access, each process takes one advisory
+lock per pin it will drive (`gpio<N>.lock` in the trusted runtime lock
+directory, acquired in ascending pin order). A pin held by another process
+fails the boot closed with a clear `[GPIO]` line — independent of lgpio's
+claim behavior, whose errors RadioLib prints but does not report. Second, by
+the kernel: GPIO line claims are exclusive, and a failed claim produces the
+profile-aware diagnosis line (which BCM pin, which function in this profile)
+as before.
 
 Recommended `config.txt` for manual-CS operation (all profiles drive CS as
 GPIO): `dtparam=spi=on` and `dtoverlay=spi0-0cs` (releases the kernel
@@ -471,7 +475,8 @@ Important behavior:
 - `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|DIRECT`, `SET TXQUEUE=0|1`, and `SET CADMONITOR=0|1` are stable per-band control commands.
 - `SET CADWAIT=N`, `SET CADIDLE=N`, `SET CADPOLL=N`, and `SET CADTXAFTERTIMEOUT=0|1` set the per-band CAD policy; accepted ranges are `CADWAIT` 50–5000 ms, `CADIDLE` 0–2000 ms, `CADPOLL` 10–500 ms. Out-of-range values are rejected and leave the previous policy unchanged. Policy changes apply to future TX attempts and queued jobs; each queued job snapshots the policy at creation time.
 - `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
-- Queued TX jobs snapshot band, TX mode, CAD policy, and payload at submission — NOT the RF configuration (modem, frequency, SF/BW/CR): a job executes against the radio configuration current at execution time, so a CONFIG change between enqueue and execution affects already-accepted jobs. `SET TXQUEUE=0` stops NEW submissions only; previously queued jobs still drain through the worker (their `TXQ*` counters keep reporting the real state). Coordinating queued jobs with reconfiguration (per-job config snapshot or drain-before-apply) is deferred to the transactional-CONFIG rework.
+- Queued TX jobs snapshot band, TX mode, CAD policy, and payload at submission — NOT the RF configuration: a job transmits with the configuration current at execution time. The daemon therefore REJECTS radio-touching `SET` commands (MODE or any non-GETRSSI parameter) while queued jobs are pending or one is executing — the client sees `CONFIG rejected: TX queue busy` in the log and retries once the queue drains (seconds). `GET` queries and runtime flags (`SET TXRESULT/TXQUEUE/CADMONITOR/...`) always pass. `SET TXQUEUE=0` stops NEW submissions only; previously queued jobs still drain through the worker (their `TXQ*` counters keep reporting the real state).
+- **Airtime limit:** the daemon tracks the effective airtime-relevant configuration (SF/BW/CR/preamble; FSK bitrate/preamble) and rejects any `SET` whose merged worst-case single-packet airtime (255-byte payload, CRC on) would exceed **20 s** — safely below the 30 s systemd stop timeout, since a blocking `transmit()` cannot be interrupted. The check runs before any hardware side effect; the whole command is rejected with the computed airtime in the log. Consequences: slow combinations are only accepted together (`SET SF=7 BW=7.8` passes at ~9 s, `SET BW=7.8` alone under an SF12 configuration is rejected at ~145 s), and a `MODE` switch re-bases the tracking on the band boot defaults. Both boot profiles (~9 s at 433, ~2.2 s at 868) and all real MeshCom/LoRa-APRS profiles pass with wide margin.
 - CONFIG apply is whole-command prevalidation followed by sequential apply, not a transaction: the full command is validated (syntax, ranges, band frequency policy, duplicate keys rejected) before any radio side effect, then parameters apply in order without rollback — a RadioLib-level failure mid-apply leaves earlier parameters applied.
 - `MODE=LORA` calls RadioLib `begin()`, `MODE=FSK` calls `beginFSK()` — both land on the band's boot RF defaults (frequency, modulation parameters), never on chip register defaults. Explicit parameters in the same command line are applied on top afterwards; anything not set stays at the band default.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
@@ -712,7 +717,7 @@ settings (≤20 dBm).
 | `BW` | LORA | 433: `125`, 868: `250` | exact `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz | `125`, `250` | LoRa bandwidth |
 | `CR` | LORA | `5` | integer `5` to `8` | `5` | LoRa coding rate (`4/5` to `4/8`) |
 | `CRC` | LORA | `1` | exact `0`, `1` | `1` | LoRa CRC off/on |
-| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048` (bounded ranges — NOT a full airtime policy: extreme accepted combinations like SF12/BW7.8/CR8 with max preamble and payload still reach ~8 min airtime; complete per-packet airtime validation needs effective-config tracking and is deferred to the transactional-CONFIG rework) | `8`, `16`, `32` | Preamble length |
+| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048`; additionally subject to the airtime limit below | `8`, `16`, `32` | Preamble length |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00` to `0xFF` or decimal `0` to `255`; FSK: 1 or 2 non-zero bytes, max `0xFFFF` | `0x12`, `0x2B`, `0x2DD4` | Sync word |
 | `LDRO` | LORA | 433: `1`, 868: `AUTO` | exact `AUTO`, `auto`, `0`, `1` | `AUTO`, `1` for SF12/BW125 | Low Data Rate Optimization |
 | `BR` | FSK | RadioLib/default unset by daemon | strict number `0.5` to `300.0` kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |

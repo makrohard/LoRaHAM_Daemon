@@ -120,6 +120,11 @@ size_t daemon_tx_async_runtime_pending(void)
     return daemon_tx_async_worker_pending(&daemon_tx_async_worker);
 }
 
+int daemon_tx_async_runtime_job_active(void)
+{
+    return daemon_tx_async_worker.job_active.load() ? 1 : 0;
+}
+
 size_t daemon_tx_async_runtime_accepted(void)
 {
     return daemon_tx_async_worker_accepted(&daemon_tx_async_worker);

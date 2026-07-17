@@ -150,6 +150,43 @@ static void test_family_capabilities(void)
                config_policy_fsk_encoding_valid_family(2, DAEMON_CHIP_FAMILY_SX1262), 1);
 }
 
+/* Audit P1-7: airtime calculator reference points. */
+static void expect_between(const char *name, double v, double lo, double hi)
+{
+    if (v >= lo && v <= hi) {
+        g_ok++;
+        printf("[ OK ] %s (%.1f ms)\n", name, v);
+    } else {
+        g_fail++;
+        printf("[FAIL] %s: %.1f not in [%.1f, %.1f]\n", name, v, lo, hi);
+    }
+}
+
+static void test_airtime_reference_points(void)
+{
+    /* 433 boot profile, 255 B: ~9.0 s — must pass the 20 s limit. */
+    expect_between("airtime SF12/BW125/CR5/PRE8",
+                   config_policy_lora_airtime_ms(12, 125.0f, 5, 8, 255),
+                   8900.0, 9150.0);
+    /* 868 boot profile: ~2.2 s. */
+    expect_between("airtime SF11/BW250/CR5/PRE16",
+                   config_policy_lora_airtime_ms(11, 250.0f, 5, 16, 255),
+                   2100.0, 2250.0);
+    /* The audit's example: SF12/BW7.8/CR8/PRE512 ≈ 489 s. */
+    expect_between("airtime audit worst case",
+                   config_policy_lora_airtime_ms(12, 7.8f, 8, 512, 255),
+                   480000.0, 500000.0),
+    expect_int("audit worst case over limit",
+               config_policy_lora_airtime_ms(12, 7.8f, 8, 512, 255)
+                   > CONFIG_POLICY_MAX_AIRTIME_MS, 1);
+    /* FSK worst case (BR 0.5, preamble 2048): ~8.3 s — under the limit. */
+    expect_between("airtime FSK worst case",
+                   config_policy_fsk_airtime_ms(0.5f, 2048, 255),
+                   8200.0, 8500.0);
+    expect_int("invalid params fail closed",
+               config_policy_lora_airtime_ms(0, 125.0f, 5, 8, 255) < 0.0, 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -174,6 +211,7 @@ int main(int argc, char **argv)
 
     test_freq_band_policy();
     test_family_capabilities();
+    test_airtime_reference_points();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

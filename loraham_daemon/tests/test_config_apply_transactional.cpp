@@ -307,6 +307,46 @@ static void test_mode_switch_applies_before_explicit_params(void)
                radio.first_apply_seq > radio.switch_seq, 1);
 }
 
+/* Audit P1-7: merged current+command worst-case airtime gates the whole
+ * command before any side effect; the shadow persists across commands. */
+static void test_airtime_gate_merged_config(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    daemon_band_resolve(RADIO_BAND_433); /* shadow base: SF12/BW125/PRE8 */
+    config_apply_effective_reset();
+
+    /* BW=7.8 with the inherited SF12 shadow: ~145 s — rejected, no apply. */
+    ConfigApplyStatus st =
+        parse_and_apply_config_generic(radio, "TEST", "SET BW=7.8",
+                                       mode, getrssi);
+    expect_int("airtime: BW7.8 at SF12 rejected", st == CONFIG_APPLY_REJECTED, 1);
+    expect_int("airtime: no hardware touched", radio.lora_apply_count, 0);
+
+    /* Same BW with SF7 in the SAME command: ~8.8 s — accepted. */
+    st = parse_and_apply_config_generic(radio, "TEST", "SET SF=7 BW=7.8",
+                                        mode, getrssi);
+    expect_int("airtime: SF7+BW7.8 accepted", st == CONFIG_APPLY_APPLIED, 1);
+    expect_int("airtime: both keys applied", radio.lora_apply_count, 2);
+
+    /* Shadow remembers BW7.8: raising SF back to 12 must now be rejected. */
+    st = parse_and_apply_config_generic(radio, "TEST", "SET SF=12",
+                                        mode, getrssi);
+    expect_int("airtime: SF12 on BW7.8 shadow rejected",
+               st == CONFIG_APPLY_REJECTED, 1);
+    expect_int("airtime: rejected key not applied", radio.lora_apply_count, 2);
+
+    /* MODE resets the shadow to band defaults: SF12 is fine again. */
+    st = parse_and_apply_config_generic(radio, "TEST", "SET MODE=LORA SF=12",
+                                        mode, getrssi);
+    expect_int("airtime: MODE reset re-admits SF12",
+               st == CONFIG_APPLY_APPLIED, 1);
+
+    config_apply_effective_reset();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -339,6 +379,8 @@ int main(int argc, char **argv)
     test_fsk_rxbw_follows_driver_family();
     test_mode_switch_passes_band_defaults();
     test_mode_switch_applies_before_explicit_params();
+
+    test_airtime_gate_merged_config();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

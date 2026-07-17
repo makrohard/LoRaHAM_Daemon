@@ -1,6 +1,7 @@
 #ifndef LORAHAM_DAEMON_TX_ASYNC_WORKER_H
 #define LORAHAM_DAEMON_TX_ASYNC_WORKER_H
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -24,6 +25,10 @@ struct DaemonTxAsyncWorker {
     std::thread thread;
     bool running;
     bool stop_requested;
+    /* True while a popped job executes (audit P1-5): pending-count alone
+     * has a pop-to-transmit window in which a CONFIG change could still
+     * retune an already-accepted job. */
+    std::atomic<bool> job_active{false};
 
     DaemonTxAsyncWorker() :
         send_fn(NULL),
