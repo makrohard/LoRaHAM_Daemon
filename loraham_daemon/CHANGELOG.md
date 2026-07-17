@@ -2,51 +2,24 @@
 
 ## loraham_daemon 112
 
-- Companion clients (chat, iGate 105d/106, rssi_dualbar, mt_decrypt parser) resolve the daemon sockets automatically: `/run/loraham` when the daemon serves there (systemd), `/tmp` fallback otherwise — one client build works in both deployments; direct daemon runs use `LORAHAM_SOCKET_DIR=/tmp`.
-- Hardware lock files (instance/SPI/GPIO) are owner-only 0600 (legacy 0660 corrected via fchmod on open) — a loraham socket-client user can no longer hold hardware locks, block startup, or force runtime SPI timeouts. The daemon itself runs unprivileged as the dedicated `loraham` system user (hardware via the spi/gpio device groups, never root); the trusted lock-dir check accepts root or the daemon user as owner.
-- Startup lock-infrastructure failures (held GPIO pin lock, unusable spi0.lock) now exit exactly 4 (restart-suppressed) after normal cleanup; genuine LED/radio hardware failures keep the restartable exit 1. Exact-exit-code integration tests added.
-- Invalid reserved runtime setters (`SET CADWAIT=1`, `TXQUEUE=2`, `TXMODE=foo`, …) answer `ERR INVALID` (or `ERR MALFORMED` when incomplete) independent of radio readiness, instead of falling through to `ERR UNKNOWN`/`ERR RADIO_NOT_READY`.
-- BEHAVIOR: stable per-command CONF replies — every complete CONF command line gets exactly one response (`OK` / `ERR MALFORMED|UNKNOWN|INVALID|BUSY|RADIO_NOT_READY|HARDWARE`); `GET STATUS/STATS/CHANNEL` keep their single data line with no trailing `OK`; broadcasts unchanged.
-- BEHAVIOR: TXQUEUE drain-before-disable — `SET TXQUEUE=0` is rejected (`ERR BUSY`) while async jobs are pending or executing; the direct DATA path additionally refuses residual async work as BUSY (a direct CAD+TX can never stack behind queued CAD+TX).
-- BEHAVIOR: public sockets moved from `/tmp` to the protected `/run/loraham` (loraham:loraham 2750 setgid via tmpfiles.d, `UMask=0007` in the unit; the daemon runs as the unprivileged `loraham` user and owns the directory) — no compatibility paths in `/tmp`; `LORAHAM_SOCKET_DIR` overrides for dev/test only. Lock namespace `/run/lock/loraham` unchanged.
-- BEHAVIOR: GPIO pin locks are acquired before the FIRST GPIO access (LED claim included) via a testable claim-then-init seam; every startup-failure path and shutdown releases them (locks before instance lock, hardware torn down first).
-- Runtime SPI fatals exit with the new code 5 (`LORAHAM_EXIT_RUNTIME_SPI_ERROR`, restart-eligible); exit 4 stays reserved for non-restartable startup lock-infrastructure failures (`RestartPreventExitStatus=3 4`).
-- SX1262 rejects EVERY `OOK` key (including `OOK=0`) at prevalidation with `ERR INVALID`; the driver branch returns a non-success state as defense in depth.
-- New Hardware Support:
-  - Uputronics Raspberry PiZero LoRa(TM) Expansion Board V2.5C
-  - Waveshare SX1262 LoRaWAN/GNSS HAT
+Breaking:
+- `--radio 433|868` is now mandatory (no `--radio both` / implicit default); dual-band runs two processes.
+- Band-suffixed flags removed (`--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868`); the plain flags apply to the selected band.
+- CONF now sends one reply per command: `OK` or `ERR MALFORMED|UNKNOWN|INVALID|BUSY|RADIO_NOT_READY|HARDWARE` (`GET STATUS/STATS/CHANNEL` keep their data line, no trailing `OK`). Parsers must consume it.
+- Public sockets moved to `/run/loraham` under systemd; direct/user runs use `LORAHAM_SOCKET_DIR=/tmp`. Bundled clients auto-detect both.
+- Daemon runs unprivileged as the `loraham` user (hardware via spi/gpio groups); `GET STATUS` gains `RXREADY`, `GET STATS` gains `RXREARMFAIL`.
 
-- Removed double stack to simplify code. That implies breaking the API:
+Behavior:
+- `SET FREQ` is rejected off the selected band (433: 430–440 MHz, 868: 863–870); slow configs are rejected by a 20 s worst-case airtime limit.
+- `SET TXQUEUE=0` and radio-touching `SET`s are rejected (`ERR BUSY`) while the TX queue is draining.
+- `SET MODE` re-applies the band's boot RF defaults; boot fails closed if any RF setter or RX-arm fails; a persistently deaf receiver escalates to `RADIO=FAILED`.
+- MANAGED TX aborts on a failed/unavailable CAD probe instead of treating it as free; a pending RX packet is no longer destroyed by a CAD probe or a rejected CONF line.
+- Per-process GPIO/SPI locks fail the boot closed on conflict; startup lock failures exit 4 (no restart), runtime SPI fatals exit 5 (restartable), duplicate instance exits 3.
+- SX1262: all `OOK`, `ENCODING=1`, and `FREQDEV<0.6` rejected at prevalidation; RF-switch failure now fails closed.
 
-- BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
-
-- BREAKING: the band-suffixed CLI flags `--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868` are removed (rejected as unknown options); the plain `--tx-mode`, `--cad-monitor`, `--cad-rssi` apply to the selected band.
-
-- Fixes from the hardware validation (`HW-ONAIR-CHECKLIST.md`): sx1262 RF-switch polarity (TX radiated nothing), sx127x LDRO warm-start ghost on no-RESET boards (garbled RX after reconfig), chip-family-aware FSK `RXBW` validation (RXBW was unconfigurable on SX1262); framed DATA emits one ERROR per rejected frame instead of one per junk byte.
-
-- BEHAVIOR: main-loop lock discipline — monitoring, RX poll, and GETRSSI ticks now SKIP their sample instead of stalling when the TX worker holds the radio across a blocking transmit (seconds at SF12). CONFIG apply deliberately still blocks (client-initiated, must not be dropped). Contract documented in `radio_controller.h`.
-- Drivers fail closed on missing band RF defaults: `begin(NULL)`/`switchMode(..., NULL)` return `NULL_POINTER` instead of falling back to chip register defaults (no code path can park a process off-band).
-- BEHAVIOR: CAD probe pending-RX guard (audit M1) — a fully received but not yet drained packet is no longer destroyed by the probe's IRQ-clear/re-arm; the probe reports BUSY without scanning, MANAGED TX waits, the packet is delivered.
-- BEHAVIOR: `SET MODE` lands on the band's boot RF defaults (audit M2) — `switchMode()` requires the band defaults (fail-closed on NULL) instead of leaving the chip at its 434-MHz register defaults after a mode change.
-- BEHAVIOR: RX re-arm robustness (audit M3) — every `startReceive()` return is captured: boot failure fails closed (`RADIO_HEALTH_FAILED` + numeric code), runtime failures log once per incident, count in the new appended `GET STATS` field `RXREARMFAIL`, and are retried each radio tick under try_to_lock until recovery (no READY-but-deaf radio).
-- Polish: root-run SKIP guard in the lockdir tests, per-band log tags read from the band descriptor (new CAD/RSSI fields) instead of ternaries, hardware-profile resolve uses the frozen descriptor's band number, v113 bench items appended to `HW-ONAIR-CHECKLIST.md`.
-- Low-findings hardening: listening sockets are nonblocking so a reset connection can never hang the daemon in `accept()` (one accept per readiness tick stays the fairness policy); event-fd sync checks registration failure before `reconcile_begin` (no dangling epoch); benign `EINTR` from the event wait no longer hits the `perror` path (debug line only); probe `rssi_dbm` semantics (packet vs live per path) documented at the source.
-- Robustness polish: STATS/STATUS reply buffers sized for saturated 20-digit counters (no truncation possible), RX re-arm latch transitions are atomic exchanges, the re-arm retry never runs over an undrained packet, and shutdown resets the re-arm latch.
-- BEHAVIOR: every mandatory boot setter (frequency, SF, BW, sync, preamble, CR, CRC, LDRO, power) is now checked — a rejected setter fails the boot closed (FAILED health, stage logged) instead of a READY radio with partial RF configuration.
-- BEHAVIOR: `SET FREQ` is validated against the band's operational range from the descriptor (433: 430.0–440.0 MHz, 868: 863.0–870.0 MHz) — an 868 process can no longer be tuned off its logical band.
-- BEHAVIOR: preamble ranges are bounded (LoRa 6–512, FSK 0–2048; the old 65535 ceiling allowed one valid ~36-minute preamble at SF12/BW125 — full airtime-based validation deferred to the transactional-CONFIG rework). Duplicate keys in one SET command are rejected (ambiguous under sequential apply).
-- SPI bus lock acquisition is deadline-bounded (2 s, CLOCK_MONOTONIC): a live-but-wedged peer process now causes a controlled fatal exit instead of hanging this daemon forever.
-- Background-mode log open is symlink-safe (`O_NOFOLLOW`); a symlink planted at the fixed /tmp log path is a hard error. Fixed a signed-shift UB in the RX debug decoder; test harness now fails on missing summaries, summary assertion failures, and unexpected XPASS (fail-open guard).
-- Repo entry point: root README now presents `loraham_daemon/` as the canonical tree; the legacy single-file daemons moved to `legacy/` (archived, not buildable per instructions).
-- BEHAVIOR: CONFIG apply reports a structured status — unknown/rejected/no-op commands no longer re-arm RX (a malformed CONF line could destroy a received, undrained packet); driver parameter setters return their RadioLib state, apply aborts on the first hardware failure, and a mid-apply failure fails the radio closed (`RADIO=FAILED`).
-- BEHAVIOR: MANAGED synchronous TX treats a failed/unavailable CAD probe as an error (abort, `RADIO_ERROR`) instead of a free channel; the passive probe reports UNAVAILABLE for sentinel RSSI readings instead of a false FREE.
-- BEHAVIOR: family-aware prevalidation — SX1262 rejects `OOK=1`, `ENCODING=1` (would silently enable whitening), and `FREQDEV<0.6`; duplicate `MODE` keys are rejected like other duplicates.
-- BEHAVIOR: persistent RX re-arm failure escalates to `RADIO=FAILED` after 30 consecutive failures; retries back off to 1/s; `GET STATUS` gains the appended `RXREADY` field.
-- Raw DATA reads are bounded by free TX-queue capacity (a single 2048-byte read could exceed the 8-job queue and silently drop the tail; excess bytes now stay in the kernel buffer). `TXQ*` STATUS counters report the worker's real state even while `TXQUEUE=0`.
-- BEHAVIOR: airtime policy — the daemon tracks the effective SF/BW/CR/preamble (FSK: bitrate/preamble) and rejects any `SET` whose merged worst-case 255-byte airtime exceeds 20 s (below the 30 s systemd stop timeout; a blocking transmit is uninterruptible). Checked before any side effect; `MODE` re-bases on band boot defaults. Real profiles pass with wide margin.
-- BEHAVIOR: radio-touching `SET` commands are rejected while queued TX jobs are pending or executing (queued jobs transmit with execution-time configuration; retuning accepted jobs was the hazard) — retry when the queue drains; `GET` and runtime-flag commands always pass.
-- BEHAVIOR: cross-process GPIO ownership — one advisory lock per claimed pin (`gpio<N>.lock`, ascending order) acquired before any hardware access; a pin held by another process fails the boot closed (deterministic conflict enforcement independent of lgpio's printed-and-swallowed claim errors).
-- sx1262 RF-switch setup (DIO2) is checked and propagated (a failure meant TX_RESULT OK with zero radiated RF); the HAL owns the SPI handle and fails closed on transfer errors (previously printed and swallowed by the base HAL); radio health is an atomic; SPI-lock acquisition documented with its latency trade-off; CADRSSI's dual role (monitor + Uputronics passive-LBT TX gate) documented; band-policy FREQ rejections log a distinct "off-band frequency" reason.
+New hardware:
+- Uputronics Raspberry Pi Zero LoRa(TM) Expansion Board V2.5C.
+- Waveshare SX1262 LoRaWAN/GNSS HAT.
 
 
 ## loraham_daemon 111a

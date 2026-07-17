@@ -487,6 +487,11 @@ static void daemon_startup_sequence(int argc, char *argv[])
 /* --- Main entry ---------------------------------------------------------- */
 int main(int argc, char *argv[])
 {
+    /* Line-buffered stdout even when redirected to a file (nohup, systemd,
+     * pipes): the RX/TX log lines must appear as they happen, not when a
+     * full stdio buffer spills — operators tail these logs live. */
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
     daemon_startup_sequence(argc, argv);
     daemon_run();
 

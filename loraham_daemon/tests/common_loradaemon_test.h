@@ -655,15 +655,32 @@ static TEST_UNUSED int run_cli_capture(const char *bin,
     }
 
     close(pipefd[1]);
-    n = read(pipefd[0], out, out_size - 1);
-    close(pipefd[0]);
 
-    waitpid(pid, &status, 0);
+    /* Read to EOF: with line-buffered child stdout the output arrives in
+     * multiple pipe chunks — a single read() raced them (latent bug hidden
+     * by the previous full buffering). */
+    {
+        size_t total = 0;
 
-    if (n < 0)
-        return TEST_FAIL;
+        for (;;) {
+            n = read(pipefd[0], out + total, out_size - 1 - total);
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+                break;
+            total += (size_t)n;
+            if (total >= out_size - 1)
+                break;
+        }
+        close(pipefd[0]);
 
-    out[n] = '\0';
+        waitpid(pid, &status, 0);
+
+        if (n < 0)
+            return TEST_FAIL;
+
+        out[total] = '\0';
+    }
 
     if (!WIFEXITED(status))
         return TEST_FAIL;
