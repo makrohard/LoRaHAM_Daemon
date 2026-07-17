@@ -490,7 +490,10 @@ static void stop_daemon_pid(pid_t *pid)
     if (*pid <= 0)
         return;
 
-    kill(-*pid, SIGTERM);
+    /* Group-kill with direct-kill fallback: if the child lost the setpgid
+     * race the group may not exist yet. */
+    if (kill(-*pid, SIGTERM) != 0)
+        kill(*pid, SIGTERM);
 
     for (int i = 0; i < 30; i++) {
         pid_t r = waitpid(*pid, &status, WNOHANG);
@@ -501,7 +504,8 @@ static void stop_daemon_pid(pid_t *pid)
         usleep(100000);
     }
 
-    kill(-*pid, SIGKILL);
+    if (kill(-*pid, SIGKILL) != 0)
+        kill(*pid, SIGKILL);
     waitpid(*pid, &status, 0);
     *pid = -1;
 }

@@ -211,6 +211,8 @@ static int start_daemon_radio(const char *radio)
         _exit(127);
     }
 
+    (void)setpgid(pid, pid);
+
     g_daemon_pid = pid;
     return TEST_PASS;
 }
@@ -310,6 +312,8 @@ static int run_daemon_in_runtime_dir_expect(const char *runtime_dir,
         execl(g_bin, g_bin, "--radio", "433", (char *)NULL);
         _exit(127);
     }
+    if (pid > 0)
+        (void)setpgid(pid, pid);
 
     if (pid > 0 && waitpid(pid, &status, 0) == pid &&
         WIFEXITED(status) && WEXITSTATUS(status) == expected_code) {
@@ -388,6 +392,8 @@ static int test_waveshare_profile_fails_closed(void)
               (char *)NULL);
         _exit(127);
     }
+    if (pid > 0)
+        (void)setpgid(pid, pid);
 
     g_daemon_pid = pid;
 

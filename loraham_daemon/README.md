@@ -69,7 +69,7 @@ hardware").
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | Profile-driven Module construction, driver selection by chip family, RF boot defaults from the band descriptor, callback install, initial RX start, and the family-aware begin()-failure diagnosis dispatch |
 | SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock`; fails closed if the lock cannot be established (see Multi-instance operation) |
 | Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
-| Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, root-owned + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
+| Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, owned by root or the daemon user + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
 | Radio health | `radio_health.cpp` | Radio readiness/failed-state helpers used to guard CONFIG/TX behavior |
 | LED/GPIO helpers | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state control; the LED is a per-band hardware/activity resource, not the instance-ownership lock (that is `daemon_instance_lock`; see Multi-instance operation) |
 
@@ -147,15 +147,21 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 |---|---|---|---|---|
 **Socket directory:** all public sockets live in `/run/loraham` (root:`loraham`,
 mode `2750`, provisioned via `systemd/tmpfiles.d/loraham.conf`). Create the
-system group once — `getent group loraham >/dev/null || sudo groupadd --system
-loraham` — then run `systemd-tmpfiles --create`; client users need membership
-(`sudo usermod -aG loraham <user>`). Only root can create files in the
+system group and daemon user once —
+`getent group loraham >/dev/null || sudo groupadd --system loraham` and
+`getent passwd loraham >/dev/null || sudo useradd --system -g loraham -G
+spi,gpio -M -s /usr/sbin/nologin loraham` — then run `systemd-tmpfiles
+--create`; client users need group membership (`sudo usermod -aG loraham
+<user>`). Only root can create files in the
 directory, so no local user can plant a non-socket collision at a socket path;
-group members connect normally. The service's PRIMARY group stays `root`: the
-hardware lock files under `/run/lock/loraham` (instance, `spi0`, `gpio<N>`)
-are owner-only `0600` (legacy `0660` files are corrected on open), so a
-`loraham` client user can never hold a hardware lock, block startup, or force
-a runtime SPI timeout — socket access and hardware ownership stay separated. `LORAHAM_SOCKET_DIR` overrides the directory
+group members connect normally. The daemon itself runs UNPRIVILEGED as the
+dedicated system user `loraham` (hardware access via the Raspberry Pi OS
+`spi`/`gpio` device groups, not root). Hardware lock files under
+`/run/lock/loraham` (instance, `spi0`, `gpio<N>`) are owner-only `0600`
+(legacy `0660` files are corrected on open), so a `loraham` client user can
+never hold a hardware lock, block startup, or force a runtime SPI timeout —
+socket access and hardware ownership stay separated even though clients and
+daemon share the `loraham` group. `LORAHAM_SOCKET_DIR` overrides the directory
 for non-root dev/test runs only (the systemd unit clears it). The lock
 namespace `/run/lock/loraham` is separate and unchanged.
 
@@ -612,7 +618,7 @@ death.
   transfer. A hard (non-`EINTR`) `flock` failure on lock **or unlock**, or any
   transfer attempt without the lock held, is a controlled fatal.
 - **Override (dev/test only):** `LORAHAM_RUNTIME_DIR` redirects the directory and
-  relaxes the root-owner requirement (still rejecting symlinks and group/world
+  relaxes the trusted-owner requirement (still rejecting symlinks and group/world
   writability), creating the directory `0700` if missing. This is supported for
   direct test/developer invocation. The installed systemd service is pinned to
   the production directory: it sources **no** `EnvironmentFile` and additionally
@@ -660,7 +666,7 @@ sudo install -D -m0644 systemd/loraham-daemon@.service \
 sudo systemctl daemon-reload
 sudo systemctl enable --now loraham-daemon@433.service loraham-daemon@868.service
 
-# Verify the shared lock directory is trusted (root-owned, not group/world-writable):
+# Verify the shared lock directory is trusted (owned by root or the daemon user, not group/world-writable):
 sudo stat -c '%U:%G %a %n' /run/lock/loraham   # expect: root:root 755 /run/lock/loraham
 ```
 

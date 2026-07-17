@@ -87,8 +87,21 @@ int beacon_idx = 0;
 
 #define APRS_SERVER    "euro.aprs2.net"
 #define APRS_PORT      14580
-#define DATA_SOCKET    "/tmp/lora433.sock"
-#define CONF_SOCKET    "/tmp/loraconf433.sock"
+
+/* --- Daemon-Socket-Pfadwahl -------------------------------------------------
+ * systemd-Deployments servieren die Sockets unter /run/loraham, direkte/
+ * Benutzer-Starts unter /tmp (LORAHAM_SOCKET_DIR). Ein Build funktioniert in
+ * beiden Welten: nimm den Pfad, unter dem der Daemon-Socket tatsaechlich
+ * existiert, sonst den /tmp-Fallback. */
+#include <sys/stat.h>
+static const char *loraham_sockpath(const char *runp, const char *tmpp)
+{
+    struct stat st;
+    return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
+}
+
+#define DATA_SOCKET loraham_sockpath("/run/loraham/lora433.sock", "/tmp/lora433.sock")
+#define CONF_SOCKET loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
 
 const char* LORA_HEADER = "<\xff\x01";
 #define HEADER_LEN 3
@@ -305,10 +318,14 @@ int main(int argc, char **argv) {
             struct sockaddr_un data_remote;
             data_s = socket(AF_UNIX, SOCK_STREAM, 0);
             data_remote.sun_family = AF_UNIX;
-            strncpy(data_remote.sun_path, DATA_SOCKET, sizeof(data_remote.sun_path)-1);
-
             log_print("[SYSTEM]     Warte auf LoRa-Daemon Socket...\n");
-            while (connect(data_s, (struct sockaddr *)&data_remote, strlen(data_remote.sun_path) + sizeof(data_remote.sun_family)) == -1) {
+            for (;;) {
+                /* Pfad je Versuch neu aufloesen: der Daemon kann waehrend
+                 * des Wartens unter /run/loraham ODER /tmp erscheinen. */
+                memset(data_remote.sun_path, 0, sizeof(data_remote.sun_path));
+                strncpy(data_remote.sun_path, DATA_SOCKET, sizeof(data_remote.sun_path)-1);
+                if (connect(data_s, (struct sockaddr *)&data_remote, strlen(data_remote.sun_path) + sizeof(data_remote.sun_family)) == 0)
+                    break;
                 sleep(5);
             }
             log_print("[SYSTEM]     LoRa-Daemon Socket verbunden.\n");

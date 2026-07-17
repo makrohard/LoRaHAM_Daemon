@@ -25,7 +25,9 @@
  *
  * The directory is validated before use (see loraham_open_lock_dir): it must be
  * a real directory (not a symlink), not group- or world-writable, and -- for the
- * production default path -- owned by root. The daemon never silently creates
+ * production default path -- owned by root or by the daemon user itself
+ * (the daemon runs unprivileged; tmpfiles provisions the directory for the
+ * dedicated `loraham` user). The daemon never silently creates
  * the production directory; it must be pre-provisioned by tmpfiles.d. There is
  * deliberately no implicit /tmp fallback: a lock that cannot be established in
  * the trusted location must fail closed, never open.
@@ -86,9 +88,15 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
         return -1;
     }
 
-    if (require_root && st.st_uid != 0) {
+    /* Trusted owner (non-root deployment): the production directory must be
+     * owned by root or by the daemon user itself — never a third user, who
+     * could otherwise pre-create and manipulate the lock namespace. The
+     * daemon deliberately does NOT run as root (hardware access comes from
+     * the spi/gpio supplementary groups). */
+    if (require_root && st.st_uid != 0 && st.st_uid != geteuid()) {
         fprintf(stderr,
-                "[LOCK] Fehler: Sperrverzeichnis %s nicht root-eigen (uid=%u)\n",
+                "[LOCK] Fehler: Sperrverzeichnis %s gehoert weder root noch "
+                "dem Daemon-Nutzer (uid=%u)\n",
                 dir, (unsigned)st.st_uid);
         close(fd);
         return -1;

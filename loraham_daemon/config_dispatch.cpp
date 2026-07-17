@@ -1,5 +1,7 @@
 #include "config_dispatch.h"
 
+#include <ctype.h>
+
 #include "daemon_rx_rearm.h"
 #include "daemon_tx_async_runtime.h"
 #include "config_parser.h"
@@ -60,7 +62,21 @@ void config_dispatch_apply_line(const char *line, void *user)
 
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
-    if(config_status_is_get_status(line)) {
+    /* Reserved-setter matching is case-insensitive like every documented
+     * CONF key: the dedicated matchers and the invalid-value classifier all
+     * operate on an uppercased copy (values of reserved setters are numeric
+     * or MANAGED/DIRECT, so uppercasing is loss-free). The generic CONFIG
+     * path below keeps the raw line — its parser normalizes keys itself. */
+    char upper_line[buf_SIZE];
+    {
+        size_t i = 0;
+
+        for (; line[i] != '\0' && i < sizeof(upper_line) - 1; i++)
+            upper_line[i] = (char)toupper((unsigned char)line[i]);
+        upper_line[i] = '\0';
+    }
+
+    if(config_status_is_get_status(upper_line)) {
         char status[512];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
@@ -74,7 +90,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
-    if(config_status_is_get_stats(line)) {
+    if(config_status_is_get_stats(upper_line)) {
         char stats[384];
 
         config_status_format_stats(stats, sizeof(stats), ctx->ctrl);
@@ -88,7 +104,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
-    if(config_status_is_get_channel(line)) {
+    if(config_status_is_get_channel(upper_line)) {
         char channel[192];
 
         config_status_format_channel(channel, sizeof(channel), ctx->ctrl);
@@ -104,7 +120,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     int txresult_enabled = 0;
-    if(config_status_is_set_txresult(line, &txresult_enabled)) {
+    if(config_status_is_set_txresult(upper_line, &txresult_enabled)) {
         if(ctx->ctrl)
             ctx->ctrl->tx_result_active.store(txresult_enabled != 0);
         printf("[%s] TXRESULT=%d\n", ctx->tag, txresult_enabled ? 1 : 0);
@@ -114,7 +130,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     int txqueue_enabled = 0;
-    if(config_status_is_set_txqueue(line, &txqueue_enabled)) {
+    if(config_status_is_set_txqueue(upper_line, &txqueue_enabled)) {
         /* Drain-before-disable (audit item 1): switching to the direct path
          * while the worker still holds or executes jobs would let new
          * direct CAD+TX stack behind active queued CAD+TX. Fail closed:
@@ -140,7 +156,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     RadioTxMode_t txmode = RADIO_TX_MODE_MANAGED;
-    if(config_status_is_set_txmode(line, &txmode)) {
+    if(config_status_is_set_txmode(upper_line, &txmode)) {
         if(ctx->ctrl)
             ctx->ctrl->tx_mode = txmode;
         printf("[%s] TXMODE=%s\n", ctx->tag, radio_tx_mode_name(txmode));
@@ -150,7 +166,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     int cadrssi_dbm = 0;
-    if(config_status_is_set_cadrssi(line, &cadrssi_dbm)) {
+    if(config_status_is_set_cadrssi(upper_line, &cadrssi_dbm)) {
         if(ctx->ctrl)
             ctx->ctrl->cad_rssi_threshold_dbm.store((float)cadrssi_dbm);
         printf("[%s] CADRSSI=%d\n", ctx->tag, cadrssi_dbm);
@@ -160,7 +176,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     int cadmonitor_enabled = 0;
-    if(config_status_is_set_cadmonitor(line, &cadmonitor_enabled)) {
+    if(config_status_is_set_cadmonitor(upper_line, &cadmonitor_enabled)) {
         if(ctx->ctrl) {
             ctx->ctrl->cad_monitor_active.store(cadmonitor_enabled != 0);
             ctx->ctrl->cad_monitor_free_streak.store(0);
@@ -174,7 +190,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     uint32_t cadwait_ms = 0;
-    if(config_status_is_set_cadwait(line, &cadwait_ms)) {
+    if(config_status_is_set_cadwait(upper_line, &cadwait_ms)) {
         if(ctx->ctrl)
             ctx->ctrl->cad_wait_timeout_ms.store(cadwait_ms);
         printf("[%s] CADWAIT=%u\n", ctx->tag, (unsigned)cadwait_ms);
@@ -184,7 +200,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     uint32_t cadidle_ms = 0;
-    if(config_status_is_set_cadidle(line, &cadidle_ms)) {
+    if(config_status_is_set_cadidle(upper_line, &cadidle_ms)) {
         if(ctx->ctrl)
             ctx->ctrl->cad_idle_stable_ms.store(cadidle_ms);
         printf("[%s] CADIDLE=%u\n", ctx->tag, (unsigned)cadidle_ms);
@@ -194,7 +210,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     uint32_t cadpoll_ms = 0;
-    if(config_status_is_set_cadpoll(line, &cadpoll_ms)) {
+    if(config_status_is_set_cadpoll(upper_line, &cadpoll_ms)) {
         if(ctx->ctrl)
             ctx->ctrl->cad_poll_interval_ms.store(cadpoll_ms);
         printf("[%s] CADPOLL=%u\n", ctx->tag, (unsigned)cadpoll_ms);
@@ -204,7 +220,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     int cadtx_val = 0;
-    if(config_status_is_set_cadtxaftertimeout(line, &cadtx_val)) {
+    if(config_status_is_set_cadtxaftertimeout(upper_line, &cadtx_val)) {
         if(ctx->ctrl)
             ctx->ctrl->cad_send_after_timeout.store(cadtx_val != 0);
         printf("[%s] CADTXAFTERTIMEOUT=%d\n", ctx->tag, cadtx_val ? 1 : 0);
@@ -218,7 +234,7 @@ void config_dispatch_apply_line(const char *line, void *user)
      * "SET TXMODE=foo" used to fall through to the generic path and answer
      * ERR UNKNOWN or ERR RADIO_NOT_READY. Classify them truthfully here,
      * independent of radio readiness — no radio access either way. */
-    switch (config_status_classify_reserved_setter(line)) {
+    switch (config_status_classify_reserved_setter(upper_line)) {
     case 1:
         printf("[%s] CONFIG rejected: %s (invalid runtime-setter value)\n",
                ctx->tag, line);

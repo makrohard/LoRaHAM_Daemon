@@ -93,15 +93,19 @@ static void test_group_world_writable(void)
     expect_int("world-writable dir rejected", dir_accepts(w, 0), 0);
 }
 
-static void test_non_root_owner(void)
+static void test_trusted_owner(void)
 {
     char p[256];
     path_in("user-owned", p, sizeof(p));
     mkdir(p, 0700);
-    /* Owned by the (non-root) test user; require_root must reject it. */
-    expect_int("non-root owner rejected when require_root", dir_accepts(p, 1), 0);
-    /* ...but accepted in relaxed (dev/override) mode. */
-    expect_int("user-owned accepted when require_root=0", dir_accepts(p, 0), 1);
+    /* Non-root deployment: a directory owned by the daemon's own euid is a
+     * trusted owner (tmpfiles provisions it for the `loraham` user), so the
+     * production validation accepts it. A foreign-owner rejection cannot be
+     * constructed without root privileges here; the check remains
+     * `owner == root || owner == geteuid()`. */
+    expect_int("own-user dir accepted under trusted-owner check",
+               dir_accepts(p, 1), 1);
+    expect_int("own-user dir accepted in relaxed mode", dir_accepts(p, 0), 1);
 }
 
 static void test_lock_file_regular(void)
@@ -252,7 +256,7 @@ int main(void)
     test_symlink_dir();
     test_non_directory();
     test_group_world_writable();
-    test_non_root_owner();
+    test_trusted_owner();
     test_lock_file_regular();
     test_lock_file_owner_only();
     test_lock_file_symlink();

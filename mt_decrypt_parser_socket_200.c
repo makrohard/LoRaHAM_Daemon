@@ -20,7 +20,20 @@
 #include <openssl/evp.h>
 #include <ctype.h>
 
-#define DATA433_SOCKET "/tmp/lora868.sock"
+
+/* --- Daemon-Socket-Pfadwahl -------------------------------------------------
+ * systemd-Deployments servieren die Sockets unter /run/loraham, direkte/
+ * Benutzer-Starts unter /tmp (LORAHAM_SOCKET_DIR). Ein Build funktioniert in
+ * beiden Welten: nimm den Pfad, unter dem der Daemon-Socket tatsaechlich
+ * existiert, sonst den /tmp-Fallback. */
+#include <sys/stat.h>
+static const char *loraham_sockpath(const char *runp, const char *tmpp)
+{
+    struct stat st;
+    return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
+}
+
+#define DATA433_SOCKET loraham_sockpath("/run/loraham/lora868.sock", "/tmp/lora868.sock")
 #define MAX_FRAME_LEN 512
 #define LORA_MAX_PAYLOAD 237
 

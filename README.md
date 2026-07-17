@@ -92,12 +92,18 @@ But Chat use the RX-Frequency from iGate to transmitt and the TX-Frequency from 
 That will collide.
 You can read on the Chat all incoming RF tranmissions to your iGate.
 
-1. ./loraham_daemon --radio 433   (and/or a second process: --radio 868)
+For a direct (non-systemd) run, point the daemon's sockets at /tmp — the
+clients find them there automatically via their built-in fallback:
+
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433   (and/or a second process: --radio 868)
 2. ./loraham_igate
 3. ./loraham_chat
 
+(Under the systemd deployment the sockets live in /run/loraham instead and
+clients pick them up there — see loraham_daemon/README.md.)
+
 Daemon and iGate can also run as real daemon (parameter -d):
-1. ./loraham_daemon --radio 433 -d
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433 -d
 2. ./loraham_igate -d
 
 if you dont run loraham_daemon as a daemon, you see all traffic on your terminal!
@@ -255,13 +261,16 @@ Zudem nutzt der Chat die RX-Frequenz vom iGate zum Senden und die TX-Frequenz vo
 Das wird kollidieren.
 Sie können im Chat alle eingehenden Funkübertragungen an Ihr iGate mitlesen.
 
-1. ./loraham_daemon --radio 433   (und/oder zweiter Prozess: --radio 868)
+Für einen direkten Start (ohne systemd) die Daemon-Sockets nach /tmp legen —
+die Clients finden sie dort automatisch (eingebauter Fallback):
+
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433   (und/oder zweiter Prozess: --radio 868)
 2. ./loraham_igate
 3. ./loraham_chat
 
 Daemon und iGate können auch als echter Daemon laufen (Parameter -d):
 
-1. ./loraham_daemon --radio 433 -d
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433 -d
 2. ./loraham_igate -d
 
 Wenn Sie loraham_daemon nicht als Daemon ausführen, sehen Sie den gesamten Datenverkehr in Ihrem Terminal!

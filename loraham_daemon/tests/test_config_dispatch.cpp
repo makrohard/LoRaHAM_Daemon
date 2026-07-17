@@ -1599,6 +1599,24 @@ static void test_reserved_setter_classification(void)
                    "SET CADWAIT=1500\n", out, sizeof(out));
     expect_str("setter: valid CADWAIT OK", out, "OK\n");
 
+    /* Case-insensitive like every documented key: lowercase valid setters
+     * work, lowercase invalid ones classify as INVALID (not UNKNOWN). */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET txqueue=1\n", out, sizeof(out));
+    expect_str("setter: lowercase valid OK", out, "OK\n");
+    expect_int("setter: lowercase valid applied",
+               ctrl.tx_queue_active.load() ? 1 : 0, 1);
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET txqueue=2\n", out, sizeof(out));
+    expect_str("setter: lowercase invalid classified", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TxMode=direct\n", out, sizeof(out));
+    expect_str("setter: mixed-case TXMODE OK", out, "OK\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "set cadwait=1\n", out, sizeof(out));
+    expect_str("setter: lowercase command word classified",
+               out, "ERR INVALID\n");
+
     event_loop_close(&set);
     close(sv[0]);
     client_slot_close(&slots[0]);
