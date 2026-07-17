@@ -172,14 +172,14 @@ static void test_no_transaction_without_lock(void)
     if (pid == 0) {
         setenv("LORAHAM_RUNTIME_DIR", "/proc/loraham_nonexistent", 1);
         LockingPiHal hal(0);          /* not lock-ready */
-        hal.spiBeginTransaction();    /* must _exit(LORAHAM_EXIT_LOCK_ERROR) */
+        hal.spiBeginTransaction();    /* must _exit(LORAHAM_EXIT_RUNTIME_SPI_ERROR) */
         _exit(0);                     /* reaching here = FAILED (proceeded) */
     }
 
     int status = 0;
     waitpid(pid, &status, 0);
     expect_int("spiBeginTransaction without lock is fatal",
-               (WIFEXITED(status) && WEXITSTATUS(status) == LORAHAM_EXIT_LOCK_ERROR)
+               (WIFEXITED(status) && WEXITSTATUS(status) == LORAHAM_EXIT_RUNTIME_SPI_ERROR)
                    ? 1 : 0, 1);
 }
 
@@ -354,7 +354,7 @@ static void test_unlock_hard_failure_is_fatal(void)
     int status = 0;
     waitpid(pid, &status, 0);
     expect_int("hard unlock failure exits via lock-error",
-               (WIFEXITED(status) && WEXITSTATUS(status) == LORAHAM_EXIT_LOCK_ERROR)
+               (WIFEXITED(status) && WEXITSTATUS(status) == LORAHAM_EXIT_RUNTIME_SPI_ERROR)
                    ? 1 : 0, 1);
 }
 

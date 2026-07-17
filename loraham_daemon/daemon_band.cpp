@@ -105,9 +105,39 @@ static const DaemonBandDescriptor band_868 = {
 
 static const DaemonBandDescriptor *g_band = NULL;
 
+/* LORAHAM_SOCKET_DIR override (dev/test only; audit item 3): resolved once,
+ * here, into static buffers — every consumer keeps reading the immutable
+ * descriptor. Empty/unset env means the production /run/loraham defaults. */
+static DaemonBandDescriptor g_band_override;
+static char g_sock_data[192];
+static char g_sock_framed[192];
+static char g_sock_conf[192];
+
 void daemon_band_resolve(RadioBand_t band)
 {
-    g_band = (band == RADIO_BAND_868) ? &band_868 : &band_433;
+    const DaemonBandDescriptor *table =
+        (band == RADIO_BAND_868) ? &band_868 : &band_433;
+    const char *dir = getenv("LORAHAM_SOCKET_DIR");
+
+    if (!dir || dir[0] == '\0') {
+        g_band = table;
+        return;
+    }
+
+    g_band_override = *table;
+    snprintf(g_sock_data, sizeof(g_sock_data), "%s/%s", dir,
+             band == RADIO_BAND_868 ? DATA868_SOCKET_NAME
+                                    : DATA433_SOCKET_NAME);
+    snprintf(g_sock_framed, sizeof(g_sock_framed), "%s/%s", dir,
+             band == RADIO_BAND_868 ? DATA868_FRAMED_SOCKET_NAME
+                                    : DATA433_FRAMED_SOCKET_NAME);
+    snprintf(g_sock_conf, sizeof(g_sock_conf), "%s/%s", dir,
+             band == RADIO_BAND_868 ? CONF868_SOCKET_NAME
+                                    : CONF433_SOCKET_NAME);
+    g_band_override.data_socket = g_sock_data;
+    g_band_override.framed_socket = g_sock_framed;
+    g_band_override.conf_socket = g_sock_conf;
+    g_band = &g_band_override;
 }
 
 const DaemonBandDescriptor *daemon_band(void)

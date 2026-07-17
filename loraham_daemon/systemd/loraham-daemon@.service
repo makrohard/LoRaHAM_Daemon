@@ -9,12 +9,20 @@ RequiresMountsFor=/run/lock
 [Service]
 Type=simple
 User=root
+# Primary group stays root (audit P1): lock files under /run/lock/loraham are
+# hardware ownership and must never carry the client group — with loraham as
+# the service group a socket client could hold instance/SPI/GPIO locks and block
+# startup or force runtime SPI timeouts. Sockets still get group loraham
+# automatically from the setgid /run/loraham directory (2750 root:loraham);
+# UMask=0007 keeps them 0660. Lock files are created/corrected to 0600.
+Group=root
+UMask=0007
 
 # Force the production shared lock namespace: the daemon honours
 # LORAHAM_RUNTIME_DIR for direct test/developer runs, but an installed service
 # must always use /run/lock/loraham. Clearing any inherited manager-level value
 # guarantees both band services share one instance/SPI lock namespace.
-UnsetEnvironment=LORAHAM_RUNTIME_DIR
+UnsetEnvironment=LORAHAM_RUNTIME_DIR LORAHAM_SOCKET_DIR
 
 # Deployable default: install the built binary to /usr/local/bin/loraham_daemon
 # (e.g. `sudo install -m0755 loraham_daemon /usr/local/bin/`). To run from a
@@ -29,9 +37,11 @@ ExecStart=/usr/local/bin/loraham_daemon --radio %i
 Restart=on-failure
 RestartSec=2
 # Stable exit codes (see loraham_runtime.h):
-#   3 = same-band instance already running (duplicate)
-#   4 = lock infrastructure unavailable (fail closed)
-# Neither is fixed by restarting, so do not restart-spin on them.
+#   3 = same-band instance already running (duplicate)      -> no restart
+#   4 = STARTUP lock infrastructure unavailable (fail closed) -> no restart
+#   5 = runtime SPI/bus-lock fatal after operation began    -> restart OK
+# 3/4 are not fixed by restarting; 5 (e.g. transient bus fault, wedged peer
+# that has since been power-cycled) legitimately benefits from a restart.
 RestartPreventExitStatus=3 4
 
 KillSignal=SIGTERM

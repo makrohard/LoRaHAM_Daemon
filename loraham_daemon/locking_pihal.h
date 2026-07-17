@@ -157,12 +157,17 @@ class LockingPiHal : public PiHal {
     }
 
   private:
+    /* Runtime fatal (audit item 4): every fatal in this HAL fires AFTER
+     * operation began (transfer without lock/handle, bus error, wedged-peer
+     * timeout, hard un/lock failure). Exit 5 — distinct from the startup
+     * lock-infrastructure code 4 — so systemd's Restart=on-failure may
+     * restart, while codes 3/4 stay non-restartable. */
     [[noreturn]] static void fatal(const char *why) {
         fprintf(stderr,
                 "[SPI] FATAL: %s - breche ab, um unsynchronisierten "
                 "SPI-Zugriff zu verhindern\n", why);
         fflush(stderr);
-        _exit(LORAHAM_EXIT_LOCK_ERROR);
+        _exit(LORAHAM_EXIT_RUNTIME_SPI_ERROR);
     }
 
     int _ownSpiHandle = -1;

@@ -155,11 +155,12 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
 
     if(!parsed.is_set) {
         printf("[%s] Unbekannter Befehl: %s\n", tag, parsed.text.c_str());
-        return CONFIG_APPLY_NOOP;
+        return CONFIG_APPLY_UNKNOWN;
     }
 
+    /* SET without a single parameter is an incomplete setter. */
     if(!parsed.has_params)
-        return CONFIG_APPLY_NOOP;
+        return CONFIG_APPLY_REJECTED_MALFORMED;
 
     ConfigValidationResult validation;
     if(!config_validate_command(parsed, mode_flag, &validation,
@@ -171,7 +172,11 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                validation.key.c_str(),
                validation.value.c_str(),
                validation.reason.c_str());
-        return CONFIG_APPLY_REJECTED;
+        if (validation.reason == "malformed token")
+            return CONFIG_APPLY_REJECTED_MALFORMED;
+        if (validation.reason == "unknown key")
+            return CONFIG_APPLY_UNKNOWN;
+        return CONFIG_APPLY_REJECTED_INVALID;
     }
 
     bool hardware_touched = false;
@@ -179,7 +184,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
     /* Airtime gate (audit P1-7): merged current+command worst case, checked
      * BEFORE any hardware side effect. */
     if (!config_apply_airtime_ok(parsed, validation.target_mode, tag))
-        return CONFIG_APPLY_REJECTED;
+        return CONFIG_APPLY_REJECTED_INVALID;
 
     bool printed = false;
 
@@ -287,5 +292,5 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
     }
     printf("\n");
 
-    return hardware_touched ? CONFIG_APPLY_APPLIED : CONFIG_APPLY_NOOP;
+    return hardware_touched ? CONFIG_APPLY_APPLIED : CONFIG_APPLY_OK_NO_RADIO;
 }

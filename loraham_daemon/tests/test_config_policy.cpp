@@ -140,8 +140,8 @@ static void test_family_capabilities(void)
                config_policy_fsk_ook_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 1);
     expect_int("sx1262 OOK=1 rejected",
                config_policy_fsk_ook_valid_family(1, DAEMON_CHIP_FAMILY_SX1262), 0);
-    expect_int("sx1262 OOK=0 ok",
-               config_policy_fsk_ook_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx1262 OOK=0 also rejected (no OOK capability)",
+               config_policy_fsk_ook_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 0);
     expect_int("sx127x ENCODING=1 ok",
                config_policy_fsk_encoding_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 1);
     expect_int("sx1262 ENCODING=1 rejected (whitening alias)",

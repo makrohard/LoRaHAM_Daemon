@@ -24,7 +24,11 @@ static int g_pid_count = 0;
 
 static pid_t spawn_daemon(const char *radio)
 {
-    pid_t pid = fork();
+    pid_t pid;
+
+    ensure_test_runtime_dir();
+
+    pid = fork();
 
     if (pid < 0)
         return -1;

@@ -249,6 +249,49 @@ static void test_default_direct_path(void)
                 daemon_tx_async_runtime_pending(), 0);
 }
 
+/* Audit item 1 (defense in depth): with the queue disabled but residual
+ * async work present, the direct path rejects BUSY instead of waiting
+ * behind or interleaving with queued CAD+TX. */
+static void test_direct_refuses_residual_async_work(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+    uint8_t payload[] = { 1, 2, 3 };
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+
+    /* Residual executing job (pop-to-transmit window). */
+    daemon_tx_async_runtime_worker()->job_active.store(true);
+
+    expect_int("residual-active direct tx rejected BUSY",
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
+               DAEMON_TX_OUTCOME_BUSY);
+    expect_int("residual-active sender NOT called", sender.calls, 0);
+
+    daemon_tx_async_runtime_worker()->job_active.store(false);
+
+    /* Residual pending job. */
+    DaemonTxJob job;
+    daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 1);
+    daemon_tx_job_set_payload(&job, payload, sizeof(payload));
+    daemon_tx_queue_push(&daemon_tx_async_runtime_worker()->worker.queue,
+                         &job);
+
+    expect_int("residual-pending direct tx rejected BUSY",
+               send_data_chunk(payload, sizeof(payload), 0, &ctx),
+               DAEMON_TX_OUTCOME_BUSY);
+    expect_int("residual-pending sender NOT called", sender.calls, 0);
+
+    /* Drain the residue; the direct path works again. */
+    daemon_tx_queue_pop(&daemon_tx_async_runtime_worker()->worker.queue,
+                        &job);
+    expect_int("drained direct tx result",
+               send_data_chunk(payload, sizeof(payload), 0, &ctx), 0);
+    expect_int("drained sender called", sender.calls, 1);
+}
+
 static void test_txqueue_optin_path(void)
 {
     RadioController ctrl;
@@ -847,6 +890,7 @@ int main(int argc, char **argv)
     }
 
     test_default_direct_path();
+    test_direct_refuses_residual_async_work();
     test_txqueue_optin_path();
     test_txqueue_direct_full_rejects_newest();
     test_direct_tx_busy_timeout_blocks_send();

@@ -27,8 +27,10 @@ Key facts (details in the daemon README):
   and `loraham-daemon@868`, shipped in `loraham_daemon/systemd/`).
 * Hardware presets via `--hw` (legacy dual-module SX1278+RFM95, Uputronics
   Pi Zero LoRa boards, Waveshare SX1262 LoRaWAN/GNSS HAT).
-* Sockets per band: raw DATA `/tmp/lora{433,868}.sock`, framed DATA
-  `/tmp/lora{433,868}f.sock`, CONF `/tmp/loraconf{433,868}.sock`.
+* Sockets per band in `/run/loraham` (root:`loraham` 2750, via tmpfiles.d —
+  create the group first: `sudo groupadd --system loraham`; clients need
+  membership): raw DATA `lora{433,868}.sock`, framed DATA
+  `lora{433,868}f.sock`, CONF `loraconf{433,868}.sock`.
 
 > The historical `curl ... | sh` install script from loraham.de installs the
 > **archived legacy daemon** and must not be used for current deployments.
@@ -122,12 +124,12 @@ Example:
 # Background information
 loraham_daemon opens its IPC (inter process communication) UNIX sockets per band:
 
-    - DATA433_SOCKET  "/tmp/lora433.sock"     (raw DATA)
-    - DATA868_SOCKET  "/tmp/lora868.sock"
-    - DATA433_FRAMED  "/tmp/lora433f.sock"    (framed DATA with RX metadata / TX_RESULT)
-    - DATA868_FRAMED  "/tmp/lora868f.sock"
-    - CONF433_SOCKET  "/tmp/loraconf433.sock" (CONF commands)
-    - CONF868_SOCKET  "/tmp/loraconf868.sock"
+    - DATA433_SOCKET  "/run/loraham/lora433.sock"     (raw DATA)
+    - DATA868_SOCKET  "/run/loraham/lora868.sock"
+    - DATA433_FRAMED  "/run/loraham/lora433f.sock"    (framed DATA with RX metadata / TX_RESULT)
+    - DATA868_FRAMED  "/run/loraham/lora868f.sock"
+    - CONF433_SOCKET  "/run/loraham/loraconf433.sock" (CONF commands)
+    - CONF868_SOCKET  "/run/loraham/loraconf868.sock"
 
 The complete CONF command set (GET STATUS / GET STATS / GET CHANNEL, TX modes,
 CAD policy, value ranges) is documented in loraham_daemon/README.md.
@@ -139,8 +141,8 @@ On the config sockets, you can send a simple text string to configurate the LoRa
 
 You can send this also from your terminal via socat:
 
-    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
+    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/run/loraham/loraconf868.sock
  
  thats the config for 433 LoRa-APRS and 868 Meshtastic in Ulm/Dornstadt Germany ;-)
 
@@ -286,12 +288,12 @@ Beispiel:
 # Hintergrundinformationen
 loraham_daemon öffnet seine IPC (Inter-Process Communication) UNIX-Sockets pro Band:
 
-    - DATA433_SOCKET  "/tmp/lora433.sock"     (rohes DATA)
-    - DATA868_SOCKET  "/tmp/lora868.sock"
-    - DATA433_FRAMED  "/tmp/lora433f.sock"    (framed DATA mit RX-Metadaten / TX_RESULT)
-    - DATA868_FRAMED  "/tmp/lora868f.sock"
-    - CONF433_SOCKET  "/tmp/loraconf433.sock" (CONF-Kommandos)
-    - CONF868_SOCKET  "/tmp/loraconf868.sock"
+    - DATA433_SOCKET  "/run/loraham/lora433.sock"     (rohes DATA)
+    - DATA868_SOCKET  "/run/loraham/lora868.sock"
+    - DATA433_FRAMED  "/run/loraham/lora433f.sock"    (framed DATA mit RX-Metadaten / TX_RESULT)
+    - DATA868_FRAMED  "/run/loraham/lora868f.sock"
+    - CONF433_SOCKET  "/run/loraham/loraconf433.sock" (CONF-Kommandos)
+    - CONF868_SOCKET  "/run/loraham/loraconf868.sock"
 
 Der vollständige CONF-Befehlssatz ist in loraham_daemon/README.md dokumentiert.
     
@@ -302,8 +304,8 @@ Der vollständige CONF-Befehlssatz ist in loraham_daemon/README.md dokumentiert.
 
 Sie können dies auch von Ihrem Terminal über socat senden:
 
-    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
+    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/run/loraham/loraconf868.sock
  
 Das ist die Konfiguration für 433 LoRa-APRS und 868 Meshtastic in Ulm/Dornstadt, Deutschland ;-)
 

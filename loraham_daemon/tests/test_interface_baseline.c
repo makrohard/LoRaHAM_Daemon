@@ -1,5 +1,8 @@
 #include "common_loradaemon_test.h"
 
+#include "../loraham_runtime.h"
+#include <sys/file.h>
+
 /*
  * Baseline interface test.
  *
@@ -192,7 +195,12 @@ static int test_cli_radio_both_rejected(void)
 
 static int start_daemon_radio(const char *radio)
 {
-    pid_t pid = fork();
+    pid_t pid;
+
+    /* Inherit the dev/test lock+socket dir overrides across execl. */
+    ensure_test_runtime_dir();
+
+    pid = fork();
 
     if (pid < 0)
         return TEST_FAIL;
@@ -279,9 +287,97 @@ static int test_single_radio_socket_mode_868(void)
  * selected radio becomes ready the daemon exits fail-closed without leaving
  * sockets behind. Exercises the Sx1262Driver construction and
  * begin()-failure path without hardware. */
+/* Audit P1: startup lock-infrastructure failures must exit EXACTLY
+ * LORAHAM_EXIT_LOCK_ERROR (4, restart-suppressed) — not the generic 1. */
+static int run_daemon_in_runtime_dir_expect(const char *runtime_dir,
+                                            int expected_code,
+                                            const char *what)
+{
+    const char *saved = getenv("LORAHAM_RUNTIME_DIR");
+    char saved_buf[256];
+    pid_t pid;
+    int status;
+    int rc = TEST_FAIL;
+
+    if (saved)
+        snprintf(saved_buf, sizeof(saved_buf), "%s", saved);
+
+    setenv("LORAHAM_RUNTIME_DIR", runtime_dir, 1);
+
+    pid = fork();
+    if (pid == 0) {
+        setpgid(0, 0);
+        execl(g_bin, g_bin, "--radio", "433", (char *)NULL);
+        _exit(127);
+    }
+
+    if (pid > 0 && waitpid(pid, &status, 0) == pid &&
+        WIFEXITED(status) && WEXITSTATUS(status) == expected_code) {
+        rc = TEST_PASS;
+    } else if (pid > 0) {
+        fail_msg("%s: expected exit %d, got %d", what, expected_code,
+                 WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+    }
+
+    if (saved)
+        setenv("LORAHAM_RUNTIME_DIR", saved_buf, 1);
+    else
+        unsetenv("LORAHAM_RUNTIME_DIR");
+
+    return rc;
+}
+
+static int test_gpio_lock_held_exits_lock_error(void)
+{
+    char dir[128];
+    char lockpath[192];
+    int fd;
+    int rc;
+
+    ensure_test_runtime_dir();
+    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-gpio-%d", (int)getpid());
+    mkdir(dir, 0700);
+
+    /* Peer holds a legacy-433 profile pin lock (BCM 5 = RST). */
+    snprintf(lockpath, sizeof(lockpath), "%s/gpio5.lock", dir);
+    fd = open(lockpath, O_CREAT | O_RDWR, 0600);
+    if (fd < 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        if (fd >= 0)
+            close(fd);
+        return TEST_FAIL;
+    }
+
+    rc = run_daemon_in_runtime_dir_expect(dir, LORAHAM_EXIT_LOCK_ERROR,
+                                          "held gpio lock");
+    flock(fd, LOCK_UN);
+    close(fd);
+    return rc;
+}
+
+static int test_spi_lock_unusable_exits_lock_error(void)
+{
+    char dir[128];
+    char lockpath[192];
+
+    ensure_test_runtime_dir();
+    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-spi-%d", (int)getpid());
+    mkdir(dir, 0700);
+
+    /* spi0.lock as a DIRECTORY: openat(O_CREAT) fails, lock unusable. */
+    snprintf(lockpath, sizeof(lockpath), "%s/spi0.lock", dir);
+    mkdir(lockpath, 0700);
+
+    return run_daemon_in_runtime_dir_expect(dir, LORAHAM_EXIT_LOCK_ERROR,
+                                            "unusable spi0.lock");
+}
+
 static int test_waveshare_profile_fails_closed(void)
 {
-    pid_t pid = fork();
+    pid_t pid;
+
+    ensure_test_runtime_dir();
+
+    pid = fork();
 
     if (pid < 0)
         return TEST_FAIL;
@@ -664,6 +760,10 @@ int main(int argc, char **argv)
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);
     run_test("waveshare profile fails closed without HAT",
              test_waveshare_profile_fails_closed);
+    run_test("held GPIO lock exits LOCK_ERROR",
+             test_gpio_lock_held_exits_lock_error);
+    run_test("unusable spi0.lock exits LOCK_ERROR",
+             test_spi_lock_unusable_exits_lock_error);
 
     info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)

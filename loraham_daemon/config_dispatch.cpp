@@ -6,6 +6,22 @@
 
 /* Bodies moved verbatim from config_dispatch.h (D3 de-inlining). */
 
+/* Stable per-command CONF reply (audit item 6): exactly one newline-
+ * terminated response per complete command, delivered only to the requesting
+ * client. GET STATUS/STATS/CHANNEL answer with their data line instead and
+ * never get a trailing OK. Queue-append failure closes the client (existing
+ * slow-client policy). */
+static void config_dispatch_reply(ClientSlot *slot, const char *reply)
+{
+    if (!client_output_queue_append(&slot->output,
+                                    (const uint8_t *)reply,
+                                    strlen(reply))) {
+        client_slot_close(slot);
+        return;
+    }
+    client_slot_flush_output(slot);
+}
+
 void config_dispatch_log_bytes(const ConfigDispatchLog *log,
                                              ssize_t n)
 {
@@ -93,15 +109,33 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->tx_result_active.store(txresult_enabled != 0);
         printf("[%s] TXRESULT=%d\n", ctx->tag, txresult_enabled ? 1 : 0);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
     int txqueue_enabled = 0;
     if(config_status_is_set_txqueue(line, &txqueue_enabled)) {
+        /* Drain-before-disable (audit item 1): switching to the direct path
+         * while the worker still holds or executes jobs would let new
+         * direct CAD+TX stack behind active queued CAD+TX. Fail closed:
+         * disabling requires an empty, idle queue. Enabling is always safe. */
+        if (txqueue_enabled == 0 &&
+            (daemon_tx_async_runtime_pending() > 0 ||
+             daemon_tx_async_runtime_job_active())) {
+            printf("[%s] TXQUEUE=0 abgelehnt: Queue aktiv (%zu pending%s)\n",
+                   ctx->tag, daemon_tx_async_runtime_pending(),
+                   daemon_tx_async_runtime_job_active() ? ", 1 executing"
+                                                        : "");
+            fflush(stdout);
+            config_dispatch_reply(ctx->slot, "ERR BUSY\n");
+            return;
+        }
+
         if(ctx->ctrl)
             ctx->ctrl->tx_queue_active.store(txqueue_enabled != 0);
         printf("[%s] TXQUEUE=%d\n", ctx->tag, txqueue_enabled ? 1 : 0);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -111,6 +145,7 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->tx_mode = txmode;
         printf("[%s] TXMODE=%s\n", ctx->tag, radio_tx_mode_name(txmode));
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -120,6 +155,7 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->cad_rssi_threshold_dbm.store((float)cadrssi_dbm);
         printf("[%s] CADRSSI=%d\n", ctx->tag, cadrssi_dbm);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -133,6 +169,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         }
         printf("[%s] CADMONITOR=%d\n", ctx->tag, cadmonitor_enabled ? 1 : 0);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -142,6 +179,7 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->cad_wait_timeout_ms.store(cadwait_ms);
         printf("[%s] CADWAIT=%u\n", ctx->tag, (unsigned)cadwait_ms);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -151,6 +189,7 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->cad_idle_stable_ms.store(cadidle_ms);
         printf("[%s] CADIDLE=%u\n", ctx->tag, (unsigned)cadidle_ms);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -160,6 +199,7 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->cad_poll_interval_ms.store(cadpoll_ms);
         printf("[%s] CADPOLL=%u\n", ctx->tag, (unsigned)cadpoll_ms);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
     }
 
@@ -169,7 +209,30 @@ void config_dispatch_apply_line(const char *line, void *user)
             ctx->ctrl->cad_send_after_timeout.store(cadtx_val != 0);
         printf("[%s] CADTXAFTERTIMEOUT=%d\n", ctx->tag, cadtx_val ? 1 : 0);
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
         return;
+    }
+
+    /* Reserved runtime setters with bad values (audit P2): the dedicated
+     * matchers above only accept fully valid lines, so "SET CADWAIT=1" or
+     * "SET TXMODE=foo" used to fall through to the generic path and answer
+     * ERR UNKNOWN or ERR RADIO_NOT_READY. Classify them truthfully here,
+     * independent of radio readiness — no radio access either way. */
+    switch (config_status_classify_reserved_setter(line)) {
+    case 1:
+        printf("[%s] CONFIG rejected: %s (invalid runtime-setter value)\n",
+               ctx->tag, line);
+        fflush(stdout);
+        config_dispatch_reply(ctx->slot, "ERR INVALID\n");
+        return;
+    case 2:
+        printf("[%s] CONFIG rejected: %s (incomplete runtime setter)\n",
+               ctx->tag, line);
+        fflush(stdout);
+        config_dispatch_reply(ctx->slot, "ERR MALFORMED\n");
+        return;
+    default:
+        break;
     }
 
     if(!ctx->ctrl || !ctx->ctrl->driver ||
@@ -179,6 +242,7 @@ void config_dispatch_apply_line(const char *line, void *user)
                ctx->tag,
                radio_health_name(radio_controller_health(ctx->ctrl)));
         fflush(stdout);
+        config_dispatch_reply(ctx->slot, "ERR RADIO_NOT_READY\n");
         return;
     }
 
@@ -198,6 +262,7 @@ void config_dispatch_apply_line(const char *line, void *user)
                    "(%zu pending%s) – retry when drained\n",
                    ctx->tag, queued, executing ? ", 1 executing" : "");
             fflush(stdout);
+            config_dispatch_reply(ctx->slot, "ERR BUSY\n");
             return;
         }
     }
@@ -239,6 +304,25 @@ void config_dispatch_apply_line(const char *line, void *user)
         config_dispatch_log_message(&ctx->log, "RX neu gestartet");
     else
         config_dispatch_log_message(&ctx->log, "Kein RX-Neustart (kein Apply)");
+
+    switch (apply_status) {
+    case CONFIG_APPLY_OK_NO_RADIO:
+    case CONFIG_APPLY_APPLIED:
+        config_dispatch_reply(ctx->slot, "OK\n");
+        break;
+    case CONFIG_APPLY_REJECTED_INVALID:
+        config_dispatch_reply(ctx->slot, "ERR INVALID\n");
+        break;
+    case CONFIG_APPLY_REJECTED_MALFORMED:
+        config_dispatch_reply(ctx->slot, "ERR MALFORMED\n");
+        break;
+    case CONFIG_APPLY_UNKNOWN:
+        config_dispatch_reply(ctx->slot, "ERR UNKNOWN\n");
+        break;
+    case CONFIG_APPLY_HW_ERROR:
+        config_dispatch_reply(ctx->slot, "ERR HARDWARE\n");
+        break;
+    }
 }
 
 void config_dispatch_client(ClientSlot *slots,

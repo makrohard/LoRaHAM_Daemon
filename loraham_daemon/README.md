@@ -145,19 +145,33 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 
 | Socket | Type | Direction | Payload | Meaning |
 |---|---|---|---|---|
-| `/tmp/lora433.sock` | raw DATA 433 | client ↔ daemon | raw bytes | TX raw bytes on 433 MHz; receive raw RF packets from 433 MHz |
-| `/tmp/lora868.sock` | raw DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive raw RF packets from 868 MHz |
-| `/tmp/lora433f.sock` | framed DATA 433 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 433 MHz |
-| `/tmp/lora868f.sock` | framed DATA 868 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 868 MHz |
-| `/tmp/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CONF status/events |
-| `/tmp/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CONF status/events |
+**Socket directory:** all public sockets live in `/run/loraham` (root:`loraham`,
+mode `2750`, provisioned via `systemd/tmpfiles.d/loraham.conf`). Create the
+system group once — `getent group loraham >/dev/null || sudo groupadd --system
+loraham` — then run `systemd-tmpfiles --create`; client users need membership
+(`sudo usermod -aG loraham <user>`). Only root can create files in the
+directory, so no local user can plant a non-socket collision at a socket path;
+group members connect normally. The service's PRIMARY group stays `root`: the
+hardware lock files under `/run/lock/loraham` (instance, `spi0`, `gpio<N>`)
+are owner-only `0600` (legacy `0660` files are corrected on open), so a
+`loraham` client user can never hold a hardware lock, block startup, or force
+a runtime SPI timeout — socket access and hardware ownership stay separated. `LORAHAM_SOCKET_DIR` overrides the directory
+for non-root dev/test runs only (the systemd unit clears it). The lock
+namespace `/run/lock/loraham` is separate and unchanged.
+
+| `/run/loraham/lora433.sock` | raw DATA 433 | client ↔ daemon | raw bytes | TX raw bytes on 433 MHz; receive raw RF packets from 433 MHz |
+| `/run/loraham/lora868.sock` | raw DATA 868 | client ↔ daemon | raw bytes | TX raw bytes on 868 MHz; receive raw RF packets from 868 MHz |
+| `/run/loraham/lora433f.sock` | framed DATA 433 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 433 MHz |
+| `/run/loraham/lora868f.sock` | framed DATA 868 | client ↔ daemon | binary frames | TX/RX packet-preserving frames on 868 MHz |
+| `/run/loraham/loraconf433.sock` | CONF 433 | client ↔ daemon | text commands | Configure 433 MHz radio; receive CONF status/events |
+| `/run/loraham/loraconf868.sock` | CONF 868 | client ↔ daemon | text commands | Configure 868 MHz radio; receive CONF status/events |
 
 Socket availability depends on the selected radio band:
 
 | Radio mode | Created sockets |
 |---|---|
-| `--radio 433` | `/tmp/lora433.sock`, `/tmp/lora433f.sock`, `/tmp/loraconf433.sock` |
-| `--radio 868` | `/tmp/lora868.sock`, `/tmp/lora868f.sock`, `/tmp/loraconf868.sock` |
+| `--radio 433` | `/run/loraham/lora433.sock`, `/run/loraham/lora433f.sock`, `/run/loraham/loraconf433.sock` |
+| `--radio 868` | `/run/loraham/lora868.sock`, `/run/loraham/lora868f.sock`, `/run/loraham/loraconf868.sock` |
 
 Inactive-radio sockets are not created. This is intentional so clients can detect which radio backend is active by checking the socket path.
 
@@ -234,8 +248,8 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
 | Waveshare + Waveshare | ✗ conflict (all pins identical) |
 
 Conflicts are enforced twice. First, deterministically by the daemon itself
-(audit P1-1): before any hardware access, each process takes one advisory
-lock per pin it will drive (`gpio<N>.lock` in the trusted runtime lock
+(audit P1-1): before ANY GPIO access — including the status-LED claim — each
+process takes one advisory lock per pin it will drive (`gpio<N>.lock` in the trusted runtime lock
 directory, acquired in ascending pin order). A pin held by another process
 fails the boot closed with a clear `[GPIO]` line — independent of lgpio's
 claim behavior, whose errors RadioLib prints but does not report. Second, by
@@ -306,13 +320,13 @@ DATA sockets are raw byte streams. They have no line protocol and no length pref
 Examples:
 
 ```bash
-printf 'Hello LoRaHAM\n' | socat - UNIX-CONNECT:/tmp/lora433.sock
+printf 'Hello LoRaHAM\n' | socat - UNIX-CONNECT:/run/loraham/lora433.sock
 ```
 
 ```bash
 echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" \
   | perl -pe 's/([0-9A-Fa-f]{2})/chr(hex($1))/ge' \
-  | socat - UNIX-CONNECT:/tmp/lora868.sock
+  | socat - UNIX-CONNECT:/run/loraham/lora868.sock
 ```
 
 ## Framed DATA sockets
@@ -399,7 +413,7 @@ def recv_exact(sock, n):
     return bytes(data)
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect("/tmp/lora868f.sock")
+sock.connect("/run/loraham/lora868f.sock")
 
 header = recv_exact(sock, 3)
 frame_type, payload_len = struct.unpack("<BH", header)
@@ -423,7 +437,7 @@ payload = b"Hello LoRaHAM"
 frame = struct.pack("<BH", 0x02, len(payload)) + payload
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect("/tmp/lora868f.sock")
+sock.connect("/run/loraham/lora868f.sock")
 sock.sendall(frame)
 ```
 
@@ -474,8 +488,20 @@ Important behavior:
 - `GET STATUS`, `GET STATS`, and `GET CHANNEL` return stable one-line responses on the requesting CONF socket.
 - `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|DIRECT`, `SET TXQUEUE=0|1`, and `SET CADMONITOR=0|1` are stable per-band control commands.
 - `SET CADWAIT=N`, `SET CADIDLE=N`, `SET CADPOLL=N`, and `SET CADTXAFTERTIMEOUT=0|1` set the per-band CAD policy; accepted ranges are `CADWAIT` 50–5000 ms, `CADIDLE` 0–2000 ms, `CADPOLL` 10–500 ms. Out-of-range values are rejected and leave the previous policy unchanged. Policy changes apply to future TX attempts and queued jobs; each queued job snapshots the policy at creation time.
-- `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
-- Queued TX jobs snapshot band, TX mode, CAD policy, and payload at submission — NOT the RF configuration: a job transmits with the configuration current at execution time. The daemon therefore REJECTS radio-touching `SET` commands (MODE or any non-GETRSSI parameter) while queued jobs are pending or one is executing — the client sees `CONFIG rejected: TX queue busy` in the log and retries once the queue drains (seconds). `GET` queries and runtime flags (`SET TXRESULT/TXQUEUE/CADMONITOR/...`) always pass. `SET TXQUEUE=0` stops NEW submissions only; previously queued jobs still drain through the worker (their `TXQ*` counters keep reporting the real state).
+- **Stable per-command replies:** every complete CONF command line receives exactly one newline-terminated response on the requesting client's connection (broadcasts like `TX=`, `CAD=`, `RSSI=` remain separate and unchanged):
+
+```text
+OK                    accepted (runtime setter, applied CONFIG, or accepted no-radio-op)
+ERR MALFORMED         malformed SET, malformed token, or SET without parameters
+ERR UNKNOWN           unknown command or unknown key
+ERR INVALID           valid syntax rejected by value/capability/band/airtime policy
+ERR BUSY              TX queue busy (RF CONFIG deferred, or TXQUEUE=0 before drain)
+ERR RADIO_NOT_READY   command needs a ready radio and the radio is unavailable
+ERR HARDWARE          RadioLib/CONFIG hardware failure (radio goes FAILED, fail-closed)
+```
+
+  `GET STATUS`, `GET STATS`, and `GET CHANNEL` answer with their one-line data response instead — never a second trailing `OK`. Reserved runtime setters (`TXRESULT`, `TXQUEUE`, `TXMODE`, `CAD*`) are classified before the radio-readiness gate: an out-of-range or unparsable value answers `ERR INVALID`, a structurally incomplete one (`SET CADWAIT`, `SET TXQUEUE=`) answers `ERR MALFORMED` — regardless of radio state.
+- Queued TX jobs snapshot band, TX mode, CAD policy, and payload at submission — NOT the RF configuration: a job transmits with the configuration current at execution time. The daemon therefore REJECTS radio-touching `SET` commands (MODE or any non-GETRSSI parameter) while queued jobs are pending or one is executing — the client receives `ERR BUSY` and retries once the queue drains (seconds). `GET` queries and runtime flags always pass. **Drain-before-disable:** `SET TXQUEUE=0` is likewise rejected with `ERR BUSY` while jobs are pending or executing — the transition to the direct path succeeds only on an empty, idle queue, so a direct CAD+TX can never stack behind residual queued work (the direct path additionally refuses residual async work as BUSY, defense in depth). `SET TXQUEUE=1` always succeeds. `TXQ*` counters keep reporting the worker's real state throughout.
 - **Airtime limit:** the daemon tracks the effective airtime-relevant configuration (SF/BW/CR/preamble; FSK bitrate/preamble) and rejects any `SET` whose merged worst-case single-packet airtime (255-byte payload, CRC on) would exceed **20 s** — safely below the 30 s systemd stop timeout, since a blocking `transmit()` cannot be interrupted. The check runs before any hardware side effect; the whole command is rejected with the computed airtime in the log. Consequences: slow combinations are only accepted together (`SET SF=7 BW=7.8` passes at ~9 s, `SET BW=7.8` alone under an SF12 configuration is rejected at ~145 s), and a `MODE` switch re-bases the tracking on the band boot defaults. Both boot profiles (~9 s at 433, ~2.2 s at 868) and all real MeshCom/LoRa-APRS profiles pass with wide margin.
 - CONFIG apply is whole-command prevalidation followed by sequential apply, not a transaction: the full command is validated (syntax, ranges, band frequency policy, duplicate keys rejected) before any radio side effect, then parameters apply in order without rollback — a RadioLib-level failure mid-apply leaves earlier parameters applied.
 - `MODE=LORA` calls RadioLib `begin()`, `MODE=FSK` calls `beginFSK()` — both land on the band's boot RF defaults (frequency, modulation parameters), never on chip register defaults. Explicit parameters in the same command line are applied on top afterwards; anything not set stays at the band default.
@@ -651,7 +677,7 @@ restart-spin on them; a genuine radio/runtime failure (exit 1) still restarts.
 **Readiness / health:** the unit is `Type=simple`, so systemd reports it active
 as soon as the process starts, before the radio is confirmed ready. An
 orchestrator should treat a service as healthy only after it can connect to that
-band's CONF socket (`/tmp/loraconf433.sock` / `/tmp/loraconf868.sock`) and get a
+band's CONF socket (`/run/loraham/loraconf433.sock` / `/run/loraham/loraconf868.sock`) and get a
 `GET STATUS` response. (`Type=notify` with `sd_notify` is a possible future
 enhancement and is intentionally not used today.)
 
@@ -668,8 +694,8 @@ sudo systemctl start loraham-daemon@868.service
 sudo systemctl status loraham-daemon@433.service
 sudo systemctl status loraham-daemon@868.service
 systemctl is-active loraham-daemon@433.service loraham-daemon@868.service
-test -S /tmp/loraconf433.sock && test -S /tmp/loraconf868.sock && echo "both CONF sockets present"
-printf 'GET STATUS\n' | socat - UNIX-CONNECT:/tmp/loraconf433.sock   # each reports only its band
+test -S /run/loraham/loraconf433.sock && test -S /run/loraham/loraconf868.sock && echo "both CONF sockets present"
+printf 'GET STATUS\n' | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock   # each reports only its band
 
 # The shared lock directory must be trusted:
 sudo stat -c '%U:%G %a %n' /run/lock/loraham    # expect: root:root 755 /run/lock/loraham
@@ -723,7 +749,7 @@ settings (≤20 dBm).
 | `BR` | FSK | RadioLib/default unset by daemon | strict number `0.5` to `300.0` kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |
 | `FREQDEV` | FSK | RadioLib/default unset by daemon | strict number `>0` to `200.0` kHz (SX1262: minimum `0.6` kHz); RadioLib may reject invalid BR/FREQDEV combinations | `2.2`, `3.0`, `5.0`, `10.0` | Frequency deviation |
 | `RXBW` | FSK | RadioLib/default unset by daemon | exact `2.6`, `3.1`, `3.9`, `5.2`, `6.3`, `7.8`, `10.4`, `12.5`, `15.6`, `20.8`, `25.0`, `31.25`, `31.3`, `41.7`, `50.0`, `62.5`, `83.3`, `100.0`, `125.0`, `166.7`, `200.0`, `250.0` kHz | `6.3`, `12.5`, `20.8`, `25.0`, `250.0` | RX filter bandwidth |
-| `OOK` | FSK | RadioLib/default | SX127x: exact `0`, `1`; SX1262: only `0` (no OOK modulator — `OOK=1` is rejected at prevalidation) | `0` FSK, `1` OOK (SX127x only) | Enable OOK mode |
+| `OOK` | FSK | RadioLib/default | SX127x: exact `0`, `1`; SX1262: EVERY `OOK` key is rejected at prevalidation (`ERR INVALID`) — the chip has no OOK modulator, and even `OOK=0` would be a success report for a missing capability | `0` FSK, `1` OOK (SX127x only) | Enable OOK mode |
 | `SHAPING` | FSK | RadioLib/default | exact `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0` | `0.0`, `0.3`, `0.5`, `1.0` | Data shaping / Gaussian filter |
 | `ENCODING` | FSK | RadioLib/default | SX127x: `0`, `1`, `2`; SX1262: only `0`, `2` (`1` would silently enable whitening, not Manchester — rejected) | `0` NRZ, `1` Manchester (SX127x), `2` Whitening | FSK encoding |
 
@@ -766,42 +792,42 @@ The daemon also prints one compact operator stats line per selected radio every
 
 ```bash
 echo "SET MODE=LORA FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" \
-  | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+  | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
 ```
 
 868 MHz LoRa setup:
 
 ```bash
 echo "SET MODE=LORA FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=AUTO POWER=10" \
-  | socat - UNIX-CONNECT:/tmp/loraconf868.sock
+  | socat - UNIX-CONNECT:/run/loraham/loraconf868.sock
 ```
 
 433 MHz FSK setup:
 
 ```bash
 echo "SET MODE=FSK FREQ=433.775 BR=4.8 FREQDEV=5.0 RXBW=12.5 POWER=10" \
-  | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+  | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
 ```
 
 433 MHz OOK setup:
 
 ```bash
 echo "SET MODE=FSK FREQ=433.920 BR=1.2 RXBW=6.3 OOK=1 POWER=10" \
-  | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+  | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
 ```
 
 RSSI stream:
 
 ```bash
-echo "SET GETRSSI=1" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-echo "SET GETRSSI=0" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+echo "SET GETRSSI=1" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+echo "SET GETRSSI=0" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
 ```
 
 CONF status and stats queries:
 
 ```bash
-echo "GET STATUS" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-echo "GET STATS"  | socat - UNIX-CONNECT:/tmp/loraconf433.sock
+echo "GET STATUS" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+echo "GET STATS"  | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
 ```
 
 ## Warnings

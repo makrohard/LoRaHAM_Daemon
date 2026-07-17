@@ -109,3 +109,18 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
 
     return true;
 }
+
+int daemon_gpio_locks_claim_then(const int *pins, size_t count,
+                                 int (*hw_init)(void))
+{
+    if (!daemon_gpio_locks_acquire(pins, count))
+        return DAEMON_GPIO_CLAIM_LOCK_FAILED;
+
+    int rc = hw_init ? hw_init() : 0;
+    if (rc != 0) {
+        daemon_gpio_locks_release();
+        return DAEMON_GPIO_CLAIM_HW_FAILED;
+    }
+
+    return 0;
+}

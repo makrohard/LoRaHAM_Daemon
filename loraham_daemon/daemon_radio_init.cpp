@@ -65,10 +65,19 @@ static void hw_log_reset_note(const char *band)
 
 /* Boot RF defaults live in the band descriptor (daemon_band.cpp). */
 
+static bool g_boot_lock_failed = false;
+
+bool daemon_radio_boot_lock_failed(void)
+{
+    return g_boot_lock_failed;
+}
+
 /* --- Radio startup/init -------------------------------------------------- */
 void lora_init(void) {
     const DaemonBandDescriptor *band = daemon_band();
     const char *tag = band->tag;
+
+    g_boot_lock_failed = false;
 
     printf("[Init] Starte LoRa Receiver: radio=%s\n", tag);
     daemon_debug_ctx("RADIO", "Funk-Init beginnt");
@@ -76,24 +85,15 @@ void lora_init(void) {
     radio_controller.health = RADIO_HEALTH_UNINITIALIZED;
     daemon_debug_ctx("RADIO", "Health zurückgesetzt");
 
-    /* Cross-process GPIO ownership (audit P1-1): claim every pin this
-     * process will drive BEFORE any lgpio claim. lgpio claim errors are
-     * printed-and-swallowed inside RadioLib's HAL, so this is the only
-     * deterministic conflict gate between the two band processes. */
-    {
-        int pins[DAEMON_HW_MAX_CLAIMED + 1];
-        size_t n = 0;
-
-        for (int i = 0; i < daemon_hw_profile.claimed_count; i++)
-            pins[n++] = daemon_hw_profile.claimed[i];
-        pins[n++] = daemon_led_pin_configured(); /* may be overridden */
-
-        if (!daemon_gpio_locks_acquire(pins, n)) {
-            printf("[GPIO] Fehler: GPIO-Konflikt/Sperre – Radio-Init "
-                   "abgebrochen (fail-closed)\n");
-            radio_controller.health = RADIO_HEALTH_FAILED;
-            return;
-        }
+    /* GPIO ownership is acquired in daemon_io_init() BEFORE the LED claim
+     * (audit item 2); this is only the invariant check — a radio boot
+     * without held pin locks would bypass the conflict gate. */
+    if (daemon_gpio_locks_held() == 0) {
+        printf("[GPIO] Fehler: keine Pin-Sperren gehalten – Radio-Init "
+               "abgebrochen (fail-closed)\n");
+        g_boot_lock_failed = true;
+        radio_controller.health = RADIO_HEALTH_FAILED;
+        return;
     }
 
     if (!daemon_led_ready()) {
@@ -126,6 +126,7 @@ void lora_init(void) {
         state = radio_controller.driver->begin(band->rf_defaults);
     } else {
         state = RADIOLIB_ERR_SPI_CMD_FAILED;
+        g_boot_lock_failed = true;
         printf("[SPI] Fehler: SPI-Sperre für %s nicht verfügbar – "
                "begin() übersprungen\n", tag);
     }

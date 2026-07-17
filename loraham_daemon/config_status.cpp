@@ -476,3 +476,34 @@ void config_status_format_stats(char *buf,
                                  radio_controller_health(ctrl),
                                  ctrl ? &ctrl->stats : NULL);
 }
+
+int config_status_classify_reserved_setter(const char *line)
+{
+    static const char *const reserved[] = {
+        "TXRESULT", "TXQUEUE", "TXMODE", "CADRSSI", "CADMONITOR",
+        "CADWAIT", "CADIDLE", "CADPOLL", "CADTXAFTERTIMEOUT",
+    };
+
+    if (!line || strncmp(line, "SET ", 4) != 0)
+        return 0;
+
+    const char *key = line + 4;
+    size_t key_len = strcspn(key, "= \t\r\n");
+
+    for (size_t i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
+        if (key_len == strlen(reserved[i]) &&
+            strncmp(key, reserved[i], key_len) == 0) {
+            /* The dedicated matcher already rejected the full line, so a
+             * present value is invalid; a missing/empty value is
+             * structurally incomplete. */
+            const char *eq = key + key_len;
+
+            if (*eq != '=' || eq[1] == '\0' || eq[1] == ' ')
+                return 2;
+
+            return 1;
+        }
+    }
+
+    return 0;
+}

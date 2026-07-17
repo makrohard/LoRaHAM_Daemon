@@ -277,12 +277,14 @@ static void daemon_print_usage(const char *argv0)
     printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
     printf("\n");
     printf("Sockets (erzeugt werden nur die des gewählten Bandes):\n");
-    printf("  DATA  433: /tmp/lora433.sock\n");
-    printf("  DATA  868: /tmp/lora868.sock\n");
-    printf("  DATAF 433: /tmp/lora433f.sock\n");
-    printf("  DATAF 868: /tmp/lora868f.sock\n");
-    printf("  CONF  433: /tmp/loraconf433.sock\n");
-    printf("  CONF  868: /tmp/loraconf868.sock\n");
+    printf("  DATA  433: %s\n", DATA433_SOCKET);
+    printf("  DATA  868: %s\n", DATA868_SOCKET);
+    printf("  DATAF 433: %s\n", DATA433_FRAMED_SOCKET);
+    printf("  DATAF 868: %s\n", DATA868_FRAMED_SOCKET);
+    printf("  CONF  433: %s\n", CONF433_SOCKET);
+    printf("  CONF  868: %s\n", CONF868_SOCKET);
+    printf("  (Verzeichnis /run/loraham; Gruppe loraham fuer Client-Zugriff;\n");
+    printf("   LORAHAM_SOCKET_DIR uebersteuert nur fuer Dev/Test-Laeufe)\n");
     printf("\n");
 }
 

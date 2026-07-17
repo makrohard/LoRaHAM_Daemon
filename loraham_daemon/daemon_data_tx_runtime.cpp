@@ -371,6 +371,19 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
     }
 
+    /* Defense in depth (audit item 1): with the queue disabled but the
+     * worker still holding or executing residual jobs, a direct TX must
+     * neither wait behind nor interleave with them — reject as BUSY. */
+    if (!ctrl->tx_queue_active.load() &&
+        (daemon_tx_async_runtime_pending() > 0 ||
+         daemon_tx_async_runtime_job_active())) {
+        daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
+        daemon_debug_ctx(tx->log_ctx, "Rest-Queue aktiv");
+        printf("[%s] DATA-TX abgebrochen: %s (Rest-Queue aktiv)\n", tag,
+               tx_result_name(TX_RESULT_BUSY));
+        return DAEMON_TX_OUTCOME_BUSY;
+    }
+
     if (!ctrl->tx_queue_active.load() &&
         data_tx_wait_tx_ready_with_limits(ctrl,
                                           tx->tx_busy_wait_ticks,
