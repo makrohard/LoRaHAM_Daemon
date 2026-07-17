@@ -34,7 +34,7 @@ The daemon is the interface between the LoRaHAM radio hardware and applications 
 | Hardware profiles | `hardware_profile.cpp`, `hardware_profile.h` | `--hw` preset table (wiring, chip family, capabilities, LED, claimed pins); see "Hardware profiles" |
 | Radio driver interface | `radio_driver.h` | Runtime interface between the chip-agnostic daemon and one radio chip family: generic PhysicalLayer delegation + pure-virtual chip specifics (begin with RF defaults/TCXO, mode switch, CONF param apply, raw RSSI) |
 | SX127x driver | `sx127x_driver.cpp`, `sx127x_driver.h` | Concrete driver for SX1278/RFM9x (all SX127x register constants live here), incl. the D8 begin()-failure diagnosis |
-| SX1262 driver | `sx1262_driver.cpp`, `sx1262_driver.h` | Concrete driver for the SX126x family (TCXO via DIO3, DIO2-as-RF-switch + TXEN, SX126x CRC/sync/power semantics, GetRssiInst live RSSI) |
+| SX1262 driver | `sx1262_driver.cpp`, `sx1262_driver.h` | Concrete driver for the SX126x family (TCXO via DIO3, DIO2-as-RF-switch + inverse antenna-switch line, SX126x CRC/sync/power semantics, GetRssiInst live RSSI) |
 | Radio controller state | `radio_controller.h` | Per-band HAL/Module/driver ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, hardware capability flag, LED pin, and RX drop counter |
 | Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
 | Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | Profile-driven Module construction, driver selection by chip family, per-band RF boot defaults, callback install, initial RX start, and the family-aware begin()-failure diagnosis dispatch |
@@ -147,7 +147,7 @@ SX127x: `irq` = DIO0, `gpio` = DIO1 — SX1262: `irq` = DIO1, `gpio` = BUSY.
 | `legacy` (default) | SX127x | 8 / 7 | 25 / 16 | 5 / 6 | 24 / 12 | 13 / 19 | Per band (433 / 868); identical to the pre-profile hardcoded wiring |
 | `uputronics-ce0` | SX127x | 8 | 25 (DIO0) | — | — | 6 | Uputronics Pi Zero LoRa board, CE switch on CE0; DIO5 on BCM 24 (unused) |
 | `uputronics-ce1` | SX127x | 7 | 16 (DIO0) | — | — | 13 | Same board, CE switch on CE1; DIO5 on BCM 12 (unused) |
-| `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; TXEN BCM 6, RXEN via DIO2 (`setDio2AsRfSwitch`), TCXO via DIO3 (voltage from the profile, applied in `begin()`) |
+| `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; antenna-switch line BCM 6 (board silk "TXEN", but it must be LOW during TX / HIGH during RX — registered as RadioLib rxEn), TX routing via DIO2 (`setDio2AsRfSwitch`), TCXO via DIO3 (voltage from the profile, applied in `begin()`) |
 
 Uputronics specifics:
 
@@ -164,7 +164,8 @@ Uputronics specifics:
   across stacked boards. Assignment is slot-based (CE0 → 6, CE1 → 13) so two
   processes never claim the same line; both physical boards display both
   indicators — that is inherent to the board design.
-- LED polarity on BCM 6/13 is assumed active-high (bench-verify).
+- LED polarity on BCM 6/13 is active-high (bench-verified 2026-07: CE0 → BCM 6
+  green "LAN", CE1 → BCM 13 red "INTERNET", mirrored on both stacked boards).
 
 Two stacked Uputronics boards = two daemon processes (one per band), sharing
 SPI through the per-transaction flock and separated by disjoint GPIO claims.
@@ -173,13 +174,20 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
 `sx1262_driver.{h,cpp}`):
 
 - LoRa sync word: RadioLib maps the SX127x byte (`0x12`/`0x2B`) via the
-  compatibility control bits; on-air compatibility with SX127x stations is an
-  explicit bench item (see `HW-ONAIR-CHECKLIST.md`).
+  compatibility control bits; `0x2B` (MeshCom raster) is bench-verified both
+  directions against an SX1262 station, and SX1262↔SX127x cross-family decode
+  is verified in the RX direction (see `HW-ONAIR-CHECKLIST.md` status notes).
+- The LF/433 variant is fully on-air-validated; the HF/868 binding is
+  software-supported but on-air-untested (validated by analogy — the driver is
+  band-agnostic and the variants are pin-identical).
 - `CRC` on/off maps to SX126x CRC length 2/0; TX power range is −9…+22 dBm
   (the CONF policy 0…20 lies within it).
-- No OOK mode: `SET OOK=…` is rejected with a clear note. The FSK `RXBW`
-  raster differs from the SX127x list; RadioLib validates the chip's own
-  raster and rejects foreign values visibly.
+- No OOK mode: `SET OOK=…` is rejected with a clear note.
+- KNOWN ISSUE — FSK `RXBW` is currently unconfigurable on SX1262: the CONF
+  validation list is the SX127x raster, the chip accepts only its own raster,
+  and the two barely intersect. Chip-valid values (e.g. `23.4`) are rejected
+  upstream; daemon-valid values (e.g. `25.0`) fail the chip apply (shown red).
+  Planned fix: driver-aware `RXBW` validation.
 - Live RSSI comes from the SX126x instantaneous-RSSI command, never from
   SX127x register addresses.
 - Without the HAT present, `begin()` fails (`CHIP_NOT_FOUND`), one
@@ -190,7 +198,7 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
 | Combination | Verdict |
 |---|---|
 | Uputronics CE0 + Uputronics CE1 | ✓ disjoint |
-| Waveshare (either band) + Uputronics CE0 | (✓) radio pins disjoint, but BCM 6 is Waveshare TXEN **and** the CE0 LED line — the CE0 process must run with its LED reassigned to BCM 13 (LED-override mechanism arrives with the SX1262 milestone; until then this pairing fails closed at LED claim time with the diagnosis line) |
+| Waveshare (either band) + Uputronics CE0 | ✗ not planned — BCM 6 is the Waveshare antenna-switch line **and** the CE0 LED line; the pairing is unsupported and fails closed at LED claim time with the diagnosis line (an LED-override mechanism was considered and dropped: no use case) |
 | Waveshare + Uputronics CE1 | ✗ conflict (BCM 16 IRQ on both; BCM 6) |
 | Waveshare + Waveshare | ✗ conflict (all pins identical) |
 

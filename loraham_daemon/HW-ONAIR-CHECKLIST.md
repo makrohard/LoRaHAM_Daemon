@@ -4,6 +4,24 @@ Software-seitig grün heißt NICHT on-air-korrekt; diese Liste ist der manuelle
 Abnahmetest am Funkgerät. Alle RF-Übungen nur mit legalen Frequenz-/Leistungs-/
 Duty-Cycle-Einstellungen (≤ 20 dBm).
 
+## STATUS (Session 2026-07-16/17, Gegenstation MeshCom-T-Deck/SX1262 + Meshtastic-868)
+
+- **M3 A/B: BESTANDEN**, beide Bänder, A==B (Zeile 1 als Ein-Paket-Verfahren;
+  Zeile-6-BUSY-in-Airtime auf B nachgewiesen). Befund: A-only kosmetische
+  Pin-25-Reclaim-Meldung bei Rekonfiguration; B sauber.
+- **M4 Waveshare LF/433: BESTANDEN** mit 2 Befunden: RF-Switch-Polarität
+  (gefixt, `dc213b0`, Zeile 10 = Regressionswache hat gegriffen) und
+  FSK-RXBW-Raster (offen, siehe README Known Issue). Long-Packets 12×230 B
+  ohne Hänger (Zeile 5 TX-Richtung; RX-Richtung mit Textnachrichten nicht
+  darstellbar). Zeile 2 LoRa-APRS-Satz + echte SX127x-Gegenstation: OFFEN
+  (T-Deck ist SX1262; Cross-Family-RX-Nachweis existiert aus M3 Zeile 1).
+  Zeile 11 entfällt (Kombination Waveshare+Uputronics: nicht geplant).
+  HF/868-Variante: nicht vorhanden, per Analogie abgedeckt (README).
+- **Uputronics-Stack (CE0+CE1): BESTANDEN** (Init/Warmstart, CADSCAN=0-Pfad,
+  RX/TX beide Bänder, Parallel-Last 16/16, Duplikat-Exit 3, LED-Slots+Polarität
+  aktiv-high verifiziert). Befund: LDRO-Warmstart-Geist (gefixt, `be43e1d`);
+  Hardware-Lehre: 433/868-Antennen waren vertauscht (~50 dB, symmetrisch).
+
 ## M3 — RadioDriver-Extraktion (A/B gegen den Vor-Treiber-Stand `834841a`)
 
 Ziel: `--radio 433` / `--radio 868` (Profil `legacy`) verhalten sich mit dem
