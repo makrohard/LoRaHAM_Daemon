@@ -1,20 +1,11 @@
 # Changelog
 
 ## loraham_daemon 112
-- sx1262: RF-switch polarity fixed — BCM 6 must be LOW during TX (registered as rxEn); before, TX reported OK but radiated nothing (bench-found, M4 row 10)
-- sx127x: LDRO is always written explicitly — on no-RESET boards a boot-forced LDRO bit survived restarts in silicon while RadioLib's cache assumed POR, garbling RX after reconfig (bench-found)
-- On-air validation executed (M3 A/B both bands, M4 Waveshare LF, Uputronics CE0+CE1 stack): see `HW-ONAIR-CHECKLIST.md` status notes; LED polarity BCM 6/13 verified active-high
-- Known issue: FSK `RXBW` on SX1262 is currently unconfigurable — CONF validation uses the SX127x raster, the chip accepts only its own (fix: driver-aware validation)
-- Framed DATA: a rejected frame (oversized TX_PACKET, unknown/oversized frame type) now yields exactly one ERROR frame; the parser skips the declared payload and re-syncs (previously each junk byte produced an "unknown frame type" ERROR).
-- Cleanup: .gitignore covers all built test binaries by pattern (+ repo-root ignore for IDE dirs), shared driver print/shaping helpers (`driver_config_print.h`), `--help` notes that only the selected band's sockets are created.
-- Multi-hardware M5: docs closure — README architecture table covers hardware profiles and both radio drivers, combination matrix final, maintainer on-air checklists (M3 A/B + M4 SX1262) collected in `HW-ONAIR-CHECKLIST.md`.
-- Multi-hardware M4: `Sx1262Driver` activates `--hw waveshare-sx1262` (LF and HF binding): TCXO via DIO3 in begin()/beginFSK(), DIO2-as-RF-switch + TXEN, SX126x CRC/sync/power/LDRO semantics, no-OOK rejected, live RSSI via GetRssiInst; without the HAT begin() fails closed with one diagnosis line (suite-tested on the bench).
-- Multi-hardware M3: chip access extracted into a runtime `RadioDriver` interface (`radio_driver.h`, `sx127x_driver.{h,cpp}`); `RadioController` and all runtime paths are chip-agnostic (no SX1278/RFM95 names or SX127x register constants outside the driver). Behavior-identical: full suite and live legacy-hardware smoke (STATUS/CHANNEL/TX) unchanged.
-- Multi-hardware M2: `--hw <preset>` hardware profiles (`legacy` default = pre-profile wiring bit-identical; `uputronics-ce0/ce1` with NC DIO1/RESET, capability-gated CAD (passive-RSSI fallback for MANAGED TX and `GET CHANNEL`, `CADSCAN=0`), slot-based LEDs, warm-start note; `waveshare-sx1262` preset resolves, init fails closed until the SX1262 driver milestone). Profile-aware `begin()` failure diagnosis (RegVersion heuristic), LED-off profiles (`led_pin` NC) run cleanly without claims, boot TX-mode/CAD apply and logs restricted to the selected band (P3-1).
-- Version bump to 112; full-suite verification against the 111a baseline (no single-band regression).
-- Docs/comments: removed all in-process dual-radio descriptions; README documents mandatory `--radio`, single-band socket exposure, and a migration note (`--radio both` → `loraham-daemon@433` + `@868`; banded flags → plain flags in per-unit overrides).
-- BREAKING: removed the band-suffixed CLI overrides `--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868` (rejected as unknown options). The plain `--tx-mode`, `--cad-monitor`, `--cad-rssi` are equivalent in a single-band process; per-band differentiation moves to per-unit systemd overrides.
-- Instance lock and LED claim reduced to single-band acquisition (no dual-lock ordering/rollback); exit codes 3/4 and LOCK_NB semantics unchanged.
+
+- New Hardware Support:
+  - Raspberry Pizzero LoRa(TM) expansion Board V2.5C
+  - Waveshare SX1262 LoRaWAM/GNSS HAT
+
 - BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
 
 ## loraham_daemon 111a

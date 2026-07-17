@@ -76,6 +76,33 @@ bool config_policy_fsk_rxbw_valid(float bw)
     return false;
 }
 
+/* SX126x GFSK RX bandwidth raster (RadioLib SX126x::setRxBandwidth). The two
+ * chip rasters barely intersect, so the validator must select per family. */
+bool config_policy_fsk_rxbw_valid_sx126x(float bw)
+{
+    const float allowed[] = {
+        4.8f, 5.8f, 7.3f, 9.7f, 11.7f, 14.6f,
+        19.5f, 23.4f, 29.3f, 39.0f, 46.9f,
+        58.6f, 78.2f, 93.8f, 117.3f, 156.2f,
+        187.2f, 234.3f, 312.0f, 373.6f, 467.0f
+    };
+
+    for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
+        if (config_value_float_equal(bw, allowed[i]))
+            return true;
+    }
+
+    return false;
+}
+
+bool config_policy_fsk_rxbw_valid_family(float bw, DaemonChipFamily family)
+{
+    if (family == DAEMON_CHIP_FAMILY_SX1262)
+        return config_policy_fsk_rxbw_valid_sx126x(bw);
+
+    return config_policy_fsk_rxbw_valid(bw);
+}
+
 bool config_policy_fsk_preamble_valid(int preamble)
 {
     return preamble >= 0;

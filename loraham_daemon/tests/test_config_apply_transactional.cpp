@@ -59,6 +59,10 @@ struct FakeRadio : public RadioDriver {
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     float rssiProbe() override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
+    DaemonChipFamily chipFamily() const override
+    {
+        return DAEMON_CHIP_FAMILY_SX127X;
+    }
 };
 
 /* --- Test helpers --- */
@@ -173,6 +177,58 @@ static void test_valid_lora_parameter_still_applies(void)
     expect_int("valid lora getrssi unchanged", getrssi.load(), false);
 }
 
+// SX1262-Variante: das Familien-Raster der Validierung folgt dem Treiber.
+struct FakeSx1262Radio : public FakeRadio {
+    DaemonChipFamily chipFamily() const override
+    {
+        return DAEMON_CHIP_FAMILY_SX1262;
+    }
+};
+
+static void test_fsk_rxbw_follows_driver_family(void)
+{
+    // SX126x raster value: rejected on the (default) SX127x family fake...
+    {
+        FakeRadio radio;
+        RadioMode_t mode = RADIO_MODE_LORA;
+        std::atomic<bool> getrssi(false);
+
+        apply_cmd(radio, "SET MODE=FSK BR=9.6 RXBW=23.4", mode, getrssi);
+        expect_int("sx127x family rejects 23.4 (no mode switch)",
+                   radio.begin_fsk_count, 0);
+        expect_int("sx127x family rejects 23.4 (no apply)",
+                   radio.fsk_apply_count, 0);
+    }
+
+    // ...accepted transactionally on the SX1262 family fake...
+    {
+        FakeSx1262Radio radio;
+        RadioMode_t mode = RADIO_MODE_LORA;
+        std::atomic<bool> getrssi(false);
+
+        apply_cmd(radio, "SET MODE=FSK BR=9.6 RXBW=23.4", mode, getrssi);
+        expect_int("sx1262 family accepts 23.4 (mode switched)",
+                   radio.begin_fsk_count, 1);
+        expect_int("sx1262 family accepts 23.4 (params applied)",
+                   radio.fsk_apply_count, 2);
+    }
+
+    // ...and an SX127x raster value rejects the whole command on SX1262.
+    {
+        FakeSx1262Radio radio;
+        RadioMode_t mode = RADIO_MODE_LORA;
+        std::atomic<bool> getrssi(false);
+
+        apply_cmd(radio, "SET MODE=FSK BR=9.6 RXBW=25.0", mode, getrssi);
+        expect_int("sx1262 family rejects 25.0 (no mode switch)",
+                   radio.begin_fsk_count, 0);
+        expect_int("sx1262 family rejects 25.0 (no apply)",
+                   radio.fsk_apply_count, 0);
+        expect_int("sx1262 family rejects 25.0 (mode flag unchanged)",
+                   mode, RADIO_MODE_LORA);
+    }
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -198,6 +254,7 @@ int main(int argc, char **argv)
     test_failed_mode_switch_aborts_remaining_apply();
     test_valid_mode_and_getrssi_still_apply();
     test_valid_lora_parameter_still_applies();
+    test_fsk_rxbw_follows_driver_family();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

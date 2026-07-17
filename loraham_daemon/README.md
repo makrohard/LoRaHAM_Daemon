@@ -183,11 +183,12 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
 - `CRC` on/off maps to SX126x CRC length 2/0; TX power range is −9…+22 dBm
   (the CONF policy 0…20 lies within it).
 - No OOK mode: `SET OOK=…` is rejected with a clear note.
-- KNOWN ISSUE — FSK `RXBW` is currently unconfigurable on SX1262: the CONF
-  validation list is the SX127x raster, the chip accepts only its own raster,
-  and the two barely intersect. Chip-valid values (e.g. `23.4`) are rejected
-  upstream; daemon-valid values (e.g. `25.0`) fail the chip apply (shown red).
-  Planned fix: driver-aware `RXBW` validation.
+- FSK `RXBW` is validated against the active chip family's raster: the driver
+  reports its family (`RadioDriver::chipFamily()`) and the transactional CONF
+  validation selects the matching value list (`config_policy_fsk_rxbw_valid*`,
+  rasters per RadioLib). SX1262 accepts e.g. `23.4`, rejects the SX127x-only
+  `25.0` upfront — the whole command is rejected before any apply, as for all
+  invalid values.
 - Live RSSI comes from the SX126x instantaneous-RSSI command, never from
   SX127x register addresses.
 - Without the HAT present, `begin()` fails (`CHIP_NOT_FOUND`), one

@@ -11,7 +11,7 @@ Duty-Cycle-Einstellungen (≤ 20 dBm).
   Pin-25-Reclaim-Meldung bei Rekonfiguration; B sauber.
 - **M4 Waveshare LF/433: BESTANDEN** mit 2 Befunden: RF-Switch-Polarität
   (gefixt, `dc213b0`, Zeile 10 = Regressionswache hat gegriffen) und
-  FSK-RXBW-Raster (offen, siehe README Known Issue). Long-Packets 12×230 B
+  FSK-RXBW-Raster (gefixt: familienbewusste Validierung). Long-Packets 12×230 B
   ohne Hänger (Zeile 5 TX-Richtung; RX-Richtung mit Textnachrichten nicht
   darstellbar). Zeile 2 LoRa-APRS-Satz + echte SX127x-Gegenstation: OFFEN
   (T-Deck ist SX1262; Cross-Family-RX-Nachweis existiert aus M3 Zeile 1).

@@ -72,6 +72,30 @@ static void test_fsk_policy(void)
     expect_int("fsk rxbw accepts 250", config_policy_fsk_rxbw_valid(250.0f), 1);
     expect_int("fsk rxbw rejects 30", config_policy_fsk_rxbw_valid(30.0f), 0);
 
+    // SX126x raster (RadioLib SX126x::setRxBandwidth) + family selector.
+    expect_int("fsk rxbw sx126x accepts 4.8",
+               config_policy_fsk_rxbw_valid_sx126x(4.8f), 1);
+    expect_int("fsk rxbw sx126x accepts 23.4",
+               config_policy_fsk_rxbw_valid_sx126x(23.4f), 1);
+    expect_int("fsk rxbw sx126x accepts 467",
+               config_policy_fsk_rxbw_valid_sx126x(467.0f), 1);
+    expect_int("fsk rxbw sx126x rejects 20.8",
+               config_policy_fsk_rxbw_valid_sx126x(20.8f), 0);
+    expect_int("fsk rxbw sx126x rejects 25.0",
+               config_policy_fsk_rxbw_valid_sx126x(25.0f), 0);
+    expect_int("fsk rxbw family sx127x accepts 20.8",
+               config_policy_fsk_rxbw_valid_family(20.8f,
+                                                   DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("fsk rxbw family sx127x rejects 23.4",
+               config_policy_fsk_rxbw_valid_family(23.4f,
+                                                   DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("fsk rxbw family sx1262 accepts 23.4",
+               config_policy_fsk_rxbw_valid_family(23.4f,
+                                                   DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("fsk rxbw family sx1262 rejects 25.0",
+               config_policy_fsk_rxbw_valid_family(25.0f,
+                                                   DAEMON_CHIP_FAMILY_SX1262), 0);
+
     expect_int("fsk preamble accepts 0", config_policy_fsk_preamble_valid(0), 1);
     expect_int("fsk preamble rejects -1", config_policy_fsk_preamble_valid(-1), 0);
 

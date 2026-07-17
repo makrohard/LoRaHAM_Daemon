@@ -147,7 +147,8 @@ static bool config_validate_fsk_shaping_value(const std::string &val)
 }
 
 static bool config_validate_fsk_value(const std::string &key,
-                                      const std::string &val)
+                                      const std::string &val,
+                                      DaemonChipFamily chip_family)
 {
     if (key == "FREQ")
         return config_validate_freq_value(val);
@@ -170,7 +171,7 @@ static bool config_validate_fsk_value(const std::string &key,
     if (key == "RXBW") {
         float bw = 0.0f;
         return config_value_parse_float_exact(val, &bw) &&
-               config_policy_fsk_rxbw_valid(bw);
+               config_policy_fsk_rxbw_valid_family(bw, chip_family);
     }
 
     if (key == "OOK")
@@ -204,7 +205,8 @@ static bool config_validate_fsk_value(const std::string &key,
 
 bool config_validate_command(const ConfigCommand &cmd,
                              RadioMode_t current_mode,
-                             ConfigValidationResult *result)
+                             ConfigValidationResult *result,
+                             DaemonChipFamily chip_family)
 {
     config_validation_result_init(result, current_mode);
 
@@ -259,7 +261,7 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (config_is_lora_only_key(key))
                 continue;
 
-            if (!config_validate_fsk_value(key, val)) {
+            if (!config_validate_fsk_value(key, val, chip_family)) {
                 config_validation_reject(result, key, val,
                                          "invalid FSK value");
                 return false;

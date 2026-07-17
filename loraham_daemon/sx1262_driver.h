@@ -43,6 +43,10 @@ public:
     float readLiveRssi(RadioMode_t mode, bool is_hf) override;
     float rssiProbe() override;
     const char *chipName() const override;
+    DaemonChipFamily chipFamily() const override
+    {
+        return DAEMON_CHIP_FAMILY_SX1262;
+    }
 
 private:
     Module *mod_;

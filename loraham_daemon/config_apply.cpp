@@ -30,7 +30,8 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
         return;
 
     ConfigValidationResult validation;
-    if(!config_validate_command(parsed, mode_flag, &validation)) {
+    if(!config_validate_command(parsed, mode_flag, &validation,
+                                radio.chipFamily())) {
         printf("[%s] CONFIG rejected: %s=%s (%s)\n",
                tag,
                validation.key.c_str(),
