@@ -7,6 +7,7 @@
 
 #include <RadioLib.h>
 
+#include "hardware_profile.h" /* DaemonChipFamily */
 #include "radio_channel.h"   /* RadioMode_t */
 
 /* --- Radio driver interface ----------------------------------------------- */
@@ -94,6 +95,11 @@ public:
     virtual float rssiProbe() = 0;
 
     virtual const char *chipName() const = 0;
+
+    /* Chip family for family-specific CONF value rasters (e.g. FSK RXBW):
+     * the transactional validation must accept exactly what the chip's
+     * apply path will accept, per family. */
+    virtual DaemonChipFamily chipFamily() const = 0;
 
 protected:
     explicit RadioDriver(PhysicalLayer *phy) : phy_(phy) {}

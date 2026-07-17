@@ -115,6 +115,10 @@ struct FakeRadio : public RadioDriver {
                        const std::string &) override {}
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
+    DaemonChipFamily chipFamily() const override
+    {
+        return DAEMON_CHIP_FAMILY_SX127X;
+    }
 };
 
 static FakeRadio *fake(RadioController *ctrl)

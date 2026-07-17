@@ -48,6 +48,19 @@ static ConfigValidationResult validate(const char *cmd,
     return result;
 }
 
+static ConfigValidationResult validate_family(const char *cmd,
+                                              RadioMode_t current_mode,
+                                              DaemonChipFamily family,
+                                              int *ok)
+{
+    ConfigCommand parsed = config_parse_command(cmd);
+    ConfigValidationResult result;
+
+    *ok = config_validate_command(parsed, current_mode, &result, family);
+
+    return result;
+}
+
 static void test_valid_lora_command(void)
 {
     int ok = 0;
@@ -92,6 +105,31 @@ static void test_valid_fsk_target_mode(void)
 
     expect_int("valid fsk command", ok, 1);
     expect_int("valid fsk target", result.target_mode, RADIO_MODE_FSK);
+}
+
+static void test_fsk_rxbw_family_raster(void)
+{
+    int ok = 0;
+
+    // SX1262 family: chip raster accepted, SX127x raster rejected.
+    validate_family("SET MODE=FSK BR=9.6 RXBW=23.4",
+                    RADIO_MODE_LORA, DAEMON_CHIP_FAMILY_SX1262, &ok);
+    expect_int("sx1262 rxbw 23.4 accepted", ok, 1);
+
+    ConfigValidationResult result =
+        validate_family("SET MODE=FSK BR=9.6 RXBW=25.0",
+                        RADIO_MODE_LORA, DAEMON_CHIP_FAMILY_SX1262, &ok);
+    expect_int("sx1262 rxbw 25.0 rejected", ok, 0);
+    expect_str("sx1262 rxbw reject key", result.key, "RXBW");
+
+    // SX127x family: unchanged semantics.
+    validate_family("SET MODE=FSK BR=9.6 RXBW=23.4",
+                    RADIO_MODE_LORA, DAEMON_CHIP_FAMILY_SX127X, &ok);
+    expect_int("sx127x rxbw 23.4 rejected", ok, 0);
+
+    // Default parameter = legacy SX127x semantics for driverless callers.
+    validate("SET MODE=FSK BR=9.6 RXBW=25.0", RADIO_MODE_LORA, &ok);
+    expect_int("default family rxbw 25.0 accepted", ok, 1);
 }
 
 static void test_invalid_fsk_value_rejects_before_mode_switch(void)
@@ -184,6 +222,7 @@ int main(int argc, char **argv)
     test_invalid_lora_value_rejects_whole_command();
     test_invalid_getrssi_rejects_whole_command();
     test_valid_fsk_target_mode();
+    test_fsk_rxbw_family_raster();
     test_invalid_fsk_value_rejects_before_mode_switch();
     test_invalid_mode_rejects_whole_command();
     test_ignored_wrong_mode_keys_preserve_compatibility();

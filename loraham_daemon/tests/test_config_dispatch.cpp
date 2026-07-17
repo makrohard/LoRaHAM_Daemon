@@ -75,6 +75,10 @@ struct FakeRadio : public RadioDriver {
     // Kein Module hinter dem Fake: Live-RSSI unavailable wie zuvor (-200).
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
+    DaemonChipFamily chipFamily() const override
+    {
+        return DAEMON_CHIP_FAMILY_SX127X;
+    }
 };
 
 static FakeRadio *fake(RadioController *ctrl)
