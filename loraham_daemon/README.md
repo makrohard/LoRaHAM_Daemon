@@ -1,8 +1,36 @@
 # LoRaHAM_Daemon
 
-`loraham_daemon` is the local hardware daemon for LoRaHAM_Pi / LoRaHAM Cartridge on Raspberry Pi. Each process drives exactly one radio, selected with the mandatory `--radio 433` or `--radio 868` option; dual-band operation runs two processes (`loraham-daemon@433` + `loraham-daemon@868`). The active radio is exposed to user programs through local UNIX sockets.
+`loraham_daemon` is the local radio daemon for LoRaHAM_Pi / LoRaHAM Cartridge on
+Raspberry Pi. It drives one LoRa transceiver (SX127x or SX126x family) directly
+over SPI via RadioLib and exposes it to user programs through local UNIX
+sockets — raw DATA streams, packet-boundary-preserving framed DATA, and a CONF
+socket for runtime radio configuration. Each process owns exactly one radio,
+selected with the mandatory `--radio 433` or `--radio 868` option; dual-band
+operation runs two processes (`loraham-daemon@433` + `loraham-daemon@868`).
 
-The daemon is the interface between the LoRaHAM radio hardware and applications such as LoRaHAM iGate, PiGate, LoRaHAM Chat, test tools, or custom clients. External bridge/client programs can use these sockets to integrate APRS or other higher-level protocols.
+The daemon is the interface between the radio hardware and applications such as
+LoRaHAM iGate, PiGate, LoRaHAM Chat, the MeshCom bridge, test tools, or custom
+clients. External bridge/client programs use the sockets to integrate APRS,
+MeshCom, or other higher-level protocols without touching SPI/RadioLib
+themselves.
+
+## Supported hardware
+
+Hardware is selected with `--hw <preset>` (details and pin maps in
+"Hardware profiles" below):
+
+| Preset | Board | Radio | Bands |
+|---|---|---|---|
+| `legacy` (default) | Original LoRaHAM dual-module wiring | SX1278 (433) + RFM95 (868), SX127x family | 433 + 868, one process per band |
+| `uputronics-ce0` / `-ce1` | [Uputronics Raspberry PiZero LoRa(TM) Expansion Board](https://store.uputronics.com/products/raspberry-pizero-loratm-expansion-board) (tested: V2.5C) | HopeRF RFM95/98W, SX127x family | 434 or 868 variant; CE switch per board, two boards stackable |
+| `waveshare-sx1262` | [Waveshare SX1262 LoRaWAN/GNSS HAT](https://www.waveshare.com/wiki/SX1262_XXXM_LoRaWAN/GNSS_HAT) | SX1262, SX126x family | LF (410–510 MHz, on-air-validated) or HF (850–930 MHz, supported by analogy) variant |
+
+All presets are driven as raw LoRa radios (no LoRaWAN stack); on-air
+compatibility with SX127x- and SX126x-based counterparts (LoRa-APRS, MeshCom,
+Meshtastic parameter sets) is bench-verified per `HW-ONAIR-CHECKLIST.md`.
+Adding a board of a supported chip family needs only a hardware profile; a new
+chip family additionally needs a `RadioDriver` implementation (see "Adding new
+hardware").
 
 ## Purpose
 
