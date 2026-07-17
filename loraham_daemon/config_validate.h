@@ -20,12 +20,15 @@ struct ConfigValidationResult {
 void config_validation_result_init(ConfigValidationResult *result,
                                    RadioMode_t current_mode);
 
-/* chip_family selects family-specific value rasters (currently FSK RXBW);
- * the default keeps legacy SX127x semantics for callers without a driver. */
+/* chip_family selects family-specific value rasters (currently FSK RXBW).
+ * freq_min/max_mhz is the band's operational frequency policy (audit P1-4,
+ * from the band descriptor) — deliberately without defaults so no caller can
+ * silently validate FREQ against an unbounded range. */
 bool config_validate_command(const ConfigCommand &cmd,
                              RadioMode_t current_mode,
                              ConfigValidationResult *result,
-                             DaemonChipFamily chip_family =
-                                 DAEMON_CHIP_FAMILY_SX127X);
+                             DaemonChipFamily chip_family,
+                             float freq_min_mhz,
+                             float freq_max_mhz);
 
 #endif

@@ -1,4 +1,5 @@
 #include "radio_cad.h"
+#include "daemon_rx_rearm.h"
 #include "daemon_cad_monitor.h"
 
 /* Bodies moved verbatim from radio_cad.h and daemon_cad_monitor.h (D3). */
@@ -76,7 +77,8 @@ void radio_cad_restore_rx_after_probe(RadioController *ctrl)
     ctrl->driver->clearIrq(0xFFFFFFFF);
     ctrl->received.store(false);
     ctrl->driver->setPacketReceivedAction(ctrl->rx_callback);
-    ctrl->driver->startReceive();
+    daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
+                                "CAD-Probe");
 }
 
 RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
@@ -141,6 +143,20 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
     if (ctrl->tx_busy.load())
         return result;
 
+    /* Pending-RX guard (audit M1): a packet that finished reception but has
+     * not been drained by the main loop yet — flag set, payload still in the
+     * FIFO — must not be destroyed by the probe's IRQ-clear/re-arm. A channel
+     * that just delivered a packet is legitimately BUSY: the MANAGED CAD loop
+     * backs off and the main loop gets its tick to drain the packet. RSSI
+     * comes from the passive live read (mirrors GET CHANNEL's pending path).
+     */
+    if (ctrl->received.load()) {
+        result.rssi_dbm = ctrl->driver->rssiProbe();
+        result.scan_ran = 0;
+        result.status = RADIO_CAD_PROBE_BUSY;
+        return result;
+    }
+
     result.rssi_dbm = ctrl->driver->getRSSI();
 
     if (ctrl->mode != RADIO_MODE_LORA)
@@ -171,6 +187,21 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
         return radio_cad_probe_passive(ctrl);
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
+
+    /* Pending-RX guard (audit M1): a packet that finished reception but has
+     * not been drained by the main loop yet — flag set, payload still in the
+     * FIFO — must not be destroyed by the probe's IRQ-clear/re-arm. A channel
+     * that just delivered a packet is legitimately BUSY: the MANAGED CAD loop
+     * backs off and the main loop gets its tick to drain the packet. RSSI
+     * comes from the passive live read (mirrors GET CHANNEL's pending path).
+     */
+    if (ctrl->received.load()) {
+        result.rssi_dbm = ctrl->driver->rssiProbe();
+        result.scan_ran = 0;
+        result.status = RADIO_CAD_PROBE_BUSY;
+        return result;
+    }
+
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);
 
     if (ctrl->mode != RADIO_MODE_LORA)

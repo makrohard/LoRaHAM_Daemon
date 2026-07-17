@@ -105,7 +105,7 @@ hardware").
 
 | Area | File/module | Role |
 |---|---|---|
-| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_status.*`, `config_dispatch.*` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands; the chip-specific per-key application lives in the radio drivers |
+| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_status.*`, `config_dispatch.*` | Line framing, strict parsing, validation policy, whole-command prevalidation followed by sequential apply, and dispatch support for `SET KEY=VALUE` commands; the chip-specific per-key application lives in the radio drivers |
 | CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Builds the CONFIG dispatch context from the band descriptor, plus debug logging callbacks |
 | Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats. Lock discipline: monitoring/RX/status ticks SKIP their sample instead of stalling while a TX holds the radio (see radio_controller.h); CONFIG apply deliberately blocks |
 | CAD probe core | `radio_cad.cpp`, `radio_cad.h`, `daemon_cad_monitor.h` | Passive RSSI probe (try-lock, TX-gated), active scanChannel probes for TX gating and `GET CHANNEL`, and the CAD monitor tick |
@@ -214,7 +214,7 @@ SX1262 specifics (chip semantics differ from SX127x; handled in
   (the CONF policy 0…20 lies within it).
 - No OOK mode: `SET OOK=…` is rejected with a clear note.
 - FSK `RXBW` is validated against the active chip family's raster: the driver
-  reports its family (`RadioDriver::chipFamily()`) and the transactional CONF
+  reports its family (`RadioDriver::chipFamily()`) and the prevalidating CONF
   validation selects the matching value list (`config_policy_fsk_rxbw_valid*`,
   rasters per RadioLib). SX1262 accepts e.g. `23.4`, rejects the SX127x-only
   `25.0` upfront — the whole command is rejected before any apply, as for all
@@ -361,7 +361,7 @@ Rules:
 - `TX=1` and `TX=0` CONF broadcasts are emitted by the main loop; async TX workers do not access client slots.
 - `GET CHANNEL` returns a one-line per-band snapshot with `RADIO`, `BUSY`, `CAD`, `CADSCAN`, `CADSTATE`, `RSSI`, `PACKETRSSI`, `LIVERSSI`, `MODE`, and `TXMODE`.
 - `STATUS CAD` reflects monitoring activity; transient TX and on-demand CAD probes do not change it.
-- During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio.
+- During an active TX, `GET CHANNEL` returns immediately with `BUSY=1` and `CADSTATE=UNAVAILABLE` without scanning the radio. A received-but-undrained packet likewise reports BUSY without scanning (the packet survives).
 - `DIRECT` TX mode transmits immediately with no CAD gating and never returns `CHANNEL_BUSY`.
 - `MANAGED` TX mode waits for stable CAD idle before TX and returns `CHANNEL_BUSY` when the CAD wait timeout expires.
 - Final framed `TX_RESULT` flags include managed and CAD-timeout context (the deferred bit `1` is reserved and currently never set; deferred delivery is recognizable by the suppressed immediate result).
@@ -471,8 +471,8 @@ Important behavior:
 - `SET TXRESULT=0|1`, `SET TXMODE=MANAGED|DIRECT`, `SET TXQUEUE=0|1`, and `SET CADMONITOR=0|1` are stable per-band control commands.
 - `SET CADWAIT=N`, `SET CADIDLE=N`, `SET CADPOLL=N`, and `SET CADTXAFTERTIMEOUT=0|1` set the per-band CAD policy; accepted ranges are `CADWAIT` 50–5000 ms, `CADIDLE` 0–2000 ms, `CADPOLL` 10–500 ms. Out-of-range values are rejected and leave the previous policy unchanged. Policy changes apply to future TX attempts and queued jobs; each queued job snapshots the policy at creation time.
 - `SET` commands and malformed commands do not have a stable OK/ERR response protocol; errors are logged by the daemon.
-- `MODE=LORA` calls RadioLib `begin()`.
-- `MODE=FSK` calls RadioLib `beginFSK()`.
+- CONFIG apply is whole-command prevalidation followed by sequential apply, not a transaction: the full command is validated (syntax, ranges, band frequency policy, duplicate keys rejected) before any radio side effect, then parameters apply in order without rollback — a RadioLib-level failure mid-apply leaves earlier parameters applied.
+- `MODE=LORA` calls RadioLib `begin()`, `MODE=FSK` calls `beginFSK()` — both land on the band's boot RF defaults (frequency, modulation parameters), never on chip register defaults. Explicit parameters in the same command line are applied on top afterwards; anything not set stays at the band default.
 - After mode reinitialization, the packet-received callback is restored and RX is restarted.
 
 ## Startup and shutdown behavior
@@ -704,14 +704,14 @@ settings (≤20 dBm).
 | Key | Mode | Default | Accepted values | Common values | Meaning |
 |---|---|---|---|---|---|
 | `MODE` | global | `LORA` | `LORA`, `FSK` | `LORA`, `FSK` | Select RadioLib mode |
-| `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number > `0`, MHz; RadioLib rejects unsupported bands | `433.775`, `433.900`, `869.525` | RF frequency |
+| `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number, MHz, inside the band policy — 433 process: `430.0`–`440.0`, 868 process: `863.0`–`870.0` (off-band values rejected) | `433.775`, `433.900`, `869.525` | RF frequency |
 | `POWER` | LORA/FSK | `10` | integer `0` to `20` dBm | `10`, `17`, `20` | TX power |
 | `GETRSSI` | global | `0` | exact `0`, `1` | `1` start, `0` stop | Stream live RSSI to CONF clients |
 | `SF` | LORA | 433: `12`, 868: `11` | integer `7` to `12` | `12`, `11`, `10`, `7` | LoRa spreading factor |
 | `BW` | LORA | 433: `125`, 868: `250` | exact `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz | `125`, `250` | LoRa bandwidth |
 | `CR` | LORA | `5` | integer `5` to `8` | `5` | LoRa coding rate (`4/5` to `4/8`) |
 | `CRC` | LORA | `1` | exact `0`, `1` | `1` | LoRa CRC off/on |
-| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `65535`; FSK: integer `>=0` | `8`, `16`, `32` | Preamble length |
+| `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048` (airtime-bounded; the old 65535 ceiling allowed ~36 min of preamble at SF12/BW125) | `8`, `16`, `32` | Preamble length |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00` to `0xFF` or decimal `0` to `255`; FSK: 1 or 2 non-zero bytes, max `0xFFFF` | `0x12`, `0x2B`, `0x2DD4` | Sync word |
 | `LDRO` | LORA | 433: `1`, 868: `AUTO` | exact `AUTO`, `auto`, `0`, `1` | `AUTO`, `1` for SF12/BW125 | Low Data Rate Optimization |
 | `BR` | FSK | RadioLib/default unset by daemon | strict number `0.5` to `300.0` kbps | `1.2`, `2.4`, `4.8`, `9.6`, `100` | FSK bitrate |
@@ -730,7 +730,7 @@ behavior: the daemon logs them but does not send a stable OK/ERR response.
 | Command | Response | Meaning |
 |---|---|---|
 | `GET STATUS` | `STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90` | Current radio health, runtime flags, TX mode, TX queue state, and CAD policy |
-| `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0` | Counters since daemon start |
+| `GET STATS` | `STATS UPTIME=123 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=0 TXERR=0 TXBUSY=0 CADTIMEOUT=0 CADSEND=0 RXREARMFAIL=0` | Counters since daemon start; `RXREARMFAIL` (appended field) counts failed RX re-arms after TX/probe/CONFIG — non-zero means the retry path had to recover the receiver |
 | `GET CHANNEL` | One-shot channel probe: radio health, busy state, legacy `CAD` scan flag, explicit `CADSCAN`, explicit `CADSTATE`, legacy packet-RSSI `RSSI`, explicit `PACKETRSSI`, explicit live-register `LIVERSSI`, current modem mode, and TX mode |
 
 The daemon also prints one compact operator stats line per selected radio every
@@ -746,13 +746,13 @@ The daemon also prints one compact operator stats line per selected radio every
 | `TX=1\n` | matching CONF socket | Local radio transmit started |
 | `TX=0\n` | matching CONF socket | Local radio transmit finished |
 | `STATUS RADIO=... TX=... CAD=... GETRSSI=... TXRESULT=... TXMODE=... TXQUEUE=... TXQ=... TXQDROP=... TXQREJECT=... TXQSTALE=... TXQRESULTDROP=... TXQDONE=... TXQLAST=... TXQSEQ=... CADWAIT=... CADIDLE=... CADPOLL=... CADTXAFTERTIMEOUT=... CADMONITOR=... CADRSSI=...\n` | requesting CONF socket | Reply to `GET STATUS` |
-| `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=...\n` | requesting CONF socket | Reply to `GET STATS` |
+| `STATS UPTIME=... RADIO=... RX=... RXBYTES=... RXDROPS=... TXOK=... TXERR=... TXBUSY=... CADTIMEOUT=... CADSEND=... RXREARMFAIL=...\n` | requesting CONF socket | Reply to `GET STATS` |
 | `CHANNEL RADIO=... BUSY=... CAD=... CADSCAN=... CADSTATE=... RSSI=... PACKETRSSI=... LIVERSSI=... MODE=... TXMODE=...\n` | requesting CONF socket | Reply to `GET CHANNEL` |
 | log: `kein Client mehr verbunden -> GETRSSI auto-stop` | daemon stdout/log | RSSI stream stopped because no CONF client is connected |
 
 `GETRSSI=1` automatically stops when no CONF client remains connected. A reconnect must send `SET GETRSSI=1` again.
 
-`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor` for legacy CONF clients that expect CAD broadcasts but cannot send the command. It is a smoothed live-RSSI busy indication, not true scan-based CAD: when enabled and a CONF client is connected, the daemon samples a non-destructive live-RSSI read at most every `200 ms`. Busy (`CAD=1`) asserts immediately when the sample is at or above the `CADRSSI` threshold (default `-90 dBm`); free (`CAD=0`) is published only after two consecutive samples at least `3 dB` below the threshold (about `400 ms` of clearly-free channel), while values in the dead band keep the current state. Each transition is broadcast exactly once, and a pending or newly received RF packet never suppresses or delays the `CAD=0`. The monitor never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe.
+`CAD=1/0` monitoring is opt-in per band via `SET CADMONITOR=1` (default off), or at boot with `--cad-monitor` for legacy CONF clients that expect CAD broadcasts but cannot send the command. It is a smoothed live-RSSI busy indication, not true scan-based CAD: when enabled and a CONF client is connected, the daemon samples a non-destructive live-RSSI read at most every `200 ms`. Busy (`CAD=1`) asserts immediately when the sample is at or above the `CADRSSI` threshold (default `-90 dBm`); free (`CAD=0`) is published only after two consecutive samples at least `3 dB` below the threshold (about `400 ms` of clearly-free channel), while values in the dead band keep the current state. Each transition is broadcast exactly once, and a pending or newly received RF packet never suppresses or delays the `CAD=0`. The monitor never runs `scanChannel` or otherwise interrupts continuous RX, so it cannot disturb reception. Without the opt-in (or without a CONF client) no monitoring runs. The scanChannel-based CAD is used only for MANAGED TX gating and the on-demand `GET CHANNEL` probe. A received packet that the main loop has not drained yet makes the scan probe report BUSY without scanning — the probe's IRQ-clear/re-arm never destroys a pending packet.
 
 ## Examples
 

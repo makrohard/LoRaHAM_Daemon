@@ -42,8 +42,9 @@ static void test_lora_policy(void)
 
     expect_int("lora preamble rejects 5", config_policy_lora_preamble_valid(5), 0);
     expect_int("lora preamble accepts 6", config_policy_lora_preamble_valid(6), 1);
-    expect_int("lora preamble accepts 65535", config_policy_lora_preamble_valid(65535), 1);
-    expect_int("lora preamble rejects 65536", config_policy_lora_preamble_valid(65536), 0);
+    expect_int("lora preamble accepts 512", config_policy_lora_preamble_valid(512), 1);
+    expect_int("lora preamble rejects 513 (airtime cap)", config_policy_lora_preamble_valid(513), 0);
+    expect_int("lora preamble rejects 65535 (airtime cap)", config_policy_lora_preamble_valid(65535), 0);
 
     expect_int("lora sync accepts ff", config_policy_lora_sync_valid(0xFF), 1);
     expect_int("lora sync rejects 100", config_policy_lora_sync_valid(0x100), 0);
@@ -98,6 +99,8 @@ static void test_fsk_policy(void)
 
     expect_int("fsk preamble accepts 0", config_policy_fsk_preamble_valid(0), 1);
     expect_int("fsk preamble rejects -1", config_policy_fsk_preamble_valid(-1), 0);
+    expect_int("fsk preamble accepts 2048", config_policy_fsk_preamble_valid(2048), 1);
+    expect_int("fsk preamble rejects 2049 (airtime cap)", config_policy_fsk_preamble_valid(2049), 0);
 
     expect_int("fsk sync rejects 0", config_policy_fsk_sync_valid(0x00), 0);
     expect_int("fsk sync accepts 12", config_policy_fsk_sync_valid(0x12), 1);
@@ -105,6 +108,23 @@ static void test_fsk_policy(void)
     expect_int("fsk sync rejects 1200", config_policy_fsk_sync_valid(0x1200), 0);
     expect_int("fsk sync accepts normalized 0012", config_policy_fsk_sync_valid(0x0012), 1);
     expect_int("fsk sync rejects 10000", config_policy_fsk_sync_valid(0x10000), 0);
+}
+
+/* Audit P1-4: band frequency policy. */
+static void test_freq_band_policy(void)
+{
+    expect_int("433 band accepts 433.900",
+               config_policy_freq_valid_band(433.900f, 430.0f, 440.0f), 1);
+    expect_int("433 band rejects 869.525",
+               config_policy_freq_valid_band(869.525f, 430.0f, 440.0f), 0);
+    expect_int("868 band accepts 869.525",
+               config_policy_freq_valid_band(869.525f, 863.0f, 870.0f), 1);
+    expect_int("868 band rejects 433.900",
+               config_policy_freq_valid_band(433.900f, 863.0f, 870.0f), 0);
+    expect_int("band edges inclusive",
+               config_policy_freq_valid_band(430.0f, 430.0f, 440.0f), 1);
+    expect_int("degenerate range fails closed",
+               config_policy_freq_valid_band(433.9f, 0.0f, 0.0f), 0);
 }
 
 int main(int argc, char **argv)
@@ -128,6 +148,8 @@ int main(int argc, char **argv)
 
     test_lora_policy();
     test_fsk_policy();
+
+    test_freq_band_policy();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

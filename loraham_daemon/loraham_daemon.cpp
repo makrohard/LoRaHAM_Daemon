@@ -191,9 +191,17 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     // Wait for socket events.
     int ret = daemon_wait_for_events(event_set, readfds);
     if (ret < 0) {
-        if (errno == EINTR && daemon_lifecycle_stop_requested()) {
+        switch (daemon_lifecycle_classify_wait_error(
+                    errno, daemon_lifecycle_stop_requested())) {
+        case DAEMON_WAIT_ERROR_STOPPING:
             daemon_debug_ctx("LIFE", "Event-Wait durch Stop unterbrochen");
             return;
+        case DAEMON_WAIT_ERROR_SILENT:
+            daemon_debug_ctx("LIFE",
+                             "Event-Wait durch Signal unterbrochen (EINTR)");
+            return;
+        case DAEMON_WAIT_ERROR_LOG:
+            break;
         }
 
         perror("event_loop_wait");
@@ -386,10 +394,12 @@ static bool daemon_parse_args(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    /* Resolve the hardware preset against the selected band; an unknown
-     * preset fails closed via the standard usage-error path. */
-    if (!daemon_hardware_profile_resolve(
-            daemon_radio_433_enabled() ? 433 : 868)) {
+    /* Selection is final: freeze the band descriptor, then resolve the
+     * hardware preset against it; an unknown preset fails closed via the
+     * standard usage-error path. */
+    daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
+                                                   : RADIO_BAND_868);
+    if (!daemon_hardware_profile_resolve(daemon_band()->band_number)) {
         fprintf(stderr, "Ungültiges Hardware-Profil: %s\n",
                 daemon_hardware_preset_name());
         fprintf(stderr, "Bekannt: %s\n", daemon_hardware_profile_known());
@@ -400,9 +410,6 @@ static bool daemon_parse_args(int argc, char *argv[])
                      daemon_hw_profile.name,
                      daemon_chip_family_name(daemon_hw_profile.family));
 
-    /* Selection and profile are final: freeze the band descriptor. */
-    daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
-                                                   : RADIO_BAND_868);
 
     return is_daemon;
 }

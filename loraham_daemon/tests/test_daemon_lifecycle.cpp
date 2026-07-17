@@ -165,6 +165,76 @@ static void test_stdio_redirect_appends_and_flushes(void)
 
 /* --- CLI parsing and test sequence --- */
 
+/* Audit L5d: benign EINTR (no stop pending) must not reach the perror path;
+ * EINTR during stop and real errors keep their behavior. */
+static void test_wait_error_classification(void)
+{
+    expect_int("EINTR without stop is silent",
+               daemon_lifecycle_classify_wait_error(EINTR, 0),
+               DAEMON_WAIT_ERROR_SILENT);
+    expect_int("EINTR with stop exits the tick",
+               daemon_lifecycle_classify_wait_error(EINTR, 1),
+               DAEMON_WAIT_ERROR_STOPPING);
+    expect_int("EBADF is logged",
+               daemon_lifecycle_classify_wait_error(EBADF, 0),
+               DAEMON_WAIT_ERROR_LOG);
+    expect_int("EBADF during stop is still logged",
+               daemon_lifecycle_classify_wait_error(EBADF, 1),
+               DAEMON_WAIT_ERROR_LOG);
+    expect_int("EINVAL is logged",
+               daemon_lifecycle_classify_wait_error(EINVAL, 0),
+               DAEMON_WAIT_ERROR_LOG);
+}
+
+/* Audit P1-5: the log path must never follow a symlink planted at the
+ * predictable /tmp path by another local user. */
+static void test_stdio_redirect_rejects_symlink(void)
+{
+    char target[] = "/tmp/loraham-lifecycle-target.XXXXXX";
+    const char *link_path = "/tmp/loraham-lifecycle-symlink-test.log";
+    pid_t pid;
+    int status;
+    int fd;
+
+    fd = mkstemp(target);
+    if (fd < 0) {
+        g_fail++;
+        printf("[FAIL] symlink test temp file\n");
+        return;
+    }
+    close(fd);
+
+    unlink(link_path);
+    if (symlink(target, link_path) != 0) {
+        unlink(target);
+        g_fail++;
+        printf("[FAIL] symlink test setup\n");
+        return;
+    }
+
+    fflush(NULL);
+    pid = fork();
+    if (pid < 0) {
+        unlink(link_path);
+        unlink(target);
+        g_fail++;
+        printf("[FAIL] symlink test fork\n");
+        return;
+    }
+
+    if (pid == 0) {
+        /* Child: redirect must FAIL on the symlink (exit 0 = rejected). */
+        _exit(daemon_lifecycle_redirect_stdio(link_path) != 0 ? 0 : 1);
+    }
+
+    waitpid(pid, &status, 0);
+    expect_int("redirect rejects symlinked log path",
+               (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 1 : 0, 1);
+
+    unlink(link_path);
+    unlink(target);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -188,7 +258,9 @@ int main(int argc, char **argv)
     test_stop_request_is_idempotent();
     test_stdio_redirect_rejects_empty_path();
     test_stdio_redirect_appends_and_flushes();
+    test_stdio_redirect_rejects_symlink();
     test_signal_install_and_raise();
+    test_wait_error_classification();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

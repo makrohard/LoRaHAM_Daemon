@@ -58,6 +58,7 @@ test_binaries=(
   "$TEST_DIR/test_packaging"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
   "$TEST_DIR/test_framed_data"
@@ -139,6 +140,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_band.cpp"
   "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
+  "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
   "$SCRIPT_DIR/client_slot.cpp"
@@ -424,6 +426,8 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/daemon_tx_completion.cpp" \
     "$SCRIPT_DIR/daemon_tx_executor.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_status.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
@@ -635,6 +639,8 @@ build_one_radio_cad_probe_test() {
     "$SCRIPT_DIR/daemon_tx_completion.cpp" \
     "$SCRIPT_DIR/daemon_tx_executor.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
@@ -669,6 +675,30 @@ build_one_cad_monitor_state_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
+}
+
+build_one_rx_rearm_test() {
+  local src="$1"
+  local out="$2"
+
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for RX re-arm test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    -pthread \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}" \
@@ -836,6 +866,7 @@ build_one_config_apply_transactional_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_apply.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/config_validate.cpp" \
     "$SCRIPT_DIR/config_value.cpp" \
@@ -896,6 +927,7 @@ build_one_config_dispatch_test() {
     "$SCRIPT_DIR/config_status.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/client_output_queue.cpp" \
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
@@ -939,6 +971,7 @@ build_tests() {
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
+  build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
   build_one_framed_data_test "$TEST_DIR/test_framed_data.cpp" "$TEST_DIR/test_framed_data"
   build_one_framed_data_test "$TEST_DIR/test_framed_rx_contract.cpp" "$TEST_DIR/test_framed_rx_contract"
@@ -1387,6 +1420,22 @@ echo "SKIP:          $assert_skip_total"
 echo "XFAIL:         $assert_xfail_total"
 echo "XPASS:         $assert_xpass_total"
 echo "Elapsed:       ${suite_elapsed}s"
+
+# Fail-open guards: a binary that exits 0 without a parseable summary, or a
+# summary carrying assertion failures / unexpected passes, must fail the
+# suite even when every exit status was zero.
+if [[ "$missing_summaries" -gt 0 ]]; then
+  echo "FATAL: $missing_summaries test binaries produced no summary line"
+  overall_rc=1
+fi
+if [[ "$assert_fail_total" -gt 0 ]]; then
+  echo "FATAL: $assert_fail_total assertion failures reported in summaries"
+  overall_rc=1
+fi
+if [[ "$assert_xpass_total" -gt 0 ]]; then
+  echo "FATAL: $assert_xpass_total unexpected XPASS results"
+  overall_rc=1
+fi
 
 if [[ "$overall_rc" -eq 0 ]]; then
   echo "OVERALL OK"

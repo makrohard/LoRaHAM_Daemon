@@ -10,6 +10,7 @@
 #include "daemon_log.h"
 #include "daemon_band.h"
 #include "daemon_radio_runtime.h"
+#include "daemon_rx_rearm.h"
 #include "radio_controller.h"
 #include "radio_health.h"
 #include "rf_packet.h"
@@ -24,7 +25,8 @@ static bool lora_send_valid_band(int band)
 
 static const char *lora_tx_log_ctx(int band)
 {
-    return band == 433 ? "TX433" : "TX868";
+    (void)band;
+    return daemon_band()->tx_log_ctx;
 }
 
 static bool lora_send_acquire_controller_tx(RadioController *ctrl)
@@ -211,7 +213,8 @@ static TxResult lora_send_controller(RadioController *ctrl,
         ctrl->driver->clearIrq(0xFFFFFFFF);
         ctrl->received.store(false);
         ctrl->driver->setPacketReceivedAction(ctrl->rx_callback);
-        ctrl->driver->startReceive();
+        daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
+                                    "TX-Restore");
 
         result = state == RADIOLIB_ERR_NONE
             ? TX_RESULT_OK

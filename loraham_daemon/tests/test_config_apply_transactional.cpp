@@ -1,4 +1,5 @@
 #include "../config_apply.h"
+#include "../daemon_band.h"
 
 #include <stdio.h>
 #include <atomic>
@@ -31,8 +32,17 @@ struct FakeRadio : public RadioDriver {
     {
     }
 
-    int16_t switchMode(RadioMode_t mode) override
+    const RadioRfDefaults *last_switch_defaults = NULL;
+    int call_seq = 0;
+    int switch_seq = -1;
+    int first_apply_seq = -1;
+
+    int16_t switchMode(RadioMode_t mode,
+                       const RadioRfDefaults *defaults) override
     {
+        last_switch_defaults = defaults;
+        switch_seq = call_seq++;
+
         if (mode == RADIO_MODE_FSK) {
             begin_fsk_count++;
             return begin_fsk_result;
@@ -45,6 +55,9 @@ struct FakeRadio : public RadioDriver {
     void applyLoraParam(const char *, const std::string &,
                         const std::string &) override
     {
+        if (first_apply_seq < 0)
+            first_apply_seq = call_seq;
+        call_seq++;
         lora_apply_count++;
     }
 
@@ -229,6 +242,68 @@ static void test_fsk_rxbw_follows_driver_family(void)
     }
 }
 
+/* --- SET MODE lands on the band boot defaults (audit M2) ------------------ */
+
+static void test_mode_switch_passes_band_defaults(void)
+{
+    // 868 process: MODE switch must carry 869.525, never chip defaults.
+    {
+        FakeRadio radio;
+        RadioMode_t mode = RADIO_MODE_FSK;
+        std::atomic<bool> getrssi(false);
+
+        daemon_band_resolve(RADIO_BAND_868);
+        apply_cmd(radio, "SET MODE=LORA", mode, getrssi);
+
+        expect_int("868 lora switch got defaults",
+                   radio.last_switch_defaults != NULL, 1);
+        expect_int("868 lora switch freq",
+                   (int)(radio.last_switch_defaults->freq_mhz * 1000.0f + 0.5f),
+                   869525);
+
+        apply_cmd(radio, "SET MODE=FSK", mode, getrssi);
+        expect_int("868 fsk switch freq",
+                   (int)(radio.last_switch_defaults->freq_mhz * 1000.0f + 0.5f),
+                   869525);
+    }
+
+    // 433 process: MODE switch must carry 433.900.
+    {
+        FakeRadio radio;
+        RadioMode_t mode = RADIO_MODE_FSK;
+        std::atomic<bool> getrssi(false);
+
+        daemon_band_resolve(RADIO_BAND_433);
+        apply_cmd(radio, "SET MODE=LORA", mode, getrssi);
+
+        expect_int("433 lora switch got defaults",
+                   radio.last_switch_defaults != NULL, 1);
+        expect_int("433 lora switch freq",
+                   (int)(radio.last_switch_defaults->freq_mhz * 1000.0f + 0.5f),
+                   433900);
+        expect_int("433 lora switch sf",
+                   radio.last_switch_defaults->spreading_factor, 12);
+    }
+}
+
+static void test_mode_switch_applies_before_explicit_params(void)
+{
+    // Combined command: MODE lands on band defaults FIRST, then the explicit
+    // params override them — order is the guarantee that FREQ/SF win.
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_FSK;
+    std::atomic<bool> getrssi(false);
+
+    daemon_band_resolve(RADIO_BAND_433);
+    apply_cmd(radio, "SET MODE=LORA FREQ=433.175 SF=11", mode, getrssi);
+
+    expect_int("combined switch happened", radio.begin_count, 1);
+    expect_int("combined params applied", radio.lora_apply_count, 2);
+    expect_int("combined switch before params",
+               radio.switch_seq >= 0 &&
+               radio.first_apply_seq > radio.switch_seq, 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -248,6 +323,10 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Baseline band for all MODE-applying tests (config_apply reads the
+     * descriptor for the boot RF defaults). */
+    daemon_band_resolve(RADIO_BAND_433);
+
     test_invalid_getrssi_has_no_side_effects();
     test_invalid_fsk_value_has_no_mode_or_getrssi_side_effects();
     test_malformed_token_has_no_side_effects();
@@ -255,6 +334,8 @@ int main(int argc, char **argv)
     test_valid_mode_and_getrssi_still_apply();
     test_valid_lora_parameter_still_applies();
     test_fsk_rxbw_follows_driver_family();
+    test_mode_switch_passes_band_defaults();
+    test_mode_switch_applies_before_explicit_params();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

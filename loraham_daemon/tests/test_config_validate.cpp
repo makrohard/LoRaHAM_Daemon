@@ -43,7 +43,10 @@ static ConfigValidationResult validate(const char *cmd,
     ConfigCommand parsed = config_parse_command(cmd);
     ConfigValidationResult result;
 
-    *ok = config_validate_command(parsed, current_mode, &result);
+    /* 433-band policy: tests validate against the 430–440 MHz range. */
+    *ok = config_validate_command(parsed, current_mode, &result,
+                                  DAEMON_CHIP_FAMILY_SX127X,
+                                  430.0f, 440.0f);
 
     return result;
 }
@@ -56,7 +59,8 @@ static ConfigValidationResult validate_family(const char *cmd,
     ConfigCommand parsed = config_parse_command(cmd);
     ConfigValidationResult result;
 
-    *ok = config_validate_command(parsed, current_mode, &result, family);
+    *ok = config_validate_command(parsed, current_mode, &result, family,
+                                  430.0f, 440.0f);
 
     return result;
 }
@@ -199,6 +203,40 @@ static void test_malformed_token_rejects_whole_command(void)
 }
 
 
+/* Audit P1-4: FREQ outside the band descriptor's range fails closed — an
+ * 868 value must never validate under the 433-band policy. */
+static void test_freq_outside_band_rejected(void)
+{
+    int ok = 0;
+    ConfigValidationResult result =
+        validate("SET FREQ=869.525", RADIO_MODE_LORA, &ok);
+
+    expect_int("off-band freq rejected", ok, 0);
+    expect_str("off-band freq key", result.key, "FREQ");
+
+    validate("SET FREQ=433.900", RADIO_MODE_LORA, &ok);
+    expect_int("in-band freq accepted", ok, 1);
+
+    validate("SET FREQ=429.999", RADIO_MODE_LORA, &ok);
+    expect_int("below-band freq rejected", ok, 0);
+}
+
+/* Audit P2-1: duplicate keys are ambiguous (last-one-wins under sequential
+ * apply) and fail closed. */
+static void test_duplicate_key_rejected(void)
+{
+    int ok = 0;
+    ConfigValidationResult result =
+        validate("SET SF=12 SF=7", RADIO_MODE_LORA, &ok);
+
+    expect_int("duplicate key rejected", ok, 0);
+    expect_str("duplicate key name", result.key, "SF");
+    expect_str("duplicate key reason", result.reason, "duplicate key");
+
+    validate("SET SF=12 BW=125", RADIO_MODE_LORA, &ok);
+    expect_int("distinct keys accepted", ok, 1);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -228,6 +266,9 @@ int main(int argc, char **argv)
     test_ignored_wrong_mode_keys_preserve_compatibility();
     test_unknown_key_rejects_whole_command();
     test_malformed_token_rejects_whole_command();
+
+    test_freq_outside_band_rejected();
+    test_duplicate_key_rejected();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

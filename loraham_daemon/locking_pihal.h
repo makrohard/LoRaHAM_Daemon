@@ -45,6 +45,10 @@
  * Lock ordering: callers hold the per-band radio_mutex before any SPI call, and
  * this flock is the lowest-level lock taken last -- no inverse path, no deadlock.
  */
+/* SPI transactions are µs–ms; 2 s of contention on the shared bus lock can
+ * only mean a wedged peer process. */
+#define LORAHAM_SPI_LOCK_TIMEOUT_MS 2000L
+
 class LockingPiHal : public PiHal {
   public:
     /* flock_fn is injectable for tests; production uses the real flock(). */
@@ -80,8 +84,16 @@ class LockingPiHal : public PiHal {
             if (_lockFd < 0)
                 fatal("SPI-Sperre nicht verfuegbar (fail-closed)");
 
-            if (loraham_flock_acquire_ex(_lockFd, _flock) != 0)
+            /* Bounded (audit P1-3): a live-but-wedged peer must not block
+             * this daemon forever. Expiry is fatal — systemd restarts a
+             * dead process; it cannot see a silently hung one. */
+            if (loraham_flock_acquire_ex_deadline(_lockFd, _flock,
+                    LORAHAM_SPI_LOCK_TIMEOUT_MS) != 0) {
+                if (errno == ETIMEDOUT)
+                    fatal("SPI-Sperre nicht binnen Frist erhalten "
+                          "(Peer verklemmt?)");
                 fatal("flock(LOCK_EX) hart fehlgeschlagen");
+            }
 
             _held = true;
         }

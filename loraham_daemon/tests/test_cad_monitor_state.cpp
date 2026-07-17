@@ -73,7 +73,8 @@ struct FakeRadio : public RadioDriver {
     }
 
     int16_t begin(const RadioRfDefaults *) override { return 0; }
-    int16_t switchMode(RadioMode_t) override { return 0; }
+    int16_t switchMode(RadioMode_t,
+                       const RadioRfDefaults *) override { return 0; }
     void applyLoraParam(const char *, const std::string &,
                         const std::string &) override {}
     void applyFskParam(const char *, const std::string &,

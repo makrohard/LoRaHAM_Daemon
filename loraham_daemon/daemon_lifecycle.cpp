@@ -1,6 +1,7 @@
 #include "daemon_lifecycle.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,8 +69,28 @@ int daemon_lifecycle_redirect_stdio(const char *log_path)
         return -1;
     }
 
-    if (!freopen(log_path, "a", stdout))
+    /* O_NOFOLLOW (audit P1-5): the fixed /tmp log path must never follow a
+     * symlink planted by another local user; a symlink at the path is a
+     * hard error, not a redirect. The verified descriptor is then re-bound
+     * to the stdout STREAM via /dev/fd (race-free: it names our open file
+     * description, not the path) so the freopen resets FILE buffering —
+     * plain dup2 would keep a stale fully-buffered stream that _exit()
+     * silently drops. */
+    int fd = open(log_path,
+                  O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC,
+                  0640);
+    if (fd < 0)
         return -1;
+
+    char fd_path[64];
+    snprintf(fd_path, sizeof(fd_path), "/dev/fd/%d", fd);
+    if (!freopen(fd_path, "a", stdout)) {
+        int saved_errno = errno;
+        close(fd);
+        errno = saved_errno;
+        return -1;
+    }
+    close(fd);
 
     if (dup2(fileno(stdout), STDERR_FILENO) < 0)
         return -1;
@@ -128,6 +149,16 @@ void daemon_lifecycle_request_stop(int signal_number)
 int daemon_lifecycle_stop_requested(void)
 {
     return daemon_stop_requested_flag ? 1 : 0;
+}
+
+DaemonWaitErrorAction daemon_lifecycle_classify_wait_error(int err,
+                                                           int stop_requested)
+{
+    if (err == EINTR)
+        return stop_requested ? DAEMON_WAIT_ERROR_STOPPING
+                              : DAEMON_WAIT_ERROR_SILENT;
+
+    return DAEMON_WAIT_ERROR_LOG;
 }
 
 void daemon_lifecycle_ignore_sigpipe(void)

@@ -1,6 +1,7 @@
 #include "unix_socket.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -81,6 +82,19 @@ int setup_unix_socket(const char *path, int backlog)
         close(fd);
         unlink(path);
         return -1;
+    }
+
+    /* Nonblocking listener (audit L1): a connection reset between
+     * epoll_wait readiness and accept() must never leave a blocking
+     * accept() hanging the daemon; accept() then returns EAGAIN instead. */
+    {
+        int flags = fcntl(fd, F_GETFL, 0);
+
+        if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+            close(fd);
+            unlink(path);
+            return -1;
+        }
     }
 
     if (listen(fd, backlog) < 0) {

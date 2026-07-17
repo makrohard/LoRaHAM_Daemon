@@ -230,6 +230,66 @@ static void test_flock_hard_failure(void)
     expect_int("hard flock failure not retried", g_fake_calls, 1);
 }
 
+/* --- deadline-bounded acquisition (audit P1-3) ---------------------------- */
+
+static int g_busy_calls = 0;
+static int g_busy_remaining = 0;
+
+static int fake_flock_busy(int fd, int op)
+{
+    (void)fd;
+    (void)op;
+    g_busy_calls++;
+    if (g_busy_remaining-- > 0) {
+        errno = EWOULDBLOCK;
+        return -1;
+    }
+    return 0;
+}
+
+static int fake_flock_busy_forever(int fd, int op)
+{
+    (void)fd;
+    (void)op;
+    g_busy_calls++;
+    errno = EWOULDBLOCK;
+    return -1;
+}
+
+static void test_flock_deadline_recovers(void)
+{
+    g_busy_calls = 0;
+    g_busy_remaining = 3;   /* three busy polls, then the peer releases */
+
+    int rc = loraham_flock_acquire_ex_deadline(3, fake_flock_busy, 2000L);
+
+    expect_int("deadline: acquired after contention", rc, 0);
+    expect_int("deadline: polled until free", g_busy_calls, 4);
+}
+
+static void test_flock_deadline_expires(void)
+{
+    g_busy_calls = 0;
+    errno = 0;
+
+    int rc = loraham_flock_acquire_ex_deadline(3, fake_flock_busy_forever, 20L);
+
+    expect_int("deadline: wedged peer times out", rc, -1);
+    expect_int("deadline: errno is ETIMEDOUT", errno == ETIMEDOUT ? 1 : 0, 1);
+    expect_int("deadline: polled more than once", g_busy_calls > 1 ? 1 : 0, 1);
+}
+
+static void test_flock_deadline_hard_failure(void)
+{
+    g_fake_calls = 0;
+
+    int rc = loraham_flock_acquire_ex_deadline(3, fake_flock_hardfail, 2000L);
+
+    expect_int("deadline: hard failure reported (-1)", rc, -1);
+    expect_int("deadline: hard failure not retried", g_fake_calls, 1);
+    expect_int("deadline: hard failure keeps errno", errno == EIO ? 1 : 0, 1);
+}
+
 /* --- unlock (LOCK_UN) failure handling (M4-P0-3) ------------------------- */
 
 static int g_unlock_calls = 0;
@@ -313,6 +373,9 @@ int main(void)
     test_no_transaction_without_lock();
     test_flock_eintr_retry();
     test_flock_hard_failure();
+    test_flock_deadline_recovers();
+    test_flock_deadline_expires();
+    test_flock_deadline_hard_failure();
     test_unlock_eintr_retry();
     test_unlock_hard_failure_reported();
     test_unlock_hard_failure_is_fatal();

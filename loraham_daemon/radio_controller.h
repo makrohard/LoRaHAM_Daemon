@@ -68,6 +68,7 @@ struct RadioController {
     RadioHealth health;
     RadioMode_t mode;
     std::atomic<bool> received;
+    std::atomic<bool> rx_rearm_pending;
     std::atomic<bool> tx_busy;
     std::atomic<uint32_t> tx_status_generation;
     uint32_t tx_status_broadcast_generation;
@@ -123,6 +124,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->mode = RADIO_MODE_LORA;
     ctrl->received.store(false);
+    ctrl->rx_rearm_pending.store(false);
     ctrl->tx_busy.store(false);
     ctrl->tx_status_generation.store(0u);
     ctrl->tx_status_broadcast_generation = 0u;

@@ -72,6 +72,7 @@ static void radio_controller_shutdown(RadioController *ctrl)
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
     ctrl->received.store(false);
+    ctrl->rx_rearm_pending.store(false);
     ctrl->tx_busy.store(false);
     ctrl->cad_active.store(false);
     ctrl->getrssi_active.store(false);

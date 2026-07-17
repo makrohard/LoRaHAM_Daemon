@@ -4,6 +4,7 @@
 #include <mutex>
 
 #include "client_slot.h"
+#include "daemon_band.h"
 #include "daemon_io_runtime.h"
 #include "daemon_log.h"
 #include "daemon_protocol.h"
@@ -16,14 +17,14 @@
 #include "radio_health.h"
 
 /* --- CAD/RSSI log contexts ---------------------------------------------- */
-static const char *daemon_cad_log_ctx(RadioController *ctrl)
+static const char *daemon_cad_log_ctx(RadioController *)
 {
-    return (ctrl && ctrl->band == RADIO_BAND_433) ? "CAD433" : "CAD868";
+    return daemon_band()->cad_log_ctx;
 }
 
-static const char *daemon_rssi_log_ctx(RadioController *ctrl)
+static const char *daemon_rssi_log_ctx(RadioController *)
 {
-    return (ctrl && ctrl->band == RADIO_BAND_433) ? "RSSI433" : "RSSI868";
+    return daemon_band()->rssi_log_ctx;
 }
 
 
@@ -156,7 +157,7 @@ static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 /* --- Periodic operator stats -------------------------------------------- */
 static void daemon_print_radio_stats(RadioController *ctrl)
 {
-    char fields[256];
+    char fields[384];
     long uptime = daemon_stats_uptime_seconds(daemon_now_ms());
 
     daemon_stats_format_fields(fields,

@@ -30,6 +30,13 @@ typedef struct {
     const char *conf_log_ctx;      /* "CONF433" / "CONF868" */
     const char *config_log_ctx;    /* "CONFIG433" / "CONFIG868" */
     const char *client_log_ctx;    /* "CLIENT433" / "CLIENT868" */
+    const char *cad_log_ctx;       /* "CAD433" / "CAD868" */
+    const char *rssi_log_ctx;      /* "RSSI433" / "RSSI868" */
+    /* Operational frequency policy (audit P1-4): SET FREQ outside this range
+     * is rejected so an --radio 868 process can never tune off its logical
+     * band (locks/sockets/logs would keep lying about the band). */
+    float       freq_min_mhz;
+    float       freq_max_mhz;
     const struct RadioRfDefaults *rf_defaults; /* boot RF defaults */
     int         legacy_led_pin;    /* DAEMON_LED_PIN_433 / _868 */
 } DaemonBandDescriptor;
