@@ -256,7 +256,6 @@ void daemon_process_framed_data_slots(const char *tag,
 
 
 void daemon_drain_framed_tx_completions(const char *tag,
-                                        int band,
                                         ClientSlot *slots,
                                         int max_clients)
 {
@@ -265,13 +264,13 @@ void daemon_drain_framed_tx_completions(const char *tag,
     if (!slots || max_clients <= 0)
         return;
 
-    while (daemon_tx_async_runtime_pop_completion_for_band(band, &result) == 0) {
+    while (daemon_tx_async_runtime_pop_completion(&result) == 0) {
         int rc = daemon_tx_completion_deliver_to_slot(slots,
                                                       max_clients,
                                                       &result);
 
         if (rc == DAEMON_TX_COMPLETION_DELIVERY_STALE) {
-            daemon_tx_async_runtime_record_completion_stale_for_band(band);
+            daemon_tx_async_runtime_record_completion_stale();
             daemon_debug_ctx(tag ? tag : "TXF",
                              "TX completion stale, dropped");
             continue;

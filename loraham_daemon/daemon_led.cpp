@@ -4,7 +4,8 @@
 
 #include <lgpio.h>
 
-#include "daemon_radio_selection.h"
+#include "daemon_band.h"
+#include "daemon_radio_runtime.h"
 #include "hardware_profile.h"
 
 /* --- LED/GPIO helpers ---------------------------------------------------- */
@@ -14,33 +15,31 @@
  * ownership and duplicate-instance rejection are handled by the per-band FD
  * locks in daemon_instance_lock (instance-433.lock / instance-868.lock).
  *
- * The LED line is claimed only for the single band selected via --radio, and a
- * failed claim of the *selected* band is treated as fatal by the caller because
- * the LED is a required hardware resource for that band.
+ * The LED line is claimed only for the single band this process serves, and a
+ * failed claim is treated as fatal by the caller because the LED is a required
+ * hardware resource for that band.
  */
 
 static int daemon_led_chip = -1;
-static int daemon_led_433_claimed = 0;
-static int daemon_led_868_claimed = 0;
+static int daemon_led_claimed = 0;
 
-/* Profile-configurable LED lines (legacy defaults); < 0 = LED disabled. */
-static int daemon_led_pin_433 = DAEMON_LED_PIN_433;
-static int daemon_led_pin_868 = DAEMON_LED_PIN_868;
+/* Profile-configurable LED line (legacy default set at configure time);
+ * < 0 = LED disabled. */
+static int daemon_led_pin = -1;
+static int daemon_led_pin_set = 0;
 
-void daemon_led_configure(int pin_433, int pin_868)
+void daemon_led_configure(int pin)
 {
-    daemon_led_pin_433 = pin_433;
-    daemon_led_pin_868 = pin_868;
+    daemon_led_pin = pin;
+    daemon_led_pin_set = 1;
 }
 
-int daemon_led_pin_433_configured(void)
+int daemon_led_pin_configured(void)
 {
-    return daemon_led_pin_433;
-}
+    if (!daemon_led_pin_set)
+        return daemon_band()->legacy_led_pin;
 
-int daemon_led_pin_868_configured(void)
-{
-    return daemon_led_pin_868;
+    return daemon_led_pin;
 }
 
 static int daemon_led_claim_pin(int pin, int *claimed)
@@ -74,8 +73,7 @@ static void daemon_led_release_pin(int pin, int *claimed)
 
 void daemon_led_shutdown(void)
 {
-    daemon_led_release_pin(daemon_led_pin_433, &daemon_led_433_claimed);
-    daemon_led_release_pin(daemon_led_pin_868, &daemon_led_868_claimed);
+    daemon_led_release_pin(daemon_led_pin_configured(), &daemon_led_claimed);
 
     if (daemon_led_chip >= 0) {
         lgGpiochipClose(daemon_led_chip);
@@ -83,12 +81,8 @@ void daemon_led_shutdown(void)
     }
 }
 
-static int daemon_led_claim_band(bool enabled, int pin, int *claimed,
-                                 const char *band)
+static int daemon_led_claim_band(int pin, int *claimed, const char *band)
 {
-    if (!enabled)
-        return 0;
-
     /* Profile without an LED line: feature cleanly disabled, not an error. */
     if (pin < 0) {
         printf("[GPIO] Hinweis: Kein LED-GPIO im Hardware-Profil für Band %s "
@@ -109,6 +103,8 @@ static int daemon_led_claim_band(bool enabled, int pin, int *claimed,
 
 int daemon_led_init(void)
 {
+    int pin = daemon_led_pin_configured();
+
     daemon_led_shutdown();
 
     daemon_led_chip = lgGpiochipOpen(0);
@@ -118,21 +114,14 @@ int daemon_led_init(void)
         return -1;
     }
 
-    /* Claim the LED line only for the selected band. */
-    if (daemon_led_claim_band(daemon_radio_433_enabled(),
-                              daemon_led_pin_433,
-                              &daemon_led_433_claimed, "433") < 0 ||
-        daemon_led_claim_band(daemon_radio_868_enabled(),
-                              daemon_led_pin_868,
-                              &daemon_led_868_claimed, "868") < 0) {
+    /* Claim the LED line of this process's band only. */
+    if (daemon_led_claim_band(pin, &daemon_led_claimed,
+                              daemon_band()->tag) < 0) {
         daemon_led_shutdown();
         return -1;
     }
 
-    if (daemon_radio_433_enabled())
-        daemon_led_set_pin(daemon_led_pin_433, 0);
-    if (daemon_radio_868_enabled())
-        daemon_led_set_pin(daemon_led_pin_868, 0);
+    daemon_led_set_pin(pin, 0);
 
     return 0;
 }
@@ -142,14 +131,9 @@ int daemon_led_ready(void)
     if (daemon_led_chip < 0)
         return 0;
 
-    /* Only the selected band must hold its LED line; a profile without an
-     * LED line (pin < 0) counts as ready with the LED feature disabled. */
-    if (daemon_radio_433_enabled() && daemon_led_pin_433 >= 0 &&
-        !daemon_led_433_claimed)
-        return 0;
-
-    if (daemon_radio_868_enabled() && daemon_led_pin_868 >= 0 &&
-        !daemon_led_868_claimed)
+    /* The band must hold its LED line; a profile without an LED line
+     * (pin < 0) counts as ready with the LED feature disabled. */
+    if (daemon_led_pin_configured() >= 0 && !daemon_led_claimed)
         return 0;
 
     return 1;
@@ -162,4 +146,32 @@ void daemon_led_set_pin(int pin, int state)
 
     if (daemon_led_ready())
         lgGpioWrite(daemon_led_chip, pin, state ? 1 : 0);
+}
+
+/* --- Bodies moved verbatim from daemon_radio_runtime.h (D3; hosted here so LED logic links without the TX runtime) --- */
+
+void daemon_radio_runtime_led(RadioController *ctrl,
+                                            int state)
+{
+    if (!ctrl)
+        return;
+
+    daemon_led_set_pin(ctrl->led_pin, state);
+}
+
+void daemon_radio_runtime_sync_led(RadioController *ctrl)
+{
+    if (!ctrl)
+        return;
+
+    std::lock_guard<std::mutex> led_lock(ctrl->led_mutex);
+
+    int desired = (ctrl->tx_busy.load() || ctrl->cad_broadcast_active.load())
+                      ? 1 : 0;
+
+    if (desired == ctrl->led_state)
+        return;
+
+    ctrl->led_state = desired;
+    daemon_led_set_pin(ctrl->led_pin, desired);
 }

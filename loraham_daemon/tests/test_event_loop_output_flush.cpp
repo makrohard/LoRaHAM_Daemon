@@ -1,4 +1,4 @@
-#include "../client_set.h"
+#include "../client_slot.h"
 #include "../event_loop.h"
 
 #include <errno.h>
@@ -9,10 +9,11 @@
 #include <sys/socket.h>
 
 /*
- * EPOLLOUT / queued output flush tests.
+ * EPOLLOUT / queued output flush tests (ClientSlot API).
  *
  * This locks the non-blocking write-completion step: clients with pending
- * output are registered for write readiness and flushed only when ready.
+ * output are registered for write readiness (mirroring the daemon's fd
+ * reconciliation) and flushed only when ready.
  */
 
 static int g_ok = 0;
@@ -48,6 +49,21 @@ static void close_pair(int sv[2])
         close(sv[1]);
 }
 
+/* Mirror of the daemon's reconciliation rule: slots with pending output get
+ * READ|WRITE interest, others READ only. */
+static void add_slot_to_event_loop(ClientSlot *slot, EventLoopSet *set)
+{
+    if (!client_slot_has_client(slot))
+        return;
+
+    if (client_output_queue_pending(&slot->output) > 0)
+        event_loop_add_fd_events(set, client_slot_fd(slot),
+                                 EVENT_LOOP_EVENT_READ |
+                                 EVENT_LOOP_EVENT_WRITE);
+    else
+        event_loop_add_fd(set, client_slot_fd(slot));
+}
+
 static void test_event_loop_write_ready(void)
 {
     int sv[2] = {-1, -1};
@@ -78,13 +94,12 @@ static void test_event_loop_write_ready(void)
 static void test_pending_output_registers_write_interest(void)
 {
     int sv[2] = {-1, -1};
-    int clients[1] = {0};
-    ClientOutputQueue queues[1];
+    ClientSlot slots[1];
     EventLoopSet set;
     EventLoopReadySet ready;
     const uint8_t payload[] = {'O', 'K'};
 
-    client_output_queue_init_all(queues, 1);
+    client_slot_init_all(slots, 1);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
         g_fail++;
@@ -92,38 +107,40 @@ static void test_pending_output_registers_write_interest(void)
         return;
     }
 
-    clients[0] = sv[1];
-    client_set_set_nonblocking(clients[0]);
-    expect_int("pending write append", client_output_queue_append(&queues[0], payload, sizeof(payload)), 1);
+    client_slot_set_fd(&slots[0], sv[1]);
+    client_slot_set_nonblocking(client_slot_fd(&slots[0]));
+    expect_int("pending write append",
+               client_output_queue_append(&slots[0].output, payload,
+                                          sizeof(payload)), 1);
 
     if (event_loop_init(&set) != 0) {
-        client_set_close_slot_with_output(clients, queues, 0);
+        client_slot_close(&slots[0]);
         close(sv[0]);
         g_fail++;
         printf("[FAIL] pending write event loop init\n");
         return;
     }
 
-    client_set_add_to_event_loop_with_output(clients, queues, 1, &set);
+    add_slot_to_event_loop(&slots[0], &set);
     expect_int("pending write wait", event_loop_wait(&set, &ready, 100000) > 0, 1);
-    expect_int("pending output ready", client_set_output_ready(clients, queues, 0, &ready), 1);
+    expect_int("pending output ready",
+               client_slot_output_ready(&slots[0], &ready), 1);
 
     event_loop_close(&set);
     close(sv[0]);
-    client_set_close_slot_with_output(clients, queues, 0);
+    client_slot_close(&slots[0]);
 }
 
 static void test_flush_ready_output_sends_payload(void)
 {
     int sv[2] = {-1, -1};
-    int clients[1] = {0};
-    ClientOutputQueue queues[1];
+    ClientSlot slots[1];
     EventLoopSet set;
     EventLoopReadySet ready;
     const uint8_t payload[] = {'h', 'i'};
     uint8_t got[sizeof(payload)] = {0};
 
-    client_output_queue_init_all(queues, 1);
+    client_slot_init_all(slots, 1);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
         g_fail++;
@@ -131,30 +148,33 @@ static void test_flush_ready_output_sends_payload(void)
         return;
     }
 
-    clients[0] = sv[1];
-    client_set_set_nonblocking(clients[0]);
-    expect_int("flush append", client_output_queue_append(&queues[0], payload, sizeof(payload)), 1);
+    client_slot_set_fd(&slots[0], sv[1]);
+    client_slot_set_nonblocking(client_slot_fd(&slots[0]));
+    expect_int("flush append",
+               client_output_queue_append(&slots[0].output, payload,
+                                          sizeof(payload)), 1);
 
     if (event_loop_init(&set) != 0) {
         close(sv[0]);
-        client_set_close_slot_with_output(clients, queues, 0);
+        client_slot_close(&slots[0]);
         g_fail++;
         printf("[FAIL] flush event loop init\n");
         return;
     }
 
-    client_set_add_to_event_loop_with_output(clients, queues, 1, &set);
+    add_slot_to_event_loop(&slots[0], &set);
     expect_int("flush wait", event_loop_wait(&set, &ready, 100000) > 0, 1);
 
-    client_set_flush_ready_outputs(clients, queues, 1, &ready);
+    client_slot_flush_ready_outputs(slots, 1, &ready);
 
-    expect_size("flush queue empty", client_output_queue_pending(&queues[0]), 0);
+    expect_size("flush queue empty",
+                client_output_queue_pending(&slots[0].output), 0);
     expect_int("flush read size", (int)read(sv[0], got, sizeof(got)), (int)sizeof(payload));
     expect_int("flush payload", memcmp(got, payload, sizeof(payload)) == 0, 1);
 
     event_loop_close(&set);
     close(sv[0]);
-    client_set_close_slot_with_output(clients, queues, 0);
+    client_slot_close(&slots[0]);
 }
 
 int main(int argc, char **argv)

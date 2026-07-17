@@ -1,4 +1,4 @@
-#include "../client_set.h"
+#include "../client_slot.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -8,16 +8,12 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL 0
-#endif
-
 /*
- * Slow client output tests.
+ * Slow-client isolation tests (ClientSlot API).
  *
- * These tests lock the important non-blocking broadcast behavior:
- * a slow client must not block delivery to a fast client, and a full
- * per-client output queue closes only that client.
+ * A client with a full kernel send buffer must not block or disturb other
+ * clients: its payload stays queued, the fast client receives immediately,
+ * and only a client whose user-space queue overflows is closed.
  */
 
 static int g_ok = 0;
@@ -95,7 +91,7 @@ static int fill_send_buffer_until_eagain(int fd)
     memset(payload, 'S', sizeof(payload));
     (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
-    if (client_set_set_nonblocking(fd) != 0)
+    if (client_slot_set_nonblocking(fd) != 0)
         return 0;
 
     for (int i = 0; i < 20000; i++) {
@@ -122,13 +118,11 @@ static void test_slow_client_does_not_block_fast_client(void)
 {
     int slow[2] = {-1, -1};
     int fast[2] = {-1, -1};
-    int clients[2];
-    ClientOutputQueue queues[2];
+    ClientSlot slots[2];
     const uint8_t msg[] = {'O', 'K'};
     uint8_t got[sizeof(msg)] = {0};
 
-    client_output_queue_init_all(queues, 2);
-    client_set_init_all(clients, 2);
+    client_slot_init_all(slots, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, slow) != 0 ||
         socketpair(AF_UNIX, SOCK_STREAM, 0, fast) != 0) {
@@ -139,42 +133,42 @@ static void test_slow_client_does_not_block_fast_client(void)
         return;
     }
 
-    clients[0] = slow[1];
-    clients[1] = fast[1];
+    client_slot_set_fd(&slots[0], slow[1]);
+    client_slot_set_fd(&slots[1], fast[1]);
     slow[1] = -1;
     fast[1] = -1;
 
-    expect_int("slow buffer filled", fill_send_buffer_until_eagain(clients[0]), 1);
-    expect_int("fast client nonblocking", client_set_set_nonblocking(clients[1]), 0);
+    expect_int("slow buffer filled",
+               fill_send_buffer_until_eagain(client_slot_fd(&slots[0])), 1);
+    expect_int("fast client nonblocking",
+               client_slot_set_nonblocking(client_slot_fd(&slots[1])), 0);
 
-    client_set_broadcast_bytes_queued(clients, queues, 2, msg, sizeof(msg));
+    client_slot_broadcast_bytes_queued(slots, 2, msg, sizeof(msg));
 
-    expect_int("slow client kept", clients[0] >= 0, 1);
+    expect_int("slow client kept", client_slot_has_client(&slots[0]), 1);
     expect_size_ge("slow client has pending output",
-                   client_output_queue_pending(&queues[0]),
+                   client_output_queue_pending(&slots[0].output),
                    sizeof(msg));
-    expect_int("fast client kept", clients[1] >= 0, 1);
+    expect_int("fast client kept", client_slot_has_client(&slots[1]), 1);
     expect_int("fast client received", wait_read_exact(fast[0], got, sizeof(got)), 1);
     expect_int("fast client payload", memcmp(got, msg, sizeof(msg)) == 0, 1);
 
     close_pair(slow);
     close_pair(fast);
-    client_set_close_all_with_output(clients, queues, 2);
+    client_slot_close_all(slots, 2);
 }
 
 static void test_queue_overflow_closes_only_full_client(void)
 {
     int full[2] = {-1, -1};
     int fast[2] = {-1, -1};
-    int clients[2];
-    ClientOutputQueue queues[2];
+    ClientSlot slots[2];
     static uint8_t full_payload[CLIENT_OUTPUT_QUEUE_CAPACITY];
     const uint8_t msg[] = {'!'};
     uint8_t got = 0;
 
     memset(full_payload, 'F', sizeof(full_payload));
-    client_output_queue_init_all(queues, 2);
-    client_set_init_all(clients, 2);
+    client_slot_init_all(slots, 2);
 
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, full) != 0 ||
         socketpair(AF_UNIX, SOCK_STREAM, 0, fast) != 0) {
@@ -185,28 +179,33 @@ static void test_queue_overflow_closes_only_full_client(void)
         return;
     }
 
-    clients[0] = full[1];
-    clients[1] = fast[1];
+    client_slot_set_fd(&slots[0], full[1]);
+    client_slot_set_fd(&slots[1], fast[1]);
     full[1] = -1;
     fast[1] = -1;
 
-    expect_int("overflow full client nonblocking", client_set_set_nonblocking(clients[0]), 0);
-    expect_int("overflow fast client nonblocking", client_set_set_nonblocking(clients[1]), 0);
+    expect_int("overflow full client nonblocking",
+               client_slot_set_nonblocking(client_slot_fd(&slots[0])), 0);
+    expect_int("overflow fast client nonblocking",
+               client_slot_set_nonblocking(client_slot_fd(&slots[1])), 0);
     expect_int("fill output queue",
-               client_output_queue_append(&queues[0], full_payload, sizeof(full_payload)),
+               client_output_queue_append(&slots[0].output, full_payload,
+                                          sizeof(full_payload)),
                1);
 
-    client_set_broadcast_bytes_queued(clients, queues, 2, msg, sizeof(msg));
+    client_slot_broadcast_bytes_queued(slots, 2, msg, sizeof(msg));
 
-    expect_int("overflow client closed", clients[0], -1);
-    expect_int("overflow queue reset", (int)client_output_queue_pending(&queues[0]), 0);
-    expect_int("overflow fast client kept", clients[1] >= 0, 1);
-    expect_int("overflow fast client received", wait_read_exact(fast[0], &got, sizeof(got)), 1);
+    expect_int("overflow client closed", client_slot_fd(&slots[0]), -1);
+    expect_int("overflow queue reset",
+               (int)client_output_queue_pending(&slots[0].output), 0);
+    expect_int("overflow fast client kept", client_slot_has_client(&slots[1]), 1);
+    expect_int("overflow fast client received",
+               wait_read_exact(fast[0], &got, sizeof(got)), 1);
     expect_int("overflow fast payload", got == msg[0], 1);
 
     close_pair(full);
     close_pair(fast);
-    client_set_close_all_with_output(clients, queues, 2);
+    client_slot_close_all(slots, 2);
 }
 
 int main(int argc, char **argv)

@@ -17,122 +17,64 @@ struct DaemonTxAsyncCompletionRecordCtx {
     }
 };
 
-DaemonTxAsyncWorker daemon_tx_async_worker_433;
-DaemonTxAsyncWorker daemon_tx_async_worker_868;
-DaemonTxCompletionQueue daemon_tx_async_completion_queue_433;
-DaemonTxCompletionQueue daemon_tx_async_completion_queue_868;
-static size_t daemon_tx_async_completion_stale_433;
-static size_t daemon_tx_async_completion_stale_868;
-static DaemonTxAsyncCompletionRecordCtx daemon_tx_async_completion_record_433;
-static DaemonTxAsyncCompletionRecordCtx daemon_tx_async_completion_record_868;
+DaemonTxAsyncWorker daemon_tx_async_worker;
+DaemonTxCompletionQueue daemon_tx_async_completion_queue;
+static size_t daemon_tx_async_completion_stale;
+static DaemonTxAsyncCompletionRecordCtx daemon_tx_async_completion_record;
 
 void daemon_tx_async_runtime_init(void)
 {
     daemon_debug_ctx("TXASYNC", "Worker initialisieren");
 
-    daemon_tx_async_worker_init(&daemon_tx_async_worker_433);
-    daemon_tx_async_worker_init(&daemon_tx_async_worker_868);
-    daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue_433);
-    daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue_868);
-    daemon_tx_async_completion_record_433.completion_queue =
-        &daemon_tx_async_completion_queue_433;
-    daemon_tx_async_completion_record_433.stats.store(
+    daemon_tx_async_worker_init(&daemon_tx_async_worker);
+    daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue);
+    daemon_tx_async_completion_record.completion_queue =
+        &daemon_tx_async_completion_queue;
+    daemon_tx_async_completion_record.stats.store(
         NULL, std::memory_order_release);
-    daemon_tx_async_completion_record_868.completion_queue =
-        &daemon_tx_async_completion_queue_868;
-    daemon_tx_async_completion_record_868.stats.store(
-        NULL, std::memory_order_release);
-    daemon_tx_async_completion_stale_433 = 0;
-    daemon_tx_async_completion_stale_868 = 0;
+    daemon_tx_async_completion_stale = 0;
 }
 
 void daemon_tx_async_runtime_shutdown(void)
 {
     daemon_debug_ctx("TXASYNC", "Worker stoppen");
 
-    daemon_tx_async_worker_stop(&daemon_tx_async_worker_433);
-    daemon_tx_async_worker_stop(&daemon_tx_async_worker_868);
+    daemon_tx_async_worker_stop(&daemon_tx_async_worker);
 
-    daemon_tx_async_worker_init(&daemon_tx_async_worker_433);
-    daemon_tx_async_worker_init(&daemon_tx_async_worker_868);
-    daemon_tx_async_completion_record_433.stats.store(
-        NULL, std::memory_order_release);
-    daemon_tx_async_completion_record_868.stats.store(
+    daemon_tx_async_worker_init(&daemon_tx_async_worker);
+    daemon_tx_async_completion_record.stats.store(
         NULL, std::memory_order_release);
 }
 
-DaemonTxAsyncWorker *daemon_tx_async_runtime_worker_for_band(int band)
+DaemonTxAsyncWorker *daemon_tx_async_runtime_worker(void)
 {
-    if (band == 433)
-        return &daemon_tx_async_worker_433;
-
-    if (band == 868)
-        return &daemon_tx_async_worker_868;
-
-    return NULL;
+    return &daemon_tx_async_worker;
 }
 
-
-DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue_for_band(int band)
+DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue(void)
 {
-    if (band == 433)
-        return &daemon_tx_async_completion_queue_433;
-
-    if (band == 868)
-        return &daemon_tx_async_completion_queue_868;
-
-    return NULL;
+    return &daemon_tx_async_completion_queue;
 }
 
-static DaemonTxAsyncCompletionRecordCtx *daemon_tx_async_runtime_record_ctx_for_band(int band)
+void daemon_tx_async_runtime_set_stats(DaemonRadioStats *stats)
 {
-    if (band == 433)
-        return &daemon_tx_async_completion_record_433;
-
-    if (band == 868)
-        return &daemon_tx_async_completion_record_868;
-
-    return NULL;
+    daemon_tx_async_completion_record.stats.store(stats,
+                                                  std::memory_order_release);
 }
 
-void daemon_tx_async_runtime_set_stats_for_band(int band, DaemonRadioStats *stats)
+void *daemon_tx_async_runtime_completion_record_ctx(void)
 {
-    DaemonTxAsyncCompletionRecordCtx *record =
-        daemon_tx_async_runtime_record_ctx_for_band(band);
-
-    if (record)
-        record->stats.store(stats, std::memory_order_release);
+    return &daemon_tx_async_completion_record;
 }
 
-void *daemon_tx_async_runtime_completion_record_ctx_for_band(int band)
+void daemon_tx_async_runtime_record_completion_stale(void)
 {
-    return daemon_tx_async_runtime_record_ctx_for_band(band);
+    daemon_tx_async_completion_stale++;
 }
 
-static size_t *daemon_tx_async_runtime_stale_counter_for_band(int band)
+size_t daemon_tx_async_runtime_completion_stale(void)
 {
-    if (band == 433)
-        return &daemon_tx_async_completion_stale_433;
-
-    if (band == 868)
-        return &daemon_tx_async_completion_stale_868;
-
-    return NULL;
-}
-
-void daemon_tx_async_runtime_record_completion_stale_for_band(int band)
-{
-    size_t *counter = daemon_tx_async_runtime_stale_counter_for_band(band);
-
-    if (counter)
-        (*counter)++;
-}
-
-size_t daemon_tx_async_runtime_completion_stale_for_band(int band)
-{
-    size_t *counter = daemon_tx_async_runtime_stale_counter_for_band(band);
-
-    return counter ? *counter : 0;
+    return daemon_tx_async_completion_stale;
 }
 
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result,
@@ -158,58 +100,52 @@ void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result,
     daemon_tx_completion_queue_push(record->completion_queue, result);
 }
 
-size_t daemon_tx_async_runtime_completion_pending_for_band(int band)
+size_t daemon_tx_async_runtime_completion_pending(void)
 {
-    return daemon_tx_completion_queue_pending(
-        daemon_tx_async_runtime_completion_queue_for_band(band));
+    return daemon_tx_completion_queue_pending(&daemon_tx_async_completion_queue);
 }
 
-size_t daemon_tx_async_runtime_completion_dropped_for_band(int band)
+size_t daemon_tx_async_runtime_completion_dropped(void)
 {
-    return daemon_tx_completion_queue_dropped(
-        daemon_tx_async_runtime_completion_queue_for_band(band));
+    return daemon_tx_completion_queue_dropped(&daemon_tx_async_completion_queue);
 }
 
-int daemon_tx_async_runtime_pop_completion_for_band(int band,
-                                                    DaemonTxJobResult *out)
+int daemon_tx_async_runtime_pop_completion(DaemonTxJobResult *out)
 {
-    return daemon_tx_completion_queue_pop(
-        daemon_tx_async_runtime_completion_queue_for_band(band), out);
+    return daemon_tx_completion_queue_pop(&daemon_tx_async_completion_queue, out);
 }
 
-size_t daemon_tx_async_runtime_pending_for_band(int band)
+size_t daemon_tx_async_runtime_pending(void)
 {
-    return daemon_tx_async_worker_pending(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_pending(&daemon_tx_async_worker);
 }
 
-
-size_t daemon_tx_async_runtime_accepted_for_band(int band)
+size_t daemon_tx_async_runtime_accepted(void)
 {
-    return daemon_tx_async_worker_accepted(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_accepted(&daemon_tx_async_worker);
 }
 
-size_t daemon_tx_async_runtime_rejected_for_band(int band)
+size_t daemon_tx_async_runtime_rejected(void)
 {
-    return daemon_tx_async_worker_rejected(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_rejected(&daemon_tx_async_worker);
 }
 
-size_t daemon_tx_async_runtime_processed_for_band(int band)
+size_t daemon_tx_async_runtime_processed(void)
 {
-    return daemon_tx_async_worker_processed(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_processed(&daemon_tx_async_worker);
 }
 
-size_t daemon_tx_async_runtime_dropped_for_band(int band)
+size_t daemon_tx_async_runtime_dropped(void)
 {
-    return daemon_tx_async_worker_dropped(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_dropped(&daemon_tx_async_worker);
 }
 
-int daemon_tx_async_runtime_last_result_for_band(int band, DaemonTxJobResult *out)
+int daemon_tx_async_runtime_last_result(DaemonTxJobResult *out)
 {
-    return daemon_tx_async_worker_last_result_copy(daemon_tx_async_runtime_worker_for_band(band),
-                                                  out);
+    return daemon_tx_async_worker_last_result_copy(&daemon_tx_async_worker, out);
 }
 
-int daemon_tx_async_runtime_running_for_band(int band)
+int daemon_tx_async_runtime_running(void)
 {
-    return daemon_tx_async_worker_running(daemon_tx_async_runtime_worker_for_band(band));
+    return daemon_tx_async_worker_running(&daemon_tx_async_worker);
 }

@@ -39,6 +39,7 @@
 #include "daemon_timing.h"
 #include "daemon_stats.h"
 #include "daemon_lifecycle.h"
+#include "daemon_band.h"
 #include "daemon_radio_selection.h"
 #include "hardware_profile.h"
 #include "daemon_tx_mode_boot.h"
@@ -112,10 +113,8 @@ typedef struct {
     DaemonDeadlineTimer cad_timer;
     DaemonDeadlineTimer rssi_timer;
     DaemonDeadlineTimer stats_timer;
-    DataTxDaemonContext data_tx_433_ctx;
-    DataTxDaemonContext data_tx_868_ctx;
-    ConfigDispatchContext config_433_ctx;
-    ConfigDispatchContext config_868_ctx;
+    DataTxDaemonContext data_tx_ctx;
+    ConfigDispatchContext config_ctx;
 } DaemonLoopContext;
 
 static void daemon_loop_context_init(DaemonLoopContext *ctx)
@@ -138,26 +137,19 @@ static void daemon_loop_context_init(DaemonLoopContext *ctx)
                                now,
                                DAEMON_STATS_LOG_INTERVAL_MS);
 
-    // DATA TX contexts.
-    ctx->data_tx_433_ctx = daemon_data_tx_context(&radio_controller_433);
-    ctx->data_tx_868_ctx = daemon_data_tx_context(&radio_controller_868);
+    // DATA TX context.
+    ctx->data_tx_ctx = daemon_data_tx_context(&radio_controller);
 
-    // CONFIG client slots.
-    client_slot_init_all(client_conf433_slots, MAX_CLIENTS);
-    client_slot_init_all(client_conf868_slots, MAX_CLIENTS);
-
-    // CONFIG contexts.
-    ctx->config_433_ctx = daemon_config_433_context();
-    ctx->config_868_ctx = daemon_config_868_context();
+    // CONFIG context (CONF slots are initialized in daemon_io_init).
+    ctx->config_ctx = daemon_config_context();
 }
 
 /* --- Main runtime context ------------------------------------------------ */
 typedef struct {
     EventLoopSet event_set;
     EventLoopReadySet readfds;
-    uint8_t buf[buf_SIZE];
-    uint8_t rx_buf_433[buf_SIZE];  // Separate buffer per band.
-    uint8_t rx_buf_868[buf_SIZE];  // Separate buffer per band.
+    uint8_t buf[buf_SIZE];     // CONF read scratch buffer.
+    uint8_t rx_buf[buf_SIZE];  // RF RX buffer.
     DaemonLoopContext loop_ctx;
 } DaemonMainContext;
 
@@ -181,14 +173,9 @@ static void daemon_log_loop_start(void)
 static void daemon_process_radio_polling(DaemonDeadlineTimer *cad_timer,
                                           DaemonDeadlineTimer *rssi_timer,
                                           DaemonDeadlineTimer *stats_timer,
-                                         uint8_t (&rx_buf_433)[buf_SIZE],
-                                         uint8_t (&rx_buf_868)[buf_SIZE])
+                                          uint8_t (&rx_buf)[buf_SIZE])
 {
-    if (daemon_radio_433_enabled())
-        daemon_process_radio_433(rx_buf_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_process_radio_868(rx_buf_868);
+    daemon_process_radio(rx_buf);
 
     // Monitoring: CAD/RSSI/status stats.
     daemon_process_monitoring(cad_timer, rssi_timer, stats_timer);
@@ -199,8 +186,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
                                            EventLoopReadySet *readfds,
                                            DaemonLoopContext *loop_ctx,
                                            uint8_t *buf,
-                                           uint8_t (&rx_buf_433)[buf_SIZE],
-                                           uint8_t (&rx_buf_868)[buf_SIZE])
+                                           uint8_t (&rx_buf)[buf_SIZE])
 {
     // Wait for socket events.
     int ret = daemon_wait_for_events(event_set, readfds);
@@ -219,17 +205,14 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     }
 
     // Process ready socket clients.
-    daemon_process_ready_sockets(&loop_ctx->config_433_ctx,
-                                 &loop_ctx->config_868_ctx,
-                                 &loop_ctx->data_tx_433_ctx,
-                                 &loop_ctx->data_tx_868_ctx,
+    daemon_process_ready_sockets(&loop_ctx->config_ctx,
+                                 &loop_ctx->data_tx_ctx,
                                  readfds, buf);
 
     daemon_process_radio_polling(&loop_ctx->cad_timer,
                                  &loop_ctx->rssi_timer,
                                  &loop_ctx->stats_timer,
-                                 rx_buf_433,
-                                 rx_buf_868);
+                                 rx_buf);
 
     daemon_io_sync_event_fds(event_set);
 }
@@ -245,8 +228,7 @@ static void daemon_run_polling_loop(DaemonMainContext *ctx)
                                       &ctx->readfds,
                                       &ctx->loop_ctx,
                                       ctx->buf,
-                                      ctx->rx_buf_433,
-                                      ctx->rx_buf_868);
+                                      ctx->rx_buf);
     }
 }
 
@@ -418,6 +400,10 @@ static bool daemon_parse_args(int argc, char *argv[])
                      daemon_hw_profile.name,
                      daemon_chip_family_name(daemon_hw_profile.family));
 
+    /* Selection and profile are final: freeze the band descriptor. */
+    daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
+                                                   : RADIO_BAND_868);
+
     return is_daemon;
 }
 
@@ -436,17 +422,9 @@ static void daemon_apply_boot_tx_modes(void)
     RadioTxMode_t mode =
         daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective());
 
-    if (daemon_radio_433_enabled()) {
-        radio_controller_433.tx_mode = mode;
-        daemon_debug_ctx("STARTUP", "TX-Modus 433=%s",
-                         radio_tx_mode_name(mode));
-    }
-
-    if (daemon_radio_868_enabled()) {
-        radio_controller_868.tx_mode = mode;
-        daemon_debug_ctx("STARTUP", "TX-Modus 868=%s",
-                         radio_tx_mode_name(mode));
-    }
+    radio_controller.tx_mode = mode;
+    daemon_debug_ctx("STARTUP", "TX-Modus %s=%s",
+                     daemon_band()->tag, radio_tx_mode_name(mode));
 }
 
 /* --- Boot CAD monitor application ---------------------------------------- */
@@ -459,23 +437,14 @@ static void daemon_apply_boot_cad_monitor(void)
     float rssi = 0.0f;
     bool rssi_set = daemon_cad_rssi_boot_effective(&rssi);
 
-    if (daemon_radio_433_enabled()) {
-        radio_controller_433.cad_monitor_active.store(mon);
-        daemon_debug_ctx("STARTUP", "CAD-Monitor 433=%d", mon ? 1 : 0);
-        // CAD RSSI threshold override (unset keeps the default).
-        if (rssi_set) {
-            radio_controller_433.cad_rssi_threshold_dbm.store(rssi);
-            daemon_debug_ctx("STARTUP", "CAD-RSSI 433=%.0f", (double)rssi);
-        }
-    }
-
-    if (daemon_radio_868_enabled()) {
-        radio_controller_868.cad_monitor_active.store(mon);
-        daemon_debug_ctx("STARTUP", "CAD-Monitor 868=%d", mon ? 1 : 0);
-        if (rssi_set) {
-            radio_controller_868.cad_rssi_threshold_dbm.store(rssi);
-            daemon_debug_ctx("STARTUP", "CAD-RSSI 868=%.0f", (double)rssi);
-        }
+    radio_controller.cad_monitor_active.store(mon);
+    daemon_debug_ctx("STARTUP", "CAD-Monitor %s=%d",
+                     daemon_band()->tag, mon ? 1 : 0);
+    // CAD RSSI threshold override (unset keeps the default).
+    if (rssi_set) {
+        radio_controller.cad_rssi_threshold_dbm.store(rssi);
+        daemon_debug_ctx("STARTUP", "CAD-RSSI %s=%.0f",
+                         daemon_band()->tag, (double)rssi);
     }
 }
 

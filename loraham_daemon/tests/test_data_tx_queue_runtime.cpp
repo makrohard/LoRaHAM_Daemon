@@ -16,9 +16,9 @@ static int g_led_last_state = -1;
 /* --- Local production-symbol stubs for this unit test --- */
 TxResult lora_send(uint8_t *buf, size_t len, int band)
 {
+    (void)band;
     (void)buf;
     (void)len;
-    (void)band;
     return TX_RESULT_RADIO_ERROR;
 }
 
@@ -174,10 +174,10 @@ static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
 }
 
 
-static int wait_async_processed(int band, size_t expected)
+static int wait_async_processed(size_t expected)
 {
     for (int i = 0; i < 1000; i++) {
-        if (daemon_tx_async_runtime_processed_for_band(band) >= expected)
+        if (daemon_tx_async_runtime_processed() >= expected)
             return 1;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -240,11 +240,11 @@ static void test_default_direct_path(void)
     expect_int("direct sender calls", sender.calls, 1);
     expect_int("direct frontdoor led untouched", g_led_set_count, 0);
     expect_size("direct async accepted",
-                daemon_tx_async_runtime_accepted_for_band(433), 0);
+                daemon_tx_async_runtime_accepted(), 0);
     expect_size("direct async processed",
-                daemon_tx_async_runtime_processed_for_band(433), 0);
+                daemon_tx_async_runtime_processed(), 0);
     expect_size("direct async pending",
-                daemon_tx_async_runtime_pending_for_band(433), 0);
+                daemon_tx_async_runtime_pending(), 0);
 }
 
 static void test_txqueue_optin_path(void)
@@ -263,34 +263,34 @@ static void test_txqueue_optin_path(void)
     expect_int("queue tx result",
                send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
-    expect_int("queue processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queue processed wait", wait_async_processed(1), 1);
     expect_int("queue sender calls", sender.calls, 1);
     expect_int("queue frontdoor led untouched", g_led_set_count, 0);
     expect_size("queue stats tx ok from completion", ctrl.stats.tx_ok, 1);
     expect_size("queue stats tx busy", ctrl.stats.tx_busy, 0);
-    expect_size("queue async accepted", daemon_tx_async_runtime_accepted_for_band(433), 1);
-    expect_size("queue async processed", daemon_tx_async_runtime_processed_for_band(433), 1);
-    expect_size("queue async pending drained", daemon_tx_async_runtime_pending_for_band(433), 0);
+    expect_size("queue async accepted", daemon_tx_async_runtime_accepted(), 1);
+    expect_size("queue async processed", daemon_tx_async_runtime_processed(), 1);
+    expect_size("queue async pending drained", daemon_tx_async_runtime_pending(), 0);
 
     DaemonTxJobResult last;
     expect_int("queue async last present",
-               daemon_tx_async_runtime_last_result_for_band(433, &last),
+               daemon_tx_async_runtime_last_result(&last),
                1);
     expect_int("queue async last result", last.tx_result, TX_RESULT_OK);
 
     expect_size("queue completion pending",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 1);
     DaemonTxJobResult completion;
     expect_int("queue completion pop",
-               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               daemon_tx_async_runtime_pop_completion(&completion),
                0);
     expect_int("queue completion result", completion.tx_result, TX_RESULT_OK);
     expect_int("queue completion target", completion.completion_slot, 3);
     expect_int("queue completion generation", completion.completion_generation, 9u);
     expect_int("queue completion seq", completion.seq, 44);
     expect_size("queue completion pending drained",
-                daemon_tx_async_runtime_completion_pending_for_band(433),
+                daemon_tx_async_runtime_completion_pending(),
                 0);
 }
 
@@ -301,7 +301,7 @@ static void test_txqueue_direct_full_rejects_newest(void)
     daemon_tx_async_runtime_shutdown();
     daemon_tx_async_runtime_init();
 
-    worker = daemon_tx_async_runtime_worker_for_band(433);
+    worker = daemon_tx_async_runtime_worker();
 
     for (int i = 0; i < DAEMON_TX_QUEUE_CAPACITY; i++) {
         DaemonTxJob job;
@@ -320,9 +320,9 @@ static void test_txqueue_direct_full_rejects_newest(void)
     expect_int("queue full direct reject",
                daemon_tx_async_worker_submit(worker, &extra),
                -1);
-    expect_size("queue full rejected", daemon_tx_async_runtime_rejected_for_band(433), 1);
-    expect_size("queue full dropped", daemon_tx_async_runtime_dropped_for_band(433), 0);
-    expect_size("queue full still pending", daemon_tx_async_runtime_pending_for_band(433),
+    expect_size("queue full rejected", daemon_tx_async_runtime_rejected(), 1);
+    expect_size("queue full dropped", daemon_tx_async_runtime_dropped(), 0);
+    expect_size("queue full still pending", daemon_tx_async_runtime_pending(),
                 DAEMON_TX_QUEUE_CAPACITY);
 
     daemon_tx_async_runtime_shutdown();
@@ -364,7 +364,7 @@ static void test_queued_tx_skips_frontdoor_tx_busy_wait(void)
     expect_int("queued tx accepted while tx busy",
                send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
-    expect_int("queued tx processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued tx processed wait", wait_async_processed(1), 1);
     expect_int("queued tx sender calls", sender.calls, 1);
     expect_size("queued tx busy frontdoor stats", ctrl.stats.tx_busy, 0);
 }
@@ -533,7 +533,7 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
     fake(&ctrl)->scan_state = 1;
 
-    worker = daemon_tx_async_runtime_worker_for_band(433);
+    worker = daemon_tx_async_runtime_worker();
     daemon_tx_async_worker_configure(worker, fake_send, &sender, NULL, NULL);
 
     daemon_tx_job_init(&protected_job, 433, RADIO_TX_MODE_MANAGED, 90);
@@ -551,12 +551,12 @@ static void test_queued_cad_callback_survives_later_non_cad_config(void)
                daemon_tx_async_worker_start(worker),
                0);
     expect_int("queued CAD callback processed",
-               wait_async_processed(433, 1),
+               wait_async_processed(1),
                1);
     expect_int("queued CAD callback probe", fake(&ctrl)->scan_count, 1);
     expect_int("queued CAD callback blocks send", sender.calls, 0);
     expect_int("queued CAD callback last result",
-               daemon_tx_async_runtime_last_result_for_band(433, &last),
+               daemon_tx_async_runtime_last_result(&last),
                1);
     expect_int("queued CAD callback result busy",
                last.tx_result,
@@ -586,7 +586,7 @@ static void test_queued_managed_cad_timeout_blocks_in_worker(void)
     expect_int("queued managed cad no frontdoor scan",
                fake(&ctrl)->scan_count <= 1 ? 1 : 0,
                1);
-    expect_int("queued managed cad processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued managed cad processed wait", wait_async_processed(1), 1);
     expect_int("queued managed cad worker probes", fake(&ctrl)->scan_count, 2);
     expect_int("queued managed cad timeout blocks send", sender.calls, 0);
     expect_size("queued managed cad stats no tx ok", ctrl.stats.tx_ok, 0);
@@ -595,7 +595,7 @@ static void test_queued_managed_cad_timeout_blocks_in_worker(void)
 
     DaemonTxJobResult completion;
     expect_int("queued managed cad completion pop",
-               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               daemon_tx_async_runtime_pop_completion(&completion),
                0);
     expect_int("queued managed cad completion result",
                completion.tx_result,
@@ -629,7 +629,7 @@ static void test_direct_transmits_on_busy_channel_queued(void)
     expect_int("queued direct accepted",
                send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
-    expect_int("queued direct processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued direct processed wait", wait_async_processed(1), 1);
     expect_int("queued direct no worker probe", fake(&ctrl)->scan_count, 0);
     expect_int("queued direct sends", sender.calls, 1);
     expect_size("queued direct stats tx ok", ctrl.stats.tx_ok, 1);
@@ -637,7 +637,7 @@ static void test_direct_transmits_on_busy_channel_queued(void)
 
     DaemonTxJobResult completion;
     expect_int("queued direct completion pop",
-               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               daemon_tx_async_runtime_pop_completion(&completion),
                0);
     expect_int("queued direct completion result", completion.tx_result, TX_RESULT_OK);
     // P1: DIRECT must not advertise the managed flag.
@@ -661,12 +661,12 @@ static void test_managed_completion_sets_managed_flag(void)
     expect_int("queued managed accepted",
                send_data_chunk(payload, sizeof(payload), 0, &ctx),
                0);
-    expect_int("queued managed processed wait", wait_async_processed(433, 1), 1);
+    expect_int("queued managed processed wait", wait_async_processed(1), 1);
     expect_int("queued managed sends", sender.calls, 1);
 
     DaemonTxJobResult completion;
     expect_int("queued managed completion pop",
-               daemon_tx_async_runtime_pop_completion_for_band(433, &completion),
+               daemon_tx_async_runtime_pop_completion(&completion),
                0);
     // P1: MANAGED advertises the managed flag.
     expect_int("queued managed managed flag set",
@@ -718,7 +718,7 @@ static void test_not_ready_still_short_circuits(void)
                send_data_chunk(payload, sizeof(payload), 0, &ctx),
                DAEMON_TX_OUTCOME_RADIO_NOT_READY);
     expect_int("not ready no send", sender.calls, 0);
-    expect_size("not ready no queued", daemon_tx_async_runtime_pending_for_band(433), 0);
+    expect_size("not ready no queued", daemon_tx_async_runtime_pending(), 0);
 }
 
 static void test_controller_cad_policy_snapshot(void)
@@ -810,9 +810,9 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
                0);
 
     /* Beide muessen abgearbeitet werden: A blockiert B nicht. */
-    expect_int("starve guard both processed", wait_async_processed(433, 2), 1);
+    expect_int("starve guard both processed", wait_async_processed(2), 1);
     expect_size("starve guard processed count",
-                daemon_tx_async_runtime_processed_for_band(433), 2);
+                daemon_tx_async_runtime_processed(), 2);
 
     /* Pro Job auf cad_wait_ticks (2) beschraenkt -> Gesamtprobes beschraenkt. */
     expect_int("starve guard bounded probes",

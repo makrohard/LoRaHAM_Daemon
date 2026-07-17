@@ -47,6 +47,22 @@ struct RadioController {
     std::unique_ptr<PiHal> hal;
     std::unique_ptr<Module> mod;
     std::unique_ptr<RadioDriver> driver;
+    /*
+     * LOCK-ORDERING / LOCK-DISCIPLINE CONTRACT
+     *
+     * Order: radio_mutex first, then the process-shared SPI flock (taken only
+     * inside a single SPI transaction, lowest and last — see locking_pihal.h).
+     * led_mutex is a leaf lock (only atomics and the GPIO write inside it) and
+     * never nests with either.
+     *
+     * Access rule: the TX WORKER may hold radio_mutex across the blocking
+     * transmit() (seconds at SF12). Therefore NO MAIN-LOOP path may block on
+     * radio_mutex while a TX can be in flight: main-loop paths gate on
+     * tx_busy and/or acquire with try_to_lock and skip the tick on contention
+     * (RX poll, CAD monitor probe, GETRSSI stream). The one deliberate
+     * exception is CONFIG apply (client-initiated, rare, must not be silently
+     * dropped) — see config_dispatch.cpp.
+     */
     std::recursive_mutex radio_mutex;
 
     RadioHealth health;

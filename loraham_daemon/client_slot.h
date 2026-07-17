@@ -26,6 +26,7 @@ void client_slot_reset_output(ClientSlot *slot);
 void client_slot_reset_stream(ClientSlot *slot);
 void client_slot_close(ClientSlot *slot);
 void client_slot_close_all(ClientSlot *slots, int count);
+int client_slot_set_nonblocking(int fd);
 int client_slot_add(ClientSlot *slots, int max_clients, int fd);
 int client_slot_accept_with_output(int listen_fd, ClientSlot *slots, int max_clients);
 int client_slot_ready(const ClientSlot *slot, const EventLoopReadySet *ready);

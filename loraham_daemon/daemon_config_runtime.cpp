@@ -2,16 +2,13 @@
 
 #include "client_slot.h"
 #include "config_apply.h"
+#include "daemon_band.h"
+#include "daemon_io_runtime.h"
 #include "daemon_log.h"
 #include "daemon_protocol.h"
 #include "daemon_radio_runtime.h"
 
-/* --- External daemon CONF slots ----------------------------------------- */
-
-extern ClientSlot client_conf433_slots[];
-extern ClientSlot client_conf868_slots[];
-
-/* --- CONFIG runtime context factories ----------------------------------- */
+/* --- CONFIG runtime context factory -------------------------------------- */
 
 static void daemon_config_trace_message(void *ctx, const char *msg)
 {
@@ -36,27 +33,16 @@ static ConfigDispatchLog daemon_config_log(const char *ctx)
     return log;
 }
 
-ConfigDispatchContext daemon_config_433_context(void)
+ConfigDispatchContext daemon_config_context(void)
 {
-    ConfigDispatchContext ctx = {
-        client_conf433_slots,
-        &radio_controller_433,
-        "CONF433",
-        config_apply_command,
-        daemon_config_log("CONFIG433")
-    };
+    const DaemonBandDescriptor *band = daemon_band();
 
-    return ctx;
-}
-
-ConfigDispatchContext daemon_config_868_context(void)
-{
     ConfigDispatchContext ctx = {
-        client_conf868_slots,
-        &radio_controller_868,
-        "CONF868",
+        client_conf_slots,
+        &radio_controller,
+        band->conf_log_ctx,
         config_apply_command,
-        daemon_config_log("CONFIG868")
+        daemon_config_log(band->config_log_ctx)
     };
 
     return ctx;

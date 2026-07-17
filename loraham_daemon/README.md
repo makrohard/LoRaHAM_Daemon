@@ -59,13 +59,14 @@ hardware").
 | Area | File/module | Role |
 |---|---|---|
 | Radio selection | `daemon_radio_selection.cpp`, `daemon_radio_selection.h` | Parses and exposes the selected radio band: `433` or `868`; unset until the mandatory `--radio` is given |
+| Band descriptor | `daemon_band.cpp`, `daemon_band.h` | The one immutable per-process band context, resolved once from `--radio`: band/tag, frozen socket paths, log contexts, RF boot defaults, legacy LED pin. Runtime code is written once and reads its band from here — there are no per-band globals or duplicated 433/868 code paths |
 | Hardware profiles | `hardware_profile.cpp`, `hardware_profile.h` | `--hw` preset table (wiring, chip family, capabilities, LED, claimed pins); see "Hardware profiles" |
 | Radio driver interface | `radio_driver.h` | Runtime interface between the chip-agnostic daemon and one radio chip family: generic PhysicalLayer delegation + pure-virtual chip specifics (begin with RF defaults/TCXO, mode switch, CONF param apply, raw RSSI) |
 | SX127x driver | `sx127x_driver.cpp`, `sx127x_driver.h` | Concrete driver for SX1278/RFM9x (all SX127x register constants live here), incl. the D8 begin()-failure diagnosis |
 | SX1262 driver | `sx1262_driver.cpp`, `sx1262_driver.h` | Concrete driver for the SX126x family (TCXO via DIO3, DIO2-as-RF-switch + inverse antenna-switch line, SX126x CRC/sync/power semantics, GetRssiInst live RSSI) |
-| Radio controller state | `radio_controller.h` | Per-band HAL/Module/driver ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, hardware capability flag, LED pin, and RX drop counter |
-| Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | Per-radio controller setup/shutdown, RX callback glue, selected-radio readiness, and active-radio logging |
-| Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | Profile-driven Module construction, driver selection by chip family, per-band RF boot defaults, callback install, initial RX start, and the family-aware begin()-failure diagnosis dispatch |
+| Radio controller state | `radio_controller.h` | HAL/Module/driver ownership, radio health/mode flags, RX callback state, TX/CAD/RSSI flags, hardware capability flag, LED pin, RX drop counter — and the lock-ordering/lock-discipline contract (radio_mutex → SPI flock; main loop never blocks behind TX) |
+| Radio runtime | `daemon_radio_runtime.cpp`, `daemon_radio_runtime.h` | The single `radio_controller` instance: setup/shutdown from the band descriptor, RX callback glue (`setFlag`), readiness, and active-radio logging |
+| Radio startup/init | `daemon_radio_init.cpp`, `daemon_radio_init.h` | Profile-driven Module construction, driver selection by chip family, RF boot defaults from the band descriptor, callback install, initial RX start, and the family-aware begin()-failure diagnosis dispatch |
 | SPI transaction lock | `locking_pihal.h` | `LockingPiHal` — RadioLib `PiHal` subclass that serializes each SPI transaction across processes/bands via a shared `flock`; fails closed if the lock cannot be established (see Multi-instance operation) |
 | Instance ownership lock | `daemon_instance_lock.cpp`, `daemon_instance_lock.h` | Per-band lifetime `flock` ownership lock acquired before sockets and released after socket cleanup; rejects same-band duplicates and prevents the shutdown/restart socket race (see Multi-instance operation) |
 | Shared runtime/lock paths | `loraham_runtime.h` | Trusted lock-directory resolution and validation (`/run/lock/loraham`, `O_DIRECTORY`/`O_NOFOLLOW`, root-owned + not group/world-writable, `openat` lock files; `LORAHAM_RUNTIME_DIR` dev override), stable exit codes, and the EINTR-only `flock` acquire/release helpers |
@@ -76,13 +77,13 @@ hardware").
 
 | Area | File/module | Role |
 |---|---|---|
-| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns socket fds, client slots, framed client state, per-band channel state, I/O startup/cleanup, and persistent event-watch reconciliation |
+| Daemon I/O runtime | `daemon_io_runtime.cpp`, `daemon_io_runtime.h` | Owns the band's socket fds, client slots, framed client state, channel state, I/O startup/cleanup, and persistent event-watch reconciliation |
 | Radio channel I/O | `radio_channel.cpp`, `radio_channel.h` | Per-band raw DATA, framed DATA, and CONF socket descriptors, socket setup/open helpers, client accept/flush flow, and live RSSI helper |
 | Event loop | `event_loop.cpp`, `event_loop_epoll.cpp` | Backend-neutral event-loop wrapper plus persistent epoll watch reconciliation for socket readiness |
 | UNIX sockets | `unix_socket.cpp` | Create, bind, listen, close, and remove local UNIX socket files; stale socket paths are replaced, non-socket path collisions are rejected |
 | Socket runtime | `daemon_socket_runtime.cpp`, `daemon_socket_runtime.h` | Logged per-channel accept/flush helpers around socket client slots |
-| Socket dispatch | `daemon_socket_dispatch.cpp`, `daemon_socket_dispatch.h` | Per-band ready-socket orchestration for raw DATA, framed DATA, CONFIG, accept, and flush flow |
-| Client handling | `client_output_queue.cpp`, `client_set.cpp`, `client_slot.cpp` | Client slots, nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
+| Socket dispatch | `daemon_socket_dispatch.cpp`, `daemon_socket_dispatch.h` | Ready-socket orchestration (accept → raw DATA → framed DATA → completion drain → CONFIG → flush), tags from the band descriptor |
+| Client handling | `client_output_queue.cpp`, `client_slot.cpp` | Unified client slots (fd + output queue + stream buffer + generation), nonblocking I/O, queued output, disconnect cleanup, and broadcast helpers |
 
 ### DATA/RX/TX runtime
 
@@ -92,21 +93,22 @@ hardware").
 | Shared DATA TX runtime | `daemon_data_tx_runtime.cpp`, `daemon_data_tx_runtime.h` | Applies radio-health checks, TX-busy policy, CAD policy, TX queue selection, TX result state, stats, and DATA TX logging |
 | TX policy | `daemon_tx_policy.h` | Central TX-busy timeout, CAD wait timeout, stable-idle window, poll interval, and send-after-CAD-timeout policy |
 | TX executor/outcome | `daemon_tx_executor.h`, `daemon_tx_outcome.h`, `daemon_tx_job.h` | Internal TX job/result structures, TX result mapping, and the RadioLib send seam |
-| TX queue / worker | `daemon_tx_queue.h`, `daemon_tx_worker.h`, `daemon_tx_async_worker.*`, `daemon_tx_async_runtime.*` | Bounded reject-newest TX queue, per-radio async worker lifecycle, per-band worker counters, and queued completion storage |
-| TX completion bridge | `daemon_tx_completion.h` | Encodes final async TX results as framed `TX_RESULT`, targets the originating framed slot, and drops stale completions using client-slot generation |
+| TX queue / worker | `daemon_tx_queue.*`, `daemon_tx_worker.*`, `daemon_tx_async_worker.*`, `daemon_tx_async_runtime.*` | Bounded reject-newest TX queue, the process's one async worker lifecycle and counters, and queued completion storage |
+| TX completion bridge | `daemon_tx_completion.*` | Encodes final async TX results as framed `TX_RESULT`, targets the originating framed slot, and drops stale completions using client-slot generation |
 | Radio TX path | `daemon_tx.cpp`, `daemon_tx.h` | Validates TX requests, broadcasts `TX=1/0` on CONF sockets, prepares/restores radio TX state, and maps RadioLib TX results |
 | Framed DATA protocol | `framed_data.cpp`, `framed_data_tx.cpp` | Binary frame helpers, framed TX stream state, ERROR frames, TX_RESULT frames, and RX_PACKET framing |
 | Framed DATA runtime | `daemon_framed_data_runtime.cpp`, `daemon_framed_data_runtime.h` | Framed DATA socket read loop, TX_PACKET forwarding, immediate/final TX_RESULT behavior, ERROR handling, and async completion draining |
-| RX runtime | `daemon_rx.cpp`, `daemon_rx.h` | Per-band RX packet read/validate/print/forward flow for raw and framed clients |
+| RX runtime | `daemon_rx.cpp`, `daemon_rx.h` | RX packet read/validate/print/forward flow for raw and framed clients; returns without blocking while a TX is in flight |
 | RF packet / TX result | `rf_packet.cpp`, `tx_result.cpp` | RF payload validation/preview helpers and normalized TX result states |
 
 ### CONFIG and monitoring
 
 | Area | File/module | Role |
 |---|---|---|
-| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_dispatch.h` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands; the chip-specific per-key application lives in the radio drivers |
-| CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Build per-band CONFIG dispatch contexts and debug logging callbacks |
-| Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats |
+| CONFIG stream/parser/apply | `config_stream.cpp`, `config_parser.cpp`, `config_value.cpp`, `config_policy.cpp`, `config_validate.cpp`, `config_apply.cpp`, `config_status.*`, `config_dispatch.*` | Line framing, strict parsing, validation policy, transactional apply, and dispatch support for `SET KEY=VALUE` commands; the chip-specific per-key application lives in the radio drivers |
+| CONFIG runtime | `daemon_config_runtime.cpp`, `daemon_config_runtime.h` | Builds the CONFIG dispatch context from the band descriptor, plus debug logging callbacks |
+| Monitoring runtime | `daemon_monitoring.cpp`, `daemon_monitoring.h` | CAD status, live RSSI streaming, GETRSSI auto-stop, and periodic operator stats. Lock discipline: monitoring/RX/status ticks SKIP their sample instead of stalling while a TX holds the radio (see radio_controller.h); CONFIG apply deliberately blocks |
+| CAD probe core | `radio_cad.cpp`, `radio_cad.h`, `daemon_cad_monitor.h` | Passive RSSI probe (try-lock, TX-gated), active scanChannel probes for TX gating and `GET CHANNEL`, and the CAD monitor tick |
 
 ## Build and test scripts
 

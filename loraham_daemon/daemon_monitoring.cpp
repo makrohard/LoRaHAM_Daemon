@@ -4,21 +4,16 @@
 #include <mutex>
 
 #include "client_slot.h"
+#include "daemon_io_runtime.h"
 #include "daemon_log.h"
 #include "daemon_protocol.h"
 #include "daemon_radio_runtime.h"
-#include "daemon_radio_selection.h"
 #include "daemon_stats.h"
 #include "radio_channel.h"
 #include "radio_controller.h"
 #include "radio_cad.h"
 #include "daemon_cad_monitor.h"
 #include "radio_health.h"
-
-/* --- External daemon channel state -------------------------------------- */
-
-extern RadioChannelIo channel_433;
-extern RadioChannelIo channel_868;
 
 /* --- CAD/RSSI log contexts ---------------------------------------------- */
 static const char *daemon_cad_log_ctx(RadioController *ctrl)
@@ -59,15 +54,6 @@ static void daemon_process_tx_status(RadioController *ctrl,
                 busy ? "TX=1\n" : "TX=0\n");
         }
     }
-}
-
-static void daemon_process_tx_status_all(void)
-{
-    if (daemon_radio_433_enabled())
-        daemon_process_tx_status(&radio_controller_433, &channel_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_process_tx_status(&radio_controller_868, &channel_868);
 }
 
 /* --- CAD status ---------------------------------------------------------- */
@@ -142,7 +128,15 @@ static void daemon_process_rssi_stream_one(RadioController *ctrl,
         return;
     }
 
-    std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
+    /* Lock discipline (see radio_controller.h): main-loop tick — never block
+     * behind a TX holding radio_mutex; skip this tick on contention. */
+    std::unique_lock<std::recursive_mutex> radio_lock(
+        ctrl->radio_mutex, std::try_to_lock);
+    if (!radio_lock.owns_lock()) {
+        daemon_debug_ctx(ctx, "Radio belegt, überspringe");
+        return;
+    }
+
     float rssi = ctrl->driver->readLiveRssi(ctrl->mode, ctrl->is_hf);
     char rssi_msg[32];
     snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi);
@@ -152,22 +146,11 @@ static void daemon_process_rssi_stream_one(RadioController *ctrl,
 
 static void daemon_process_rssi_stream(DaemonDeadlineTimer *rssi_timer)
 {
-    if (daemon_radio_433_enabled())
-        daemon_radio_controller_getrssi_autostop(&channel_433,
-                                                 &radio_controller_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_radio_controller_getrssi_autostop(&channel_868,
-                                                 &radio_controller_868);
+    daemon_radio_controller_getrssi_autostop(&channel, &radio_controller);
 
     // RSSI streaming is time based.
-    if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms())) {
-        if (daemon_radio_433_enabled())
-            daemon_process_rssi_stream_one(&radio_controller_433, &channel_433);
-
-        if (daemon_radio_868_enabled())
-            daemon_process_rssi_stream_one(&radio_controller_868, &channel_868);
-    }
+    if (daemon_deadline_timer_due(rssi_timer, daemon_now_ms()))
+        daemon_process_rssi_stream_one(&radio_controller, &channel);
 }
 
 /* --- Periodic operator stats -------------------------------------------- */
@@ -191,11 +174,7 @@ static void daemon_process_periodic_stats(DaemonDeadlineTimer *stats_timer)
     if (!daemon_deadline_timer_due(stats_timer, daemon_now_ms()))
         return;
 
-    if (daemon_radio_433_enabled())
-        daemon_print_radio_stats(&radio_controller_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_print_radio_stats(&radio_controller_868);
+    daemon_print_radio_stats(&radio_controller);
 }
 
 /* --- CAD/RSSI polling ---------------------------------------------------- */
@@ -205,52 +184,29 @@ static void daemon_process_cad_rssi(DaemonDeadlineTimer *cad_timer,
     // Monitoring runs only on explicit opt-in (SET CADMONITOR=1). A merely
     // connected CONF client (e.g. a config-only MeshCom client) must not trigger
     // it, so it can never disturb RX.
-    bool cad_433_subscribed = daemon_radio_433_enabled() &&
-        client_slot_has_clients(channel_433.conf_slots, MAX_CLIENTS) &&
-        radio_controller_433.cad_monitor_active.load();
-    bool cad_868_subscribed = daemon_radio_868_enabled() &&
-        client_slot_has_clients(channel_868.conf_slots, MAX_CLIENTS) &&
-        radio_controller_868.cad_monitor_active.load();
+    bool cad_subscribed =
+        client_slot_has_clients(channel.conf_slots, MAX_CLIENTS) &&
+        radio_controller.cad_monitor_active.load();
 
     if (daemon_monitoring_cad_probe_due(cad_timer,
                                         daemon_now_ms(),
-                                        cad_433_subscribed || cad_868_subscribed)) {
-        if (cad_433_subscribed)
-            daemon_process_cad_status(&radio_controller_433, &channel_433);
-
-        if (cad_868_subscribed)
-            daemon_process_cad_status(&radio_controller_868, &channel_868);
+                                        cad_subscribed)) {
+        if (cad_subscribed)
+            daemon_process_cad_status(&radio_controller, &channel);
     }
 
-    // A band that is not (or no longer) subscribed must not keep a stale busy
+    // When not (or no longer) subscribed the band must not keep a stale busy
     // latch: the falling edge in daemon_process_cad_status only runs while
     // subscribed, so a last CONF disconnect in the busy state would otherwise
     // leave cad_broadcast_active=true (LED latched, stale CAD=1). Clear it and
     // reconcile the LED; cad_monitor_active stays armed for a reconnect.
-    if (daemon_radio_433_enabled() && !cad_433_subscribed) {
-        radio_controller_433.cad_broadcast_active.store(false);
-        radio_controller_433.cad_monitor_free_streak.store(0);
-        daemon_radio_runtime_sync_led(&radio_controller_433);
-    }
-    if (daemon_radio_868_enabled() && !cad_868_subscribed) {
-        radio_controller_868.cad_broadcast_active.store(false);
-        radio_controller_868.cad_monitor_free_streak.store(0);
-        daemon_radio_runtime_sync_led(&radio_controller_868);
+    if (!cad_subscribed) {
+        radio_controller.cad_broadcast_active.store(false);
+        radio_controller.cad_monitor_free_streak.store(0);
+        daemon_radio_runtime_sync_led(&radio_controller);
     }
 
     daemon_process_rssi_stream(rssi_timer);
-}
-
-/* --- Per-loop LED reconciliation ----------------------------------------- */
-// Safety net: drive each enabled band's LED from the derived state every loop,
-// so a missed edge can never leave the pin latched.
-static void daemon_sync_band_leds(void)
-{
-    if (daemon_radio_433_enabled())
-        daemon_radio_runtime_sync_led(&radio_controller_433);
-
-    if (daemon_radio_868_enabled())
-        daemon_radio_runtime_sync_led(&radio_controller_868);
 }
 
 /* --- Monitoring tick ----------------------------------------------------- */
@@ -258,8 +214,11 @@ void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
                                 DaemonDeadlineTimer *rssi_timer,
                                 DaemonDeadlineTimer *stats_timer)
 {
-    daemon_process_tx_status_all();
+    daemon_process_tx_status(&radio_controller, &channel);
     daemon_process_cad_rssi(cad_timer, rssi_timer);
     daemon_process_periodic_stats(stats_timer);
-    daemon_sync_band_leds();
+
+    // Safety net: drive the LED from the derived state every loop, so a
+    // missed edge can never leave the pin latched.
+    daemon_radio_runtime_sync_led(&radio_controller);
 }

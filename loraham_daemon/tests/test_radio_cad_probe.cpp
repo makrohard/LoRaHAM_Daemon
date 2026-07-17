@@ -81,6 +81,15 @@ static FakeRadio *fake(RadioController *ctrl)
     return static_cast<FakeRadio *>(ctrl->driver.get());
 }
 
+/* Link stub: daemon_data_tx_runtime.cpp references the production sender. */
+TxResult lora_send(uint8_t *buf, size_t len, int band)
+{
+    (void)buf;
+    (void)len;
+    (void)band;
+    return TX_RESULT_RADIO_ERROR;
+}
+
 static void fake_rx_callback(void)
 {
 }

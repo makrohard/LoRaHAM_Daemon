@@ -43,7 +43,6 @@ void daemon_process_framed_data_slots(const char *tag,
                                       DaemonFramedTxManagedFlagFn managed_flag);
 
 void daemon_drain_framed_tx_completions(const char *tag,
-                                        int band,
                                         ClientSlot *slots,
                                         int max_clients);
 

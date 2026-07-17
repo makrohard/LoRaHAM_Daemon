@@ -57,7 +57,11 @@ static void sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
 {
     if (!defaults) {
-        int16_t state = radio_->begin();
+        /* No RF defaults: still pass the profile's TCXO voltage — no caller
+         * may ever bypass the TCXO, or the chip runs off a dead oscillator. */
+        int16_t state = radio_->begin(434.0, 125.0, 9, 7,
+                                      RADIOLIB_SX126X_SYNC_WORD_PRIVATE,
+                                      10, 8, tcxo_voltage_);
         if (state == RADIOLIB_ERR_NONE)
             sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
         return state;

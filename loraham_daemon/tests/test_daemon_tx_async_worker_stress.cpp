@@ -15,9 +15,9 @@ static int g_fail = 0;
 
 TxResult lora_send(uint8_t *buf, size_t len, int band)
 {
+    (void)band;
     (void)buf;
     (void)len;
-    (void)band;
     return TX_RESULT_RADIO_ERROR;
 }
 
@@ -50,11 +50,11 @@ static void expect_size(const char *name, size_t actual, size_t expected)
 
 static TxResult stress_send(uint8_t *payload, size_t len, int band, void *ctx)
 {
+    (void)band;
     StressState *state = (StressState *)ctx;
 
     (void)payload;
     (void)len;
-    (void)band;
 
     state->sends.fetch_add(1, std::memory_order_relaxed);
     return TX_RESULT_OK;

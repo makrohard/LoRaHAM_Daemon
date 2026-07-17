@@ -7,7 +7,6 @@
 
 /* --- RX runtime helpers -------------------------------------------------- */
 
-void daemon_process_radio_433(uint8_t (&rx_buf_433)[buf_SIZE]);
-void daemon_process_radio_868(uint8_t (&rx_buf_868)[buf_SIZE]);
+void daemon_process_radio(uint8_t (&rx_buf)[buf_SIZE]);
 
 #endif

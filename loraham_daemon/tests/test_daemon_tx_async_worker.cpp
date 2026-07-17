@@ -14,9 +14,9 @@ static int g_fail = 0;
 
 TxResult lora_send(uint8_t *buf, size_t len, int band)
 {
+    (void)band;
     (void)buf;
     (void)len;
-    (void)band;
     return TX_RESULT_RADIO_ERROR;
 }
 
@@ -70,12 +70,12 @@ static void expect_size(const char *name, size_t actual, size_t expected)
 
 static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
 {
+    (void)band;
     FakeSender *sender = (FakeSender *)ctx;
     int idx = sender->calls;
 
     (void)payload;
     (void)len;
-    (void)band;
 
     sender->calls++;
 
@@ -85,12 +85,12 @@ static TxResult fake_send(uint8_t *payload, size_t len, int band, void *ctx)
 
 static TxResult blocking_send(uint8_t *payload, size_t len, int band, void *ctx)
 {
+    (void)band;
     BlockingSender *sender = (BlockingSender *)ctx;
     std::unique_lock<std::mutex> guard(sender->lock);
 
     (void)payload;
     (void)len;
-    (void)band;
 
     sender->calls++;
     sender->entered = true;
@@ -132,9 +132,9 @@ static void record_result(const DaemonTxJobResult *result, void *ctx)
 
 static int fake_cad_probe(int band, void *ctx)
 {
+    (void)band;
     FakeCad *cad = (FakeCad *)ctx;
 
-    (void)band;
 
     cad->calls++;
     if (cad->always_busy)

@@ -8,30 +8,29 @@
 #include "daemon_stats.h"
 
 /* --- TX-Async-Runtime ---------------------------------------------------- */
+/* One band per process: one worker, one completion queue, one record ctx. */
 
-extern DaemonTxAsyncWorker daemon_tx_async_worker_433;
-extern DaemonTxAsyncWorker daemon_tx_async_worker_868;
-extern DaemonTxCompletionQueue daemon_tx_async_completion_queue_868;
-extern DaemonTxCompletionQueue daemon_tx_async_completion_queue_433;
+extern DaemonTxAsyncWorker daemon_tx_async_worker;
+extern DaemonTxCompletionQueue daemon_tx_async_completion_queue;
 
 void daemon_tx_async_runtime_init(void);
 void daemon_tx_async_runtime_shutdown(void);
-DaemonTxAsyncWorker *daemon_tx_async_runtime_worker_for_band(int band);
-int daemon_tx_async_runtime_pop_completion_for_band(int band, DaemonTxJobResult *out);
-size_t daemon_tx_async_runtime_completion_dropped_for_band(int band);
-size_t daemon_tx_async_runtime_completion_stale_for_band(int band);
-void daemon_tx_async_runtime_record_completion_stale_for_band(int band);
-void daemon_tx_async_runtime_set_stats_for_band(int band, DaemonRadioStats *stats);
-void *daemon_tx_async_runtime_completion_record_ctx_for_band(int band);
-size_t daemon_tx_async_runtime_completion_pending_for_band(int band);
+DaemonTxAsyncWorker *daemon_tx_async_runtime_worker(void);
+int daemon_tx_async_runtime_pop_completion(DaemonTxJobResult *out);
+size_t daemon_tx_async_runtime_completion_dropped(void);
+size_t daemon_tx_async_runtime_completion_stale(void);
+void daemon_tx_async_runtime_record_completion_stale(void);
+void daemon_tx_async_runtime_set_stats(DaemonRadioStats *stats);
+void *daemon_tx_async_runtime_completion_record_ctx(void);
+size_t daemon_tx_async_runtime_completion_pending(void);
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result, void *ctx);
-DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue_for_band(int band);
-size_t daemon_tx_async_runtime_pending_for_band(int band);
-size_t daemon_tx_async_runtime_dropped_for_band(int band);
-size_t daemon_tx_async_runtime_processed_for_band(int band);
-size_t daemon_tx_async_runtime_rejected_for_band(int band);
-size_t daemon_tx_async_runtime_accepted_for_band(int band);
-int daemon_tx_async_runtime_last_result_for_band(int band, DaemonTxJobResult *out);
-int daemon_tx_async_runtime_running_for_band(int band);
+DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue(void);
+size_t daemon_tx_async_runtime_pending(void);
+size_t daemon_tx_async_runtime_dropped(void);
+size_t daemon_tx_async_runtime_processed(void);
+size_t daemon_tx_async_runtime_rejected(void);
+size_t daemon_tx_async_runtime_accepted(void);
+int daemon_tx_async_runtime_last_result(DaemonTxJobResult *out);
+int daemon_tx_async_runtime_running(void);
 
 #endif

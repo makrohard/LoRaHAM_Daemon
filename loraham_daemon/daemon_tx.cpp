@@ -8,37 +8,18 @@
 #include <RadioLib.h>
 
 #include "daemon_log.h"
+#include "daemon_band.h"
 #include "daemon_radio_runtime.h"
 #include "radio_controller.h"
 #include "radio_health.h"
 #include "rf_packet.h"
 
 /* --- LoRa TX ------------------------------------------------------------- */
+/* band stays a wire-adjacent validity check: only this process's band may
+ * transmit through the single controller. */
 static bool lora_send_valid_band(int band)
 {
-    return band == 433 || band == 868;
-}
-
-static RadioHealth daemon_radio_health(int band)
-{
-    if (!lora_send_valid_band(band))
-        return RADIO_HEALTH_FAILED;
-
-    if (band == 433)
-        return radio_controller_health(&radio_controller_433);
-
-    return radio_controller_health(&radio_controller_868);
-}
-
-static bool daemon_radio_ready(int band)
-{
-    if (!lora_send_valid_band(band))
-        return false;
-
-    if (band == 433)
-        return radio_controller_ready(&radio_controller_433);
-
-    return radio_controller_ready(&radio_controller_868);
+    return band == daemon_band()->band_number;
 }
 
 static const char *lora_tx_log_ctx(int band)
@@ -250,15 +231,13 @@ TxResult lora_send(uint8_t *buf, size_t len, int band) {
         return TX_RESULT_INVALID_BAND;
     }
 
-    if (!daemon_radio_ready(band)) {
+    if (!radio_controller_ready(&radio_controller)) {
         printf("[SEND %d] radio not ready: %s\n",
-               band, radio_health_name(daemon_radio_health(band)));
+               band,
+               radio_health_name(radio_controller_health(&radio_controller)));
         fflush(stdout);
         return TX_RESULT_RADIO_NOT_READY;
     }
 
-    if (band == 433)
-        return lora_send_controller(&radio_controller_433, buf, len);
-
-    return lora_send_controller(&radio_controller_868, buf, len);
+    return lora_send_controller(&radio_controller, buf, len);
 }

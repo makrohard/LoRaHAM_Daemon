@@ -9,10 +9,8 @@
 
 /* --- Socket dispatch orchestration -------------------------------------- */
 
-void daemon_process_ready_sockets(ConfigDispatchContext *config_433_ctx,
-                                  ConfigDispatchContext *config_868_ctx,
-                                  DataTxDaemonContext *data_tx_433_ctx,
-                                  DataTxDaemonContext *data_tx_868_ctx,
+void daemon_process_ready_sockets(ConfigDispatchContext *config_ctx,
+                                  DataTxDaemonContext *data_tx_ctx,
                                   const EventLoopReadySet *readfds,
                                   uint8_t *buf);
 

@@ -99,47 +99,39 @@ static ApplyState g_apply_state;
 
 /* --- Async TX runtime status stubs -------------------------------------- */
 
-size_t daemon_tx_async_runtime_pending_for_band(int band)
+size_t daemon_tx_async_runtime_pending()
 {
-    (void)band;
     return 0;
 }
 
-size_t daemon_tx_async_runtime_dropped_for_band(int band)
+size_t daemon_tx_async_runtime_dropped()
 {
-    (void)band;
     return 0;
 }
 
-size_t daemon_tx_async_runtime_rejected_for_band(int band)
+size_t daemon_tx_async_runtime_rejected()
 {
-    (void)band;
     return 0;
 }
 
-size_t daemon_tx_async_runtime_processed_for_band(int band)
+size_t daemon_tx_async_runtime_processed()
 {
-    (void)band;
     return 0;
 }
 
-size_t daemon_tx_async_runtime_completion_stale_for_band(int band)
+size_t daemon_tx_async_runtime_completion_stale()
 {
-    (void)band;
     return 0;
 }
 
 
-size_t daemon_tx_async_runtime_completion_dropped_for_band(int band)
+size_t daemon_tx_async_runtime_completion_dropped()
 {
-    (void)band;
     return 0;
 }
 
-int daemon_tx_async_runtime_last_result_for_band(int band,
-                                                     DaemonTxJobResult *out)
+int daemon_tx_async_runtime_last_result(DaemonTxJobResult *out)
 {
-    (void)band;
     (void)out;
     return 0;
 }
