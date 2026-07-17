@@ -8,14 +8,17 @@ RequiresMountsFor=/run/lock
 
 [Service]
 Type=simple
-User=root
-# Primary group stays root (audit P1): lock files under /run/lock/loraham are
-# hardware ownership and must never carry the client group — with loraham as
-# the service group a socket client could hold instance/SPI/GPIO locks and block
-# startup or force runtime SPI timeouts. Sockets still get group loraham
-# automatically from the setgid /run/loraham directory (2750 root:loraham);
-# UMask=0007 keeps them 0660. Lock files are created/corrected to 0600.
-Group=root
+# The daemon runs UNPRIVILEGED as the dedicated system user `loraham`
+# (create it before enabling: see README "systemd deployment"). Hardware
+# access comes from the Raspberry Pi OS device groups spi and gpio, not from
+# root. Client separation (audit P1) is carried by the lock FILES: they are
+# owner-only 0600, so members of the client group loraham can never hold an
+# instance/SPI/GPIO lock, block startup, or force a runtime SPI timeout.
+# Sockets are 0660 loraham:loraham (UMask=0007 + the setgid socket dir), so
+# group members connect normally.
+User=loraham
+Group=loraham
+SupplementaryGroups=spi gpio
 UMask=0007
 
 # Force the production shared lock namespace: the daemon honours

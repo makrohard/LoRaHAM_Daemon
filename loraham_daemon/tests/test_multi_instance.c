@@ -39,6 +39,8 @@ static pid_t spawn_daemon(const char *radio)
         _exit(127);
     }
 
+    (void)setpgid(pid, pid);
+
     if (g_pid_count < ARRAY_LEN(g_pids))
         g_pids[g_pid_count++] = pid;
 
@@ -57,7 +59,8 @@ static void kill_pid(pid_t pid)
     if (pid <= 0)
         return;
 
-    kill(-pid, SIGTERM);
+    if (kill(-pid, SIGTERM) != 0)
+        kill(pid, SIGTERM);
 
     for (int i = 0; i < 30; i++) {
         if (waitpid(pid, &status, WNOHANG) == pid)
@@ -65,7 +68,8 @@ static void kill_pid(pid_t pid)
         usleep(100000);
     }
 
-    kill(-pid, SIGKILL);
+    if (kill(-pid, SIGKILL) != 0)
+        kill(pid, SIGKILL);
     waitpid(pid, &status, 0);
 }
 

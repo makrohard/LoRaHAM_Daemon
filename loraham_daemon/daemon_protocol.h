@@ -13,9 +13,10 @@
 /* --- Public Unix socket paths --- */
 /*
  * Production sockets live in the protected shared runtime directory
- * /run/loraham (root:loraham, mode 2750, provisioned via tmpfiles.d): group
- * members connect, nobody but root can create files there — the old /tmp
- * namespace allowed any local user to squat or impersonate the paths.
+ * /run/loraham (loraham:loraham, mode 2750, provisioned via tmpfiles.d):
+ * group members connect, and only the unprivileged daemon user `loraham`
+ * (the directory owner) can create files there — the old /tmp namespace
+ * allowed any local user to squat or impersonate the paths.
  * LORAHAM_SOCKET_DIR overrides the directory for non-root dev/test runs
  * ONLY (resolved once in daemon_band_resolve); the systemd unit clears it.
  * The separate lock namespace /run/lock/loraham is unaffected.

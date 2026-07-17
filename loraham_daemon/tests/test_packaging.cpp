@@ -81,19 +81,23 @@ int main(void)
            strstr(buf, "/run/loraham ") != NULL ||
            strstr(buf, "/run/loraham\t") != NULL ||
            strstr(buf, "d      /run/loraham") != NULL);
-    expect("socket dir is setgid group loraham (2750)",
-           strstr(buf, "2750 root loraham") != NULL);
+    expect("socket dir is setgid, owned by the daemon user (2750)",
+           strstr(buf, "2750 loraham loraham") != NULL);
+    expect("lock dir is owned by the daemon user",
+           strstr(buf, "/run/lock/loraham   0755 loraham loraham") != NULL);
     expect("tmpfiles rule is a directory rule (starts with d)",
            strstr(buf, "\nd ") != NULL || buf[0] == 'd');
 
     /* systemd unit exists and is free of namespace-splitting patterns. */
     snprintf(path, sizeof(path), "%s/systemd/loraham-daemon@.service", proj);
     expect("loraham-daemon@.service exists", read_file(path, buf, sizeof(buf)));
-    /* Audit P1: the service's primary group must be root — group loraham on
-     * the process would put the client group on the hardware lock files. */
-    expect("unit sets Group=root", strstr(buf, "Group=root\n") != NULL);
-    expect("unit does NOT run as group loraham",
-           strstr(buf, "Group=loraham") == NULL);
+    /* Non-root deployment: dedicated unprivileged user, hardware via the
+     * spi/gpio device groups. Client separation is carried by 0600 lock
+     * files, not by the process group. */
+    expect("unit runs as user loraham", strstr(buf, "User=loraham\n") != NULL);
+    expect("unit does NOT run as root", strstr(buf, "User=root") == NULL);
+    expect("unit gets hardware via spi/gpio groups",
+           strstr(buf, "SupplementaryGroups=spi gpio") != NULL);
     expect("unit sets UMask=0007", strstr(buf, "UMask=0007") != NULL);
     expect("unit clears socket-dir override",
            strstr(buf, "LORAHAM_SOCKET_DIR") != NULL);

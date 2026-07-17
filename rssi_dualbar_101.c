@@ -28,8 +28,21 @@
 #include <sys/un.h>
 #include <sys/ioctl.h>
 
-#define SOCKET_PATH_433  "/tmp/loraconf433.sock"
-#define SOCKET_PATH_868  "/tmp/loraconf868.sock"
+
+/* --- Daemon-Socket-Pfadwahl -------------------------------------------------
+ * systemd-Deployments servieren die Sockets unter /run/loraham, direkte/
+ * Benutzer-Starts unter /tmp (LORAHAM_SOCKET_DIR). Ein Build funktioniert in
+ * beiden Welten: nimm den Pfad, unter dem der Daemon-Socket tatsaechlich
+ * existiert, sonst den /tmp-Fallback. */
+#include <sys/stat.h>
+static const char *loraham_sockpath(const char *runp, const char *tmpp)
+{
+    struct stat st;
+    return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
+}
+
+#define SOCKET_PATH_433 loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
+#define SOCKET_PATH_868 loraham_sockpath("/run/loraham/loraconf868.sock", "/tmp/loraconf868.sock")
 #define DEFAULT_FREQ_433 "433.175"
 #define DEFAULT_FREQ_868 "869.525"
 #define RSSI_MIN_DBM     -160.0f

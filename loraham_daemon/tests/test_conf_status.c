@@ -27,6 +27,8 @@ static int start_daemon_433(const char *bin)
         _exit(127);
     }
 
+    (void)setpgid(pid, pid);
+
     g_daemon_pid = pid;
     return TEST_PASS;
 }

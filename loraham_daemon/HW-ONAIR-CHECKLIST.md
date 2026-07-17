@@ -74,3 +74,21 @@ verbaut. B8 aus M3 wird hiermit verschärft (Frequenz-Nachweis statt nur
 | 3 | MODE-Wechsel unter Last: RX-Traffic während des Wechsels | kein Absturz, RX-Callback wieder aktiv, nächstes Paket dekodiert |
 | 4 | CAD-Probe bei anliegendem, noch nicht abgeholtem Paket (Traffic + gleichzeitiges MANAGED TX) | Paket wird dekodiert (kein RX-Verlust durch Probe), TX wartet als BUSY/`CHANNEL_BUSY` |
 | 5 | `GET STATS` nach Testlauf | `RXREARMFAIL=0` im Normalbetrieb; Feld vorhanden und angehängt (Altparser unbeeinflusst) |
+
+## v113 Audit-Abschluss — Deployment & CONF-Protokoll (Bench-Nachweis)
+
+Voraussetzung Variante A (systemd): Gruppe+Nutzer anlegen (README "systemd
+deployment"), tmpfiles ausführen, Units aktivieren. Variante B (direkt/lhpc):
+`LORAHAM_SOCKET_DIR=/tmp` beim Daemon-Start; Clients finden beide Welten
+automatisch.
+
+| # | Test | Erwartung |
+|---|---|---|
+| 1 | Boot beider Bänder (Variante nach Wahl): `[GPIO] Pin-Sperren gehalten: ...` vor LED/Init | disjunkte Pin-Listen je Band, Init OK, RADIO=READY |
+| 2 | Zweiter Start desselben Bands | Exit 3 (Instanz); gehaltener fremder gpio-Lock → Exit 4, kein Restart-Spin unter systemd |
+| 3 | CONF-Replies via socat: gültiges `SET CADWAIT=1500` / ungültiges `SET CADWAIT=1` / `set txqueue=1` (klein) / `BOGUS` | genau eine Antwort je Zeile: `OK` / `ERR INVALID` / `OK` / `ERR UNKNOWN`; `GET STATUS` einzeilig ohne `OK`, mit `RXREADY=1` |
+| 4 | TXQUEUE-Drain: Queue mit Jobs füllen (framed TX Serie), sofort `SET TXQUEUE=0` | `ERR BUSY` solange Jobs laufen; nach Drain `OK`; direkter DATA-TX während Rest-Queue → BUSY |
+| 5 | Band-Politik on-air: 433-Prozess `SET FREQ=869.525` | `ERR INVALID` (off-band, Log nennt band policy); RF unverändert auf 433 |
+| 6 | Airtime-Gate: `SET BW=7.8` (bei SF12) | `ERR INVALID` mit Airtime-Ausgabe im Log; `SET SF=7 BW=7.8` → `OK` |
+| 7 | Clients (chat/iGate/rssi_dualbar) gegen beide Varianten (systemd-Sockets UND /tmp-Sockets) ohne Rebuild | verbinden automatisch, RX/TX-Verkehr normal |
+| 8 | SIGTERM unter Last (MANAGED TX aktiv) | sauberer Stopp < TimeoutStopSec 30 s, Sockets entfernt, Locks frei |

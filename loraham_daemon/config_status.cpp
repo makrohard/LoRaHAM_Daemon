@@ -273,8 +273,9 @@ int config_status_is_set_cadtxaftertimeout(const char *line, int *val)
 }
 
 /* Counters report the worker's real state regardless of tx_queue_active
- * (audit P1-5): SET TXQUEUE=0 only stops NEW submissions — hiding pending/
- * processed work while the worker still drains would blind an operator. */
+ * (audit P1-5): SET TXQUEUE=0 is only accepted once the queue is fully
+ * drained (drain-before-disable), but the counters must never gate on the
+ * flag — hiding the worker's real history/state would blind an operator. */
 size_t config_status_txq_pending(const RadioController *ctrl)
 {
     if (!ctrl)
