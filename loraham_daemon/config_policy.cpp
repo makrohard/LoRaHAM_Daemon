@@ -34,9 +34,10 @@ bool config_policy_lora_cr_valid(int cr)
 }
 
 /* Cap at 512 symbols (audit P1-2): the old 65535 ceiling allowed a single
- * valid preamble of ~36 min at SF12/BW125 — unstoppable past the systemd
- * stop timeout. 512 covers every real profile (boot uses 8/16) while
- * bounding the worst case; a full airtime-based policy stays deferred. */
+ * valid preamble of ~36 min at SF12/BW125. 512 covers every real profile
+ * (boot uses 8/16); the merged effective-config airtime gate
+ * (config_apply, CONFIG_POLICY_MAX_AIRTIME_MS) enforces the full
+ * worst-case per-packet limit on top of this range. */
 bool config_policy_lora_preamble_valid(int preamble)
 {
     return preamble >= 6 && preamble <= 512;
@@ -158,9 +159,11 @@ bool config_policy_fsk_freqdev_valid_family(float freqdev,
 
 bool config_policy_fsk_ook_valid_family(int ook, DaemonChipFamily family)
 {
-    /* SX126x has no OOK modulator; only OOK=0 (off) is acceptable. */
+    /* SX126x has no OOK modulator: EVERY OOK key is rejected, including
+     * OOK=0 — accepting a no-op setter would report OK for a capability
+     * the chip does not have (audit item 5). */
     if (family == DAEMON_CHIP_FAMILY_SX1262)
-        return ook == 0;
+        return false;
 
     return ook == 0 || ook == 1;
 }

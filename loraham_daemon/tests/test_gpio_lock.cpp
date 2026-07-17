@@ -103,6 +103,77 @@ static void test_conflict_fails_closed(void)
     daemon_gpio_locks_release();
 }
 
+/* Audit item 2: locks are acquired BEFORE the hardware-init hook; a failed
+ * acquisition never reaches hw_init; a failing hw_init releases the locks. */
+static int g_hw_init_calls = 0;
+static int g_hw_init_result = 0;
+static long g_hw_init_locks_seen = -1;
+
+static int fake_hw_init(void)
+{
+    g_hw_init_calls++;
+    g_hw_init_locks_seen = (long)daemon_gpio_locks_held();
+    return g_hw_init_result;
+}
+
+static void test_claim_then_ordering(void)
+{
+    const int pins[] = { 21, 16 };
+
+    g_hw_init_calls = 0;
+    g_hw_init_result = 0;
+    g_hw_init_locks_seen = -1;
+
+    expect_int("claim-then: success path",
+               daemon_gpio_locks_claim_then(pins, 2, fake_hw_init), 0);
+    expect_int("claim-then: hw init ran once", g_hw_init_calls, 1);
+    expect_int("claim-then: locks held BEFORE hw init",
+               g_hw_init_locks_seen, 2);
+    expect_int("claim-then: locks still held after success",
+               (long)daemon_gpio_locks_held(), 2);
+    daemon_gpio_locks_release();
+
+    /* Failing hw init: locks acquired first, then rolled back. */
+    g_hw_init_calls = 0;
+    g_hw_init_result = 7;
+    expect_int("claim-then: hw failure reported as HW_FAILED",
+               daemon_gpio_locks_claim_then(pins, 2, fake_hw_init),
+               DAEMON_GPIO_CLAIM_HW_FAILED);
+    expect_int("claim-then: hw init ran", g_hw_init_calls, 1);
+    expect_int("claim-then: locks released on hw failure",
+               (long)daemon_gpio_locks_held(), 0);
+    g_hw_init_result = 0;
+}
+
+static void test_claim_then_conflict_skips_hw_init(void)
+{
+    char path[192];
+    const int pins[] = { 21, 16 };
+
+    /* Peer holds pin 16. */
+    snprintf(path, sizeof(path), "%s/gpio16.lock", g_dir);
+    int fd = open(path, O_RDWR | O_CREAT, 0660);
+    if (fd < 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        g_fail++;
+        printf("[FAIL] claim-then conflict setup\n");
+        if (fd >= 0)
+            close(fd);
+        return;
+    }
+
+    g_hw_init_calls = 0;
+    expect_int("claim-then: conflict returns LOCK_FAILED",
+               daemon_gpio_locks_claim_then(pins, 2, fake_hw_init),
+               DAEMON_GPIO_CLAIM_LOCK_FAILED);
+    expect_int("claim-then: hw init NOT called on conflict",
+               g_hw_init_calls, 0);
+    expect_int("claim-then: nothing held after conflict",
+               (long)daemon_gpio_locks_held(), 0);
+
+    flock(fd, LOCK_UN);
+    close(fd);
+}
+
 int main(void)
 {
     snprintf(g_dir, sizeof(g_dir), "/tmp/loraham-gpiolock-%d", (int)getpid());
@@ -115,6 +186,8 @@ int main(void)
 
     test_acquire_and_conflict();
     test_conflict_fails_closed();
+    test_claim_then_ordering();
+    test_claim_then_conflict_skips_hw_init();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

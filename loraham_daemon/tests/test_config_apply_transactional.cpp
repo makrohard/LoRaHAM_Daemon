@@ -322,7 +322,7 @@ static void test_airtime_gate_merged_config(void)
     ConfigApplyStatus st =
         parse_and_apply_config_generic(radio, "TEST", "SET BW=7.8",
                                        mode, getrssi);
-    expect_int("airtime: BW7.8 at SF12 rejected", st == CONFIG_APPLY_REJECTED, 1);
+    expect_int("airtime: BW7.8 at SF12 rejected", st == CONFIG_APPLY_REJECTED_INVALID, 1);
     expect_int("airtime: no hardware touched", radio.lora_apply_count, 0);
 
     /* Same BW with SF7 in the SAME command: ~8.8 s — accepted. */
@@ -335,7 +335,7 @@ static void test_airtime_gate_merged_config(void)
     st = parse_and_apply_config_generic(radio, "TEST", "SET SF=12",
                                         mode, getrssi);
     expect_int("airtime: SF12 on BW7.8 shadow rejected",
-               st == CONFIG_APPLY_REJECTED, 1);
+               st == CONFIG_APPLY_REJECTED_INVALID, 1);
     expect_int("airtime: rejected key not applied", radio.lora_apply_count, 2);
 
     /* MODE resets the shadow to band defaults: SF12 is fine again. */

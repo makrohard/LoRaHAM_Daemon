@@ -77,12 +77,32 @@ int main(void)
     expect("tmpfiles.d/loraham.conf exists", read_file(path, buf, sizeof(buf)));
     expect("tmpfiles rule provisions /run/lock/loraham",
            strstr(buf, "/run/lock/loraham") != NULL);
+    expect("tmpfiles rule provisions /run/loraham socket dir",
+           strstr(buf, "/run/loraham ") != NULL ||
+           strstr(buf, "/run/loraham\t") != NULL ||
+           strstr(buf, "d      /run/loraham") != NULL);
+    expect("socket dir is setgid group loraham (2750)",
+           strstr(buf, "2750 root loraham") != NULL);
     expect("tmpfiles rule is a directory rule (starts with d)",
            strstr(buf, "\nd ") != NULL || buf[0] == 'd');
 
     /* systemd unit exists and is free of namespace-splitting patterns. */
     snprintf(path, sizeof(path), "%s/systemd/loraham-daemon@.service", proj);
     expect("loraham-daemon@.service exists", read_file(path, buf, sizeof(buf)));
+    /* Audit P1: the service's primary group must be root — group loraham on
+     * the process would put the client group on the hardware lock files. */
+    expect("unit sets Group=root", strstr(buf, "Group=root\n") != NULL);
+    expect("unit does NOT run as group loraham",
+           strstr(buf, "Group=loraham") == NULL);
+    expect("unit sets UMask=0007", strstr(buf, "UMask=0007") != NULL);
+    expect("unit clears socket-dir override",
+           strstr(buf, "LORAHAM_SOCKET_DIR") != NULL);
+    /* Audit item 4: only startup codes 3/4 are restart-prevented; the
+     * runtime SPI fatal (5) must stay eligible for Restart=on-failure. */
+    expect("restart prevention is exactly 3 4",
+           strstr(buf, "RestartPreventExitStatus=3 4\n") != NULL);
+    expect("runtime SPI fatal (5) is restartable",
+           strstr(buf, "RestartPreventExitStatus=3 4 5") == NULL);
     /* Check for the directive form (Key=), so explanatory comments mentioning
      * the words do not trip the test. */
     expect("unit has no RuntimeDirectory= directive",

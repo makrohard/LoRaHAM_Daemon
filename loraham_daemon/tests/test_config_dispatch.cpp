@@ -1177,7 +1177,7 @@ static void test_dispatch_rejected_no_rearm(void)
     RadioController ctrl;
 
     memset(&g_apply_state, 0, sizeof(g_apply_state));
-    g_apply_state.result_override = (int)CONFIG_APPLY_REJECTED;
+    g_apply_state.result_override = (int)CONFIG_APPLY_REJECTED_INVALID;
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
     ctrl.received.store(true);
 
@@ -1349,6 +1349,261 @@ static void test_dispatch_defers_config_while_queue_busy(void)
     client_slot_close(&slots[0]);
 }
 
+/* --- Stable CONF replies (audit item 6) ---------------------------------- */
+
+static int read_reply(int fd, char *out, size_t out_size)
+{
+    ssize_t n;
+
+    usleep(20000); /* let the flush land */
+    n = read(fd, out, out_size - 1);
+    if (n < 0)
+        n = 0;
+    out[n] = '\0';
+    return (int)n;
+}
+
+/* One dispatch round: send `cmd`, return the reply text in `out`. */
+static void dispatch_round(ClientSlot *slots, RadioController *ctrl,
+                           int sv[2], EventLoopSet *set,
+                           EventLoopReadySet *readfds, uint8_t *buf,
+                           const char *cmd, char *out, size_t out_size)
+{
+    ConfigDispatchContext ctx = make_context(slots, ctrl);
+
+    write(sv[0], cmd, strlen(cmd));
+    event_loop_reset(set);
+    event_loop_add_fd(set, sv[1]);
+    if (event_loop_wait(set, readfds, 100000) != 1) {
+        g_fail++;
+        printf("[FAIL] dispatch_round wait (%s)\n", cmd);
+        out[0] = '\0';
+        return;
+    }
+    config_dispatch_context(&ctx, 2, readfds, buf);
+    read_reply(sv[0], out, out_size);
+}
+
+static void test_stable_conf_replies(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+    char out[512];
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        return;
+    }
+
+    /* Runtime setter: OK, exactly once. */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXRESULT=1\n", out, sizeof(out));
+    expect_str("reply: runtime setter OK", out, "OK\n");
+
+    /* Applied CONFIG: OK. */
+    g_apply_state.result_override = 0; /* APPLIED */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET SF=7\n", out, sizeof(out));
+    expect_str("reply: applied OK", out, "OK\n");
+
+    /* Policy rejection: ERR INVALID. */
+    g_apply_state.result_override = (int)CONFIG_APPLY_REJECTED_INVALID;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET SF=99\n", out, sizeof(out));
+    expect_str("reply: invalid", out, "ERR INVALID\n");
+
+    /* Malformed: ERR MALFORMED. */
+    g_apply_state.result_override = (int)CONFIG_APPLY_REJECTED_MALFORMED;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET SF\n", out, sizeof(out));
+    expect_str("reply: malformed", out, "ERR MALFORMED\n");
+
+    /* Unknown: ERR UNKNOWN. */
+    g_apply_state.result_override = (int)CONFIG_APPLY_UNKNOWN;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "BOGUS\n", out, sizeof(out));
+    expect_str("reply: unknown", out, "ERR UNKNOWN\n");
+
+    /* Hardware failure: ERR HARDWARE (+ FAILED transition elsewhere). */
+    g_apply_state.result_override = (int)CONFIG_APPLY_HW_ERROR;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET SF=7\n", out, sizeof(out));
+    expect_str("reply: hardware", out, "ERR HARDWARE\n");
+    g_apply_state.result_override = 0;
+
+    /* Radio not ready: ERR RADIO_NOT_READY. */
+    ctrl.health = RADIO_HEALTH_FAILED;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET SF=7\n", out, sizeof(out));
+    expect_str("reply: not ready", out, "ERR RADIO_NOT_READY\n");
+    ctrl.health = RADIO_HEALTH_READY;
+
+    /* GET STATUS: one data line, NO trailing OK. */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "GET STATUS\n", out, sizeof(out));
+    expect_int("reply: GET STATUS is data line",
+               strncmp(out, "STATUS ", 7) == 0, 1);
+    expect_int("reply: GET STATUS no trailing OK",
+               strstr(out, "OK\n") == NULL, 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+/* Audit item 1: TXQUEUE=0 drain-before-disable transition contract. */
+static void test_txqueue_disable_transition(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+    char out[128];
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        return;
+    }
+
+    /* Pending jobs: disable rejected, flag unchanged, no radio touch. */
+    g_stub_pending = 3;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=0\n", out, sizeof(out));
+    expect_str("txqueue: pending rejects disable", out, "ERR BUSY\n");
+    expect_int("txqueue: flag stays enabled",
+               ctrl.tx_queue_active.load() ? 1 : 0, 1);
+    expect_int("txqueue: no apply on rejection", g_apply_state.calls, 0);
+    expect_int("txqueue: no re-arm on rejection",
+               fake(&ctrl)->start_receive_count, 0);
+
+    /* Executing-only job: still rejected. */
+    g_stub_pending = 0;
+    g_stub_job_active = 1;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=0\n", out, sizeof(out));
+    expect_str("txqueue: executing rejects disable", out, "ERR BUSY\n");
+    expect_int("txqueue: flag still enabled",
+               ctrl.tx_queue_active.load() ? 1 : 0, 1);
+
+    /* Drained: disable succeeds; enable stays trivial. */
+    g_stub_job_active = 0;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=0\n", out, sizeof(out));
+    expect_str("txqueue: drained disable OK", out, "OK\n");
+    expect_int("txqueue: flag disabled",
+               ctrl.tx_queue_active.load() ? 1 : 0, 0);
+
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=1\n", out, sizeof(out));
+    expect_str("txqueue: enable OK", out, "OK\n");
+    expect_int("txqueue: flag re-enabled",
+               ctrl.tx_queue_active.load() ? 1 : 0, 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+/* Audit P2: invalid reserved runtime setters answer ERR INVALID (or
+ * ERR MALFORMED when incomplete), classified from the REAL input strings and
+ * independent of radio readiness. */
+static void test_reserved_setter_classification(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+    char out[128];
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        return;
+    }
+
+    /* Out-of-range / invalid values -> ERR INVALID, generic path untouched. */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADWAIT=1\n", out, sizeof(out));
+    expect_str("setter: CADWAIT=1 invalid", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=2\n", out, sizeof(out));
+    expect_str("setter: TXQUEUE=2 invalid", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXMODE=foo\n", out, sizeof(out));
+    expect_str("setter: TXMODE=foo invalid", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXRESULT=9\n", out, sizeof(out));
+    expect_str("setter: TXRESULT=9 invalid", out, "ERR INVALID\n");
+    expect_int("setter: generic apply never ran", g_apply_state.calls, 0);
+
+    /* Structurally incomplete -> ERR MALFORMED. */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADWAIT\n", out, sizeof(out));
+    expect_str("setter: bare CADWAIT malformed", out, "ERR MALFORMED\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET TXQUEUE=\n", out, sizeof(out));
+    expect_str("setter: empty TXQUEUE malformed", out, "ERR MALFORMED\n");
+
+    /* Independent of radio readiness. */
+    ctrl.health = RADIO_HEALTH_FAILED;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADWAIT=1\n", out, sizeof(out));
+    expect_str("setter: invalid beats NOT_READY", out, "ERR INVALID\n");
+    ctrl.health = RADIO_HEALTH_READY;
+
+    /* Valid reserved setter still answers OK (real parser, no override). */
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADWAIT=1500\n", out, sizeof(out));
+    expect_str("setter: valid CADWAIT OK", out, "OK\n");
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -1372,6 +1627,9 @@ int main(int argc, char **argv)
     test_dispatch_rejected_no_rearm();
     test_dispatch_hw_error_fails_closed();
     test_dispatch_defers_config_while_queue_busy();
+    test_stable_conf_replies();
+    test_txqueue_disable_transition();
+    test_reserved_setter_classification();
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();

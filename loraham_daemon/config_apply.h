@@ -17,11 +17,19 @@
  * the radio closed (RADIO_HEALTH_FAILED).
  */
 typedef enum {
-    CONFIG_APPLY_NOOP = 0,   /* nothing touched the radio */
-    CONFIG_APPLY_REJECTED,   /* prevalidation rejected; radio untouched */
-    CONFIG_APPLY_APPLIED,    /* success; radio touched, RX must re-arm */
-    CONFIG_APPLY_HW_ERROR    /* setter/mode failure; radio state suspect */
+    CONFIG_APPLY_OK_NO_RADIO = 0, /* accepted; nothing touched the radio */
+    CONFIG_APPLY_APPLIED,         /* success; radio touched, RX must re-arm */
+    CONFIG_APPLY_REJECTED_INVALID,   /* valid syntax, rejected by policy */
+    CONFIG_APPLY_REJECTED_MALFORMED, /* malformed token / incomplete SET */
+    CONFIG_APPLY_UNKNOWN,            /* unknown command or unknown key */
+    CONFIG_APPLY_HW_ERROR            /* setter/mode failure; radio suspect */
 } ConfigApplyStatus;
+
+/* True for every status that leaves the radio untouched (no RX re-arm). */
+static inline bool config_apply_status_untouched(ConfigApplyStatus st)
+{
+    return st != CONFIG_APPLY_APPLIED && st != CONFIG_APPLY_HW_ERROR;
+}
 
 /* --- CONFIG apply callback --- */
 

@@ -21,6 +21,19 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count);
 
 void daemon_gpio_locks_release(void);
 
+/* Startup ordering seam (audit item 2): acquire the full pin set FIRST, then
+ * run hw_init (the LED/hardware hook). Return contract (audit P1 — the
+ * caller maps lock failures to exit 4, hardware failures to exit 1):
+ *   DAEMON_GPIO_CLAIM_LOCK_FAILED  acquisition failed; hw_init NOT called
+ *   DAEMON_GPIO_CLAIM_HW_FAILED    hw_init failed; locks released again
+ *   0                              locks held and hw_init succeeded
+ * Injectable hook keeps this testable without hardware. */
+#define DAEMON_GPIO_CLAIM_LOCK_FAILED (-1)
+#define DAEMON_GPIO_CLAIM_HW_FAILED   1
+
+int daemon_gpio_locks_claim_then(const int *pins, size_t count,
+                                 int (*hw_init)(void));
+
 /* Number of currently held pin locks (test/diagnostic). */
 size_t daemon_gpio_locks_held(void);
 

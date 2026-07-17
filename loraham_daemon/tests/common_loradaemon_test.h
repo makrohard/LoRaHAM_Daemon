@@ -31,6 +31,22 @@
 
 #include "../daemon_protocol.h"
 
+/* Test-side socket paths: the harness runs the daemon with
+ * LORAHAM_SOCKET_DIR=/tmp (see ensure_test_runtime_dir), so clients connect
+ * under /tmp regardless of the production /run/loraham defaults. */
+#undef SOCK_DATA_433
+#undef SOCK_DATA_868
+#undef SOCK_DATA_FRAMED_433
+#undef SOCK_DATA_FRAMED_868
+#undef SOCK_CONF_433
+#undef SOCK_CONF_868
+#define SOCK_DATA_433 "/tmp/" DATA433_SOCKET_NAME
+#define SOCK_DATA_868 "/tmp/" DATA868_SOCKET_NAME
+#define SOCK_DATA_FRAMED_433 "/tmp/" DATA433_FRAMED_SOCKET_NAME
+#define SOCK_DATA_FRAMED_868 "/tmp/" DATA868_FRAMED_SOCKET_NAME
+#define SOCK_CONF_433 "/tmp/" CONF433_SOCKET_NAME
+#define SOCK_CONF_868 "/tmp/" CONF868_SOCKET_NAME
+
 #if defined(__GNUC__)
 #define TEST_UNUSED __attribute__((unused))
 #else
@@ -419,6 +435,13 @@ static TEST_UNUSED void ensure_test_runtime_dir(void)
         mkdir(dir, 0700);
         setenv("LORAHAM_RUNTIME_DIR", dir, 1);
     }
+
+    /* Production sockets live in /run/loraham (root-provisioned); a
+     * non-root test runner points daemon AND clients at /tmp via the
+     * dev/test-only override. The TEST_SOCK_* macros below must resolve to
+     * the same directory. */
+    if (!getenv("LORAHAM_SOCKET_DIR"))
+        setenv("LORAHAM_SOCKET_DIR", "/tmp", 1);
 
     done = 1;
 }

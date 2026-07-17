@@ -40,7 +40,11 @@
 
 /* Process exit codes (stable; referenced by the systemd unit). */
 #define LORAHAM_EXIT_INSTANCE_BUSY 3  /* same-band instance already running */
-#define LORAHAM_EXIT_LOCK_ERROR    4  /* lock infrastructure failed; fail closed */
+#define LORAHAM_EXIT_LOCK_ERROR    4  /* STARTUP lock infrastructure failed;
+                                        * fail closed, not restartable */
+#define LORAHAM_EXIT_RUNTIME_SPI_ERROR 5 /* runtime SPI/bus-lock fatal after
+                                          * operation began; systemd MAY
+                                          * restart (Restart=on-failure) */
 
 static inline const char *loraham_runtime_dir(void)
 {
@@ -129,7 +133,11 @@ static inline int loraham_open_runtime_dir(void)
 static inline int loraham_open_lock_file_at(int dirfd, const char *name)
 {
     struct stat st;
-    int fd = openat(dirfd, name, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0660);
+    /* Owner-only (audit P1): instance/SPI/GPIO locks are HARDWARE ownership —
+     * a loraham-group socket client must never be able to hold one and
+     * block startup or force a runtime SPI timeout. 0600 on create, and
+     * fchmod() below also corrects files created by earlier builds. */
+    int fd = openat(dirfd, name, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
 
     if (fd < 0) {
         fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht nutzbar: %s\n",
@@ -140,6 +148,13 @@ static inline int loraham_open_lock_file_at(int dirfd, const char *name)
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
         fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s ist keine regulaere Datei\n",
                 name);
+        close(fd);
+        return -1;
+    }
+
+    if ((st.st_mode & 0777) != 0600 && fchmod(fd, 0600) != 0) {
+        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht auf 0600 "
+                "korrigierbar: %s\n", name, strerror(errno));
         close(fd);
         return -1;
     }

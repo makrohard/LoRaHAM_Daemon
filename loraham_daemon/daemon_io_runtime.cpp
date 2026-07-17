@@ -1,5 +1,8 @@
 #include "daemon_io_runtime.h"
 
+#include "daemon_gpio_lock.h"
+#include "loraham_runtime.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -49,7 +52,9 @@ void daemon_io_startup_cleanup(void)
 
     daemon_io_close();
 
-    /* Release instance ownership only after sockets are gone. */
+    /* GPIO pin locks after radio/LED teardown, instance lock last: sockets
+     * and hardware must be gone before ownership is released. */
+    daemon_gpio_locks_release();
     daemon_instance_lock_release();
 }
 
@@ -113,12 +118,35 @@ void daemon_io_init(void)
      * the LED line. A failed claim is fatal because the LED is a required
      * hardware resource for the band.
      */
-    daemon_debug_ctx("GPIO", "LED initialisieren");
-    /* Route the profile's LED line to the band; led_pin < 0 = LED disabled. */
+    /* GPIO ownership BEFORE the first GPIO access (audit item 2): every pin
+     * this process will drive — the profile's claimed set plus the possibly
+     * overridden LED line — is locked before daemon_led_init() touches
+     * lgpio and before any SPI/Module/RadioLib access in lora_init(). */
+    daemon_debug_ctx("GPIO", "Pin-Sperren erwerben");
     daemon_led_configure(daemon_hw_profile.led_pin);
-    if (daemon_led_init() != 0) {
-        printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
-        exit(EXIT_FAILURE);
+    {
+        int pins[DAEMON_HW_MAX_CLAIMED + 1];
+        size_t n = 0;
+
+        for (int i = 0; i < daemon_hw_profile.claimed_count; i++)
+            pins[n++] = daemon_hw_profile.claimed[i];
+        pins[n++] = daemon_led_pin_configured();
+
+        int claim_rc = daemon_gpio_locks_claim_then(pins, n, daemon_led_init);
+        if (claim_rc == DAEMON_GPIO_CLAIM_LOCK_FAILED) {
+            /* Lock INFRASTRUCTURE failure (audit P1): exit 4 — systemd must
+             * not restart-spin on a held/unusable pin lock. */
+            printf("[Daemon] GPIO-Sperren nicht erhältlich, beende "
+                   "(fail-closed, Exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
+            daemon_instance_lock_release();
+            exit(LORAHAM_EXIT_LOCK_ERROR);
+        }
+        if (claim_rc != 0) {
+            /* Genuine LED hardware failure: restartable exit 1. */
+            printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
+            daemon_instance_lock_release();
+            exit(EXIT_FAILURE);
+        }
     }
 
     daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
@@ -138,7 +166,11 @@ void daemon_io_init(void)
     if (!daemon_selected_radio_ready()) {
         printf("[Daemon] Kein ausgewähltes Radio bereit, beende.\n");
         daemon_io_startup_cleanup();
-        exit(EXIT_FAILURE);
+        /* Lock-infrastructure boot failures (unusable spi0.lock, missing
+         * pin locks) exit 4 — not restartable; genuine radio hardware
+         * failures keep the restartable exit 1 (audit P1). */
+        exit(daemon_radio_boot_lock_failed() ? LORAHAM_EXIT_LOCK_ERROR
+                                             : EXIT_FAILURE);
     }
 }
 

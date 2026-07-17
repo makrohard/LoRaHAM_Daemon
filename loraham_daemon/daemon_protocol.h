@@ -11,13 +11,31 @@
 #define DAEMON_CAD_POLL_INTERVAL_MS 200
 
 /* --- Public Unix socket paths --- */
+/*
+ * Production sockets live in the protected shared runtime directory
+ * /run/loraham (root:loraham, mode 2750, provisioned via tmpfiles.d): group
+ * members connect, nobody but root can create files there — the old /tmp
+ * namespace allowed any local user to squat or impersonate the paths.
+ * LORAHAM_SOCKET_DIR overrides the directory for non-root dev/test runs
+ * ONLY (resolved once in daemon_band_resolve); the systemd unit clears it.
+ * The separate lock namespace /run/lock/loraham is unaffected.
+ */
 
-#define DATA868_SOCKET "/tmp/lora868.sock"
-#define DATA433_SOCKET "/tmp/lora433.sock"
-#define DATA868_FRAMED_SOCKET "/tmp/lora868f.sock"
-#define DATA433_FRAMED_SOCKET "/tmp/lora433f.sock"
-#define CONF868_SOCKET "/tmp/loraconf868.sock"
-#define CONF433_SOCKET "/tmp/loraconf433.sock"
+#define LORAHAM_SOCKET_DIR_DEFAULT "/run/loraham"
+
+#define DATA868_SOCKET_NAME "lora868.sock"
+#define DATA433_SOCKET_NAME "lora433.sock"
+#define DATA868_FRAMED_SOCKET_NAME "lora868f.sock"
+#define DATA433_FRAMED_SOCKET_NAME "lora433f.sock"
+#define CONF868_SOCKET_NAME "loraconf868.sock"
+#define CONF433_SOCKET_NAME "loraconf433.sock"
+
+#define DATA868_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA868_SOCKET_NAME
+#define DATA433_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA433_SOCKET_NAME
+#define DATA868_FRAMED_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA868_FRAMED_SOCKET_NAME
+#define DATA433_FRAMED_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA433_FRAMED_SOCKET_NAME
+#define CONF868_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" CONF868_SOCKET_NAME
+#define CONF433_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" CONF433_SOCKET_NAME
 
 /* --- Test aliases --- */
 

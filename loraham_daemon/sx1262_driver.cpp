@@ -330,9 +330,13 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     }
 
     if (key == "OOK") {
-        /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt. */
+        /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt.
+         * Non-success state (audit item 5): prevalidation blocks every OOK
+         * key for this family, but a direct driver call must never report
+         * success for a missing capability. */
         driver_config_print_rejected("OOK", val);
         printf(" (SX1262: OOK nicht verfügbar)");
+        state = RADIOLIB_ERR_INVALID_MODULATION;
     }
 
     if (key == "SHAPING") {

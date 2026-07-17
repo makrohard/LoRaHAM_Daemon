@@ -122,6 +122,46 @@ static void test_lock_file_regular(void)
         close(dirfd);
 }
 
+/* Audit P1: hardware lock files are owner-only — the loraham client group
+ * must not be able to hold them; pre-existing group-readable files from
+ * earlier builds are corrected on open. */
+static void test_lock_file_owner_only(void)
+{
+    char dir[256];
+    struct stat st;
+    int dirfd, fd;
+
+    path_in("lockmode-dir", dir, sizeof(dir));
+    mkdir(dir, 0700);
+    dirfd = loraham_open_lock_dir(dir, 0);
+    if (dirfd < 0) {
+        g_fail++;
+        printf("[FAIL] lockmode dir setup\n");
+        return;
+    }
+
+    fd = loraham_open_lock_file_at(dirfd, "spi0.lock");
+    expect_int("lock file created", fd >= 0, 1);
+    expect_int("new lock file is 0600",
+               fd >= 0 && fstat(fd, &st) == 0 && (st.st_mode & 0777) == 0600,
+               1);
+    if (fd >= 0)
+        close(fd);
+
+    /* Legacy 0660 file gets corrected without a reboot. */
+    fd = openat(dirfd, "gpio6.lock", O_CREAT | O_RDWR, 0660);
+    if (fd >= 0)
+        close(fd);
+    fd = loraham_open_lock_file_at(dirfd, "gpio6.lock");
+    expect_int("legacy lock file reopened", fd >= 0, 1);
+    expect_int("legacy 0660 corrected to 0600",
+               fd >= 0 && fstat(fd, &st) == 0 && (st.st_mode & 0777) == 0600,
+               1);
+    if (fd >= 0)
+        close(fd);
+    close(dirfd);
+}
+
 static void test_lock_file_symlink(void)
 {
     char dir[256], target[256];
@@ -214,6 +254,7 @@ int main(void)
     test_group_world_writable();
     test_non_root_owner();
     test_lock_file_regular();
+    test_lock_file_owner_only();
     test_lock_file_symlink();
     test_lock_file_non_regular();
     test_override_behaviour();

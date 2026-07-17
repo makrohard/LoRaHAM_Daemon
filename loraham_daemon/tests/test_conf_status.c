@@ -11,7 +11,12 @@ static const char *g_bin = NULL;
 
 static int start_daemon_433(const char *bin)
 {
-    pid_t pid = fork();
+    pid_t pid;
+
+    /* Inherit the dev/test lock+socket dir overrides across execl. */
+    ensure_test_runtime_dir();
+
+    pid = fork();
 
     if (pid < 0)
         return TEST_FAIL;

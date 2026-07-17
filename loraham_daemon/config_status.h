@@ -106,6 +106,14 @@ const char *config_status_cad_state_name(RadioCadProbeStatus status);
 
 float config_status_live_rssi_dbm(RadioController *ctrl);
 
+/* Reserved runtime-setter classification (audit P2): when one of the special
+ * matchers above did NOT accept the line, this decides the truthful reply
+ * independent of radio readiness.
+ *   0 = not a reserved runtime setter (generic CONFIG path decides)
+ *   1 = reserved key with an invalid/out-of-range value  -> ERR INVALID
+ *   2 = reserved key structurally incomplete (no value)  -> ERR MALFORMED */
+int config_status_classify_reserved_setter(const char *line);
+
 void config_status_format_channel(char *buf,
                                                 size_t buf_size,
                                                 RadioController *ctrl);

@@ -2,6 +2,15 @@
 
 ## loraham_daemon 112
 
+- Hardware lock files (instance/SPI/GPIO) are owner-only 0600 (legacy 0660 corrected via fchmod on open) and the service's primary group is root — a loraham socket-client user can no longer hold hardware locks, block startup, or force runtime SPI timeouts. Sockets keep group loraham via the setgid directory.
+- Startup lock-infrastructure failures (held GPIO pin lock, unusable spi0.lock) now exit exactly 4 (restart-suppressed) after normal cleanup; genuine LED/radio hardware failures keep the restartable exit 1. Exact-exit-code integration tests added.
+- Invalid reserved runtime setters (`SET CADWAIT=1`, `TXQUEUE=2`, `TXMODE=foo`, …) answer `ERR INVALID` (or `ERR MALFORMED` when incomplete) independent of radio readiness, instead of falling through to `ERR UNKNOWN`/`ERR RADIO_NOT_READY`.
+- BEHAVIOR: stable per-command CONF replies — every complete CONF command line gets exactly one response (`OK` / `ERR MALFORMED|UNKNOWN|INVALID|BUSY|RADIO_NOT_READY|HARDWARE`); `GET STATUS/STATS/CHANNEL` keep their single data line with no trailing `OK`; broadcasts unchanged.
+- BEHAVIOR: TXQUEUE drain-before-disable — `SET TXQUEUE=0` is rejected (`ERR BUSY`) while async jobs are pending or executing; the direct DATA path additionally refuses residual async work as BUSY (a direct CAD+TX can never stack behind queued CAD+TX).
+- BEHAVIOR: public sockets moved from `/tmp` to the protected `/run/loraham` (root:loraham 2750 via tmpfiles.d, `Group=loraham` + `UMask=0007` in the unit) — no compatibility paths in `/tmp`; `LORAHAM_SOCKET_DIR` overrides for dev/test only. Lock namespace `/run/lock/loraham` unchanged.
+- BEHAVIOR: GPIO pin locks are acquired before the FIRST GPIO access (LED claim included) via a testable claim-then-init seam; every startup-failure path and shutdown releases them (locks before instance lock, hardware torn down first).
+- Runtime SPI fatals exit with the new code 5 (`LORAHAM_EXIT_RUNTIME_SPI_ERROR`, restart-eligible); exit 4 stays reserved for non-restartable startup lock-infrastructure failures (`RestartPreventExitStatus=3 4`).
+- SX1262 rejects EVERY `OOK` key (including `OOK=0`) at prevalidation with `ERR INVALID`; the driver branch returns a non-success state as defense in depth.
 - New Hardware Support:
   - Uputronics Raspberry PiZero LoRa(TM) Expansion Board V2.5C
   - Waveshare SX1262 LoRaWAN/GNSS HAT
