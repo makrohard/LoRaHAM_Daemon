@@ -31,9 +31,13 @@ bool config_policy_lora_cr_valid(int cr)
     return cr >= 5 && cr <= 8;
 }
 
+/* Cap at 512 symbols (audit P1-2): the old 65535 ceiling allowed a single
+ * valid preamble of ~36 min at SF12/BW125 — unstoppable past the systemd
+ * stop timeout. 512 covers every real profile (boot uses 8/16) while
+ * bounding the worst case; a full airtime-based policy stays deferred. */
 bool config_policy_lora_preamble_valid(int preamble)
 {
-    return preamble >= 6 && preamble <= 65535;
+    return preamble >= 6 && preamble <= 512;
 }
 
 bool config_policy_lora_sync_valid(uint32_t sync)
@@ -105,7 +109,7 @@ bool config_policy_fsk_rxbw_valid_family(float bw, DaemonChipFamily family)
 
 bool config_policy_fsk_preamble_valid(int preamble)
 {
-    return preamble >= 0;
+    return preamble >= 0 && preamble <= 2048;
 }
 
 bool config_policy_fsk_sync_valid(uint32_t sync)
@@ -118,4 +122,17 @@ bool config_policy_fsk_sync_valid(uint32_t sync)
 
     return ((sync >> 8) & 0xFF) != 0x00 &&
            (sync & 0xFF) != 0x00;
+}
+
+/* Band frequency policy (audit P1-4): limits come from the immutable band
+ * descriptor; validation receives them explicitly so this layer stays free
+ * of daemon globals. */
+bool config_policy_freq_valid_band(float freq_mhz,
+                                   float min_mhz,
+                                   float max_mhz)
+{
+    if (!(min_mhz > 0.0f) || !(max_mhz > min_mhz))
+        return false;
+
+    return freq_mhz >= min_mhz && freq_mhz <= max_mhz;
 }

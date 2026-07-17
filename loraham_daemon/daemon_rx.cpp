@@ -8,9 +8,11 @@
 #include <RadioLib.h>
 
 #include "client_slot.h"
+#include "daemon_band.h"
 #include "daemon_log.h"
 #include "daemon_protocol.h"
 #include "daemon_radio_runtime.h"
+#include "daemon_rx_rearm.h"
 #include "daemon_stats.h"
 #include "framed_data.h"
 #include "radio_channel.h"
@@ -30,7 +32,8 @@ extern RadioChannelIo channel;
 /* --- RX log context ------------------------------------------------------ */
 static const char *daemon_rx_log_ctx(RadioController *ctrl)
 {
-    return (ctrl && ctrl->band == RADIO_BAND_433) ? "RX433" : "RX868";
+    (void)ctrl;
+    return daemon_band()->rx_log_ctx;
 }
 
 static void daemon_note_rx_flag_observed(RadioController *ctrl)
@@ -117,9 +120,14 @@ static void daemon_print_lora_packet(const char *rx_ctx,
         return;
     }
 
-    uint32_t toNode      = buf[0] | (buf[1] << 8) | (buf[2] << 16) | (buf[3] << 24);
-    uint32_t fromNode    = buf[4] | (buf[5] << 8) | (buf[6] << 16) | (buf[7] << 24);
-    uint32_t uniqueID    = buf[8] | (buf[9] << 8) | (buf[10] << 16) | (buf[11] << 24);
+    /* Cast before shifting: uint8_t promotes to signed int, and a set top
+     * bit shifted by 24 is signed-overflow UB. */
+    uint32_t toNode      = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                           ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    uint32_t fromNode    = (uint32_t)buf[4] | ((uint32_t)buf[5] << 8) |
+                           ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
+    uint32_t uniqueID    = (uint32_t)buf[8] | ((uint32_t)buf[9] << 8) |
+                           ((uint32_t)buf[10] << 16) | ((uint32_t)buf[11] << 24);
 
     uint8_t hdrFlags     = buf[12];
     uint8_t chHash       = buf[13];
@@ -243,7 +251,8 @@ static void daemon_restart_receive_after_empty_rx(RadioController *ctrl)
 {
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Leer-IRQ, RX neu starten");
     ctrl->driver->clearIrq(0xFFFFFFFF);
-    ctrl->driver->startReceive();
+    daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
+                                "RX-Leer-IRQ");
 }
 
 static void daemon_finish_rx_packet(RadioController *ctrl,
@@ -260,7 +269,8 @@ static void daemon_finish_rx_packet(RadioController *ctrl,
     if (ctrl->mode == RADIO_MODE_LORA)
         ctrl->driver->clearIrq(0xFFFFFFFF);
 
-    ctrl->driver->startReceive();
+    daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
+                                "RX-Neustart");
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit");
 }
 
@@ -410,7 +420,8 @@ static void daemon_drop_invalid_rx_packet(RadioController *ctrl)
 {
     ctrl->received.store(false);
     ctrl->driver->clearIrq(0xFFFFFFFF);
-    ctrl->driver->startReceive();
+    daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
+                                "RX-Drop");
     daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "RX bereit nach Drop");
 }
 
@@ -497,5 +508,6 @@ static void daemon_process_radio_band(RadioController *ctrl,
 /* --- RX entry point ------------------------------------------------------- */
 void daemon_process_radio(uint8_t (&rx_buf)[buf_SIZE])
 {
+    daemon_rx_rearm_retry(&radio_controller);
     daemon_process_radio_band(&radio_controller, &channel, rx_buf);
 }

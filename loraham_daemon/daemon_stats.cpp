@@ -82,6 +82,15 @@ void daemon_radio_stats_record_cad_timeout_send(DaemonRadioStats *stats)
     stats->cad_timeout_sends++;
 }
 
+void daemon_radio_stats_record_rx_rearm_failure(DaemonRadioStats *stats)
+{
+    if (!stats)
+        return;
+
+    std::lock_guard<std::mutex> guard(g_stats_lock);
+    stats->rx_rearm_failures++;
+}
+
 void daemon_stats_start(DaemonTimeMs now_ms)
 {
     g_stats_start_ms = now_ms;
@@ -115,8 +124,11 @@ void daemon_stats_format_fields(char *buf,
 
     snprintf(buf,
              buf_size,
+             /* RXREARMFAIL is APPENDED (additive field): existing parsers
+              * that read known fields keep working. */
              "UPTIME=%ld RADIO=%s RX=%lu RXBYTES=%lu RXDROPS=%lu "
-             "TXOK=%lu TXERR=%lu TXBUSY=%lu CADTIMEOUT=%lu CADSEND=%lu",
+             "TXOK=%lu TXERR=%lu TXBUSY=%lu CADTIMEOUT=%lu CADSEND=%lu "
+             "RXREARMFAIL=%lu",
              uptime_seconds,
              radio_health_name(health),
              snapshot.rx_packets,
@@ -126,7 +138,8 @@ void daemon_stats_format_fields(char *buf,
              snapshot.tx_errors,
              snapshot.tx_busy,
              snapshot.cad_timeouts,
-             snapshot.cad_timeout_sends);
+             snapshot.cad_timeout_sends,
+             snapshot.rx_rearm_failures);
 }
 
 void daemon_stats_format_response(char *buf,
@@ -135,7 +148,9 @@ void daemon_stats_format_response(char *buf,
                                   RadioHealth health,
                                   const DaemonRadioStats *stats)
 {
-    char fields[256];
+    /* Worst case (11 numeric fields at 20 digits + literals) is ~304 bytes;
+     * keep headroom so a saturated counter can never truncate the reply. */
+    char fields[384];
 
     if (!buf || buf_size == 0)
         return;

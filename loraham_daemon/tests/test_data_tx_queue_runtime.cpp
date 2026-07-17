@@ -1,3 +1,4 @@
+#include "../daemon_band.h"
 #include "../daemon_data_tx_runtime.h"
 
 #include <chrono>
@@ -108,7 +109,8 @@ struct FakeRadio : public RadioDriver {
     }
 
     int16_t begin(const RadioRfDefaults *) override { return 0; }
-    int16_t switchMode(RadioMode_t) override { return 0; }
+    int16_t switchMode(RadioMode_t,
+                       const RadioRfDefaults *) override { return 0; }
     void applyLoraParam(const char *, const std::string &,
                         const std::string &) override {}
     void applyFskParam(const char *, const std::string &,
@@ -824,6 +826,9 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
 
 int main(int argc, char **argv)
 {
+    /* daemon_data_tx_context() reads log tags from the band descriptor. */
+    daemon_band_resolve(RADIO_BAND_433);
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--bin") == 0) {
             if (i + 1 >= argc) {

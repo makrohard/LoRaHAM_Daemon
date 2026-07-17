@@ -1,5 +1,7 @@
 #include "config_apply.h"
 
+#include "daemon_band.h"
+
 #include <vector>
 #include <utility>
 
@@ -31,7 +33,9 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
 
     ConfigValidationResult validation;
     if(!config_validate_command(parsed, mode_flag, &validation,
-                                radio.chipFamily())) {
+                                radio.chipFamily(),
+                                daemon_band()->freq_min_mhz,
+                                daemon_band()->freq_max_mhz)) {
         printf("[%s] CONFIG rejected: %s=%s (%s)\n",
                tag,
                validation.key.c_str(),
@@ -62,7 +66,8 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
 
         if(mode_val == "FSK") {
             printf(" MODE=FSK -> beginFSK()");
-            int state = radio.switchMode(RADIO_MODE_FSK);
+            int state = radio.switchMode(RADIO_MODE_FSK,
+                                         daemon_band()->rf_defaults);
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_FSK;
                 printf(" \033[92mOK\033[0m");
@@ -73,7 +78,8 @@ void parse_and_apply_config_generic(RadioDriver &radio, const char *tag,
             }
         } else if(mode_val == "LORA") {
             printf(" MODE=LORA -> begin()");
-            int state = radio.switchMode(RADIO_MODE_LORA);
+            int state = radio.switchMode(RADIO_MODE_LORA,
+                                         daemon_band()->rf_defaults);
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_LORA;
                 printf(" \033[92mOK\033[0m");

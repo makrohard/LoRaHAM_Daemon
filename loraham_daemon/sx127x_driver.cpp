@@ -35,18 +35,38 @@ const char *Sx127xDriver::chipName() const
 
 int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
 {
+    /* Fail closed: begin() without band defaults would leave the chip on
+     * its register defaults (deaf on-band for an 868 process). */
+    if (!defaults)
+        return RADIOLIB_ERR_NULL_POINTER;
+
     int16_t state = radio_->begin();
 
-    if (state != RADIOLIB_ERR_NONE || !defaults)
+    if (state != RADIOLIB_ERR_NONE)
         return state;
 
-    radio_->setFrequency(defaults->freq_mhz);
-    radio_->setSpreadingFactor(defaults->spreading_factor);
-    radio_->setBandwidth(defaults->bandwidth_khz);
-    radio_->setSyncWord(defaults->sync_word);
-    radio_->setPreambleLength(defaults->preamble_len);
-    radio_->setCodingRate(defaults->coding_rate);
-    radio_->setCRC(defaults->crc_on);
+    /* Fail closed (audit P1-1): every mandatory boot setter is checked. A
+     * radio must never report READY with part of its RF configuration
+     * rejected over SPI — the first failure is logged with its stage and
+     * returned, and the caller marks the radio FAILED. */
+    struct BootStep { const char *stage; int16_t state; } steps[] = {
+        { "FREQ",     radio_->setFrequency(defaults->freq_mhz) },
+        { "SF",       radio_->setSpreadingFactor(defaults->spreading_factor) },
+        { "BW",       radio_->setBandwidth(defaults->bandwidth_khz) },
+        { "SYNC",     radio_->setSyncWord(defaults->sync_word) },
+        { "PREAMBLE", radio_->setPreambleLength(defaults->preamble_len) },
+        { "CR",       radio_->setCodingRate(defaults->coding_rate) },
+        { "CRC",      radio_->setCRC(defaults->crc_on) },
+    };
+    for (const BootStep &step : steps) {
+        if (step.state != RADIOLIB_ERR_NONE) {
+            printf("[sx127x] Boot-Setter %s fehlgeschlagen: %d\n",
+                   step.stage, (int)step.state);
+            fflush(stdout);
+            return step.state;
+        }
+    }
+
     /* LDRO immer explizit ins Register schreiben: autoLDRO() setzt nur das
      * Cache-Flag, und RadioLib schreibt nur bei Cache-Differenz. Ohne
      * RESET-Leitung (Uputronics) überlebt ein zuvor forciertes LDRO-Bit
@@ -54,35 +74,47 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
      * ausgeht (bench-verifiziert: korrupte Dekodierung bei SF11/BW250). */
     bool ldro_needed = ((float)(1u << defaults->spreading_factor) /
                         defaults->bandwidth_khz) >= 16.0f;
-    radio_->forceLDRO(defaults->ldro >= 0 ? (defaults->ldro != 0)
-                                          : ldro_needed);
-    if (defaults->ldro < 0)
-        radio_->autoLDRO();
-    radio_->setOutputPower(defaults->power_dbm);
+    state = radio_->forceLDRO(defaults->ldro >= 0 ? (defaults->ldro != 0)
+                                                  : ldro_needed);
+    if (state == RADIOLIB_ERR_NONE && defaults->ldro < 0)
+        state = radio_->autoLDRO();
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx127x] Boot-Setter LDRO fehlgeschlagen: %d\n", (int)state);
+        fflush(stdout);
+        return state;
+    }
 
-    return state;
+    state = radio_->setOutputPower(defaults->power_dbm);
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx127x] Boot-Setter POWER fehlgeschlagen: %d\n", (int)state);
+        fflush(stdout);
+        return state;
+    }
+
+    return RADIOLIB_ERR_NONE;
 }
 
 /* --- LoRa <-> FSK Modemwechsel -------------------------------------------- */
 
-int16_t Sx127xDriver::switchMode(RadioMode_t mode)
+int16_t Sx127xDriver::switchMode(RadioMode_t mode,
+                                 const RadioRfDefaults *defaults)
 {
-    if (mode == RADIO_MODE_FSK)
-        return radio_->beginFSK();
+    /* Fail closed: mode switches without band defaults would park the chip
+     * on its register defaults (deaf on-band for an 868 process). */
+    if (!defaults)
+        return RADIOLIB_ERR_NULL_POINTER;
 
-    int16_t state = radio_->begin();
-
-    if (state == RADIOLIB_ERR_NONE) {
-        /* begin() geht vom POR-Zustand aus und schreibt LDRO nur bei
-         * Cache-Differenz; ohne RESET-Leitung bleibt ein altes forciertes
-         * LDRO-Bit sonst im Chip stehen. Explizit auf den begin()-Zustand
-         * (SF9/BW125 -> LDRO aus) zurückschreiben, danach Auto-Tracking
-         * für nachfolgende SF/BW-Setter. */
-        radio_->forceLDRO(false);
-        radio_->autoLDRO();
+    if (mode == RADIO_MODE_FSK) {
+        /* FSK modem params stay the established legacy values (RadioLib
+         * defaults: 4.8 kbps / 5 kHz dev / family RXBW raster) — only the
+         * frequency comes from the band so the process never parks off-band. */
+        return radio_->beginFSK(defaults->freq_mhz);
     }
 
-    return state;
+    /* LoRa: land on the band boot defaults via the boot path (same setter
+     * order incl. explicit LDRO write, which also covers the no-RESET
+     * warm-start LDRO ghost). */
+    return begin(defaults);
 }
 
 /* --- Live-RSSI (roher Registerzugriff) ------------------------------------ */

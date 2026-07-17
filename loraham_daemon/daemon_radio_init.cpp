@@ -11,6 +11,7 @@
 #include "daemon_led.h"
 #include "daemon_log.h"
 #include "daemon_radio_runtime.h"
+#include "daemon_rx_rearm.h"
 #include "hardware_profile.h"
 #include "radio_controller.h"
 #include "radio_driver.h"
@@ -126,7 +127,8 @@ void lora_init(void) {
 
     if (radio_controller_ready(&radio_controller)) {
         daemon_debug_band(tag, "RX starten");
-        radio_controller.driver->startReceive();
+        daemon_rx_rearm_boot_result(&radio_controller,
+                                    radio_controller.driver->startReceive());
     } else {
         printf("[%s] RX nicht gestartet: %s\n",
                tag, radio_health_name(radio_controller.health));

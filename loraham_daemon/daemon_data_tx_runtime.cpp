@@ -1,5 +1,7 @@
 #include "daemon_data_tx_runtime.h"
 
+#include "daemon_band.h"
+
 #include "daemon_log.h"
 
 /* --- DATA TX logging ----------------------------------------------------- */
@@ -430,12 +432,7 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
 
 DataTxDaemonContext daemon_data_tx_context(RadioController *ctrl)
 {
-    const char *log_ctx = "TX?";
-
-    if (ctrl && ctrl->band == RADIO_BAND_433)
-        log_ctx = "TX433";
-    else if (ctrl && ctrl->band == RADIO_BAND_868)
-        log_ctx = "TX868";
+    const char *log_ctx = daemon_band()->tx_log_ctx;
 
     DataTxDaemonContext ctx = {
         ctrl,

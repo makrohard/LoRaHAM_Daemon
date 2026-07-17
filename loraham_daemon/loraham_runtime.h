@@ -8,6 +8,7 @@
 
 #include <fcntl.h>
 #include <sys/file.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -164,6 +165,49 @@ static inline int loraham_flock_acquire_ex(int fd, loraham_flock_fn fn)
     } while (rc < 0 && errno == EINTR);
 
     return rc < 0 ? -1 : 0;
+}
+
+/*
+ * Deadline-bounded exclusive acquisition (audit P1-3): polls LOCK_EX|LOCK_NB
+ * against a CLOCK_MONOTONIC deadline instead of blocking forever behind a
+ * live-but-wedged peer. Returns 0 when held, -1 with errno=ETIMEDOUT on
+ * expiry, -1 with errno preserved on any hard failure. Callers must treat
+ * every non-zero return as "must not proceed" (fail closed, no unlocked
+ * fallback). SPI transactions hold the lock for microseconds–milliseconds;
+ * a peer holding it past the deadline is a fault, not contention.
+ */
+static inline int loraham_flock_acquire_ex_deadline(int fd,
+                                                    loraham_flock_fn fn,
+                                                    long timeout_ms)
+{
+    struct timespec start;
+    struct timespec now;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
+        return -1;
+
+    for (;;) {
+        int rc = fn(fd, LOCK_EX | LOCK_NB);
+
+        if (rc == 0)
+            return 0;
+
+        if (errno != EINTR && errno != EWOULDBLOCK && errno != EAGAIN)
+            return -1;
+
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+            return -1;
+
+        long elapsed_ms = (long)(now.tv_sec - start.tv_sec) * 1000L +
+                          (long)(now.tv_nsec - start.tv_nsec) / 1000000L;
+        if (elapsed_ms >= timeout_ms) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+
+        struct timespec pause = { 0, 1000000L }; /* 1 ms */
+        nanosleep(&pause, NULL);
+    }
 }
 
 static inline int loraham_flock_release(int fd, loraham_flock_fn fn)

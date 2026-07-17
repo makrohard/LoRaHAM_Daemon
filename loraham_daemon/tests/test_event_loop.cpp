@@ -293,6 +293,43 @@ static void test_registration_failure_is_not_silent(void)
     event_loop_close(&set);
 }
 
+/* Audit L2: the daemon's fd-sync path checks the registration-failure flag
+ * BEFORE reconcile_begin — a failure early-return must never leave a dangling
+ * reconcile epoch that would EBUSY the next begin. */
+static void test_failed_registration_skips_reconcile_epoch(void)
+{
+    EventLoopSet set;
+
+    if (event_loop_init(&set) != 0) {
+        g_fail++;
+        printf("[FAIL] init for reconcile-epoch test\n");
+        return;
+    }
+
+    errno = 0;
+    event_loop_add_fd(&set, -1);
+    expect_int("epoch: failure flag pre-set",
+               event_loop_registration_failed(&set), 1);
+
+    /* The daemon sync ordering: flag checked first, begin skipped. */
+    if (!event_loop_registration_failed(&set))
+        event_loop_reconcile_begin(&set);
+    expect_int("epoch: no dangling reconcile epoch",
+               set.epoll_backend.reconcile_active, 0);
+
+    /* After recovery a begin must not see EBUSY from a stale epoch. */
+    event_loop_reset(&set);
+    errno = 0;
+    event_loop_reconcile_begin(&set);
+    expect_int("epoch: begin after reset succeeds",
+               event_loop_registration_failed(&set), 0);
+    expect_int("epoch: reconcile active after begin",
+               set.epoll_backend.reconcile_active, 1);
+    event_loop_reconcile_end(&set);
+
+    event_loop_close(&set);
+}
+
 static void test_reconcile_keeps_read_watch(void)
 {
     EventLoopSet set;
@@ -529,6 +566,7 @@ int main(int argc, char **argv)
     test_reset_clears_registered_fds();
     test_registration_capacity();
     test_registration_failure_is_not_silent();
+    test_failed_registration_skips_reconcile_epoch();
     test_reconcile_keeps_read_watch();
     test_reconcile_updates_write_interest();
     test_reconcile_removes_stale_watch();

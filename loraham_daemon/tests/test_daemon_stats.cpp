@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <limits.h>
 #include <string.h>
 #include <thread>
 
@@ -70,6 +71,31 @@ static void test_cad_timeout_counted_once_via_tx_result(void)
     expect_ulong("cad timeout once", stats.cad_timeouts, 1);
     expect_ulong("cad timeout not tx error", stats.tx_errors, 0);
     expect_ulong("cad timeout not busy", stats.tx_busy, 0);
+}
+
+static void test_stats_format_saturated_counters_fit(void)
+{
+    DaemonRadioStats stats;
+    char buf[512];
+
+    daemon_radio_stats_init(&stats);
+    stats.rx_packets = ULONG_MAX;
+    stats.rx_bytes = ULONG_MAX;
+    stats.rx_drops = ULONG_MAX;
+    stats.tx_ok = ULONG_MAX;
+    stats.tx_errors = ULONG_MAX;
+    stats.tx_busy = ULONG_MAX;
+    stats.cad_timeouts = ULONG_MAX;
+    stats.cad_timeout_sends = ULONG_MAX;
+    stats.rx_rearm_failures = ULONG_MAX;
+
+    daemon_stats_format_response(buf, sizeof(buf), LONG_MAX,
+                                 RADIO_HEALTH_UNINITIALIZED, &stats);
+
+    /* Worst case: every counter 20 digits — the last field must still be
+     * complete and the line newline-terminated (no truncation). */
+    expect_int("saturated stats keep last field intact",
+               strstr(buf, "RXREARMFAIL=18446744073709551615\n") != NULL, 1);
 }
 
 static void test_stats_format_includes_cad_timeout(void)
@@ -166,6 +192,7 @@ int main(int argc, char **argv)
     test_tx_result_counters();
     test_cad_timeout_counted_once_via_tx_result();
     test_stats_format_includes_cad_timeout();
+    test_stats_format_saturated_counters_fit();
     test_uptime_crosses_32bit_ms_boundary();
     test_stats_concurrent_record_and_format();
 

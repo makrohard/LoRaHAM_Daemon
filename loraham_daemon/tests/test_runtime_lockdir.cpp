@@ -197,6 +197,14 @@ static void test_override_behaviour(void)
 
 int main(void)
 {
+    /* Root bypasses the permission/ownership semantics these tests assert
+     * (a user-owned dir passes require_root, mode checks don't reject). */
+    if (geteuid() == 0) {
+        printf("[SKIP] runtime lockdir tests: running as root\n");
+        printf("\nSummary: ok=0 fail=0 skip=1\n");
+        return 0;
+    }
+
     snprintf(g_base, sizeof(g_base), "/tmp/loraham-lockdir-%d", (int)getpid());
     mkdir(g_base, 0700);
 

@@ -1,5 +1,7 @@
 #include "config_dispatch.h"
 
+#include "daemon_rx_rearm.h"
+
 /* Bodies moved verbatim from config_dispatch.h (D3 de-inlining). */
 
 void config_dispatch_log_bytes(const ConfigDispatchLog *log,
@@ -41,7 +43,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     config_dispatch_log_line(&ctx->log, "Zeile", line);
 
     if(config_status_is_get_status(line)) {
-        char status[384];
+        char status[512];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,
@@ -55,7 +57,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     if(config_status_is_get_stats(line)) {
-        char stats[256];
+        char stats[384];
 
         config_status_format_stats(stats, sizeof(stats), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,
@@ -189,7 +191,9 @@ void config_dispatch_apply_line(const char *line, void *user)
         // beginFSK()/begin() clears the IRQ callback.
         ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
         config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
-        ctx->ctrl->driver->startReceive();
+        daemon_rx_rearm_note_result(ctx->ctrl,
+                                    ctx->ctrl->driver->startReceive(),
+                                    "CONFIG");
     }
     config_dispatch_log_message(&ctx->log, "RX neu gestartet");
 }

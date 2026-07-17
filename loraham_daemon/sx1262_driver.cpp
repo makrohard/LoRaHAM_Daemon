@@ -56,16 +56,10 @@ static void sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 
 int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
 {
-    if (!defaults) {
-        /* No RF defaults: still pass the profile's TCXO voltage — no caller
-         * may ever bypass the TCXO, or the chip runs off a dead oscillator. */
-        int16_t state = radio_->begin(434.0, 125.0, 9, 7,
-                                      RADIOLIB_SX126X_SYNC_WORD_PRIVATE,
-                                      10, 8, tcxo_voltage_);
-        if (state == RADIOLIB_ERR_NONE)
-            sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
-        return state;
-    }
+    /* Fail closed: begin() without band defaults would leave the chip on
+     * its register defaults (deaf on-band for an 868 process). */
+    if (!defaults)
+        return RADIOLIB_ERR_NULL_POINTER;
 
     int16_t state = radio_->begin(defaults->freq_mhz,
                                   defaults->bandwidth_khz,
@@ -82,32 +76,52 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
 
     sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
 
-    radio_->setCRC(defaults->crc_on ? 2 : 0);
-    radio_->autoLDRO();
-    if (defaults->ldro >= 0)
-        radio_->forceLDRO(defaults->ldro != 0);
+    /* Fail closed (audit P1-1): the post-begin() steps are part of the
+     * mandatory boot configuration — check them like begin() itself. */
+    state = radio_->setCRC(defaults->crc_on ? 2 : 0);
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx1262] Boot-Setter CRC fehlgeschlagen: %d\n", (int)state);
+        fflush(stdout);
+        return state;
+    }
 
-    return state;
+    state = radio_->autoLDRO();
+    if (state == RADIOLIB_ERR_NONE && defaults->ldro >= 0)
+        state = radio_->forceLDRO(defaults->ldro != 0);
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx1262] Boot-Setter LDRO fehlgeschlagen: %d\n", (int)state);
+        fflush(stdout);
+        return state;
+    }
+
+    return RADIOLIB_ERR_NONE;
 }
 
 /* --- LoRa <-> FSK Modemwechsel --------------------------------------------- */
 
-int16_t Sx1262Driver::switchMode(RadioMode_t mode)
+int16_t Sx1262Driver::switchMode(RadioMode_t mode,
+                                 const RadioRfDefaults *defaults)
 {
     int16_t state;
 
-    if (mode == RADIO_MODE_FSK)
-        state = radio_->beginFSK(434.0, 4.8, 5.0, 156.2, 10, 16,
+    /* Fail closed: mode switches without band defaults would park the chip
+     * on its register defaults (deaf on-band for an 868 process). */
+    if (!defaults)
+        return RADIOLIB_ERR_NULL_POINTER;
+
+    if (mode == RADIO_MODE_FSK) {
+        /* FSK modem params stay the established legacy values; only the
+         * frequency comes from the band. TCXO always applied. */
+        state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
                                  tcxo_voltage_, false);
-    else
-        state = radio_->begin(434.0, 125.0, 9, 7,
-                              RADIOLIB_SX126X_SYNC_WORD_PRIVATE, 10, 8,
-                              tcxo_voltage_, false);
+        if (state == RADIOLIB_ERR_NONE)
+            sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
+        return state;
+    }
 
-    if (state == RADIOLIB_ERR_NONE)
-        sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
-
-    return state;
+    /* LoRa: land on the band boot defaults via the boot path (TCXO, RF
+     * switch, CRC, LDRO all re-applied exactly like at startup). */
+    return begin(defaults);
 }
 
 /* --- LoRa CONFIG apply ------------------------------------------------------ */

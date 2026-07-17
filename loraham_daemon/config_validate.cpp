@@ -60,11 +60,14 @@ static bool config_is_known_config_key(const std::string &key)
            config_is_fsk_only_key(key);
 }
 
-static bool config_validate_freq_value(const std::string &val)
+static bool config_validate_freq_value(const std::string &val,
+                                       float freq_min_mhz,
+                                       float freq_max_mhz)
 {
     float f = 0.0f;
 
-    return config_value_parse_float_exact(val, &f) && f > 0.0f;
+    return config_value_parse_float_exact(val, &f) &&
+           config_policy_freq_valid_band(f, freq_min_mhz, freq_max_mhz);
 }
 
 static bool config_validate_power_value(const std::string &val)
@@ -76,10 +79,12 @@ static bool config_validate_power_value(const std::string &val)
 }
 
 static bool config_validate_lora_value(const std::string &key,
-                                       const std::string &val)
+                                       const std::string &val,
+                                       float freq_min_mhz,
+                                       float freq_max_mhz)
 {
     if (key == "FREQ")
-        return config_validate_freq_value(val);
+        return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
         return config_validate_power_value(val);
@@ -148,10 +153,12 @@ static bool config_validate_fsk_shaping_value(const std::string &val)
 
 static bool config_validate_fsk_value(const std::string &key,
                                       const std::string &val,
-                                      DaemonChipFamily chip_family)
+                                      DaemonChipFamily chip_family,
+                                      float freq_min_mhz,
+                                      float freq_max_mhz)
 {
     if (key == "FREQ")
-        return config_validate_freq_value(val);
+        return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
         return config_validate_power_value(val);
@@ -206,7 +213,9 @@ static bool config_validate_fsk_value(const std::string &key,
 bool config_validate_command(const ConfigCommand &cmd,
                              RadioMode_t current_mode,
                              ConfigValidationResult *result,
-                             DaemonChipFamily chip_family)
+                             DaemonChipFamily chip_family,
+                             float freq_min_mhz,
+                             float freq_max_mhz)
 {
     config_validation_result_init(result, current_mode);
 
@@ -247,6 +256,17 @@ bool config_validate_command(const ConfigCommand &cmd,
             return false;
         }
 
+        /* Duplicate keys rejected (audit P2-1): sequential apply would
+         * silently let the last one win — ambiguous client intent fails
+         * closed instead. */
+        for (size_t j = 0; j < i; j++) {
+            if (cmd.tokens[j].first == key) {
+                config_validation_reject(result, key, val,
+                                         "duplicate key");
+                return false;
+            }
+        }
+
         if (key == "GETRSSI") {
             if (!config_value_parse_bool01_exact(val, NULL)) {
                 config_validation_reject(result, key, val,
@@ -261,7 +281,8 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (config_is_lora_only_key(key))
                 continue;
 
-            if (!config_validate_fsk_value(key, val, chip_family)) {
+            if (!config_validate_fsk_value(key, val, chip_family,
+                                           freq_min_mhz, freq_max_mhz)) {
                 config_validation_reject(result, key, val,
                                          "invalid FSK value");
                 return false;
@@ -270,7 +291,8 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (config_is_fsk_only_key(key))
                 continue;
 
-            if (!config_validate_lora_value(key, val)) {
+            if (!config_validate_lora_value(key, val,
+                                            freq_min_mhz, freq_max_mhz)) {
                 config_validation_reject(result, key, val,
                                          "invalid LoRa value");
                 return false;

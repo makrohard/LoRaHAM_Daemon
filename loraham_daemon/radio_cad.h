@@ -14,6 +14,20 @@ typedef enum {
     RADIO_CAD_PROBE_BUSY = 2
 } RadioCadProbeStatus;
 
+/*
+ * rssi_dbm semantics depend on the path that filled the result (audit L5c —
+ * intentional, mirrors PACKETRSSI vs LIVERSSI in GET CHANNEL):
+ *
+ *   - scan probe ran (scan_ran=1): LAST-PACKET RSSI (getRSSI() /
+ *     radio_controller_packet_rssi) — the scan itself has no RSSI readout.
+ *   - passive probe and the pending-RX BUSY branch (scan_ran=0): LIVE RSSI
+ *     (rssiProbe), because these paths answer without touching RX.
+ *   - unavailable: -200.0 sentinel.
+ *
+ * Consumers must branch on scan_ran/status to know which one they got; do
+ * not "fix" this by unifying the source — the CAD monitor needs live, the
+ * scan path has only packet RSSI without disturbing RX.
+ */
 typedef struct {
     RadioCadProbeStatus status;
     int scan_state;

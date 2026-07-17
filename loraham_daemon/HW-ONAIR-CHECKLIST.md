@@ -60,3 +60,17 @@ eine Diagnosezeile, Daemon beendet sich fail-closed (softwareseitig getestet).
 | 9 | FSK: `MODE=FSK`, BR/FREQDEV/RXBW (SX126x-Raster!), SHAPING, ENCODING; `SET OOK=1` | Parametersatz wirksam; OOK deutlich abgelehnt; RXBW-Fremdwerte rot |
 | 10 | TXEN/ANT_SW (BCM 6): TX-Ausgangsleistung mit/ohne korrekt gesetztem RF-Switch | volle Leistung nur mit `setDio2AsRfSwitch` + TXEN-Pfad (Regressionswache für die RF-Switch-Verdrahtung) |
 | 11 | Kombination: Waveshare-Prozess + Uputronics-CE0-Prozess parallel | zweiter Prozess scheitert NICHT auf Funkpins; LED-Konflikt BCM 6 gemäß README-Matrix (CE0-LED-Reassign offen) |
+
+## v113 — Mode-Switch- & RX-Integritäts-Fixes (Milestones A–C)
+
+Bench-Nachweis für die v113-Verhaltensänderungen; beide Bänder, Profil wie
+verbaut. B8 aus M3 wird hiermit verschärft (Frequenz-Nachweis statt nur
+"kein Absturz").
+
+| # | Test | Erwartung |
+|---|---|---|
+| 1 | `SET MODE=FSK` dann `SET MODE=LORA` (868-Prozess), danach RX von bekannter Gegenstation auf 869.525 | Empfang funktioniert ohne weitere SET-Kommandos — Band-Boot-Defaults aktiv, kein 434-MHz-Chip-Default |
+| 2 | Wie 1 auf 433 (LoRa-APRS 433.900 SF12) | dito; `GET STATUS` zeigt Band-Defaults |
+| 3 | MODE-Wechsel unter Last: RX-Traffic während des Wechsels | kein Absturz, RX-Callback wieder aktiv, nächstes Paket dekodiert |
+| 4 | CAD-Probe bei anliegendem, noch nicht abgeholtem Paket (Traffic + gleichzeitiges MANAGED TX) | Paket wird dekodiert (kein RX-Verlust durch Probe), TX wartet als BUSY/`CHANNEL_BUSY` |
+| 5 | `GET STATS` nach Testlauf | `RXREARMFAIL=0` im Normalbetrieb; Feld vorhanden und angehängt (Altparser unbeeinflusst) |

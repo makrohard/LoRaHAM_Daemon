@@ -73,6 +73,10 @@ static const DaemonBandDescriptor band_433 = {
     "CONF433",
     "CONFIG433",
     "CLIENT433",
+    "CAD433",
+    "RSSI433",
+    430.0f,
+    440.0f,
     &rf_defaults_433,
     DAEMON_LED_PIN_433
 };
@@ -91,6 +95,10 @@ static const DaemonBandDescriptor band_868 = {
     "CONF868",
     "CONFIG868",
     "CLIENT868",
+    "CAD868",
+    "RSSI868",
+    863.0f,
+    870.0f,
     &rf_defaults_868,
     DAEMON_LED_PIN_868
 };

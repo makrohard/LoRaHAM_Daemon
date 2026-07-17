@@ -23,7 +23,8 @@ public:
     Sx127xDriver(Module *mod, bool is_hf);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
-    int16_t switchMode(RadioMode_t mode) override;
+    int16_t switchMode(RadioMode_t mode,
+                       const RadioRfDefaults *defaults) override;
     void applyLoraParam(const char *tag, const std::string &key,
                         const std::string &val) override;
     void applyFskParam(const char *tag, const std::string &key,

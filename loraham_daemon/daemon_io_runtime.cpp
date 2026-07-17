@@ -148,9 +148,14 @@ void daemon_io_sync_event_fds(EventLoopSet *event_set)
     if (!event_set)
         return;
 
-    event_loop_reconcile_begin(event_set);
+    /* Check BEFORE begin (audit L2): the failure early-return must not leave
+     * a dangling reconcile epoch (begin without matching end). Registration
+     * errors are terminal via event_loop_wait either way; this keeps the
+     * local begin⇒end invariant unconditional. */
     if (event_loop_registration_failed(event_set))
         return;
+
+    event_loop_reconcile_begin(event_set);
 
     radio_channel_reconcile_fds(&channel, event_set);
 

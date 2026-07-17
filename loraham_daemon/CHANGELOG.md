@@ -1,24 +1,34 @@
 # Changelog
 
-## Unreleased (v113 candidate — version constant not yet bumped)
-
-- Band-descriptor collapse (internal, no interface change): one process/one band/one radio/one worker is now the code structure, not just the deployment model. All per-band global pairs (controllers, client slots, channels, TX worker/completion queues, contexts, RX buffers, callbacks) collapsed to singletons driven by an immutable `DaemonBandDescriptor` (`daemon_band.*`) resolved once from `--radio`. Socket paths, wire protocols, CLI, log tags, instance locks, and exit codes are unchanged.
-- Removed the dead parallel-array client API (`client_set.*`); the only production helper moved to `client_slot_set_nonblocking()`. Covered behaviors (nonblocking accept, EMFILE on full slots, EOF close, queued broadcast, slow-client isolation, EPOLLOUT flush) were ported to `ClientSlot` tests.
-- Hot-path logic moved out of headers into `.cpp` files (`config_status`, `config_dispatch`, `daemon_data_tx_runtime`, `daemon_tx_{queue,worker,async_worker,completion,executor}`, `radio_cad` incl. the CAD monitor tick, LED sync): headers keep types, constants, and trivial accessors; signatures and semantics unchanged.
-- BEHAVIOR: main-loop lock discipline — monitoring, RX poll, and GETRSSI ticks now SKIP their sample instead of stalling when the TX worker holds the radio across a blocking transmit (seconds at SF12). CONFIG apply deliberately still blocks (client-initiated, must not be dropped). Contract documented in `radio_controller.h`.
-- sx1262: `begin()` without RF defaults now also applies the profile's TCXO voltage (no caller can bypass the TCXO).
-
 ## loraham_daemon 112
 
 - New Hardware Support:
   - Uputronics Raspberry PiZero LoRa(TM) Expansion Board V2.5C
   - Waveshare SX1262 LoRaWAN/GNSS HAT
 
+- Removed double stack to simplify code. That implies breaking the API:
+
 - BREAKING: `--radio both` and the implicit "both" default removed; `--radio 433|868` is mandatory (missing/invalid selection fails closed via the usage-error path). One radio per process; dual-band runs `loraham-daemon@433` + `loraham-daemon@868`.
 
 - BREAKING: the band-suffixed CLI flags `--tx-mode-433/868`, `--cad-monitor-433/868`, `--cad-rssi-433/868` are removed (rejected as unknown options); the plain `--tx-mode`, `--cad-monitor`, `--cad-rssi` apply to the selected band.
 
 - Fixes from the hardware validation (`HW-ONAIR-CHECKLIST.md`): sx1262 RF-switch polarity (TX radiated nothing), sx127x LDRO warm-start ghost on no-RESET boards (garbled RX after reconfig), chip-family-aware FSK `RXBW` validation (RXBW was unconfigurable on SX1262); framed DATA emits one ERROR per rejected frame instead of one per junk byte.
+
+- BEHAVIOR: main-loop lock discipline — monitoring, RX poll, and GETRSSI ticks now SKIP their sample instead of stalling when the TX worker holds the radio across a blocking transmit (seconds at SF12). CONFIG apply deliberately still blocks (client-initiated, must not be dropped). Contract documented in `radio_controller.h`.
+- Drivers fail closed on missing band RF defaults: `begin(NULL)`/`switchMode(..., NULL)` return `NULL_POINTER` instead of falling back to chip register defaults (no code path can park a process off-band).
+- BEHAVIOR: CAD probe pending-RX guard (audit M1) — a fully received but not yet drained packet is no longer destroyed by the probe's IRQ-clear/re-arm; the probe reports BUSY without scanning, MANAGED TX waits, the packet is delivered.
+- BEHAVIOR: `SET MODE` lands on the band's boot RF defaults (audit M2) — `switchMode()` requires the band defaults (fail-closed on NULL) instead of leaving the chip at its 434-MHz register defaults after a mode change.
+- BEHAVIOR: RX re-arm robustness (audit M3) — every `startReceive()` return is captured: boot failure fails closed (`RADIO_HEALTH_FAILED` + numeric code), runtime failures log once per incident, count in the new appended `GET STATS` field `RXREARMFAIL`, and are retried each radio tick under try_to_lock until recovery (no READY-but-deaf radio).
+- Polish: root-run SKIP guard in the lockdir tests, per-band log tags read from the band descriptor (new CAD/RSSI fields) instead of ternaries, hardware-profile resolve uses the frozen descriptor's band number, v113 bench items appended to `HW-ONAIR-CHECKLIST.md`.
+- Low-findings hardening: listening sockets are nonblocking so a reset connection can never hang the daemon in `accept()` (one accept per readiness tick stays the fairness policy); event-fd sync checks registration failure before `reconcile_begin` (no dangling epoch); benign `EINTR` from the event wait no longer hits the `perror` path (debug line only); probe `rssi_dbm` semantics (packet vs live per path) documented at the source.
+- Robustness polish: STATS/STATUS reply buffers sized for saturated 20-digit counters (no truncation possible), RX re-arm latch transitions are atomic exchanges, the re-arm retry never runs over an undrained packet, and shutdown resets the re-arm latch.
+- BEHAVIOR: every mandatory boot setter (frequency, SF, BW, sync, preamble, CR, CRC, LDRO, power) is now checked — a rejected setter fails the boot closed (FAILED health, stage logged) instead of a READY radio with partial RF configuration.
+- BEHAVIOR: `SET FREQ` is validated against the band's operational range from the descriptor (433: 430.0–440.0 MHz, 868: 863.0–870.0 MHz) — an 868 process can no longer be tuned off its logical band.
+- BEHAVIOR: preamble ranges are airtime-bounded (LoRa 6–512, FSK 0–2048); the old 65535 ceiling allowed a single valid ~36-minute preamble at SF12/BW125. Duplicate keys in one SET command are rejected (ambiguous under sequential apply).
+- SPI bus lock acquisition is deadline-bounded (2 s, CLOCK_MONOTONIC): a live-but-wedged peer process now causes a controlled fatal exit instead of hanging this daemon forever.
+- Background-mode log open is symlink-safe (`O_NOFOLLOW`); a symlink planted at the fixed /tmp log path is a hard error. Fixed a signed-shift UB in the RX debug decoder; test harness now fails on missing summaries, summary assertion failures, and unexpected XPASS (fail-open guard).
+- Repo entry point: root README now presents `loraham_daemon/` as the canonical tree; the legacy single-file daemons moved to `legacy/` (archived, not buildable per instructions).
+
 
 ## loraham_daemon 111a
 - loraham_daemon can now safely run multiple instances

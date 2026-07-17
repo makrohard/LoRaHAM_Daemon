@@ -1,6 +1,8 @@
 #include "../unix_socket.h"
 
 #include <fcntl.h>
+#include <errno.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -133,6 +135,31 @@ static void test_setup_replaces_stale_socket_path(void)
 
 /* --- CLI parsing and test sequence --- */
 
+/* Audit L1: the listener must be nonblocking so a connection reset between
+ * epoll readiness and accept() can never hang the daemon. */
+static void test_setup_socket_listener_nonblocking(void)
+{
+    const char *path = "/tmp/loraham_test_unix_nonblock.sock";
+    int fd;
+
+    unlink(path);
+    fd = setup_unix_socket(path, 1);
+    expect_int("nonblock: fd valid after setup", fd >= 0, 1);
+
+    int flags = fcntl(fd, F_GETFL, 0);
+    expect_int("nonblock: O_NONBLOCK set on listener",
+               flags >= 0 && (flags & O_NONBLOCK) != 0, 1);
+
+    /* Empty listener: accept must return immediately with EAGAIN, not block. */
+    errno = 0;
+    int client = accept(fd, NULL, NULL);
+    expect_int("nonblock: empty accept returns -1", client, -1);
+    expect_int("nonblock: empty accept sets EAGAIN",
+               errno == EAGAIN || errno == EWOULDBLOCK, 1);
+
+    close_unix_socket(&fd, path);
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -153,6 +180,7 @@ int main(int argc, char **argv)
     }
 
     test_close_unix_socket_unlinks_and_clears_fd();
+    test_setup_socket_listener_nonblocking();
     test_setup_socket_mode();
     test_setup_rejects_regular_file_path();
     test_setup_replaces_stale_socket_path();

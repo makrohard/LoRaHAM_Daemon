@@ -1,4 +1,5 @@
 #include "../radio_cad.h"
+#include "../daemon_band.h"
 #include "../daemon_data_tx_runtime.h"
 
 #include <stdio.h>
@@ -63,7 +64,8 @@ struct FakeRadio : public RadioDriver {
     }
 
     int16_t begin(const RadioRfDefaults *) override { return 0; }
-    int16_t switchMode(RadioMode_t) override { return 0; }
+    int16_t switchMode(RadioMode_t,
+                       const RadioRfDefaults *) override { return 0; }
     void applyLoraParam(const char *, const std::string &,
                         const std::string &) override {}
     void applyFskParam(const char *, const std::string &,
@@ -447,6 +449,12 @@ static void test_restore_clears_received_and_irq(void)
     expect_int("restore re-arms rx", fake(&ctrl)->start_receive_count, 1);
 }
 
+// Ported for the pending-RX guard (audit M1): a PRE-SET received flag now
+// means "undrained packet" and blocks the scan (covered by the guard tests
+// below). What remains guaranteed here: without pending RX the probe scans,
+// and the restore leaves no spurious received flag behind (a flag raised
+// DURING the scan is cleared by radio_cad_restore_rx_after_probe, covered by
+// test_restore_clears_received_and_irq).
 static void test_active_probe_leaves_no_spurious_received(void)
 {
     RadioController ctrl;
@@ -454,19 +462,80 @@ static void test_active_probe_leaves_no_spurious_received(void)
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     fake(&ctrl)->scan_result = 0;
-    ctrl.received.store(true); // simulate a stale flag set during the probe
 
     result = radio_cad_probe(&ctrl);
 
     expect_int("active probe scanned once", fake(&ctrl)->scan_count, 1);
-    expect_int("active probe restore cleared received",
+    expect_int("active probe leaves received clear",
                ctrl.received.load() ? 1 : 0, 0);
     expect_int("active probe cleared irq",
                fake(&ctrl)->clear_irq_count >= 1 ? 1 : 0, 1);
+    expect_int("active probe scan ran", result.scan_ran, 1);
+}
+
+
+/* --- Pending-RX guard (audit M1) ----------------------------------------- */
+// A fully received, undrained packet must never be destroyed by a scan probe:
+// the probe reports BUSY without scanning or touching IRQ/flag/RX state.
+
+static void test_probe_pending_rx_returns_busy(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->rssi = -77.0f;
+    ctrl.received.store(true);
+
+    result = radio_cad_probe(&ctrl);
+    expect_int("pending rx probe busy", result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("pending rx probe no scan", result.scan_ran, 0);
+    expect_int("pending rx probe scan count", fake(&ctrl)->scan_count, 0);
+    expect_int("pending rx probe no clearIrq", fake(&ctrl)->clear_irq_count, 0);
+    expect_int("pending rx probe no startReceive",
+               fake(&ctrl)->start_receive_count, 0);
+    expect_int("pending rx probe flag intact",
+               ctrl.received.load() ? 1 : 0, 1);
+    expect_float_centi("pending rx probe passive rssi", result.rssi_dbm, -7700);
+
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("pending rx try probe busy", result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("pending rx try probe no scan", result.scan_ran, 0);
+    expect_int("pending rx try probe scan count", fake(&ctrl)->scan_count, 0);
+    expect_int("pending rx try probe flag intact",
+               ctrl.received.load() ? 1 : 0, 1);
+}
+
+static void test_managed_wait_pending_rx_blocks(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext tx;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    tx.ctrl = &ctrl;
+    tx.log_ctx = "TEST";
+
+    // Packet arrives (and stays undrained) before/through the CAD wait.
+    ctrl.received.store(true);
+    fake(&ctrl)->scan_result = 0;   // channel would read FREE if scanned
+
+    expect_int("managed wait pending rx blocks",
+               data_tx_wait_channel_free_with_limits_ex(&tx, 3, 1, 0, false),
+               DATA_TX_CAD_WAIT_BLOCK);
+    expect_int("managed wait pending rx never scanned",
+               fake(&ctrl)->scan_count, 0);
+    expect_int("managed wait pending rx no clearIrq",
+               fake(&ctrl)->clear_irq_count, 0);
+    expect_int("managed wait pending rx packet survives",
+               ctrl.received.load() ? 1 : 0, 1);
 }
 
 int main(int argc, char **argv)
 {
+    /* daemon_data_tx_context() reads log tags from the band descriptor. */
+    daemon_band_resolve(RADIO_BAND_433);
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--bin") == 0) {
             if (i + 1 >= argc) {
@@ -494,6 +563,8 @@ int main(int argc, char **argv)
     test_try_probe_skips_active_tx();
     test_probe_gated_without_dio1();
     test_tx_wait_direct_mode_skips_cad();
+    test_probe_pending_rx_returns_busy();
+    test_managed_wait_pending_rx_blocks();
     test_tx_wait_fsk_skips_cad();
     test_passive_probe_is_non_destructive();
     test_passive_probe_uses_per_band_threshold();

@@ -64,9 +64,13 @@ public:
      * documented setter order. Returns the RadioLib begin() state. */
     virtual int16_t begin(const RadioRfDefaults *defaults) = 0;
 
-    /* LoRa <-> FSK mode switch (begin()/beginFSK()); the caller re-arms the
-     * RX callback and startReceive() afterwards, as before. */
-    virtual int16_t switchMode(RadioMode_t mode) = 0;
+    /* LoRa <-> FSK mode switch. Lands the radio on the BAND boot defaults
+     * for the target mode (never chip defaults — an 868 process must not
+     * park at 434 MHz). No default argument: every caller states its
+     * defaults, fail-closed against reintroducing chip defaults. The caller
+     * re-arms the RX callback and startReceive() afterwards, as before. */
+    virtual int16_t switchMode(RadioMode_t mode,
+                               const RadioRfDefaults *defaults) = 0;
 
     /* CONFIG SET parameter application for the current mode; prints the
      * per-key colored state exactly like the pre-driver implementation. */

@@ -22,4 +22,8 @@ bool config_policy_fsk_rxbw_valid_family(float bw, DaemonChipFamily family);
 bool config_policy_fsk_preamble_valid(int preamble);
 bool config_policy_fsk_sync_valid(uint32_t sync);
 
+bool config_policy_freq_valid_band(float freq_mhz,
+                                   float min_mhz,
+                                   float max_mhz);
+
 #endif

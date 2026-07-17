@@ -35,7 +35,8 @@ public:
     Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
-    int16_t switchMode(RadioMode_t mode) override;
+    int16_t switchMode(RadioMode_t mode,
+                       const RadioRfDefaults *defaults) override;
     void applyLoraParam(const char *tag, const std::string &key,
                         const std::string &val) override;
     void applyFskParam(const char *tag, const std::string &key,
