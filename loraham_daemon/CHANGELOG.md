@@ -1,6 +1,10 @@
 # Changelog
 
 ## loraham_daemon 112
+- sx1262: RF-switch polarity fixed — BCM 6 must be LOW during TX (registered as rxEn); before, TX reported OK but radiated nothing (bench-found, M4 row 10)
+- sx127x: LDRO is always written explicitly — on no-RESET boards a boot-forced LDRO bit survived restarts in silicon while RadioLib's cache assumed POR, garbling RX after reconfig (bench-found)
+- On-air validation executed (M3 A/B both bands, M4 Waveshare LF, Uputronics CE0+CE1 stack): see `HW-ONAIR-CHECKLIST.md` status notes; LED polarity BCM 6/13 verified active-high
+- Known issue: FSK `RXBW` on SX1262 is currently unconfigurable — CONF validation uses the SX127x raster, the chip accepts only its own (fix: driver-aware validation)
 - Framed DATA: a rejected frame (oversized TX_PACKET, unknown/oversized frame type) now yields exactly one ERROR frame; the parser skips the declared payload and re-syncs (previously each junk byte produced an "unknown frame type" ERROR).
 - Cleanup: .gitignore covers all built test binaries by pattern (+ repo-root ignore for IDE dirs), shared driver print/shaping helpers (`driver_config_print.h`), `--help` notes that only the selected band's sockets are created.
 - Multi-hardware M5: docs closure — README architecture table covers hardware profiles and both radio drivers, combination matrix final, maintainer on-air checklists (M3 A/B + M4 SX1262) collected in `HW-ONAIR-CHECKLIST.md`.
