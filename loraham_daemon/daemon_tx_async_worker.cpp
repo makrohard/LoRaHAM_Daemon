@@ -155,6 +155,8 @@ void daemon_tx_async_worker_loop(DaemonTxAsyncWorker *async)
             if (daemon_tx_queue_pop(&async->worker.queue, &job) != 0)
                 continue;
 
+            async->job_active.store(true);
+
             send_fn = async->send_fn;
             send_ctx = async->send_ctx;
             cad_probe_fn = async->cad_probe_fn;
@@ -172,6 +174,7 @@ void daemon_tx_async_worker_loop(DaemonTxAsyncWorker *async)
                                                            cad_probe_ctx,
                                                            cad_sleep_fn,
                                                            cad_sleep_ctx);
+        async->job_active.store(false);
 
         {
             DaemonTxWorkerDrainCtx drain;

@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "daemon_band.h"
+#include "daemon_gpio_lock.h"
 #include "daemon_log.h"
 #include "hardware_profile.h"
 #include "daemon_stats.h"
@@ -88,6 +89,7 @@ void daemon_radio_shutdown_cleanup(void)
     radio_controller_shutdown(&radio_controller);
 
     daemon_led_shutdown();
+    daemon_gpio_locks_release();
 }
 
 /* --- RX callback ---------------------------------------------------------- */

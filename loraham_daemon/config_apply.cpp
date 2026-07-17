@@ -8,7 +8,10 @@
 #include <RadioLib.h>
 
 #include "config_parser.h"
+#include "config_policy.h"
+#include "rf_packet.h"
 #include "config_validate.h"
+#include "radio_rf_defaults.h"
 #include "config_value.h"
 
 /* --- CONFIG command apply ------------------------------------------------ */
@@ -16,6 +19,132 @@
 // RadioDriver::switchMode(), GETRSSI, then per-key parameters via
 // RadioDriver::applyLoraParam()/applyFskParam(). The colored per-key state
 // output for the chip parameters comes from the driver.
+
+
+/* --- Effective RF config shadow (audit P1-7) ------------------------------ */
+/*
+ * One process, one radio: the CONF apply pipeline is the only runtime
+ * configuration path, so this module can track the effective airtime-relevant
+ * parameters. Lazy-initialized from the band boot defaults (which ARE the
+ * radio state until the first SET); reset to them on every successful MODE
+ * switch; updated per key on successful apply. Used to validate the merged
+ * (current + command) configuration against the airtime limit BEFORE any
+ * hardware side effect.
+ */
+typedef struct {
+    bool set;
+    int sf;
+    float bw_khz;
+    int cr;
+    int preamble;
+    float fsk_br_kbps;
+    int fsk_preamble_bits;
+} ConfigApplyEffective;
+
+static ConfigApplyEffective g_effective;
+
+static void config_apply_effective_load_defaults(ConfigApplyEffective *e)
+{
+    const RadioRfDefaults *d = daemon_band()->rf_defaults;
+
+    e->sf = d->spreading_factor;
+    e->bw_khz = d->bandwidth_khz;
+    e->cr = d->coding_rate;
+    e->preamble = d->preamble_len;
+    /* FSK modem baseline = the established legacy switchMode values. */
+    e->fsk_br_kbps = 4.8f;
+    e->fsk_preamble_bits = 16;
+    e->set = true;
+}
+
+void config_apply_effective_reset(void)
+{
+    g_effective.set = false;
+}
+
+static ConfigApplyEffective *config_apply_effective(void)
+{
+    if (!g_effective.set)
+        config_apply_effective_load_defaults(&g_effective);
+
+    return &g_effective;
+}
+
+/* Merged worst-case airtime of the command's prospective configuration.
+ * Returns false (reject) when it exceeds CONFIG_POLICY_MAX_AIRTIME_MS. */
+static bool config_apply_airtime_ok(const ConfigCommand &parsed,
+                                    RadioMode_t target_mode,
+                                    const char *tag)
+{
+    ConfigApplyEffective merged = *config_apply_effective();
+
+    /* A MODE token lands on the band boot defaults first. */
+    if (!parsed.mode.empty())
+        config_apply_effective_load_defaults(&merged);
+
+    for (const auto &kv : parsed.tokens) {
+        const std::string &key = kv.first;
+        const std::string &val = kv.second;
+
+        if (key == "SF")
+            config_value_parse_int_exact(val, &merged.sf);
+        else if (key == "BW")
+            config_value_parse_float_exact(val, &merged.bw_khz);
+        else if (key == "CR")
+            config_value_parse_int_exact(val, &merged.cr);
+        else if (key == "PREAMBLE" && target_mode == RADIO_MODE_LORA)
+            config_value_parse_int_exact(val, &merged.preamble);
+        else if (key == "PREAMBLE")
+            config_value_parse_int_exact(val, &merged.fsk_preamble_bits);
+        else if (key == "BR")
+            config_value_parse_float_exact(val, &merged.fsk_br_kbps);
+    }
+
+    double airtime_ms = (target_mode == RADIO_MODE_LORA)
+        ? config_policy_lora_airtime_ms(merged.sf, merged.bw_khz, merged.cr,
+                                        merged.preamble,
+                                        RF_PACKET_MAX_PAYLOAD_LEN)
+        : config_policy_fsk_airtime_ms(merged.fsk_br_kbps,
+                                       merged.fsk_preamble_bits,
+                                       RF_PACKET_MAX_PAYLOAD_LEN);
+
+    if (airtime_ms < 0.0 || airtime_ms > CONFIG_POLICY_MAX_AIRTIME_MS) {
+        printf("[%s] CONFIG rejected: worst-case airtime %.0f ms > %.0f ms "
+               "(SF%d/BW%.1f/CR%d/PRE%d, 255 B)\n",
+               tag, airtime_ms, CONFIG_POLICY_MAX_AIRTIME_MS,
+               merged.sf, (double)merged.bw_khz, merged.cr,
+               target_mode == RADIO_MODE_LORA ? merged.preamble
+                                              : merged.fsk_preamble_bits);
+        fflush(stdout);
+        return false;
+    }
+
+    return true;
+}
+
+/* Shadow bookkeeping after a successful per-key hardware apply. */
+static void config_apply_effective_note_key(RadioMode_t mode,
+                                            const std::string &key,
+                                            const std::string &val)
+{
+    ConfigApplyEffective *e = config_apply_effective();
+
+    if (mode == RADIO_MODE_LORA) {
+        if (key == "SF")
+            config_value_parse_int_exact(val, &e->sf);
+        else if (key == "BW")
+            config_value_parse_float_exact(val, &e->bw_khz);
+        else if (key == "CR")
+            config_value_parse_int_exact(val, &e->cr);
+        else if (key == "PREAMBLE")
+            config_value_parse_int_exact(val, &e->preamble);
+    } else {
+        if (key == "BR")
+            config_value_parse_float_exact(val, &e->fsk_br_kbps);
+        else if (key == "PREAMBLE")
+            config_value_parse_int_exact(val, &e->fsk_preamble_bits);
+    }
+}
 
 ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                                                  const char *tag,
@@ -47,6 +176,11 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
 
     bool hardware_touched = false;
 
+    /* Airtime gate (audit P1-7): merged current+command worst case, checked
+     * BEFORE any hardware side effect. */
+    if (!config_apply_airtime_ok(parsed, validation.target_mode, tag))
+        return CONFIG_APPLY_REJECTED;
+
     bool printed = false;
 
     // First pass: collect MODE, GETRSSI and radio parameters.
@@ -74,6 +208,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_FSK;
                 hardware_touched = true;
+                config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
@@ -87,6 +222,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
             if(state == RADIOLIB_ERR_NONE) {
                 mode_flag = RADIO_MODE_LORA;
                 hardware_touched = true;
+                config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
@@ -130,6 +266,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                     return CONFIG_APPLY_HW_ERROR;
                 }
                 hardware_touched = true;
+                config_apply_effective_note_key(RADIO_MODE_FSK, key, val);
             }
         } else {
             // Ignore FSK-only keys while in LoRa mode.
@@ -144,6 +281,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                         return CONFIG_APPLY_HW_ERROR;
                     }
                     hardware_touched = true;
+                    config_apply_effective_note_key(RADIO_MODE_LORA, key, val);
                 }
         }
     }

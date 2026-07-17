@@ -1,6 +1,8 @@
 #include "config_dispatch.h"
 
 #include "daemon_rx_rearm.h"
+#include "daemon_tx_async_runtime.h"
+#include "config_parser.h"
 
 /* Bodies moved verbatim from config_dispatch.h (D3 de-inlining). */
 
@@ -178,6 +180,26 @@ void config_dispatch_apply_line(const char *line, void *user)
                radio_health_name(radio_controller_health(ctx->ctrl)));
         fflush(stdout);
         return;
+    }
+
+    /* Queue/config coordination (audit P1-5): a queued TX job snapshots no
+     * RF configuration — it transmits with whatever is configured at
+     * execution time. Applying an RF change while jobs are pending or
+     * executing would retune already-accepted packets, so such commands are
+     * rejected until the queue is empty (queues drain in seconds; CONFIG is
+     * client-initiated and can be retried). */
+    if (config_command_touches_radio(line)) {
+        size_t queued = daemon_tx_async_runtime_pending();
+        int executing = daemon_tx_async_runtime_job_active();
+
+        if (queued > 0 || executing) {
+            config_dispatch_log_message(&ctx->log, "Abgelehnt: TX-Queue aktiv");
+            printf("[%s] CONFIG rejected: TX queue busy "
+                   "(%zu pending%s) – retry when drained\n",
+                   ctx->tag, queued, executing ? ", 1 executing" : "");
+            fflush(stdout);
+            return;
+        }
     }
 
     config_dispatch_log_message(&ctx->log, "Apply startet");

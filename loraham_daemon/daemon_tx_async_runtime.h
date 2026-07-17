@@ -26,6 +26,8 @@ size_t daemon_tx_async_runtime_completion_pending(void);
 void daemon_tx_async_runtime_record_completion(const DaemonTxJobResult *result, void *ctx);
 DaemonTxCompletionQueue *daemon_tx_async_runtime_completion_queue(void);
 size_t daemon_tx_async_runtime_pending(void);
+/* 1 while the worker executes a popped job (audit P1-5). */
+int daemon_tx_async_runtime_job_active(void);
 size_t daemon_tx_async_runtime_dropped(void);
 size_t daemon_tx_async_runtime_processed(void);
 size_t daemon_tx_async_runtime_rejected(void);

@@ -8,6 +8,7 @@
 #include "locking_pihal.h"
 
 #include "daemon_band.h"
+#include "daemon_gpio_lock.h"
 #include "daemon_led.h"
 #include "daemon_log.h"
 #include "daemon_radio_runtime.h"
@@ -74,6 +75,26 @@ void lora_init(void) {
 
     radio_controller.health = RADIO_HEALTH_UNINITIALIZED;
     daemon_debug_ctx("RADIO", "Health zurückgesetzt");
+
+    /* Cross-process GPIO ownership (audit P1-1): claim every pin this
+     * process will drive BEFORE any lgpio claim. lgpio claim errors are
+     * printed-and-swallowed inside RadioLib's HAL, so this is the only
+     * deterministic conflict gate between the two band processes. */
+    {
+        int pins[DAEMON_HW_MAX_CLAIMED + 1];
+        size_t n = 0;
+
+        for (int i = 0; i < daemon_hw_profile.claimed_count; i++)
+            pins[n++] = daemon_hw_profile.claimed[i];
+        pins[n++] = daemon_led_pin_configured(); /* may be overridden */
+
+        if (!daemon_gpio_locks_acquire(pins, n)) {
+            printf("[GPIO] Fehler: GPIO-Konflikt/Sperre – Radio-Init "
+                   "abgebrochen (fail-closed)\n");
+            radio_controller.health = RADIO_HEALTH_FAILED;
+            return;
+        }
+    }
 
     if (!daemon_led_ready()) {
         printf("[GPIO] Fehler: LED/GPIO nicht bereit!\n");
