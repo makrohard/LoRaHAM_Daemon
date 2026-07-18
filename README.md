@@ -12,27 +12,46 @@ First code for the LoRaHAM Pi hardware | https://www.loraham.de/produkt/loraham-
 * Raspberry Pi 3/4/5
 * Raspbian Image on RPi
 
-# This is the install script for a fresh Rasperry Pi OS installation:
+# The current daemon lives in `loraham_daemon/`
 
-    curl -k -fsSL https://loraham.de/downloads/install.sh | sh
+**[`loraham_daemon/`](loraham_daemon/) is the one canonical daemon source tree.**
+The old single-file daemons are archived under [`legacy/`](legacy/) and must not
+be built or deployed; everything else at the repository root is companion client
+tooling. Full documentation — supported hardware, CLI, CONF protocol, framed
+DATA protocol, systemd deployment: **[`loraham_daemon/README.md`](loraham_daemon/README.md)**.
 
-# Otherwise: Need follow parts on the Raspberry Pi image:
+Key facts (details in the daemon README):
+
+* `--radio 433` or `--radio 868` is **mandatory**; one process drives one band.
+  Dual-band operation runs two processes (systemd units `loraham-daemon@433`
+  and `loraham-daemon@868`, shipped in `loraham_daemon/systemd/`).
+* Hardware presets via `--hw` (legacy dual-module SX1278+RFM95, Uputronics
+  Pi Zero LoRa boards, Waveshare SX1262 LoRaWAN/GNSS HAT).
+* Sockets per band in `/run/loraham` (root:`loraham` 2750, via tmpfiles.d —
+  create the group first: `sudo groupadd --system loraham`; clients need
+  membership): raw DATA `lora{433,868}.sock`, framed DATA
+  `lora{433,868}f.sock`, CONF `loraconf{433,868}.sock`.
+
+> The historical `curl ... | sh` install script from loraham.de installs the
+> **archived legacy daemon** and must not be used for current deployments.
+
+# Build prerequisites on the Raspberry Pi image:
 
     sudo apt update
     sudo apt install g++ make cmake build-essential -y
     sudo apt install liblgpio-dev -y
     sudo apt install libncurses5-dev libncursesw5-dev -y
     sudo apt install socat -y
-    
+
     git clone https://github.com/LoRaHAM/LoRaHAM_Daemon ~/LoRaHAM
 
     git clone https://github.com/jgromes/RadioLib ~/RadioLib
+    git -C ~/RadioLib checkout 13b7c7cf84b191006da20f82bdb386f2efc96334
 
-    cd ~/RadioLib
-    mkdir build/
-    cd build
-    cmake ..
-    sudo make install
+RadioLib is used from its source checkout by the daemon build script (no
+`make install` required). The checkout above pins the exact RadioLib commit
+the test suite and CI run against (see `.github/ci/radiolib.lock`) — building
+against an arbitrary newer RadioLib may compile but is untested.
 
 # Configure your Raspberry Pi Hardware Interface:
 
@@ -47,10 +66,12 @@ First code for the LoRaHAM Pi hardware | https://www.loraham.de/produkt/loraham-
     fi
 
 # Compile instruction
-loraham Daemon:
 
-    g++ -o loraham_daemon loradaemon_305d.cpp -I/home/raspberry/RadioLib/src -I/home/raspberry/RadioLib/src/modules \
-    -I/home/raspberry/RadioLib/src/protocols/PhysicalLayer /home/raspberry/RadioLib/build/libRadioLib.a -llgpio
+loraham Daemon (canonical tree):
+
+    cd ~/LoRaHAM/loraham_daemon
+    ./build.sh            # release build (./build.sh --strict for -Werror)
+    ./run_tests.sh        # full test suite
 
 lorachat: 
 
@@ -71,12 +92,18 @@ But Chat use the RX-Frequency from iGate to transmitt and the TX-Frequency from 
 That will collide.
 You can read on the Chat all incoming RF tranmissions to your iGate.
 
-1. ./loraham_daemon
+For a direct (non-systemd) run, point the daemon's sockets at /tmp — the
+clients find them there automatically via their built-in fallback:
+
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433   (and/or a second process: --radio 868)
 2. ./loraham_igate
 3. ./loraham_chat
 
+(Under the systemd deployment the sockets live in /run/loraham instead and
+clients pick them up there — see loraham_daemon/README.md.)
+
 Daemon and iGate can also run as real daemon (parameter -d):
-1. ./loraham_daemon -d
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433 -d
 2. ./loraham_igate -d
 
 if you dont run loraham_daemon as a daemon, you see all traffic on your terminal!
@@ -101,12 +128,17 @@ Example:
      ./loraham_igate -c DB0ABC-10 -t 433.900 -r 433.775 -L 4827.70N -O 00957.60E -f 600 -i 1200 -d
  
 # Background information
-loraham_daemon opens 4 IPC (inter process communication) UNIX-Sockets:
+loraham_daemon opens its IPC (inter process communication) UNIX sockets per band:
 
-    - DATA868_SOCKET "/tmp/lora868.sock"
-    - DATA433_SOCKET "/tmp/lora433.sock"
-    - CONF868_SOCKET "/tmp/loraconf868.sock"
-    - CONF433_SOCKET "/tmp/loraconf433.sock"
+    - DATA433_SOCKET  "/run/loraham/lora433.sock"     (raw DATA)
+    - DATA868_SOCKET  "/run/loraham/lora868.sock"
+    - DATA433_FRAMED  "/run/loraham/lora433f.sock"    (framed DATA with RX metadata / TX_RESULT)
+    - DATA868_FRAMED  "/run/loraham/lora868f.sock"
+    - CONF433_SOCKET  "/run/loraham/loraconf433.sock" (CONF commands)
+    - CONF868_SOCKET  "/run/loraham/loraconf868.sock"
+
+The complete CONF command set (GET STATUS / GET STATS / GET CHANNEL, TX modes,
+CAD policy, value ranges) is documented in loraham_daemon/README.md.
     
 On the config sockets, you can send a simple text string to configurate the LoRa-Module from your programm:
 
@@ -115,8 +147,8 @@ On the config sockets, you can send a simple text string to configurate the LoRa
 
 You can send this also from your terminal via socat:
 
-    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
+    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/run/loraham/loraconf868.sock
  
  thats the config for 433 LoRa-APRS and 868 Meshtastic in Ulm/Dornstadt Germany ;-)
 
@@ -175,27 +207,21 @@ Erster Code für die LoRaHAM Pi Hardware | https://www.loraham.de/produkt/loraha
 * Raspberry Pi 3/4/5
 * Raspbian Image auf RPi
 * 
-# Dies ist das Installstionsskript für eine frische Rasperry Pi OS Installation:
+# Der aktuelle Daemon liegt in `loraham_daemon/`
 
-    curl -k -fsSL https://loraham.de/downloads/install.sh | sh
-    
-# Anderenfalls werden folgende Pakete auf dem Raspberry Pi Image benötigt:
+**[`loraham_daemon/`](loraham_daemon/) ist der einzige maßgebliche Daemon-Quellbaum.**
+Die alten Einzeldatei-Daemons sind unter [`legacy/`](legacy/) archiviert und
+dürfen nicht mehr gebaut oder eingesetzt werden. Vollständige Dokumentation
+(Hardware, CLI, CONF-Protokoll, framed DATA, systemd-Betrieb):
+**[`loraham_daemon/README.md`](loraham_daemon/README.md)**.
 
-    sudo apt update
-    sudo apt install g++ make cmake build-essential -y
-    sudo apt install liblgpio-dev -y
-    sudo apt install libncurses5-dev libncursesw5-dev -y
-    sudo apt install socat -y
-    
-    git clone https://github.com/LoRaHAM/LoRaHAM_Daemon ~/LoRaHAM
-    
-    git clone https://github.com/jgromes/RadioLib ~/RadioLib
-    
-    cd ~/RadioLib
-    mkdir build/
-    cd build
-    cmake ..
-    sudo make install
+`--radio 433` oder `--radio 868` ist **Pflicht**; ein Prozess bedient ein Band.
+Dualband-Betrieb läuft mit zwei Prozessen (`loraham-daemon@433` +
+`loraham-daemon@868`). Das historische Installationsskript von loraham.de
+installiert die archivierte Legacy-Version — nicht mehr verwenden.
+
+Benötigte Pakete und RadioLib: siehe englischer Abschnitt oben (RadioLib wird
+aus dem Quell-Checkout verwendet, kein `make install` nötig).
 
 # Konfiguriere die SPI-Hardware des Raspberry Pi:
 
@@ -210,10 +236,12 @@ Erster Code für die LoRaHAM Pi Hardware | https://www.loraham.de/produkt/loraha
     fi
 
 # Kompilieranweisung
-loraham Daemon:
 
-    g++ -o loraham_daemon loradaemon_305d.cpp -I/home/raspberry/RadioLib/src -I/home/raspberry/RadioLib/src/modules \
-    -I/home/raspberry/RadioLib/src/protocols/PhysicalLayer /home/raspberry/RadioLib/build/libRadioLib.a -llgpio
+loraham Daemon (maßgeblicher Quellbaum):
+
+    cd ~/LoRaHAM/loraham_daemon
+    ./build.sh            # Release-Build (./build.sh --strict für -Werror)
+    ./run_tests.sh        # komplette Testsuite
 
 lorachat: 
 
@@ -233,13 +261,16 @@ Zudem nutzt der Chat die RX-Frequenz vom iGate zum Senden und die TX-Frequenz vo
 Das wird kollidieren.
 Sie können im Chat alle eingehenden Funkübertragungen an Ihr iGate mitlesen.
 
-1. ./loraham_daemon
+Für einen direkten Start (ohne systemd) die Daemon-Sockets nach /tmp legen —
+die Clients finden sie dort automatisch (eingebauter Fallback):
+
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433   (und/oder zweiter Prozess: --radio 868)
 2. ./loraham_igate
 3. ./loraham_chat
 
 Daemon und iGate können auch als echter Daemon laufen (Parameter -d):
 
-1. ./loraham_daemon -d
+1. LORAHAM_SOCKET_DIR=/tmp ./loraham_daemon --radio 433 -d
 2. ./loraham_igate -d
 
 Wenn Sie loraham_daemon nicht als Daemon ausführen, sehen Sie den gesamten Datenverkehr in Ihrem Terminal!
@@ -264,12 +295,16 @@ Beispiel:
      ./loraham_igate -c DB0ABC-10 -t 433.900 -r 433.775 -L 4827.70N -O 00957.60E -f 600 -i 1200 -d
  
 # Hintergrundinformationen
-loraham_daemon öffnet 4 IPC (Inter-Process Communication) UNIX-Sockets:
+loraham_daemon öffnet seine IPC (Inter-Process Communication) UNIX-Sockets pro Band:
 
-    - DATA868_SOCKET "/tmp/lora868.sock"
-    - DATA433_SOCKET "/tmp/lora433.sock"
-    - CONF868_SOCKET "/tmp/loraconf868.sock"
-    - CONF433_SOCKET "/tmp/loraconf433.sock"
+    - DATA433_SOCKET  "/run/loraham/lora433.sock"     (rohes DATA)
+    - DATA868_SOCKET  "/run/loraham/lora868.sock"
+    - DATA433_FRAMED  "/run/loraham/lora433f.sock"    (framed DATA mit RX-Metadaten / TX_RESULT)
+    - DATA868_FRAMED  "/run/loraham/lora868f.sock"
+    - CONF433_SOCKET  "/run/loraham/loraconf433.sock" (CONF-Kommandos)
+    - CONF868_SOCKET  "/run/loraham/loraconf868.sock"
+
+Der vollständige CONF-Befehlssatz ist in loraham_daemon/README.md dokumentiert.
     
 Über die Konfigurations-Sockets können Sie eine einfache Textzeichenfolge senden, um das LoRa-Modul aus Ihrem Programm heraus zu konfigurieren:
 
@@ -278,8 +313,8 @@ loraham_daemon öffnet 4 IPC (Inter-Process Communication) UNIX-Sockets:
 
 Sie können dies auch von Ihrem Terminal über socat senden:
 
-    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/tmp/loraconf433.sock
-    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/tmp/loraconf868.sock
+    - echo "SET FREQ=433.900 SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=1 POWER=17" | socat - UNIX-CONNECT:/run/loraham/loraconf433.sock
+    - echo "SET FREQ=869.525 SF=11 BW=250 CR=5 CRC=1 PREAMBLE=16 SYNC=0x2B LDRO=1 POWER=10" | socat - UNIX-CONNECT:/run/loraham/loraconf868.sock
  
 Das ist die Konfiguration für 433 LoRa-APRS und 868 Meshtastic in Ulm/Dornstadt, Deutschland ;-)
 
