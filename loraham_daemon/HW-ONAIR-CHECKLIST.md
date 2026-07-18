@@ -22,9 +22,32 @@ Duty-Cycle-Einstellungen (≤ 20 dBm).
   aktiv-high verifiziert). Befund: LDRO-Warmstart-Geist (gefixt, `be43e1d`);
   Hardware-Lehre: 433/868-Antennen waren vertauscht (~50 dB, symmetrisch).
 
+## STATUS (Release-Abnahme v112, 2026-07-18, main @ `ad86639`) — ALLE DREI STACKS BESTANDEN
+
+v112 (Merge der Härtungsarbeit) on-air abgenommen auf LoRaHAM, Uputronics und
+Waveshare/SX1262. Alle Rows der Abschnitte „Mode-Switch/RX" und „Audit-Abschluss"
+grün auf realer Hardware; Gegenstationen MeshCom-T-Deck
+DJ0CHE-07 (433) und Meshtastic (868). Ergebnisse in `~/loraham-bench/*RESULTS.md`.
+
+- **LoRaHAM (SX1278/RFM95): BESTANDEN** — beide Bänder RX+TX (433 MeshCom, 868
+  Meshtastic), CONF-Replies, Band-Politik, Airtime-Gate, GPIO-Locks, SIGTERM.
+- **Uputronics CE0/CE1 (SX127x, kein DIO1): BESTANDEN** — disjunkte Pin-Locks
+  {6,8,25}/{7,13,16}, **CADSCAN=0 Passiv-CAD-Pfad** (schlüssel), RX+TX beide
+  Bänder, alle CONF/Politik/Airtime-Rows. LDRO=0 für MeshCom Pflicht (kein
+  RESET); sauber mit gesetztem LDRO=0.
+- **Waveshare SX1262: BESTANDEN** — Init mit TCXO 1.8 V (kein CHIP_NOT_FOUND),
+  Pin-Locks {6,16,18,20,21}, **CADSCAN=1** (hat DIO1). **RF-Switch-Fix (F1)
+  bestätigt: SX1262 STRAHLT AB** — TX auf T-Deck angezeigt (alter
+  TX_RESULT-OK-ohne-RF-Bug tot). SX1262-Familienprüfung nur hier möglich:
+  `OOK=0` UND `=1` → `ERR INVALID`; `ENCODING=1`/`FREQDEV=0.1` → `ERR INVALID`.
+  Langpaket 215 B angezeigt; Live-RSSI GetRssiInst (PACKETRSSI −41 vs
+  LIVERSSI −98). 868/HF-Variante nicht vorhanden (per Analogie).
+- **Prozess-Hinweis:** `pgrep -f "radio 433"` matcht die aufrufende Shell →
+  SIGTERM killt die Test-Shell; immer `pgrep -x loraham_daemon` verwenden.
+
 ## M3 — RadioDriver-Extraktion (A/B gegen den Vor-Treiber-Stand `834841a`)
 
-Ziel: `--radio 433` / `--radio 868` (Profil `legacy`) verhalten sich mit dem
+Ziel: `--radio 433` / `--radio 868` (LoRaHAM-Profil, `--hw legacy`) verhalten sich mit dem
 RadioDriver byte-identisch zum Stand vor der Extraktion. A = `834841a`,
 B = M3-HEAD; jede Zeile auf beiden Ständen ausführen und vergleichen.
 
@@ -39,7 +62,7 @@ B = M3-HEAD; jede Zeile auf beiden Ständen ausführen und vergleichen.
 | 7 | GETRSSI-Stream: Träger ein-/ausschalten | Pegelsprung sichtbar, Werteplateau plausibel (Offset −164/−157 LF/HF) |
 | 8 | MODE-Wechsel LoRa→FSK→LoRa per CONF, danach RX/TX | Wechsel ohne Absturz, RX-Callback wieder aktiv, Parameter-Apply im jeweiligen Modus |
 | 9 | `GET STATUS`/`GET STATS` nach Testlauf | Feldreihenfolge und Zählerstände identisch zu A |
-| 10 | LED-Verhalten (Profil `legacy`): RX-Blitz, TX/CAD-aktiv | identisches Blinkbild |
+| 10 | LED-Verhalten (LoRaHAM, `--hw legacy`): RX-Blitz, TX/CAD-aktiv | identisches Blinkbild |
 
 ## M4 — SX1262 (Waveshare LoRaWAN Node HAT, LF und HF)
 
@@ -61,9 +84,9 @@ eine Diagnosezeile, Daemon beendet sich fail-closed (softwareseitig getestet).
 | 10 | TXEN/ANT_SW (BCM 6): TX-Ausgangsleistung mit/ohne korrekt gesetztem RF-Switch | volle Leistung nur mit `setDio2AsRfSwitch` + TXEN-Pfad (Regressionswache für die RF-Switch-Verdrahtung) |
 | 11 | Kombination: Waveshare-Prozess + Uputronics-CE0-Prozess parallel | zweiter Prozess scheitert NICHT auf Funkpins; LED-Konflikt BCM 6 gemäß README-Matrix (CE0-LED-Reassign offen) |
 
-## v113 — Mode-Switch- & RX-Integritäts-Fixes (Milestones A–C)
+## v112-Härtung — Mode-Switch- & RX-Integritäts-Fixes
 
-Bench-Nachweis für die v113-Verhaltensänderungen; beide Bänder, Profil wie
+Bench-Nachweis für diese Verhaltensänderungen; beide Bänder, Profil wie
 verbaut. B8 aus M3 wird hiermit verschärft (Frequenz-Nachweis statt nur
 "kein Absturz").
 
@@ -75,7 +98,15 @@ verbaut. B8 aus M3 wird hiermit verschärft (Frequenz-Nachweis statt nur
 | 4 | CAD-Probe bei anliegendem, noch nicht abgeholtem Paket (Traffic + gleichzeitiges MANAGED TX) | Paket wird dekodiert (kein RX-Verlust durch Probe), TX wartet als BUSY/`CHANNEL_BUSY` |
 | 5 | `GET STATS` nach Testlauf | `RXREARMFAIL=0` im Normalbetrieb; Feld vorhanden und angehängt (Altparser unbeeinflusst) |
 
-## v113 Audit-Abschluss — Deployment & CONF-Protokoll (Bench-Nachweis)
+## v112-Härtung — Audit-Abschluss (Deployment & CONF-Protokoll)
+
+**STATUS 2026-07-18: alle Rows 1–8 BESTANDEN** auf LoRaHAM + Uputronics +
+Waveshare (Row 1 disjunkte Pin-Locks; Row 2 Exit 3 + gehaltener gpio-Lock →
+Exit 4 live; Row 3 CONF-Replies inkl. `set txqueue=1` klein → OK; Row 5/6
+Band-Politik + Airtime on-air; Row 7 Dual-Pfad-Client rssi_dualbar; Row 8
+SIGTERM sauber). Zusätzlich nur auf Waveshare/SX1262 nachweisbar: `OOK=0`/`=1`
+→ `ERR INVALID`, `ENCODING=1`→`ERR INVALID`, `FREQDEV=0.1`→`ERR INVALID`,
+`CADSCAN=1`, RF-Switch strahlt ab (TX auf T-Deck).
 
 Voraussetzung Variante A (systemd): Gruppe+Nutzer anlegen (README "systemd
 deployment"), tmpfiles ausführen, Units aktivieren. Variante B (direkt/lhpc):
