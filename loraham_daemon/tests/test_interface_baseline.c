@@ -116,24 +116,22 @@ static int test_cli_hw_unknown_rejected(void)
     return TEST_PASS;
 }
 
-static int test_cli_hw_legacy_accepted(void)
+static int test_cli_hw_loraham_accepted(void)
 {
     char out[2048];
     int exit_code = 0;
-    int ret = run_cli_capture(g_bin, "--hw=legacy", "--help",
+    int ret = run_cli_capture(g_bin, "--hw=loraham", "--help",
                               out, sizeof(out), &exit_code);
 
     if (ret != TEST_PASS)
         return ret;
-
     if (exit_code != 0)
         return TEST_FAIL;
-
     if (strstr(out, "--hw PRESET") == NULL)
         return TEST_FAIL;
-
     return TEST_PASS;
 }
+
 
 /* The removed band-suffixed overrides must fail closed as unknown options. */
 static int test_cli_banded_flag_rejected(void)
@@ -760,7 +758,7 @@ int main(int argc, char **argv)
     run_test("CLI rejects --radio both", test_cli_radio_both_rejected);
     run_test("CLI rejects banded flags", test_cli_banded_flag_rejected);
     run_test("CLI rejects unknown --hw preset", test_cli_hw_unknown_rejected);
-    run_test("CLI accepts --hw legacy", test_cli_hw_legacy_accepted);
+    run_test("CLI accepts --hw loraham", test_cli_hw_loraham_accepted);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);
