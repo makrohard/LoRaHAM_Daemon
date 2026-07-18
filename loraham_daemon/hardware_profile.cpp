@@ -7,7 +7,7 @@
 
 DaemonHardwareProfile daemon_hw_profile;
 
-static const char *g_hw_preset = "legacy";
+static const char *g_hw_preset = "loraham";
 
 bool daemon_set_hardware_preset(const char *name)
 {
@@ -37,7 +37,7 @@ const char *daemon_chip_family_name(DaemonChipFamily family)
 
 const char *daemon_hardware_profile_known(void)
 {
-    return "legacy, uputronics-ce0, uputronics-ce1, waveshare-sx1262";
+    return "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262";
 }
 
 static void profile_claimed_finish(DaemonHardwareProfile *p)
@@ -63,10 +63,10 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
 {
     memset(p, 0, sizeof(*p));
 
-    if (strcmp(preset, "legacy") == 0) {
-        /* Bit-identical to the pre-profile hardcoded wiring:
-         * 433: Module(hal, 8, 25, 5, 24); 868: Module(hal, 7, 16, 6, 12). */
-        p->name = "legacy";
+    if (strcmp(preset, "loraham") == 0) {
+        /* LoRaHAM_Pi dual-module wiring, bit-identical to the pre-profile
+         * hardcoded pins (433: Module(hal,8,25,5,24); 868: (hal,7,16,6,12)). */
+        p->name = "loraham";
         p->family = DAEMON_CHIP_FAMILY_SX127X;
         if (band == 433) {
             p->cs = 8;  p->irq = 25; p->rst = 5;  p->gpio = 24;

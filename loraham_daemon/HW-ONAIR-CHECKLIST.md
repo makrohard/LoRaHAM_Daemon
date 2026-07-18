@@ -47,7 +47,7 @@ DJ0CHE-07 (433) und Meshtastic (868). Ergebnisse in `~/loraham-bench/*RESULTS.md
 
 ## M3 — RadioDriver-Extraktion (A/B gegen den Vor-Treiber-Stand `834841a`)
 
-Ziel: `--radio 433` / `--radio 868` (LoRaHAM-Profil, `--hw legacy`) verhalten sich mit dem
+Ziel: `--radio 433` / `--radio 868` (LoRaHAM-Profil, `--hw loraham`) verhalten sich mit dem
 RadioDriver byte-identisch zum Stand vor der Extraktion. A = `834841a`,
 B = M3-HEAD; jede Zeile auf beiden Ständen ausführen und vergleichen.
 
@@ -62,7 +62,7 @@ B = M3-HEAD; jede Zeile auf beiden Ständen ausführen und vergleichen.
 | 7 | GETRSSI-Stream: Träger ein-/ausschalten | Pegelsprung sichtbar, Werteplateau plausibel (Offset −164/−157 LF/HF) |
 | 8 | MODE-Wechsel LoRa→FSK→LoRa per CONF, danach RX/TX | Wechsel ohne Absturz, RX-Callback wieder aktiv, Parameter-Apply im jeweiligen Modus |
 | 9 | `GET STATUS`/`GET STATS` nach Testlauf | Feldreihenfolge und Zählerstände identisch zu A |
-| 10 | LED-Verhalten (LoRaHAM, `--hw legacy`): RX-Blitz, TX/CAD-aktiv | identisches Blinkbild |
+| 10 | LED-Verhalten (LoRaHAM, `--hw loraham`): RX-Blitz, TX/CAD-aktiv | identisches Blinkbild |
 
 ## M4 — SX1262 (Waveshare LoRaWAN Node HAT, LF und HF)
 

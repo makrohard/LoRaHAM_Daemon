@@ -21,7 +21,7 @@ Hardware is selected with `--hw <preset>` (details and pin maps in
 
 | Preset | Board | Radio | Bands |
 |---|---|---|---|
-| `legacy` (default) | Original LoRaHAM dual-module wiring | SX1278 (433) + RFM95 (868), SX127x family | 433 + 868, one process per band |
+| `loraham` (default) | Original LoRaHAM dual-module wiring | SX1278 (433) + RFM95 (868), SX127x family | 433 + 868, one process per band |
 | `uputronics-ce0` / `-ce1` | [Uputronics Raspberry PiZero LoRa(TM) Expansion Board](https://store.uputronics.com/products/raspberry-pizero-loratm-expansion-board) (tested: V2.5C) | HopeRF RFM95/98W, SX127x family | 434 or 868 variant; CE switch per board, two boards stackable |
 | `waveshare-sx1262` | [Waveshare SX1262 LoRaWAN/GNSS HAT](https://www.waveshare.com/wiki/SX1262_XXXM_LoRaWAN/GNSS_HAT) | SX1262, SX126x family | LF (410–510 MHz, on-air-validated) or HF (850–930 MHz, supported by analogy) variant |
 
@@ -135,7 +135,7 @@ Build prerequisites: C++ compiler, lgpio development headers, RadioLib source/bu
 | `-v`, `--version` | - | `-v`, `--version` | Print daemon version and exit |
 | `--debug` | off | `--debug` | Enable debug log output |
 | `--radio MODE` | (required, no default) | `433`, `868` | Select the radio band this process drives; starting without `--radio` fails via the usage-error path |
-| `--hw PRESET` | `legacy` | `legacy`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262` | Hardware profile (wiring + silicon) for this process's radio; see "Hardware profiles". Unknown presets fail via the usage-error path |
+| `--hw PRESET` | `loraham` | `loraham`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262` | Hardware profile (wiring + silicon) for this process's radio; see "Hardware profiles". Unknown presets fail via the usage-error path |
 | `--tx-mode MODE` | `managed` | `direct`, `managed` | Boot TX mode for the selected band |
 | `--cad-monitor VAL` | `off` | `on`, `off` | Boot CAD=0/1 monitoring opt-in for the selected band; for legacy CONF clients that cannot send `SET CADMONITOR=1` |
 | `--cad-rssi DBM` | `-90` | integer dBm `-130`..`0` | CAD busy RSSI threshold for the selected band (environment dependent) |
@@ -194,7 +194,7 @@ SX127x: `irq` = DIO0, `gpio` = DIO1 — SX1262: `irq` = DIO1, `gpio` = BUSY.
 
 | Preset | Chip | CS | IRQ | RST | DIO1/BUSY | LED | Notes |
 |---|---|---:|---:|---:|---:|---:|---|
-| `legacy` (default) | SX127x | 8 / 7 | 25 / 16 | 5 / 6 | 24 / 12 | 13 / 19 | Per band (433 / 868); identical to the pre-profile hardcoded wiring |
+| `loraham` (default) | SX127x | 8 / 7 | 25 / 16 | 5 / 6 | 24 / 12 | 13 / 19 | LoRaHAM_Pi dual-module wiring, per band (433 / 868); identical to the pre-profile hardcoded pins |
 | `uputronics-ce0` | SX127x | 8 | 25 (DIO0) | — | — | 6 | Uputronics Pi Zero LoRa board, CE switch on CE0; DIO5 on BCM 24 (unused) |
 | `uputronics-ce1` | SX127x | 7 | 16 (DIO0) | — | — | 13 | Same board, CE switch on CE1; DIO5 on BCM 12 (unused) |
 | `waveshare-sx1262` | SX1262 | 21 | 16 (DIO1) | 18 | BUSY 20 | — | LF and HF variant are pin-identical; antenna-switch line BCM 6 (board silk "TXEN", but it must be LOW during TX / HIGH during RX — registered as RadioLib rxEn), TX routing via DIO2 (`setDio2AsRfSwitch`), TCXO via DIO3 (voltage from the profile, applied in `begin()`) |

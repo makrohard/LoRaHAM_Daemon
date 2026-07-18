@@ -40,12 +40,12 @@ static int claimed_contains(const DaemonHardwareProfile *p, int pin)
     return 0;
 }
 
-/* legacy must resolve per band exactly to the pre-profile hardcoded wiring. */
-static void test_legacy_433(void)
+/* loraham (canonical) must resolve per band exactly to the LoRaHAM_Pi wiring. */
+static void test_loraham_433(void)
 {
-    expect_int("set legacy", daemon_set_hardware_preset("legacy"), 1);
-    expect_int("resolve legacy 433", daemon_hardware_profile_resolve(433), 1);
-    expect_str("legacy name", daemon_hw_profile.name, "legacy");
+    expect_int("set loraham", daemon_set_hardware_preset("loraham"), 1);
+    expect_int("resolve loraham 433", daemon_hardware_profile_resolve(433), 1);
+    expect_str("loraham name", daemon_hw_profile.name, "loraham");
     expect_int("legacy family sx127x", daemon_hw_profile.family,
                DAEMON_CHIP_FAMILY_SX127X);
     expect_int("legacy 433 cs", daemon_hw_profile.cs, 8);
@@ -58,7 +58,7 @@ static void test_legacy_433(void)
     expect_int("legacy reset wired", daemon_hw_profile.reset_wired, 1);
 }
 
-static void test_legacy_868(void)
+static void test_loraham_868(void)
 {
     expect_int("resolve legacy 868", daemon_hardware_profile_resolve(868), 1);
     expect_int("legacy 868 cs", daemon_hw_profile.cs, 7);
@@ -67,6 +67,7 @@ static void test_legacy_868(void)
     expect_int("legacy 868 gpio/dio1", daemon_hw_profile.gpio, 12);
     expect_int("legacy 868 led", daemon_hw_profile.led_pin, 19);
 }
+
 
 /* Uputronics: DIO1 and RESET not routed; LED slot-based; band-agnostic. */
 static void test_uputronics_ce0(void)
@@ -148,8 +149,8 @@ static void test_family_names(void)
 
 int main(void)
 {
-    test_legacy_433();
-    test_legacy_868();
+    test_loraham_433();
+    test_loraham_868();
     test_uputronics_ce0();
     test_uputronics_ce1();
     test_waveshare();

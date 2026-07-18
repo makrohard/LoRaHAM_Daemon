@@ -269,8 +269,9 @@ static void daemon_print_usage(const char *argv0)
     printf("  -v, --version    Version anzeigen und beenden\n");
     printf("      --debug      Debug-Log aktivieren\n");
     printf("      --radio MODE Radio wählen: 433, 868 (erforderlich)\n");
-    printf("      --hw PRESET  Hardware-Profil: legacy, uputronics-ce0, uputronics-ce1,\n");
-    printf("                   waveshare-sx1262 (Standard: legacy)\n");
+    printf("      --hw PRESET  Hardware-Profil: %s\n",
+           daemon_hardware_profile_known());
+    printf("                   (Standard: loraham)\n");
     printf("      --tx-mode MODE      TX-Modus: direct, managed (Standard: managed)\n");
     printf("      --cad-monitor VAL   CAD=0/1-Monitor: on, off (Standard: off)\n");
     printf("      --cad-rssi DBM      CAD-Busy-Schwelle, Ganzzahl dBm -130..0 (Standard: -90)\n");
