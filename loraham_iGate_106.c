@@ -74,8 +74,21 @@
 
 //#define APRS_SERVER             "aprs1.hc.r1.ampr.org"
 //#define APRS_PORT               14501
-#define DATA_SOCKET             "/tmp/lora433.sock"
-#define CONF_SOCKET             "/tmp/loraconf433.sock"
+
+/* --- Daemon-Socket-Pfadwahl -------------------------------------------------
+ * systemd-Deployments servieren die Sockets unter /run/loraham, direkte/
+ * Benutzer-Starts unter /tmp (LORAHAM_SOCKET_DIR). Ein Build funktioniert in
+ * beiden Welten: nimm den Pfad, unter dem der Daemon-Socket tatsaechlich
+ * existiert, sonst den /tmp-Fallback. */
+#include <sys/stat.h>
+static const char *loraham_sockpath(const char *runp, const char *tmpp)
+{
+    struct stat st;
+    return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
+}
+
+#define DATA_SOCKET loraham_sockpath("/run/loraham/lora433.sock", "/tmp/lora433.sock")
+#define CONF_SOCKET loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
 
 /* 3-Byte LoRa-APRS Header: '<' 0xFF 0x01  (= 0x3C 0xFF 0x01) */
 #define LORA_HEADER             "\x3c\xff\x01"

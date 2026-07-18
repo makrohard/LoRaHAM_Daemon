@@ -41,8 +41,21 @@
 #include <ctype.h>
 #include <time.h>
 
-#define SOCKET_PATH "/tmp/lora433.sock"
-#define CONFIG_SOCKET_PATH "/tmp/loraconf433.sock"
+
+/* --- Daemon-Socket-Pfadwahl -------------------------------------------------
+ * systemd-Deployments servieren die Sockets unter /run/loraham, direkte/
+ * Benutzer-Starts unter /tmp (LORAHAM_SOCKET_DIR). Ein Build funktioniert in
+ * beiden Welten: nimm den Pfad, unter dem der Daemon-Socket tatsaechlich
+ * existiert, sonst den /tmp-Fallback. */
+#include <sys/stat.h>
+static const char *loraham_sockpath(const char *runp, const char *tmpp)
+{
+    struct stat st;
+    return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
+}
+
+#define SOCKET_PATH loraham_sockpath("/run/loraham/lora433.sock", "/tmp/lora433.sock")
+#define CONFIG_SOCKET_PATH loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
 #define CONFIG_FILE "lorachat.conf"
 #define CHAT_LOG "lorachat.log"
 #define MAX_MSG_LEN 256
