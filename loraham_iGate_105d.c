@@ -1,24 +1,17 @@
 /******************************************************************************
- * Copyright (C) 2026  [LoRaHAM / Alexander Walter]
- * * LICENSE: GNU General Public License v3 (GPLv3) with the following terms:
- * 1. PRIVATE/HOBBY: Free use, modification, and redistribution for non-commercial
- * purposes is permitted.
- * 2. COMMERCIAL: Commercial or business use is STRICTLY PROHIBITED unless a
- * written license is obtained from the author for a fee (Dual-Licensing).
- * [CONTACT: loraham.de Email Contact]
- * 3. CODE MAINTENANCE: Any modifications to this code must be reported to the
- * author (preferably via Pull Request on GitHub).
- * 4. REDISTRIBUTION: Binaries may only be distributed alongside the full
- * source code (Copyleft) (Copyleft).
- * * --- DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY ---
- * THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE
- * PROGRAM IS WITH THE USER.
+ * Copyright (C) 2026  LoRaHAM / Alexander Walter
+ *
+ * This program is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation, either version 3 of the License, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <https://www.gnu.org/licenses/>.
  *****************************************************************************/
 
 /*
@@ -215,28 +208,22 @@ void print_usage(char *name) {
 int main(int argc, char **argv) {
     log_print("[EWOCLEM]    LoRaHAM PiGate OVERWATCH V1.00 26.02.27\n");
     log_print("[EWOCLEM]    \n");
-    log_print("[EWOCLEM]     ******************************************************************************\n");
-    log_print("[EWOCLEM]     * Copyright (C) 2026  [LoRaHAM / Alexander Walter]\n");
-    log_print("[EWOCLEM]     * * LICENSE: GNU General Public License v3 (GPLv3) with the following terms:\n");
-    log_print("[EWOCLEM]     * 1. PRIVATE/HOBBY: Free use, modification, and redistribution for non-commercial\n");
-    log_print("[EWOCLEM]     * purposes is permitted.\n");
-    log_print("[EWOCLEM]     * 2. COMMERCIAL: Commercial or business use is STRICTLY PROHIBITED unless a\n");
-    log_print("[EWOCLEM]     * written license is obtained from the author for a fee (Dual-Licensing).\n");
-    log_print("[EWOCLEM]     * [CONTACT: loraham.de Email Contact]\n");
-    log_print("[EWOCLEM]     * 3. CODE MAINTENANCE: Any modifications to this code must be reported to the\n");
-    log_print("[EWOCLEM]     * author (preferably via Pull Request on GitHub).\n");
-    log_print("[EWOCLEM]     * 4. REDISTRIBUTION: Binaries may only be distributed alongside the full\n");
-    log_print("[EWOCLEM]     * source code (Copyleft).\n");
-    log_print("[EWOCLEM]     * * --- DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY ---\n");
-    log_print("[EWOCLEM]     * THIS SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n");
-    log_print("[EWOCLEM]     * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n");
-    log_print("[EWOCLEM]     * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n");
-    log_print("[EWOCLEM]     * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n");
-    log_print("[EWOCLEM]     * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n");
-    log_print("[EWOCLEM]     * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\n");
-    log_print("[EWOCLEM]     * THE SOFTWARE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE\n");
-    log_print("[EWOCLEM]     * PROGRAM IS WITH THE USER.\n");
-    log_print("[EWOCLEM]     *****************************************************************************\n");
+    log_print("[EWOCLEM]     * **************************************************************************\n");
+    log_print("[EWOCLEM]     * Copyright (C) 2026  LoRaHAM / Alexander Walter\n");
+    log_print("[EWOCLEM]     * \n");
+    log_print("[EWOCLEM]     * This program is free software: you can redistribute it and/or modify it\n");
+    log_print("[EWOCLEM]     * under the terms of the GNU General Public License as published by the Free\n");
+    log_print("[EWOCLEM]     * Software Foundation, either version 3 of the License, or (at your option)\n");
+    log_print("[EWOCLEM]     * any later version.\n");
+    log_print("[EWOCLEM]     * \n");
+    log_print("[EWOCLEM]     * This program is distributed in the hope that it will be useful, but\n");
+    log_print("[EWOCLEM]     * WITHOUT ANY WARRANTY; without even the implied warranty of\n");
+    log_print("[EWOCLEM]     * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General\n");
+    log_print("[EWOCLEM]     * Public License for more details.\n");
+    log_print("[EWOCLEM]     * \n");
+    log_print("[EWOCLEM]     * You should have received a copy of the GNU General Public License along\n");
+    log_print("[EWOCLEM]     * with this program.  If not, see <https://www.gnu.org/licenses/>.\n");
+    log_print("[EWOCLEM]     * **************************************************************************\n");
     log_print("[EWOCLEM]    \n");
 
     int opt;

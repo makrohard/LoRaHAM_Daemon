@@ -845,10 +845,20 @@ This software is experimental and used at your own risk. Use only for amateur ra
 Copyright (c) 2020-2026 Alexander Walter / LoRaHAM.  
 Refactored by Johannes Loose / 410733@gmail.com in 2026  
 
-The original project is licensed under GNU GPL v3 with additional conditions stated by the author:
+Licensed under the **GNU General Public License v3** — see [`LICENSE`](../LICENSE) for the full
+text. No further conditions apply: use, modification and redistribution, commercial or not, are
+governed solely by the GPLv3.
 
-- private/hobby use is free
-- commercial use requires written permission / commercial license
-- modifications should be reported to the author, preferably via pull request
-- binaries may only be redistributed with the full source code
-- no warranty; use at your own risk
+    Copyright (C) 2026  LoRaHAM / Alexander Walter
+    Copyright (C) 2026  Johannes Loose <410733@gmail.com>
+
+    This program is free software: you can redistribute it and/or modify it under the terms of
+    the GNU General Public License as published by the Free Software Foundation, either version
+    3 of the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+    without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+    See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along with this program.
+    If not, see <https://www.gnu.org/licenses/>.
