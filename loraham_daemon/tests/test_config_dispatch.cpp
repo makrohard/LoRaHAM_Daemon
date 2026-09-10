@@ -16,6 +16,11 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
+/* Writing a command into the socketpair. GCC's warn_unused_result on write() is not silenced
+   by a (void) cast, so the result is consumed here; what proves the command arrived is the
+   assertion on the reply that follows each send. */
+#define SEND(expr) do { ssize_t send_rc_ = (expr); (void)send_rc_; } while (0)
+
 /* --- Fake radio --- */
 
 // Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
@@ -297,7 +302,7 @@ static void test_dispatch_ready_client(void)
     }
 
     const char *cmd = "SET GETRSSI=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -353,7 +358,7 @@ static void test_dispatch_ready_client_epoll(void)
     }
 
     const char *cmd = "SET GETRSSI=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_add_fd(&set, sv[1]);
     expect_int("ready epoll wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -403,7 +408,7 @@ static void test_dispatch_ignores_not_ready_client(void)
     }
 
     const char *cmd = "SET GETRSSI=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -481,7 +486,7 @@ static void test_dispatch_get_channel_restores_rx(void)
     }
 
     const char *cmd = "GET CHANNEL\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -553,7 +558,7 @@ static void test_dispatch_get_channel_during_tx_skips_scan(void)
         return;
     }
 
-    write(sv[0], "GET CHANNEL\n", strlen("GET CHANNEL\n"));
+    SEND(write(sv[0], "GET CHANNEL\n", strlen("GET CHANNEL\n")));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -622,7 +627,7 @@ static void test_dispatch_set_txqueue(void)
     }
 
     const char *cmd = "SET TXQUEUE=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -674,7 +679,7 @@ static void test_dispatch_set_txresult(void)
     }
 
     const char *cmd = "SET TXRESULT=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -727,7 +732,7 @@ static void test_dispatch_sets_txmode_without_radio(void)
     }
 
     const char *cmd = "SET TXMODE=DIRECT\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -818,7 +823,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
 
     // SET CADMONITOR=1 enables the opt-in.
     const char *on = "SET CADMONITOR=1\n";
-    write(sv[0], on, strlen(on));
+    SEND(write(sv[0], on, strlen(on)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadmonitor on wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -830,7 +835,7 @@ static void test_dispatch_sets_cadmonitor_optin(void)
     ctrl.cad_broadcast_active.store(true);
     ctrl.cad_monitor_free_streak.store(1);
     const char *off = "SET CADMONITOR=0\n";
-    write(sv[0], off, strlen(off));
+    SEND(write(sv[0], off, strlen(off)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadmonitor off wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -919,7 +924,7 @@ static void test_dispatch_set_cadwait(void)
     }
 
     const char *cmd = "SET CADWAIT=300\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadwait wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -960,7 +965,7 @@ static void test_dispatch_set_cadidle(void)
     }
 
     const char *cmd = "SET CADIDLE=100\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadidle wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1001,7 +1006,7 @@ static void test_dispatch_set_cadpoll(void)
     }
 
     const char *cmd = "SET CADPOLL=50\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadpoll wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1042,7 +1047,7 @@ static void test_dispatch_set_cadtxaftertimeout(void)
     }
 
     const char *cmd = "SET CADTXAFTERTIMEOUT=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadtx wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1083,7 +1088,7 @@ static void test_dispatch_set_cadwait_invalid_rejected(void)
     }
 
     const char *cmd = "SET CADWAIT=1\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("cadwait-invalid wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1200,7 +1205,7 @@ static void test_dispatch_rejected_no_rearm(void)
     }
 
     const char *cmd = "SET SF=99\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -1257,7 +1262,7 @@ static void test_dispatch_hw_error_fails_closed(void)
     }
 
     const char *cmd = "SET SF=7\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -1313,7 +1318,7 @@ static void test_dispatch_defers_config_while_queue_busy(void)
     }
 
     const char *cmd = "SET SF=7\n";
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
 
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
@@ -1328,7 +1333,7 @@ static void test_dispatch_defers_config_while_queue_busy(void)
     /* Executing-only (pop-to-transmit window) also defers. */
     g_stub_pending = 0;
     g_stub_job_active = 1;
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("executing ready wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1337,7 +1342,7 @@ static void test_dispatch_defers_config_while_queue_busy(void)
 
     /* Drained queue: the same command applies. */
     g_stub_job_active = 0;
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(&set);
     event_loop_add_fd(&set, sv[1]);
     expect_int("drained ready wait", event_loop_wait(&set, &readfds, 100000), 1);
@@ -1371,7 +1376,7 @@ static void dispatch_round(ClientSlot *slots, RadioController *ctrl,
 {
     ConfigDispatchContext ctx = make_context(slots, ctrl);
 
-    write(sv[0], cmd, strlen(cmd));
+    SEND(write(sv[0], cmd, strlen(cmd)));
     event_loop_reset(set);
     event_loop_add_fd(set, sv[1]);
     if (event_loop_wait(set, readfds, 100000) != 1) {
