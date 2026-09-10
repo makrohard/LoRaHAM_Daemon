@@ -17,6 +17,11 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
+/* A one-byte poke to wake the loop, or the byte drained afterwards. GCC's warn_unused_result
+   on write()/read() is NOT silenced by a (void) cast, so the result is consumed here. The
+   effect is proved by the assertion that follows each call, not by the return value. */
+#define POKE(expr) do { ssize_t poke_rc_ = (expr); (void)poke_rc_; } while (0)
+
 static void expect_int(const char *name, int actual, int expected)
 {
     if (actual == expected) {
@@ -89,7 +94,7 @@ static void test_wait_readable_pipe(void)
     event_loop_add_fd(&set, fds[0]);
     expect_int("fd registered", event_loop_has_registered_fds(&set), 1);
 
-    (void)write(fds[1], &ch, 1);
+    POKE(write(fds[1], &ch, 1));
 
     expect_int("wait returns readable",
                event_loop_wait(&set, &ready, 100000), 1);
@@ -172,7 +177,7 @@ static void test_reset_keeps_loop_reusable(void)
     expect_int("register after reset",
                event_loop_has_registered_fds(&set), 1);
 
-    (void)write(fds[1], &ch, 1);
+    POKE(write(fds[1], &ch, 1));
 
     expect_int("wait works after reset",
                event_loop_wait(&set, &ready, 100000), 1);
@@ -246,7 +251,7 @@ static void test_registration_capacity(void)
         expect_int("registration remains clear above old limit",
                    event_loop_registration_failed(&set), 0);
 
-        (void)write(pipes[TEST_FDS - 1][1], &ch, 1);
+        POKE(write(pipes[TEST_FDS - 1][1], &ch, 1));
 
         expect_int("65th registered fd is readable",
                    event_loop_wait(&set, &ready, 100000), 1);
@@ -358,19 +363,19 @@ static void test_reconcile_keeps_read_watch(void)
                             EVENT_LOOP_EVENT_READ);
     event_loop_reconcile_end(&set);
 
-    (void)write(fds[1], &ch, 1);
+    POKE(write(fds[1], &ch, 1));
     expect_int("reconcile first read wait",
                event_loop_wait(&set, &ready, 100000), 1);
     expect_int("reconcile first read ready",
                event_loop_ready_fd_read(&ready, fds[0]), 1);
-    (void)read(fds[0], &received, 1);
+    POKE(read(fds[0], &received, 1));
 
     event_loop_reconcile_begin(&set);
     event_loop_reconcile_fd(&set, &owner, 1u, fds[0],
                             EVENT_LOOP_EVENT_READ);
     event_loop_reconcile_end(&set);
 
-    (void)write(fds[1], &ch, 1);
+    POKE(write(fds[1], &ch, 1));
     expect_int("reconcile repeated read wait",
                event_loop_wait(&set, &ready, 100000), 1);
     expect_int("reconcile repeated read ready",
@@ -458,7 +463,7 @@ static void test_reconcile_removes_stale_watch(void)
     expect_int("reconcile stale removed",
                event_loop_has_registered_fds(&set), 0);
 
-    (void)write(fds[1], &ch, 1);
+    POKE(write(fds[1], &ch, 1));
     expect_int("reconcile stale wait timeout",
                event_loop_wait(&set, &ready, 1000), 0);
 
@@ -527,7 +532,7 @@ static void test_reconcile_reuses_closed_fd(void)
                             EVENT_LOOP_EVENT_READ);
     event_loop_reconcile_end(&set);
 
-    (void)write(replacement[1], &ch, 1);
+    POKE(write(replacement[1], &ch, 1));
     expect_int("reconcile reused fd wait",
                event_loop_wait(&set, &ready, 100000), 1);
     expect_int("reconcile reused fd ready",
