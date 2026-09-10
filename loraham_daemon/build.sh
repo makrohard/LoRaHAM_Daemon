@@ -282,6 +282,12 @@ compiler_flags() {
 
   if [[ "$strict_build" == true ]]; then
     cxxflags+=(-Werror)
+    # ...but NOT for a dependency's own #warning. RadioLib's PiHal.h warns when the system
+    # lgpio is older than 0.2.2, which is true of every Debian/Ubuntu package today, so
+    # -Werror turned a third-party notice into a build failure and no strict build could ever
+    # run. -isystem does not help: GCC honours an explicit #warning even in a system header.
+    # The notice still prints; it just no longer fails a build we do not control the cause of.
+    cxxflags+=(-Wno-error=cpp)
   fi
 
   if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then

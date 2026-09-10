@@ -1082,7 +1082,11 @@ require_positive_int "$rx_seconds" "rx-seconds"
 require_positive_int "$test_timeout_seconds" "timeout-seconds"
 
 if [[ "$strict_build" == true ]]; then
-  strict_flags=(-Werror)
+  # -Wno-error=cpp for the same reason build.sh applies it: several test binaries include
+  # RadioLib, whose PiHal.h warns when the system lgpio is older than 0.2.2 (every current
+  # Debian/Ubuntu package). Without this the TEST build fails even once the daemon build
+  # passes, and -isystem does not help — GCC honours an explicit #warning in a system header.
+  strict_flags=(-Werror -Wno-error=cpp)
 fi
 
 case "$sanitizer_mode" in
