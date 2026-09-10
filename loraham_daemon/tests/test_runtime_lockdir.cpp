@@ -62,7 +62,7 @@ static void test_symlink_dir(void)
     path_in("link-dir", link, sizeof(link));
     mkdir(real, 0700);
     unlink(link);
-    symlink(real, link);
+    expect_int("symlink planted", symlink(real, link), 0);
     /* O_NOFOLLOW must reject the symlinked directory path. */
     expect_int("symlinked dir rejected", dir_accepts(link, 0), 0);
 }
@@ -176,7 +176,7 @@ static void test_lock_file_symlink(void)
 
     dirfd = loraham_open_lock_dir(dir, 0);
     /* Plant a symlink where the lock file would be created. */
-    symlinkat(target, dirfd, "spi0.lock");
+    expect_int("symlink planted", symlinkat(target, dirfd, "spi0.lock"), 0);
 
     fd = loraham_open_lock_file_at(dirfd, "spi0.lock");
     expect_int("symlinked lock file rejected", fd >= 0 ? 1 : 0, 0);
