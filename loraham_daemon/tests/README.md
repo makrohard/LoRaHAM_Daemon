@@ -33,6 +33,25 @@ hardware, frequency settings, and RF conditions:
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
 
+### Radio hardware
+
+A daemon instance only stays up once its radio reports ready, and no radio can
+be probed without an SPI device. `test_interface_baseline`, `test_config_stream`,
+`test_client_lifecycle`, `test_conf_status`, `test_conf_stats` and
+`test_rssi_multiclient` therefore check for `/dev/spidev0.*` before they start a
+daemon and report `SKIP` for that part where there is none — a machine without
+radio hardware, which includes every hosted CI runner. Everything those binaries
+do without a daemon still runs there: `test_interface_baseline` keeps its CLI
+cases, the waveshare fail-closed check and the held-GPIO-lock exit. It skips
+three further cases individually, because they too need a radio: the two
+single-radio socket modes, and the unusable-`spi0.lock` exit, which is only
+reached once the band gets as far as taking the SPI lock.
+
+The check is for the precondition, not for a daemon that failed: where an SPI
+device exists these tests run for real and a daemon that does not come up is a
+`FAIL`, so the skip cannot mask a regression. `test_multi_instance` reaches the
+same outcome per case, by observing that its first instance never came up.
+
 ## Test concept
 
 The tests should protect externally relevant behavior:

@@ -208,6 +208,9 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    if (radio_hardware_missing())
+        return skip_live_daemon_tests();
+
     info_msg("starting daemon: %s --radio 433", g_bin);
     if (start_daemon_433(g_bin) < 0)
         return 1;

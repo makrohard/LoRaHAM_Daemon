@@ -772,6 +772,40 @@ static TEST_UNUSED int print_summary(void)
     return g_fail ? 1 : 0;
 }
 
+/* --- Radio-hardware precondition --- */
+
+/*
+ * Some tests drive a live daemon, and a daemon only stays up once its radio
+ * reports ready.  Without an SPI device no radio can even be probed - lgSpiOpen
+ * fails and the band aborts - so on a machine that has none, which is every
+ * hosted CI runner, there is nothing for those tests to observe.
+ *
+ * The check is deliberately for the *precondition* and not for "the daemon did
+ * not come up": wherever an SPI device exists the tests run for real, and a
+ * daemon that then fails to start still FAILs.  So this reports an honest SKIP
+ * on a machine without radio hardware without being able to hide a regression
+ * on a machine with it.
+ */
+static TEST_UNUSED int radio_hardware_missing(void)
+{
+    return !path_exists("/dev/spidev0.0") && !path_exists("/dev/spidev0.1");
+}
+
+static TEST_UNUSED int test_needs_radio_hardware(void)
+{
+    return TEST_SKIP;
+}
+
+/* Record the skip and finish the binary.  Whatever ran before the daemon start
+ * - CLI handling, the fail-closed exit paths - is already counted, so the
+ * caller returns this as its exit code and the runner still gets a summary. */
+static TEST_UNUSED int skip_live_daemon_tests(void)
+{
+    info_msg("no SPI device (/dev/spidev0.0, /dev/spidev0.1)");
+    run_test("live-daemon tests require radio hardware", test_needs_radio_hardware);
+    return print_summary();
+}
+
 static TEST_UNUSED void usage_common(const char *argv0)
 {
     printf("Usage: %s --bin ./loraham_daemon\n", argv0);

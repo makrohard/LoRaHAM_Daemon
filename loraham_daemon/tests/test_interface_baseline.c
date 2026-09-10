@@ -247,6 +247,10 @@ static int wait_radio_sockets_868(void)
 
 static int test_single_radio_socket_mode_433(void)
 {
+    /* Exposing one band's sockets means staying up, which needs a ready radio. */
+    if (radio_hardware_missing())
+        return TEST_SKIP;
+
     if (start_daemon_radio("433") < 0)
         return TEST_FAIL;
 
@@ -265,6 +269,9 @@ static int test_single_radio_socket_mode_433(void)
 
 static int test_single_radio_socket_mode_868(void)
 {
+    if (radio_hardware_missing())
+        return TEST_SKIP;
+
     if (start_daemon_radio("868") < 0)
         return TEST_FAIL;
 
@@ -360,6 +367,12 @@ static int test_spi_lock_unusable_exits_lock_error(void)
 {
     char dir[128];
     char lockpath[192];
+
+    /* Without an SPI device the band aborts before it ever takes the SPI lock,
+     * so the daemon exits 1 and never reaches the LOCK_ERROR this asserts.  The
+     * GPIO-lock twin above needs no such guard: that lock is taken first. */
+    if (radio_hardware_missing())
+        return TEST_SKIP;
 
     ensure_test_runtime_dir();
     snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-spi-%d", (int)getpid());
@@ -768,6 +781,9 @@ int main(int argc, char **argv)
              test_gpio_lock_held_exits_lock_error);
     run_test("unusable spi0.lock exits LOCK_ERROR",
              test_spi_lock_unusable_exits_lock_error);
+
+    if (radio_hardware_missing())
+        return skip_live_daemon_tests();
 
     info_msg("starting daemons: %s (433 + 868)", g_bin);
     if (start_daemon(g_bin) < 0)
