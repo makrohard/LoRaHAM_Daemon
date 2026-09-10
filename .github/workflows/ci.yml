@@ -5,6 +5,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One group per ref, so a branch can only ever cancel its own runs -- never another
+# branch's, and never another repository's: concurrency groups are scoped to this
+# repository. A second push to the same branch supersedes the first and frees the
+# runner slot instead of leaving a stale run to finish.
+#
+# `main` is the exception: a run on main is release evidence, so it is never
+# cancelled by a later push and always runs to completion.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 

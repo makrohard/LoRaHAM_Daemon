@@ -28,7 +28,7 @@ hardware, frequency settings, and RF conditions:
 
 ## Runner behavior
 
-`run_tests.sh` currently runs 56 test binaries. It refuses to start if a
+`run_tests.sh` runs every binary in its `test_binaries` list. It refuses to start if a
 `loraham_daemon` process is already running, checks for lingering daemon
 processes after each test, parses per-test `Summary:` lines, and prints a final
 OK/FAIL/SKIP/XFAIL/XPASS table.
@@ -49,8 +49,8 @@ reached once the band gets as far as taking the SPI lock.
 
 The check is for the precondition, not for a daemon that failed: where an SPI
 device exists these tests run for real and a daemon that does not come up is a
-`FAIL`, so the skip cannot mask a regression. `test_multi_instance` reaches the
-same outcome per case, by observing that its first instance never came up.
+`FAIL`, so the skip cannot mask a regression. `test_multi_instance` uses the
+same rule.
 
 ## Test concept
 
@@ -128,7 +128,7 @@ Multi-instance (split per-band) operation:
 - `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion, recursion guard, fail-closed when the lock dir is unusable, no transfer without the lock, EINTR-retry vs hard-failure on both lock and unlock, and fatal-on-hard-unlock; no radio hardware needed)
 - `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)
 - `test_packaging` (deployment artifacts: `systemd/tmpfiles.d/loraham.conf` exists and documents `/run/lock/loraham`; the unit has no `RuntimeDirectory`/`EnvironmentFile` and keeps `RestartPreventExitStatus`)
-- `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware and reports `SKIP` without it)
+- `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware)
 
 Public integration baseline:
 

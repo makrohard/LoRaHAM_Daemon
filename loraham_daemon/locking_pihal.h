@@ -86,7 +86,7 @@ class LockingPiHal : public PiHal {
             if (_lockFd < 0)
                 fatal("SPI-Sperre nicht verfuegbar (fail-closed)");
 
-            /* Bounded (audit P1-3): a live-but-wedged peer must not block
+            /* Bounded: a live-but-wedged peer must not block
              * this daemon forever. Expiry is fatal — systemd restarts a
              * dead process; it cannot see a silently hung one. */
             if (loraham_flock_acquire_ex_deadline(_lockFd, _flock,
@@ -101,7 +101,7 @@ class LockingPiHal : public PiHal {
         }
     }
 
-    /* SPI ownership (audit P1-1): the base PiHal prints and SWALLOWS
+    /* SPI ownership: the base PiHal prints and SWALLOWS
      * lgSpiXfer/lgSpiOpen errors, so a RadioLib setter can report success
      * after the bus transfer failed. This HAL owns the SPI handle itself and
      * fails closed: an open failure leaves the handle invalid (transfers
@@ -157,7 +157,7 @@ class LockingPiHal : public PiHal {
     }
 
   private:
-    /* Runtime fatal (audit item 4): every fatal in this HAL fires AFTER
+    /* Runtime fatal: every fatal in this HAL fires AFTER
      * operation began (transfer without lock/handle, bus error, wedged-peer
      * timeout, hard un/lock failure). Exit 5 — distinct from the startup
      * lock-infrastructure code 4 — so systemd's Restart=on-failure may

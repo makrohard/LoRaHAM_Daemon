@@ -25,7 +25,7 @@ struct DaemonTxAsyncWorker {
     std::thread thread;
     bool running;
     bool stop_requested;
-    /* True while a popped job executes (audit P1-5): pending-count alone
+    /* True while a popped job executes: pending-count alone
      * has a pop-to-transmit window in which a CONFIG change could still
      * retune an already-accepted job. */
     std::atomic<bool> job_active{false};

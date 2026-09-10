@@ -33,7 +33,7 @@ bool config_policy_lora_cr_valid(int cr)
     return cr >= 5 && cr <= 8;
 }
 
-/* Cap at 512 symbols (audit P1-2): the old 65535 ceiling allowed a single
+/* Cap at 512 symbols: the old 65535 ceiling allowed a single
  * valid preamble of ~36 min at SF12/BW125. 512 covers every real profile
  * (boot uses 8/16); the merged effective-config airtime gate
  * (config_apply, CONFIG_POLICY_MAX_AIRTIME_MS) enforces the full
@@ -127,7 +127,7 @@ bool config_policy_fsk_sync_valid(uint32_t sync)
            (sync & 0xFF) != 0x00;
 }
 
-/* Band frequency policy (audit P1-4): limits come from the immutable band
+/* Band frequency policy: limits come from the immutable band
  * descriptor; validation receives them explicitly so this layer stays free
  * of daemon globals. */
 bool config_policy_freq_valid_band(float freq_mhz,
@@ -140,7 +140,7 @@ bool config_policy_freq_valid_band(float freq_mhz,
     return freq_mhz >= min_mhz && freq_mhz <= max_mhz;
 }
 
-/* Family capability policy (audit P1-3): prevalidation must reject what the
+/* Family capability policy: prevalidation must reject what the
  * concrete driver will reject, or "whole-command prevalidation" is a lie
  * (SET MODE=FSK OOK=1 would switch mode and only then fail the key). */
 
@@ -161,7 +161,7 @@ bool config_policy_fsk_ook_valid_family(int ook, DaemonChipFamily family)
 {
     /* SX126x has no OOK modulator: EVERY OOK key is rejected, including
      * OOK=0 — accepting a no-op setter would report OK for a capability
-     * the chip does not have (audit item 5). */
+     * the chip does not have. */
     if (family == DAEMON_CHIP_FAMILY_SX1262)
         return false;
 

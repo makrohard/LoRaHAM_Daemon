@@ -43,7 +43,7 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
      * registriert blockiert die Leitung den Antennenpfad während des
      * Sendens (bench-verifiziert: TX_RESULT OK, aber keine Abstrahlung).
      *
-     * Checked (audit P1-1): a failed DIO2 switch command means TX_RESULT OK
+     * Checked: a failed DIO2 switch command means TX_RESULT OK
      * with zero radiated RF — that must fail the boot/mode-switch closed,
      * not be discarded. (setRfSwitchPins is void in RadioLib — nothing to
      * check there.) */
@@ -90,7 +90,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
-    /* Fail closed (audit P1-1): the post-begin() steps are part of the
+    /* Fail closed: the post-begin() steps are part of the
      * mandatory boot configuration — check them like begin() itself. */
     state = radio_->setCRC(defaults->crc_on ? 2 : 0);
     if (state != RADIOLIB_ERR_NONE) {
@@ -331,7 +331,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
 
     if (key == "OOK") {
         /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt.
-         * Non-success state (audit item 5): prevalidation blocks every OOK
+         * Non-success state: prevalidation blocks every OOK
          * key for this family, but a direct driver call must never report
          * success for a missing capability. */
         driver_config_print_rejected("OOK", val);

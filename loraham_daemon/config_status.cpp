@@ -1,6 +1,6 @@
 #include "config_status.h"
 
-/* Bodies moved verbatim from config_status.h (D3 de-inlining). */
+/* Bodies moved verbatim from config_status.h. */
 
 void config_status_trim_copy(char *dst,
                                            size_t dst_size,
@@ -272,8 +272,8 @@ int config_status_is_set_cadtxaftertimeout(const char *line, int *val)
     return 0;
 }
 
-/* Counters report the worker's real state regardless of tx_queue_active
- * (audit P1-5): SET TXQUEUE=0 is only accepted once the queue is fully
+/* Counters report the worker's real state regardless of tx_queue_active:
+ * SET TXQUEUE=0 is only accepted once the queue is fully
  * drained (drain-before-disable), but the counters must never gate on the
  * flag — hiding the worker's real history/state would blind an operator. */
 size_t config_status_txq_pending(const RadioController *ctrl)

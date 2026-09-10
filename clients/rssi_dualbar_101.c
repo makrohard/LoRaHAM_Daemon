@@ -8,9 +8,9 @@
  *  Peak-Detektor: ein hellweisser '|'-Marker zeigt den Spitzenwert der letzten
  *                 5 Sekunden. Faellt danach auf den aktuellen Pegel ab.
  *
- *  Compile:  gcc -O2 -Wall -o rssi_bar_dual rssi_bar_dual.c
+ *  Compile:  gcc -O2 -Wall -o rssi_bar_dual rssi_dualbar_101.c
  *  Usage:    ./rssi_bar_dual [Frequenz433] [Frequenz868]
- *  Default:  ./rssi_bar_dual                  -> 438.900 / 869.525 MHz
+ *  Default:  ./rssi_bar_dual                  -> 433.175 / 869.525 MHz
  *  Beispiel: ./rssi_bar_dual 433.775 868.300
  *  Stop:     Strg+C  (sendet sauber GETRSSI=0 an beide Daemons)
  *****************************************************************************/

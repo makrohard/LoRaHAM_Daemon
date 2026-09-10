@@ -45,7 +45,7 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
-    /* Fail closed (audit P1-1): every mandatory boot setter is checked. A
+    /* Fail closed: every mandatory boot setter is checked. A
      * radio must never report READY with part of its RF configuration
      * rejected over SPI — the first failure is logged with its stage and
      * returned, and the caller marks the radio FAILED. */

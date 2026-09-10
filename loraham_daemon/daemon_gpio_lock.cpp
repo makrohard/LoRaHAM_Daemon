@@ -9,7 +9,7 @@
 
 #include "loraham_runtime.h"
 
-/* --- Cross-process GPIO ownership (audit P1-1) ---------------------------- */
+/* --- Cross-process GPIO ownership ---------------------------- */
 
 #define DAEMON_GPIO_LOCK_MAX 16
 

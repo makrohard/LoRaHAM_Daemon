@@ -84,7 +84,7 @@ int setup_unix_socket(const char *path, int backlog)
         return -1;
     }
 
-    /* Nonblocking listener (audit L1): a connection reset between
+    /* Nonblocking listener: a connection reset between
      * epoll_wait readiness and accept() must never leave a blocking
      * accept() hanging the daemon; accept() then returns EAGAIN instead. */
     {

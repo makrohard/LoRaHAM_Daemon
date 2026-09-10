@@ -7,7 +7,7 @@
 #include "daemon_timing.h"
 #include "radio_health.h"
 
-/* --- RX re-arm robustness (audit M3) -------------------------------------- */
+/* --- RX re-arm robustness -------------------------------------- */
 
 void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
                                  const char *ctx)
@@ -27,7 +27,7 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
 
     daemon_radio_stats_record_rx_rearm_failure(&ctrl->stats);
 
-    /* Escalation (audit P1-6): a receiver that cannot re-arm is deaf; past
+    /* Escalation: a receiver that cannot re-arm is deaf; past
      * the limit READY would be a lie — fail closed so GET STATUS (the
      * documented orchestrator health probe) reports FAILED. */
     uint32_t consecutive =
@@ -72,7 +72,7 @@ void daemon_rx_rearm_retry(RadioController *ctrl)
     if (!ctrl || !ctrl->rx_rearm_pending.load() || ctrl->tx_busy.load())
         return;
 
-    /* Backoff (audit P1-6): one SPI attempt per second, not per tick. */
+    /* Backoff: one SPI attempt per second, not per tick. */
     int64_t now_ms = (int64_t)daemon_now_ms();
     if (now_ms < ctrl->rx_rearm_next_retry_ms)
         return;

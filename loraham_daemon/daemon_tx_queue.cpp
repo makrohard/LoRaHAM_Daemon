@@ -1,6 +1,6 @@
 #include "daemon_tx_queue.h"
 
-/* Bodies moved verbatim from daemon_tx_queue.h (D3 de-inlining). */
+/* Bodies moved verbatim from daemon_tx_queue.h. */
 
 void daemon_tx_queue_init(DaemonTxQueue *queue)
 {

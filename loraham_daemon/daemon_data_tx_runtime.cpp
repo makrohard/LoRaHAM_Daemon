@@ -23,7 +23,7 @@ DataTxLog daemon_data_tx_log(const char *ctx)
     return log;
 }
 
-/* --- Bodies moved verbatim from daemon_data_tx_runtime.h (D3) --- */
+/* --- Bodies moved verbatim from daemon_data_tx_runtime.h --- */
 
 void data_tx_apply_cad_decision_flags(DaemonTxJob *job,
                                                     int decision)
@@ -83,7 +83,7 @@ DataTxCadPolicy data_tx_snapshot_cad_policy(
     return p;
 }
 
-/* Tri-state (audit P1-4): the boolean reduction mapped UNAVAILABLE (scan
+/* Tri-state: the boolean reduction mapped UNAVAILABLE (scan
  * error) to "free" — a failed CAD operation must never gate a transmission
  * open. */
 size_t data_tx_queue_capacity_bytes(void *ctx)
@@ -371,7 +371,7 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
     }
 
-    /* Defense in depth (audit item 1): with the queue disabled but the
+    /* Defense in depth: with the queue disabled but the
      * worker still holding or executing residual jobs, a direct TX must
      * neither wait behind nor interleave with them — reject as BUSY. */
     if (!ctrl->tx_queue_active.load() &&

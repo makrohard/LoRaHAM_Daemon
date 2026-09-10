@@ -141,7 +141,7 @@ static inline int loraham_open_runtime_dir(void)
 static inline int loraham_open_lock_file_at(int dirfd, const char *name)
 {
     struct stat st;
-    /* Owner-only (audit P1): instance/SPI/GPIO locks are HARDWARE ownership —
+    /* Owner-only: instance/SPI/GPIO locks are HARDWARE ownership —
      * a loraham-group socket client must never be able to hold one and
      * block startup or force a runtime SPI timeout. 0600 on create, and
      * fchmod() below also corrects files created by earlier builds. */
@@ -191,7 +191,7 @@ static inline int loraham_flock_acquire_ex(int fd, loraham_flock_fn fn)
 }
 
 /*
- * Deadline-bounded exclusive acquisition (audit P1-3): polls LOCK_EX|LOCK_NB
+ * Deadline-bounded exclusive acquisition: polls LOCK_EX|LOCK_NB
  * against a CLOCK_MONOTONIC deadline instead of blocking forever behind a
  * live-but-wedged peer. Returns 0 when held, -1 with errno=ETIMEDOUT on
  * expiry, -1 with errno preserved on any hard failure. Callers must treat

@@ -132,7 +132,7 @@ int client_slot_add(ClientSlot *slots, int max_clients, int fd)
 
 /* One accept per readiness tick is the deliberate fairness policy: no
  * accept-loop, so a connect flood cannot starve the RX/TX ticks. The
- * listener is nonblocking (audit L1) — a connection that vanished between
+ * listener is nonblocking — a connection that vanished between
  * readiness and accept() yields EAGAIN, which is simply "nothing to accept".
  */
 int client_slot_accept_with_output(int listen_fd, ClientSlot *slots, int max_clients)

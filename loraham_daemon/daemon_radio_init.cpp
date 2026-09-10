@@ -39,7 +39,7 @@ static RadioDriver *hw_driver_create(Module *mod, bool is_hf)
     return sx127x_driver_create(mod, is_hf);
 }
 
-/* Family-aware D8 diagnosis dispatch (one line per failed radio). */
+/* Family-aware diagnosis dispatch (one line per failed radio). */
 static void hw_diagnose_begin_failure(Module *mod, const char *band, int state)
 {
     if (daemon_hw_profile.family == DAEMON_CHIP_FAMILY_SX1262) {
@@ -85,8 +85,8 @@ void lora_init(void) {
     radio_controller.health = RADIO_HEALTH_UNINITIALIZED;
     daemon_debug_ctx("RADIO", "Health zurückgesetzt");
 
-    /* GPIO ownership is acquired in daemon_io_init() BEFORE the LED claim
-     * (audit item 2); this is only the invariant check — a radio boot
+    /* GPIO ownership is acquired in daemon_io_init() BEFORE the LED claim;
+     * this is only the invariant check — a radio boot
      * without held pin locks would bypass the conflict gate. */
     if (daemon_gpio_locks_held() == 0) {
         printf("[GPIO] Fehler: keine Pin-Sperren gehalten – Radio-Init "

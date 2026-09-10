@@ -40,7 +40,7 @@
  *  -llgpio -lpthread
  *  ----
  *
-   g++ -o loraham_daemon loradaemon_320_108.cpp -I/home/raspberry/RadioLib/src -I/home/raspberry/RadioLib/src/modules \
+   g++ -o loraham_daemon loradaemon_320_108a.cpp -I/home/raspberry/RadioLib/src -I/home/raspberry/RadioLib/src/modules \
    -I/home/raspberry/RadioLib/src/protocols/PhysicalLayer /home/raspberry/RadioLib/build/libRadioLib.a -llgpio
  *
  *
@@ -361,6 +361,7 @@ void lora_send(uint8_t *buf, size_t len, int band) {
             return;
         }
         txBusy433 = true;
+        send_to_conf_clients(client_conf433, "TX=1\n");
 
         // WICHTIG: RX-Flag clearen und Callback deaktivieren!
         receivedFlag433 = false;
@@ -421,6 +422,8 @@ void lora_send(uint8_t *buf, size_t len, int band) {
         radio_433->setPacketReceivedAction(setFlag433);
 
         txBusy433 = false;
+        send_to_conf_clients(client_conf433, "TX=0\n");
+
         radio_433->startReceive();
 
     } else if (band == 868) {
@@ -429,6 +432,7 @@ void lora_send(uint8_t *buf, size_t len, int band) {
             return;
         }
         txBusy868 = true;
+        send_to_conf_clients(client_conf868, "TX=1\n");
 
         // WICHTIG: RX-Flag clearen und Callback deaktivieren!
         receivedFlag868 = false;
@@ -459,6 +463,7 @@ void lora_send(uint8_t *buf, size_t len, int band) {
         radio_868->setPacketReceivedAction(setFlag868);
 
         txBusy868 = false;
+        send_to_conf_clients(client_conf868, "TX=0\n");
         radio_868->startReceive();
     }
 }

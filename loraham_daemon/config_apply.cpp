@@ -21,7 +21,7 @@
 // output for the chip parameters comes from the driver.
 
 
-/* --- Effective RF config shadow (audit P1-7) ------------------------------ */
+/* --- Effective RF config shadow ------------------------------ */
 /*
  * One process, one radio: the CONF apply pipeline is the only runtime
  * configuration path, so this module can track the effective airtime-relevant
@@ -181,7 +181,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
 
     bool hardware_touched = false;
 
-    /* Airtime gate (audit P1-7): merged current+command worst case, checked
+    /* Airtime gate: merged current+command worst case, checked
      * BEFORE any hardware side effect. */
     if (!config_apply_airtime_ok(parsed, validation.target_mode, tag))
         return CONFIG_APPLY_REJECTED_INVALID;

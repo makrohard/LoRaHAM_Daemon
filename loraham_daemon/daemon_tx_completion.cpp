@@ -1,6 +1,6 @@
 #include "daemon_tx_completion.h"
 
-/* Bodies moved verbatim from daemon_tx_completion.h (D3 de-inlining). */
+/* Bodies moved verbatim from daemon_tx_completion.h. */
 
 int daemon_tx_completion_encode_frame(uint8_t *frame,
                                                     size_t frame_len,

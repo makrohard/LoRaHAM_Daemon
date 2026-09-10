@@ -6,9 +6,9 @@
 #include "daemon_tx_async_runtime.h"
 #include "config_parser.h"
 
-/* Bodies moved verbatim from config_dispatch.h (D3 de-inlining). */
+/* Bodies moved verbatim from config_dispatch.h. */
 
-/* Stable per-command CONF reply (audit item 6): exactly one newline-
+/* Stable per-command CONF reply: exactly one newline-
  * terminated response per complete command, delivered only to the requesting
  * client. GET STATUS/STATS/CHANNEL answer with their data line instead and
  * never get a trailing OK. Queue-append failure closes the client (existing
@@ -131,7 +131,7 @@ void config_dispatch_apply_line(const char *line, void *user)
 
     int txqueue_enabled = 0;
     if(config_status_is_set_txqueue(upper_line, &txqueue_enabled)) {
-        /* Drain-before-disable (audit item 1): switching to the direct path
+        /* Drain-before-disable: switching to the direct path
          * while the worker still holds or executes jobs would let new
          * direct CAD+TX stack behind active queued CAD+TX. Fail closed:
          * disabling requires an empty, idle queue. Enabling is always safe. */
@@ -229,7 +229,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
-    /* Reserved runtime setters with bad values (audit P2): the dedicated
+    /* Reserved runtime setters with bad values: the dedicated
      * matchers above only accept fully valid lines, so "SET CADWAIT=1" or
      * "SET TXMODE=foo" used to fall through to the generic path and answer
      * ERR UNKNOWN or ERR RADIO_NOT_READY. Classify them truthfully here,
@@ -262,7 +262,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
-    /* Queue/config coordination (audit P1-5): a queued TX job snapshots no
+    /* Queue/config coordination: a queued TX job snapshots no
      * RF configuration — it transmits with whatever is configured at
      * execution time. Applying an RF change while jobs are pending or
      * executing would retune already-accepted packets, so such commands are
@@ -294,7 +294,7 @@ void config_dispatch_apply_line(const char *line, void *user)
                                          ctx->ctrl->mode,
                                          ctx->ctrl->getrssi_active);
 
-        /* Re-arm ONLY when the apply touched the radio (audit P1-2): the
+        /* Re-arm ONLY when the apply touched the radio: the
          * unconditional callback+startReceive here destroyed a received,
          * undrained packet even for unknown/rejected/no-op commands. */
         if (apply_status == CONFIG_APPLY_APPLIED) {

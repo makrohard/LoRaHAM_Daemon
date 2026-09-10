@@ -26,8 +26,8 @@ Duty-Cycle-Einstellungen (≤ 20 dBm).
 
 v112 (Merge der Härtungsarbeit) on-air abgenommen auf LoRaHAM, Uputronics und
 Waveshare/SX1262. Alle Rows der Abschnitte „Mode-Switch/RX" und „Audit-Abschluss"
-grün auf realer Hardware; Gegenstationen MeshCom-T-Deck
-DJ0CHE-07 (433) und Meshtastic (868). Ergebnisse in `~/loraham-bench/*RESULTS.md`.
+grün auf realer Hardware; Gegenstationen MeshCom-T-Deck (433) und
+Meshtastic (868). Ergebnisse in `~/loraham-bench/*RESULTS.md`.
 
 - **LoRaHAM (SX1278/RFM95): BESTANDEN** — beide Bänder RX+TX (433 MeshCom, 868
   Meshtastic), CONF-Replies, Band-Politik, Airtime-Gate, GPIO-Locks, SIGTERM.

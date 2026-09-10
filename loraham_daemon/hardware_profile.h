@@ -9,7 +9,7 @@ extern "C" {
 /*
  * A HardwareProfile describes wiring and silicon for THE one radio of a
  * process (one daemon process per band). Presets are selected with the flat
- * CLI flag `--hw <preset>` (default: "legacy", which resolves per band to the
+ * CLI flag `--hw <preset>` (default: "loraham", which resolves per band to the
  * wiring hardcoded before profiles existed).
  *
  * Pin semantics are family-dependent (RadioLib Module(hal, cs, irq, rst, gpio)):
@@ -17,9 +17,8 @@ extern "C" {
  *   SX1262: irq = DIO1, gpio = BUSY
  * A pin value < 0 means "not connected" and is passed as RADIOLIB_NC.
  *
- * Adding a future board of a known chip family == adding one preset row in
- * hardware_profile.cpp plus README docs; nothing else (see README, section
- * "Adding new hardware").
+ * Adding a board of a known chip family means one preset row in
+ * hardware_profile.cpp and nothing else (see docs/hardware.md, "Adding a board").
  */
 
 #define DAEMON_HW_PIN_NC (-1)
@@ -77,7 +76,7 @@ const char *daemon_hardware_preset_name(void);
 /*
  * Resolve the selected preset for the given band (433 or 868) into
  * daemon_hw_profile. Returns false for an unknown preset name.
- * "legacy" resolves per band exactly to the pre-profile hardcoded wiring.
+ * "loraham" resolves per band exactly to the pre-profile hardcoded wiring.
  */
 bool daemon_hardware_profile_resolve(int band);
 

@@ -55,9 +55,9 @@ static void profile_claimed_finish(DaemonHardwareProfile *p)
 }
 
 /*
- * Preset table. Sources: pre-profile hardcoded wiring (legacy), pinout.xyz +
- * vendor statements (Uputronics), Waveshare wiki (SX1262 HAT). See README
- * "Hardware profiles" for the full derivation and combination matrix.
+ * Preset table. Sources: the pre-profile hardcoded wiring (loraham), pinout.xyz +
+ * vendor statements (Uputronics), Waveshare wiki (SX1262 HAT). See
+ * docs/hardware.md for the full derivation and the combination matrix.
  */
 static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
 {
@@ -127,9 +127,9 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->aux = DAEMON_HW_PIN_NC;
         p->txen = 6;
         p->rxen = DAEMON_HW_PIN_NC;     /* via DIO2-as-RF-switch */
-        p->tcxo_voltage = 1.8f;         /* bench-verify in the hardware session */
+        p->tcxo_voltage = 1.8f;         /* TCXO fed from DIO3 */
         p->led_pin = DAEMON_HW_PIN_NC;  /* BCM 6 is TXEN here, no board LED */
-        p->cad_scan_available = true;   /* SX126x hardware CAD (driver: M4) */
+        p->cad_scan_available = true;   /* SX126x hardware CAD */
         p->fsk_stream_available = false;
         p->reset_wired = true;
         profile_claimed_finish(p);

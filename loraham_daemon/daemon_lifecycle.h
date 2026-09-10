@@ -11,7 +11,7 @@ void daemon_lifecycle_ignore_sigpipe(void);
 int daemon_lifecycle_redirect_stdio(const char *log_path);
 void daemon_lifecycle_enter_background(void);
 
-/* --- event-wait error classification (audit L5d) --- */
+/* --- event-wait error classification --- */
 /*
  * EINTR without a pending stop request is benign (debugger attach, SIGCHLD
  * from a wrapper) and must not hit the perror path — one classification

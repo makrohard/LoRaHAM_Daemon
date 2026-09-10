@@ -9,8 +9,10 @@
  *   - stopping one band leaves the other untouched.
  *
  * Requires real radio hardware: a per-band instance only stays up once its
- * radio reports ready.  Without hardware the first instance exits during
- * startup and the whole test reports SKIP rather than FAIL.
+ * radio reports ready.  The check is for the precondition -- no SPI device, so
+ * no radio can be probed -- and the whole test reports SKIP.  Where an SPI
+ * device exists the test runs for real and an instance that does not come up
+ * is a FAILURE.
  */
 
 #include "common_loradaemon_test.h"
@@ -135,6 +137,11 @@ static int test_multi_instance(void)
     cleanup_all();
 
     /* 1) First 433 instance. */
+    /* Radio hardware is the precondition, not the daemon coming up: once an SPI
+     * device exists, an instance that fails to start is a FAILURE, not a skip. */
+    if (radio_hardware_missing())
+        return TEST_SKIP;
+
     a = spawn_daemon("433");
     if (a < 0) {
         fail_msg("fork failed for 433 instance");
@@ -142,9 +149,9 @@ static int test_multi_instance(void)
     }
 
     if (!wait_band_up(a, SOCK_CONF_433)) {
-        info_msg("433 instance did not come up (no radio hardware?)");
+        fail_msg("433 instance did not come up");
         cleanup_all();
-        return TEST_SKIP;
+        return TEST_FAIL;
     }
 
     inode_before = socket_inode(SOCK_CONF_433);
@@ -197,9 +204,9 @@ static int test_multi_instance(void)
     }
 
     if (!wait_band_up(c, SOCK_CONF_868)) {
-        info_msg("868 instance did not come up (no 868 radio?)");
+        fail_msg("868 instance did not come up");
         cleanup_all();
-        return TEST_SKIP;
+        return TEST_FAIL;
     }
 
     if (!pid_alive(a) || !pid_alive(c)) {

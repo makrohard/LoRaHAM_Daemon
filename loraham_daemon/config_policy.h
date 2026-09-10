@@ -33,7 +33,7 @@ bool config_policy_fsk_ook_valid_family(int ook, DaemonChipFamily family);
 bool config_policy_fsk_encoding_valid_family(int encoding,
                                              DaemonChipFamily family);
 
-/* Airtime policy (audit P1-7): worst-case (255-byte payload, CRC on)
+/* Airtime policy: worst-case (255-byte payload, CRC on)
  * per-packet airtime of an accepted configuration must stay below this,
  * comfortably under the systemd stop timeout (30 s). */
 #define CONFIG_POLICY_MAX_AIRTIME_MS 20000.0

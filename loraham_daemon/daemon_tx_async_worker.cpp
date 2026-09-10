@@ -1,6 +1,6 @@
 #include "daemon_tx_async_worker.h"
 
-/* Bodies moved verbatim from daemon_tx_async_worker.h (D3 de-inlining). */
+/* Bodies moved verbatim from daemon_tx_async_worker.h. */
 
 void daemon_tx_async_worker_init(DaemonTxAsyncWorker *async)
 {

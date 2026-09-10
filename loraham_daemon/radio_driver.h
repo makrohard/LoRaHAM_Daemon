@@ -23,7 +23,7 @@
  * (counter semantics identical to the pre-driver template fakes).
  *
  * Adding a new chip family == implementing this interface; the daemon runtime
- * stays untouched (see README "Adding new hardware").
+ * stays untouched (see docs/hardware.md, "Adding a board").
  */
 
 #include "radio_rf_defaults.h"
@@ -74,7 +74,7 @@ public:
 
     /* CONFIG SET parameter application for the current mode; prints the
      * per-key colored state exactly like the pre-driver implementation.
-     * Returns the RadioLib state of the applied key (audit P1-2): 0 for
+     * Returns the RadioLib state of the applied key: 0 for
      * OK/no-op/value-rejected-before-hardware; a nonzero RadioLib error
      * means the chip rejected the operation and the apply must abort. */
     virtual int16_t applyLoraParam(const char *tag, const std::string &key,

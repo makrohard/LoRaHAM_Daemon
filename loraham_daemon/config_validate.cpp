@@ -185,7 +185,7 @@ static bool config_validate_fsk_value(const std::string &key,
         int ook = 0;
         if (!config_value_parse_bool01_exact(val, &ook))
             return false;
-        /* SX126x has no OOK (audit P1-3): reject at prevalidation instead
+        /* SX126x has no OOK: reject at prevalidation instead
          * of switching mode first and failing the key afterwards. */
         return config_policy_fsk_ook_valid_family(ook, chip_family);
     }
@@ -288,7 +288,7 @@ bool config_validate_command(const ConfigCommand &cmd,
             return false;
         }
 
-        /* Duplicate keys rejected (audit P2-1): sequential apply would
+        /* Duplicate keys rejected: sequential apply would
          * silently let the last one win — ambiguous client intent fails
          * closed instead. */
         for (size_t j = 0; j < i; j++) {

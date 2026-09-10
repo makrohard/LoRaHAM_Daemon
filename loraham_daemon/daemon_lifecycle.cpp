@@ -69,7 +69,7 @@ int daemon_lifecycle_redirect_stdio(const char *log_path)
         return -1;
     }
 
-    /* O_NOFOLLOW (audit P1-5): the fixed /tmp log path must never follow a
+    /* O_NOFOLLOW: the fixed /tmp log path must never follow a
      * symlink planted by another local user; a symlink at the path is a
      * hard error, not a redirect. The verified descriptor is then re-bound
      * to the stdout STREAM via /dev/fd (race-free: it names our open file

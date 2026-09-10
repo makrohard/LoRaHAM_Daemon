@@ -2,7 +2,7 @@
 #include "daemon_rx_rearm.h"
 #include "daemon_cad_monitor.h"
 
-/* Bodies moved verbatim from radio_cad.h and daemon_cad_monitor.h (D3). */
+/* Bodies moved verbatim from radio_cad.h and daemon_cad_monitor.h. */
 
 const char *radio_cad_probe_status_name(RadioCadProbeStatus status)
 {
@@ -111,7 +111,7 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
     if (ctrl->mode != RADIO_MODE_LORA)
         return result; // UNAVAILABLE for non-LoRa, like the active probe.
 
-    /* Validity gate (audit P1-4): the -200 sentinel (and anything below any
+    /* Validity gate: the -200 sentinel (and anything below any
      * physical noise floor) means "no usable reading", not "quiet channel" —
      * report UNAVAILABLE instead of a false FREE. */
     if (result.rssi_dbm <= -190.0f) {
@@ -151,7 +151,7 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
     if (ctrl->tx_busy.load())
         return result;
 
-    /* Pending-RX guard (audit M1): a packet that finished reception but has
+    /* Pending-RX guard: a packet that finished reception but has
      * not been drained by the main loop yet — flag set, payload still in the
      * FIFO — must not be destroyed by the probe's IRQ-clear/re-arm. A channel
      * that just delivered a packet is legitimately BUSY: the MANAGED CAD loop
@@ -196,7 +196,7 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
 
     std::lock_guard<std::recursive_mutex> radio_lock(ctrl->radio_mutex);
 
-    /* Pending-RX guard (audit M1): a packet that finished reception but has
+    /* Pending-RX guard: a packet that finished reception but has
      * not been drained by the main loop yet — flag set, payload still in the
      * FIFO — must not be destroyed by the probe's IRQ-clear/re-arm. A channel
      * that just delivered a packet is legitimately BUSY: the MANAGED CAD loop

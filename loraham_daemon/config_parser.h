@@ -12,7 +12,7 @@ struct ConfigCommand {
     bool has_params;
     std::string text;
     std::string mode;
-    /* Number of MODE tokens seen (audit P1-3): MODE is extracted from the
+    /* Number of MODE tokens seen: MODE is extracted from the
      * token list, so plain duplicate-key detection never saw a second MODE
      * and silently applied last-one-wins. */
     int mode_count = 0;
@@ -26,7 +26,7 @@ ConfigCommand config_parse_command(const char *cmd);
 
 /* True when the line is a SET that would touch RF hardware (MODE or any
  * non-GETRSSI parameter) — the dispatcher defers such commands while queued
- * TX jobs exist (audit P1-5). GET/flag-only/unknown lines return false. */
+ * TX jobs exist. GET/flag-only/unknown lines return false. */
 bool config_command_touches_radio(const char *line);
 
 #endif

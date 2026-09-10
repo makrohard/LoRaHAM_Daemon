@@ -26,7 +26,7 @@
 #define DATA_TX_CAD_WAIT_TIMEOUT_SEND 2
 /* Probe reported UNAVAILABLE (scan error / radio state untouchable): never
  * treated as free — the TX aborts as RADIO_ERROR, mirroring the queued
- * executor (audit P1-4). */
+ * executor. */
 #define DATA_TX_CAD_WAIT_ERROR 3
 
 static inline int data_tx_cad_wait_blocks_tx(int decision)
@@ -82,7 +82,7 @@ int data_tx_probe_channel_busy(DataTxDaemonContext *tx);
 
 RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx);
 
-/* Raw-DATA read budget (audit P2-1): with the async queue active, one 2048-
+/* Raw-DATA read budget: with the async queue active, one 2048-
  * byte read chunks into up to 9 jobs but the queue holds 8 — consumed bytes
  * past capacity were silently dropped. */
 size_t data_tx_queue_capacity_bytes(void *ctx);

@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include "radio_driver.h"
 
-/* --- CONFIG apply result (audit P1-2) ------------------------------------ */
+/* --- CONFIG apply result ------------------------------------ */
 /*
  * The dispatcher decides from this whether the radio was touched: only
  * APPLIED re-arms RX (callback + startReceive). NOOP/REJECTED never touch

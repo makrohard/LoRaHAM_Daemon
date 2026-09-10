@@ -32,7 +32,7 @@ typedef struct {
     const char *client_log_ctx;    /* "CLIENT433" / "CLIENT868" */
     const char *cad_log_ctx;       /* "CAD433" / "CAD868" */
     const char *rssi_log_ctx;      /* "RSSI433" / "RSSI868" */
-    /* Operational frequency policy (audit P1-4): SET FREQ outside this range
+    /* Operational frequency policy: SET FREQ outside this range
      * is rejected so an --radio 868 process can never tune off its logical
      * band (locks/sockets/logs would keep lying about the band). */
     float       freq_min_mhz;

@@ -118,7 +118,7 @@ void daemon_io_init(void)
      * the LED line. A failed claim is fatal because the LED is a required
      * hardware resource for the band.
      */
-    /* GPIO ownership BEFORE the first GPIO access (audit item 2): every pin
+    /* GPIO ownership BEFORE the first GPIO access: every pin
      * this process will drive — the profile's claimed set plus the possibly
      * overridden LED line — is locked before daemon_led_init() touches
      * lgpio and before any SPI/Module/RadioLib access in lora_init(). */
@@ -134,7 +134,7 @@ void daemon_io_init(void)
 
         int claim_rc = daemon_gpio_locks_claim_then(pins, n, daemon_led_init);
         if (claim_rc == DAEMON_GPIO_CLAIM_LOCK_FAILED) {
-            /* Lock INFRASTRUCTURE failure (audit P1): exit 4 — systemd must
+            /* Lock INFRASTRUCTURE failure: exit 4 — systemd must
              * not restart-spin on a held/unusable pin lock. */
             printf("[Daemon] GPIO-Sperren nicht erhältlich, beende "
                    "(fail-closed, Exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
@@ -168,7 +168,7 @@ void daemon_io_init(void)
         daemon_io_startup_cleanup();
         /* Lock-infrastructure boot failures (unusable spi0.lock, missing
          * pin locks) exit 4 — not restartable; genuine radio hardware
-         * failures keep the restartable exit 1 (audit P1). */
+         * failures keep the restartable exit 1. */
         exit(daemon_radio_boot_lock_failed() ? LORAHAM_EXIT_LOCK_ERROR
                                              : EXIT_FAILURE);
     }
@@ -180,7 +180,7 @@ void daemon_io_sync_event_fds(EventLoopSet *event_set)
     if (!event_set)
         return;
 
-    /* Check BEFORE begin (audit L2): the failure early-return must not leave
+    /* Check BEFORE begin: the failure early-return must not leave
      * a dangling reconcile epoch (begin without matching end). Registration
      * errors are terminal via event_loop_wait either way; this keeps the
      * local begin⇒end invariant unconditional. */

@@ -56,7 +56,7 @@ size_t data_tx_for_each_chunk(uint8_t *buf,
                               DataTxChunkHandler handler,
                               void *ctx);
 
-/* capacity_bytes_fn (audit P2-1): upper bound on bytes to consume from one
+/* capacity_bytes_fn: upper bound on bytes to consume from one
  * client read, queried per slot. NULL = unlimited. Returning 0 skips the
  * read entirely — level-triggered epoll re-delivers the readiness once
  * capacity exists, so unread bytes stay in the kernel buffer instead of

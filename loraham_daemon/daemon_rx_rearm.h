@@ -3,7 +3,7 @@
 
 #include "radio_controller.h"
 
-/* --- RX re-arm robustness (audit M3) -------------------------------------- */
+/* --- RX re-arm robustness -------------------------------------- */
 /*
  * Every startReceive() result is captured; a failed re-arm must never leave a
  * READY-but-deaf radio behind silently.
@@ -21,7 +21,7 @@
  * discipline (radio_controller.h): gated on tx_busy and try_to_lock, never
  * blocking behind the TX worker.
  */
-/* Escalation (audit P1-6): this many consecutive failed (re-)arms flip the
+/* Escalation: this many consecutive failed (re-)arms flip the
  * radio to FAILED — a persistently deaf receiver must not stay READY. */
 #define DAEMON_RX_REARM_FAIL_LIMIT 30u
 /* Retry backoff: at most one SPI re-arm attempt per second. */

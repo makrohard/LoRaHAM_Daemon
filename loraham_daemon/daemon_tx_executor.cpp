@@ -1,6 +1,6 @@
 #include "daemon_tx_executor.h"
 
-/* Bodies moved verbatim from daemon_tx_executor.h (D3 de-inlining). */
+/* Bodies moved verbatim from daemon_tx_executor.h. */
 
 DaemonTxJobResult daemon_tx_execute_job_with_sender(const DaemonTxJob *job,
                                                                  DaemonTxSendFn send_fn,

@@ -106,7 +106,7 @@ const char *config_status_cad_state_name(RadioCadProbeStatus status);
 
 float config_status_live_rssi_dbm(RadioController *ctrl);
 
-/* Reserved runtime-setter classification (audit P2): when one of the special
+/* Reserved runtime-setter classification: when one of the special
  * matchers above did NOT accept the line, this decides the truthful reply
  * independent of radio readiness.
  *   0 = not a reserved runtime setter (generic CONFIG path decides)

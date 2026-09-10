@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 
-/* --- Cross-process GPIO ownership (audit P1-1) ---------------------------- */
+/* --- Cross-process GPIO ownership ---------------------------- */
 /*
  * lgpio's claim API prints and swallows errors, so RadioLib cannot report a
  * pin conflict — two band processes could silently fight over a line. These
@@ -21,9 +21,8 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count);
 
 void daemon_gpio_locks_release(void);
 
-/* Startup ordering seam (audit item 2): acquire the full pin set FIRST, then
- * run hw_init (the LED/hardware hook). Return contract (audit P1 — the
- * caller maps lock failures to exit 4, hardware failures to exit 1):
+/* Startup ordering seam: acquire the full pin set FIRST, then
+ * run hw_init (the LED/hardware hook). Return contract:
  *   DAEMON_GPIO_CLAIM_LOCK_FAILED  acquisition failed; hw_init NOT called
  *   DAEMON_GPIO_CLAIM_HW_FAILED    hw_init failed; locks released again
  *   0                              locks held and hw_init succeeded

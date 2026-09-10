@@ -33,7 +33,7 @@ static const char *loraham_sockpath(const char *runp, const char *tmpp)
     return (stat(runp, &st) == 0 && S_ISSOCK(st.st_mode)) ? runp : tmpp;
 }
 
-#define DATA433_SOCKET loraham_sockpath("/run/loraham/lora868.sock", "/tmp/lora868.sock")
+#define DATA868_SOCKET loraham_sockpath("/run/loraham/lora868.sock", "/tmp/lora868.sock")
 #define MAX_FRAME_LEN 512
 #define LORA_MAX_PAYLOAD 237
 
@@ -1525,11 +1525,11 @@ int main(int argc, char *argv[])
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, DATA433_SOCKET, sizeof(addr.sun_path)-1);
+    strncpy(addr.sun_path, DATA868_SOCKET, sizeof(addr.sun_path)-1);
 
     if (connect(lora_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) { perror("connect"); return 1; }
 
-    printf("Verbunden mit %s\n", DATA433_SOCKET);
+    printf("Verbunden mit %s\n", DATA868_SOCKET);
 
     int flags = fcntl(lora_fd, F_GETFL, 0);
     fcntl(lora_fd, F_SETFL, flags | O_NONBLOCK);
