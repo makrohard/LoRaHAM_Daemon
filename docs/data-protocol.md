@@ -43,7 +43,7 @@ echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" \
 
 Framed DATA sockets are opt-in binary stream sockets that preserve RF packet boundaries. They are a second interface, not a replacement: raw DATA clients continue to receive raw RF bytes exactly as before, independently of any framed client on the same band.
 
-Both interfaces carry payload only. Status and config broadcasts (`TX=`, `CAD=`, `RSSI=`) go to CONF slots alone and are never written to a DATA or framed DATA socket.
+Raw DATA sockets carry payload only. Framed DATA sockets carry the payload **plus, on RX, the frame's RSSI and SNR** in the frame header (see the layout below). Status and config broadcasts (`TX=`, `CAD=`, `RSSI=`) go to CONF slots alone and are never written to a DATA or framed DATA socket.
 
 ## Frame layout
 

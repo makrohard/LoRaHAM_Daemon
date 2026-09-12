@@ -64,6 +64,12 @@ That is the direct, no-systemd start: sockets land in `/tmp`, and the bundled cl
 there through their own fallback. Run it in the foreground and it prints live RX, TX and debug
 output.
 
+`--rflog on --rflog-path /absolute/rf-daemon-433.log` keeps a persistent RF log: one line per
+frame received (with RSSI/SNR) or transmitted (with its outcome), raw payload as hex and ASCII,
+UTC timestamps. The file is capped at 5 MB — the tail moves to `<path>.1` by copy-truncate, so
+the inode never changes and an external truncate is safe. The path must be absolute; `on`
+without a path refuses to start. LoRaHAM Pi Control passes one file per band.
+
 For the real deployment — systemd units, sockets under `/run/loraham`, the `loraham` system user
 and the lock directories — see [`../docs/deployment.md`](../docs/deployment.md).
 

@@ -1,4 +1,5 @@
 #include "daemon_rx.h"
+#include "daemon_rflog.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -494,6 +495,10 @@ static void daemon_process_radio_band(RadioController *ctrl,
 
     daemon_radio_stats_record_rx(&ctrl->stats, (size_t)len);
     daemon_print_rx_packet(ctrl, rx_buf, len, signal.rssi_dbm);
+    // The RF log records what the radio delivered, with the signal data in hand,
+    // right where the frame is handed to every client.
+    daemon_rflog_rx(radio_controller_tag(ctrl), signal.rssi_cdbm, signal.snr_cdb,
+                    rx_buf, (size_t)len);
     daemon_broadcast_rx_data(io,
                              rx_buf,
                              len,

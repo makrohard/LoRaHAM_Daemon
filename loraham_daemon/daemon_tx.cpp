@@ -1,4 +1,5 @@
 #include "daemon_tx.h"
+#include "daemon_rflog.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -203,6 +204,8 @@ static TxResult lora_send_controller(RadioController *ctrl,
                 printf("[868] TX ERROR: %d\n", state);
         } else {
             daemon_debug_ctx(tx_ctx, "transmit OK");
+            // Logged only now: a CAD refusal or a radio error never radiated.
+            daemon_rflog_tx(radio_controller_tag(ctrl), "ok", send_buf, len);
         }
 
         if (ctrl->band == RADIO_BAND_868)

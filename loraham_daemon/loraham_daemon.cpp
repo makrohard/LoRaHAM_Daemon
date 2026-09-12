@@ -39,6 +39,7 @@
 #include "daemon_tx_mode_boot.h"
 #include "daemon_cad_monitor_boot.h"
 #include "daemon_cad_rssi_boot.h"
+#include "daemon_rflog.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -57,6 +58,8 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
     daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
     daemon_radio_shutdown_cleanup();
+
+    daemon_rflog_stop();
 
     daemon_debug_ctx("LIFE", "Schließe Event-Backend");
     event_loop_close(event_set);
@@ -306,6 +309,8 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"cad-monitor",     required_argument, 0, 1005},
         {"cad-rssi",        required_argument, 0, 1008},
         {"hw",          required_argument, 0, 1011},
+        {"rflog",       required_argument, 0, 1012},
+        {"rflog-path",  required_argument, 0, 1013},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -370,12 +375,37 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "Option --hw erkannt: %s", optarg);
                 break;
+            case 1012:
+                if (!daemon_set_rflog_switch_global(optarg)) {
+                    fprintf(stderr, "Ungültiger RF-Log-Schalter (on|off): %s\n", optarg ? optarg : "");
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --rflog erkannt: %s", optarg);
+                break;
+            case 1013:
+                if (!daemon_set_rflog_path_global(optarg)) {
+                    fprintf(stderr, "Ungültiger RF-Log-Pfad (absolut erforderlich): %s\n", optarg ? optarg : "");
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "Option --rflog-path erkannt: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
             default:
                 daemon_print_usage(argv[0]);
                 exit(EXIT_FAILURE);
+        }
+    }
+
+    // The RF log the controller asked for must exist before the radio does:
+    // "on" without a path, or an unopenable path, is a startup error, never a
+    // silently absent log.
+    {
+        char rflog_err[512];
+        if (!daemon_rflog_start(rflog_err, sizeof(rflog_err))) {
+            fprintf(stderr, "%s\n", rflog_err);
+            exit(EXIT_FAILURE);
         }
     }
 

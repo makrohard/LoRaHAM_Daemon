@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0
+
+- RF log: `--rflog on|off --rflog-path <absolute>` appends one line per RF frame the
+  radio received (with RSSI/SNR) or transmitted (with outcome, after `transmit()`
+  returned OK — a CAD refusal or radio error never radiated and is not logged).
+  Raw payload as hex and ASCII. Capped at 5 MB by copy-truncate to `<path>.1`; the
+  inode never changes, so an external truncate is tolerated. `on` without a path,
+  or an unopenable path, refuses to start rather than silently not logging.
+- `docs/data-protocol.md`: framed RX frames carry RSSI/SNR in their header; the
+  "payload only" sentence was stale.
+
 ## 0.9.0
 
 **This entry is where the version scheme changes.** Everything before it was a plain
