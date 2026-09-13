@@ -282,12 +282,21 @@ static void daemon_prepare_rx_packet(RadioController *ctrl,
     ctrl->received.store(false);
     memset(buf, 0, buf_len);
 
-    // In FSK mode, do not clear IRQs before reading the FIFO.
-    // Writing IRQ flags here can set FifoOverrun and clear the FIFO.
-    if (ctrl->mode == RADIO_MODE_LORA) {
-        daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "IRQ vor Read löschen");
-        ctrl->driver->clearIrq(0xFFFFFFFF);
-    }
+    // Do NOT clear the IRQ flags before readData() — in either mode.
+    //
+    // LoRa: RadioLib derives the packet verdict from the IRQ flags *at read
+    // time* — SX127x::readData() reads PayloadCrcError (and the header's
+    // CRC-on-payload bit), SX126x::readData() reads CRC_ERR / HEADER_ERR —
+    // and returns RADIOLIB_ERR_CRC_MISMATCH / RADIOLIB_ERR_LORA_HEADER_DAMAGED
+    // so that daemon_rx_read_ok() drops the frame. Clearing the flags here
+    // wiped that evidence first: every corrupted frame read as ERR_NONE and was
+    // handed to the clients as valid (seen on the air 2026-09-13: a chat frame
+    // at -120.75 dBm / SNR -6.75 delivered with bit errors in callsign and
+    // text although CRC=1 on both sides). readData() clears the flags itself
+    // after the read; daemon_finish_rx_packet() clears again before re-arming.
+    //
+    // FSK: never clear before reading the FIFO — writing IRQ flags here can set
+    // FifoOverrun and empty the FIFO (unchanged).
 }
 
 static int daemon_rx_packet_length(RadioController *ctrl)
