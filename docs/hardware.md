@@ -180,6 +180,23 @@ A pin value below zero means "not connected" and is passed to RadioLib as `RADIO
   that — only a decode from a second station can.
 * `tcxo_voltage` above zero means `begin()` must set the DIO3 TCXO voltage.
 
+  Where it is zero the board runs on a plain crystal, and that has a consequence for **FSK between
+  two such boards**: their carriers can sit further apart than RadioLib's default FSK receive
+  bandwidth tolerates, so one side hears a strong signal and demodulates nothing.
+
+  Measured between the two SX127x boards on 2026-09-16: the receiver's `LIVERSSI` rose from −105 to
+  **−78.5 dBm** — about 26 dB of signal — while `GET STATS` reported `RX=0` **and `RXDROPS=0`, so
+  not even a CRC failure**: no frame was demodulated at all. `SET RXBW=250.0` on the receiver fixed
+  it immediately and repeatably (4 of 4 frames, `RXDROPS=0`). A mode round trip did not help, so
+  this is not the warm-start state above.
+
+  Two things follow. **Zero `RXDROPS` alongside zero `RX` is the signature** — it separates "cannot
+  demodulate" from "receives and fails CRC", which is what a weak or noisy link looks like. And LoRa
+  is unaffected, because chirp demodulation tolerates far more frequency error than narrowband FSK;
+  in the same session LoRa decoded both directions at 2 dBm while FSK failed one direction at
+  17 dBm. If an FSK link works one way only, widen `RXBW` on the deaf side before suspecting power
+  or antennas.
+
 ## Chip-family differences
 
 | File | Contents |
