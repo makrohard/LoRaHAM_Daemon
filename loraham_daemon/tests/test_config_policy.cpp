@@ -64,11 +64,12 @@ static void test_lora_policy(void)
  * the antenna is on. POWER=0 did not mean "transmit quietly", it meant
  * "transmit into an unconnected pin", and the caller was told it worked.
  *
- * High end: the datasheet allows continuous operation to +17 dBm but restricts
- * +20 dBm to duty cycle <= 1 %, VSWR <= 3:1, VDD 2.4-3.7 V. This daemon has no
- * duty-cycle governor, so 18..20 are deliberately unsupported rather than
- * overlooked -- RadioLib reaches all three through the same PA_DAC-boosted
- * path.
+ * High end: RadioLib's checkOutputPower accepts 2..17 on PA_BOOST and
+ * special-cases exactly 20, so 18 and 19 are rejected by the library itself and
+ * were never reachable -- rejecting them here only makes the error early and
+ * specific. 20 was reachable, via the PA_DAC-boosted path, and is dropped
+ * deliberately: the datasheet restricts +20 dBm to duty cycle <= 1 %, VSWR
+ * <= 3:1 and VDD 2.4-3.7 V, and this daemon has no duty-cycle governor.
  *
  * SX1262 has one output path and no such restriction, so it keeps 0..20.
  */
@@ -117,11 +118,11 @@ static void test_power_policy_per_family(void)
                config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X), 1);
     expect_int("sx127x accepts 17 (continuous-operation maximum)",
                config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X), 1);
-    expect_int("sx127x rejects 18 (needs the +20 dBm boosted path)",
+    expect_int("sx127x rejects 18 (RadioLib rejects it too; early beats late)",
                config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X), 0);
-    expect_int("sx127x rejects 19 (needs the +20 dBm boosted path)",
+    expect_int("sx127x rejects 19 (RadioLib rejects it too; early beats late)",
                config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X), 0);
-    expect_int("sx127x rejects 20 (no duty-cycle governor exists)",
+    expect_int("sx127x rejects 20 (reachable, but no duty-cycle governor exists)",
                config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X), 0);
     expect_int("sx127x rejects -1",
                config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX127X), 0);

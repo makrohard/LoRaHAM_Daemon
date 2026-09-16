@@ -74,14 +74,18 @@ bool config_policy_power_valid(int power)
  * quietly", it meant "transmit into an unconnected pin", and the caller was
  * told the setting succeeded.
  *
- * SX127x, high end: the datasheet permits continuous operation to +17 dBm but
- * restricts +20 dBm to duty cycle <= 1 %, VSWR <= 3:1 and VDD 2.4-3.7 V. This
- * daemon has no duty-cycle governor -- not a weak one, none -- so offering
+ * SX127x, high end: RadioLib's own checkOutputPower accepts 2..17 on PA_BOOST
+ * and special-cases exactly 20; 18 and 19 are rejected by the library itself
+ * with ERR_INVALID_OUTPUT_POWER and were never reachable. Rejecting them here
+ * turns a late, opaque driver error into an early, specific one.
+ *
+ * 20 is the value that WAS reachable, through the PA_DAC-boosted path, and it
+ * is dropped on purpose: the datasheet permits continuous operation to +17 dBm
+ * but restricts +20 dBm to duty cycle <= 1 %, VSWR <= 3:1 and VDD 2.4-3.7 V.
+ * This daemon has no duty-cycle governor -- not a weak one, none -- so offering
  * POWER=20 as an ordinary setting would advertise an operating mode whose
- * contract nothing enforces. It is deliberately unsupported, not overlooked; if
- * it is ever wanted it comes back as a feature with that contract attached.
- * 18 and 19 go with it: RadioLib reaches them through the same +20 dBm
- * PA_DAC-boosted path.
+ * contract nothing enforces. If it is ever wanted it comes back as a feature
+ * with that contract attached.
  *
  * SX1262 keeps 0..20: its PA has a single output path and no such restriction.
  */

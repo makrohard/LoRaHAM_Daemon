@@ -207,10 +207,13 @@ On an **SX127x** board the accepted range is `2`–`17` dBm, for two separate re
 - Below `2` dBm RadioLib drives the **RFO** pin instead of PA_BOOST. That is a different output
   path, and it is not the one the antenna is connected to on these boards, so `POWER=0` would have
   meant "transmit into an unconnected pin" while reporting success.
-- `18`–`20` dBm need the PA_DAC-boosted +20 dBm path, which the datasheet restricts to a duty cycle
-  of at most 1 %, VSWR at most 3:1 and VDD 2.4–3.7 V. The daemon has no duty-cycle governor, so this
-  is an **intentionally unsupported** high-power mode rather than an oversight. If it is ever
-  wanted it returns as a feature with that operating contract attached.
+- `18` and `19` dBm are rejected by RadioLib itself (`checkOutputPower` accepts `2`–`17` on PA_BOOST
+  and special-cases exactly `20`), so they were never reachable; rejecting them here only makes the
+  error early and specific instead of a late driver code.
+- `20` dBm **was** reachable, through the PA_DAC-boosted path, and is dropped deliberately: the
+  datasheet restricts it to a duty cycle of at most 1 %, VSWR at most 3:1 and VDD 2.4–3.7 V, and the
+  daemon has no duty-cycle governor. This is an **intentionally unsupported** high-power mode, not
+  an oversight. If it is ever wanted it returns as a feature with that operating contract attached.
 
 Output power and the PA over-current limit (OCP) are applied together as one setting. RadioLib pins
 OCP to 60 mA inside both `begin()` and `beginFSK()`, below the datasheet typical draw of 87 mA at
