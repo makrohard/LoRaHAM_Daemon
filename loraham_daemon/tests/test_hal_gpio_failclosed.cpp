@@ -25,10 +25,12 @@
  */
 
 #include "../locking_pihal.h"
+#include "../sx127x_driver.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 /* ---- tiny assert helpers, matching the convention in tests/ -------------- */
@@ -311,6 +313,70 @@ static void test_a_failed_alert_clear_is_not_swallowed(void)
            !hal.gpio_startup_ok(), "the detach swallowed the error");
 }
 
+/*
+ * A failed gpiochip open must reach the daemon's NON-restartable exit.
+ *
+ * Found by an upstream diff review, and the reason the earlier tests missed it
+ * is worth stating: they stopped at hal.init(). RadioLib does not. init()
+ * latches the failure and returns void, then Module::init() and the SX127x
+ * chip detection run regardless, and the detection's register read reaches the
+ * SPI guard -- which used to kill the process with the RUNTIME code 5 before
+ * lora_init() could read the latch and choose the startup code 4. A
+ * permanently mis-wired or unpermitted box would then restart every two
+ * seconds, which is exactly what code 4 exists to prevent.
+ *
+ * So this runs the REAL Sx127xDriver::begin() against the REAL pinned RadioLib
+ * with the GPIO open failing, in a child process, and asserts the child is
+ * still alive to report a latched failure rather than having been killed.
+ */
+static void test_gpio_open_failure_survives_real_radio_init(void)
+{
+    reset_fake();
+
+    fflush(NULL);
+    pid_t pid = fork();
+    if (pid == 0) {
+        g.chip_open_result = LG_NOT_PERMITTED;
+
+        LockingPiHal hal(0, 2000000, 0, 0, fake_flock);
+        Module mod(&hal, 8, 25, 5, 24);
+        Sx127xDriver driver(&mod, false);
+
+        RadioRfDefaults defaults{};
+        defaults.freq_mhz = 433.775f;
+        defaults.spreading_factor = 12;
+        defaults.bandwidth_khz = 125.0f;
+        defaults.sync_word = 0x12;
+        defaults.preamble_len = 8;
+        defaults.coding_rate = 5;
+        defaults.crc_on = true;
+        defaults.ldro = -1;
+        defaults.power_dbm = 17;
+
+        (void)driver.begin(&defaults);
+
+        /* Reached only if begin() returned instead of the process being
+         * killed. 0 means the latch was lost, which would be its own defect. */
+        _exit(hal.gpio_startup_ok() ? 0 : LORAHAM_EXIT_LOCK_ERROR);
+    }
+
+    int status = 0;
+    const bool waited = (pid > 0) && (waitpid(pid, &status, 0) == pid);
+    const int code = (waited && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
+
+    char detail[200];
+    snprintf(detail, sizeof(detail),
+             "child exited %d; %d is the runtime radio-I/O code, which would "
+             "make systemd restart-spin on a permanently broken box",
+             code, LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR);
+
+    expect("a GPIO open failure does not become a runtime fatal",
+           code != LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR, detail);
+    expect("real radio init leaves the startup latch set, so lora_init() can "
+           "choose the non-restartable exit",
+           code == LORAHAM_EXIT_LOCK_ERROR, detail);
+}
+
 int main(void)
 {
     test_read_error_is_not_a_level();
@@ -320,6 +386,7 @@ int main(void)
     test_startup_latch_reports_the_failure();
     test_operational_gpio_failure_exits_five();
     test_a_failed_detach_is_not_swallowed();
+    test_gpio_open_failure_survives_real_radio_init();
     test_a_failed_alert_clear_is_not_swallowed();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

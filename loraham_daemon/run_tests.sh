@@ -641,11 +641,18 @@ build_one_hal_gpio_failclosed_test() {
     fi
   fi
 
+  # The real Sx127xDriver is linked in: the GPIO-open regression has to run
+  # through RadioLib's own Module::init() and chip detection, because that is
+  # where the defect lived -- a test that stops at hal.init() cannot see it.
   build_one_cpp_sources \
     "$out" \
     -I"$TEST_DIR/fakes" \
     "${radiolib_cflags[@]}" \
     "$src" \
+    "$SCRIPT_DIR/sx127x_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
     "${radiolib_libs[@]}"
 }
 

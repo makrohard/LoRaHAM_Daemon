@@ -126,6 +126,27 @@ class LockingPiHal : public PiHal {
     }
 
     void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override {
+        /*
+         * A GPIO open that already failed during startup must not be turned
+         * into a RUNTIME fatal here.
+         *
+         * init() latches the failure and returns void, but RadioLib carries on:
+         * Module::init() and the SX127x chip detection run regardless, and the
+         * detection's register read arrives at this guard. Exiting 5 from here
+         * killed the process before lora_init() could inspect the latch and
+         * choose the non-restartable 4 -- so a permanently mis-wired or
+         * unpermitted box restarted every two seconds, which is precisely what
+         * exit 4 exists to prevent.
+         *
+         * The transfer is still refused. It simply fails the initialisation
+         * rather than the process, and the startup path decides the exit code.
+         */
+        if (_gpioStartupFailed && !_gpioOperational) {
+            if (in)
+                memset(in, 0, len);
+            return;
+        }
+
         /* Hard invariant: never touch the shared SPI bus without the lock. */
         if (!_held)
             fatal("SPI transfer without the lock held");

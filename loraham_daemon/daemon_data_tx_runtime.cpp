@@ -152,6 +152,27 @@ int data_tx_wait_channel_free_with_limits_ex(
         if (probe_status == RADIO_CAD_PROBE_UNAVAILABLE)
             return DATA_TX_CAD_WAIT_ERROR;
 
+        /*
+         * A packet of OUR OWN is waiting to be read. Waiting cannot clear it:
+         * this loop runs on the main thread, which is also the thread that
+         * drains RX -- and it drains AFTER socket processing, so the packet
+         * cannot be collected until this call returns. Every further probe
+         * would see the same pending packet and report BUSY, burn the CAD
+         * budget, and end in the timeout decision.
+         *
+         * That is the dangerous part: with CADTXAFTERTIMEOUT=1 the timeout
+         * then permits a send, and the TX preparation clears `received` and
+         * the IRQ flags -- destroying a completed packet that no client ever
+         * saw. The probe protects it and the caller then erased it.
+         *
+         * So a pending local packet ends the attempt at once and never reaches
+         * the timeout opt-in. BLOCK is the honest answer: the channel just
+         * delivered something, we decline to transmit over it, and returning
+         * now is what lets the main loop drain it.
+         */
+        if (ctrl->received.load())
+            return DATA_TX_CAD_WAIT_BLOCK;
+
         if (probe_status != RADIO_CAD_PROBE_BUSY) {
             free_ticks++;
             if (free_ticks >= required_free_ticks)

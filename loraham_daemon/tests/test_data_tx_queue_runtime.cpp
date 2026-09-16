@@ -94,6 +94,7 @@ struct FakeRadio : public RadioDriver {
 
     int16_t clearIrq(uint32_t) override
     {
+        rx_packet_pending = false;
         return 0;
     }
 
@@ -130,12 +131,19 @@ struct FakeRadio : public RadioDriver {
      * packet is pending, so every fake needs both of these: the base class
      * forwards to phy_, which is NULL here. */
     int standby_count = 0;
-    int16_t standby() override { standby_count++; return 0; }
+    bool rx_completes_on_standby = false;
+    bool rx_packet_pending = false;
 
-    /* Mandatory since RadioDriver::rxDonePending() became pure virtual: a
-     * default of false silently preserved the RX-erasure defect in any driver
-     * that forgot it. These fakes never have a packet pending. */
-    bool rxDonePending() override { return false; }
+    int16_t standby() override
+    {
+        if (standby_count++ == 0 && rx_completes_on_standby)
+            rx_packet_pending = true;   /* a packet landed as RX was stopped */
+        return 0;
+    }
+
+    bool rxDonePending() override { return rx_packet_pending; }
+
+
 
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
@@ -902,6 +910,74 @@ static void test_controller_cad_policy_snapshot(void)
  * The scan returns a negative RadioLib error here, which
  * radio_cad_status_from_scan_state() maps to UNAVAILABLE.
  */
+/*
+ * A completed packet must survive the WHOLE synchronous send, not only the
+ * probe.
+ *
+ * Found by an upstream diff review, and it is the caller's half of the race the
+ * probe already handles. The probe correctly preserves the packet and reports
+ * BUSY -- but the synchronous CAD wait runs on the main thread, which is also
+ * the thread that drains RX, and it drains only AFTER socket processing. So the
+ * packet cannot be collected while this loop spins: every probe sees it, every
+ * probe says BUSY, the CAD budget is exhausted, and with CADTXAFTERTIMEOUT=1
+ * the timeout then permits a send whose TX preparation clears `received` and
+ * the IRQ flags. The packet no client ever saw is gone.
+ *
+ * Measured before the fix, through the production send path:
+ *   outcome=0 (OK), transmissions=1, undrained RX clears=1, received=0
+ *
+ * Both timeout policies are covered, because the opt-in is what turns a
+ * preserved packet into a destroyed one.
+ */
+static void test_pending_rx_survives_synchronous_managed_tx(void)
+{
+    for (int opt_in = 0; opt_in <= 1; opt_in++) {
+        RadioController ctrl;
+        DataTxDaemonContext ctx;
+        FakeSender sender;
+        uint8_t payload[] = { 1, 2, 3 };
+        char name[128];
+
+        init_context(&ctrl, &ctx, &sender);
+        ctrl.mode = RADIO_MODE_LORA;
+        ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+        ctrl.tx_queue_active.store(false);      /* the synchronous path */
+        ctrl.cad_scan_available = true;
+        ctrl.cad_wait_timeout_ms.store(50u);
+        ctrl.cad_poll_interval_ms.store(10u);
+        ctrl.cad_idle_stable_ms.store(0u);
+        ctrl.cad_send_after_timeout.store(opt_in != 0);
+        fake(&ctrl)->rx_completes_on_standby = true;
+
+        const int outcome = send_data_chunk(payload, sizeof(payload), 0, &ctx);
+
+        /* Only assertions that can actually fail in this harness. This test
+         * injects a fake sender, so the production TX preparation -- the code
+         * that clears `received` and the IRQ flags, i.e. the step that destroys
+         * the packet -- is never reached here, and counting driver transmits or
+         * IRQ clears would assert nothing. Those are covered by the upstream
+         * review's reproduction, which links the production lora_send(). What
+         * this test owns is the DECISION: the send must be refused before the
+         * timeout opt-in can permit it. */
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: it is still flagged for the main loop",
+                 opt_in);
+        expect_int(name, ctrl.received.load() ? 1 : 0, 1);
+
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: the send is refused, not reported OK",
+                 opt_in);
+        expect_int(name, outcome != DAEMON_TX_OUTCOME_OK ? 1 : 0, 1);
+
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: and the sender was never called",
+                 opt_in);
+        expect_int(name, sender.calls, 0);
+
+        daemon_tx_async_runtime_shutdown();
+    }
+}
+
 static void test_cad_error_is_never_converted_into_a_transmission(void)
 {
     RadioController ctrl;
@@ -1139,6 +1215,7 @@ int main(int argc, char **argv)
     test_runtime_switch_direct_then_managed();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();
+    test_pending_rx_survives_synchronous_managed_tx();
     test_cad_error_is_never_converted_into_a_transmission();
     test_sync_and_queued_cad_paths_agree();
     test_managed_busy_timeout_send_when_opt_in();

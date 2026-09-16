@@ -250,14 +250,18 @@ without running a scan:
 The MANAGED-TX gate uses its own probe, whose pending-RX guard returns an
 unconditional `BUSY` instead.
 
-**Do not poll `GET CHANNEL` back to back.** Each active probe takes the radio
-mutex, runs the scan and re-arms the receiver. A request that arrives before the
-previous one has finished cannot take the mutex, and the non-blocking probe then
-answers `CADSTATE=UNAVAILABLE` with `CADSCAN=0` — "state untouched, skip this
-sample" — rather than waiting behind the radio. A tight loop can therefore
-starve itself and see nothing but `UNAVAILABLE`, while the same poll at any
-realistic interval scans and answers normally. This is the contract, not a
-fault; leave a gap between samples.
+**A tight `GET CHANNEL` poll can return `UNAVAILABLE` with `CADSCAN=0`.** The
+active probe takes the radio mutex with a *try*-lock and declines rather than
+waiting: if the TX worker holds the radio, or a received packet has not been
+drained, the answer is "state untouched, skip this sample". Under rapid polling
+those conditions are simply met more often — each probe leaves the receiver
+re-armed and a packet may land between samples, and a queued transmission can
+hold the radio for the whole of a long frame's airtime.
+
+Requests on one CONF connection are handled in sequence by the main loop, so a
+poll does not contend with *itself*; what it contends with is the TX worker and
+the receive state. Leave a realistic gap between samples and the probe scans and
+answers normally.
 
 ## Reply and error vocabulary
 
