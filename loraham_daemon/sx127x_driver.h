@@ -8,15 +8,15 @@
 
 #include "radio_driver.h"
 
-/* --- SX127x-Treiberfamilie ------------------------------------------------ */
+/* --- SX127x driver family -------------------------------------------------- */
 /*
- * Konkreter RadioDriver für die SX127x-Familie (SX1278 auf 433, RFM95 auf
- * 868). RFM95 ist in RadioLib ein SX1276-Alias und erbt von SX1278; das
- * Objekt wird als SX1278* gehalten, alle chip-abweichenden Methoden (begin,
- * beginFSK, setFrequency, ...) sind virtuell und dispatchen korrekt.
+ * The concrete RadioDriver for the SX127x family (SX1278 on 433, RFM95 on
+ * 868). In RadioLib, RFM95 is an SX1276 alias and inherits from SX1278; the
+ * object is held as an SX1278* and every chip-specific method (begin,
+ * beginFSK, setFrequency, ...) is virtual and dispatches correctly.
  *
- * Sämtliche SX127x-Registerkonstanten (RegRssiValue 0x1B, RegRssiValueFSK
- * 0x11, RegVersion 0x42) leben ausschließlich in sx127x_driver.cpp.
+ * Every SX127x register constant (RegRssiValue 0x1B, RegRssiValueFSK 0x11,
+ * RegVersion 0x42) lives exclusively in sx127x_driver.cpp.
  */
 
 class Sx127xDriver : public RadioDriver {
@@ -129,11 +129,10 @@ private:
 RadioDriver *sx127x_driver_create(Module *mod, bool is_hf);
 
 /*
- * D8: genau eine profilbewusste Diagnosezeile für ein fehlgeschlagenes
- * SX127x-begin(). Für CHIP_NOT_FOUND unterscheidet ein roher
- * RegVersion-Read (0x42) "keine Antwort" von "antwortet mit unerwarteter
- * ID". Nur Log-Heuristik; das autoritative Gate bleibt der begin()-Status
- * und der fail-closed Health-Pfad.
+ * D8: exactly one profile-aware diagnostic line for a failed SX127x begin().
+ * For CHIP_NOT_FOUND a raw RegVersion read (0x42) distinguishes "no answer"
+ * from "answers with an unexpected ID". This is a logging heuristic only; the
+ * authoritative gate stays the begin() status and the fail-closed health path.
  */
 void sx127x_diagnose_begin_failure(Module *mod, const char *band, int state);
 

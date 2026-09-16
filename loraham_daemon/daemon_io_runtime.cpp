@@ -47,7 +47,7 @@ static void daemon_io_close(void)
 /* --- Daemon I/O lifecycle ----------------------------------------------- */
 void daemon_io_startup_cleanup(void)
 {
-    daemon_debug_ctx("LIFE", "Startup-Cleanup");
+    daemon_debug_ctx("LIFE", "startup cleanup");
     daemon_radio_shutdown_cleanup();
 
     daemon_io_close();
@@ -88,18 +88,18 @@ void daemon_io_init(void)
     daemon_lifecycle_reset_stop();
     if (daemon_lifecycle_install_signal_handlers() != 0) {
         perror("sigaction");
-        printf("[Daemon] Signal-Handler konnten nicht gesetzt werden, beende.\n");
+        printf("[Daemon] signal handlers could not be installed, exiting.\n");
         daemon_instance_lock_release();
         exit(EXIT_FAILURE);
     }
 
-    daemon_debug_ctx("CLIENT", "Slots initialisieren");
+    daemon_debug_ctx("CLIENT", "initialising slots");
     client_slot_init_all(client_data_slots, MAX_CLIENTS);
     client_slot_init_all(client_data_framed_slots, MAX_CLIENTS);
     framed_data_tx_state_init_all(client_framed_states, MAX_CLIENTS);
     client_slot_init_all(client_conf_slots, MAX_CLIENTS);
 
-    daemon_debug_ctx("RADIO", "Kanal-IO initialisieren");
+    daemon_debug_ctx("RADIO", "initialising channel I/O");
     radio_channel_io_init(&channel,
                           band->band,
                           band->data_socket,
@@ -122,7 +122,7 @@ void daemon_io_init(void)
      * this process will drive — the profile's claimed set plus the possibly
      * overridden LED line — is locked before daemon_led_init() touches
      * lgpio and before any SPI/Module/RadioLib access in lora_init(). */
-    daemon_debug_ctx("GPIO", "Pin-Sperren erwerben");
+    daemon_debug_ctx("GPIO", "acquiring pin locks");
     daemon_led_configure(daemon_hw_profile.led_pin);
     {
         int pins[DAEMON_HW_MAX_CLAIMED + 1];
@@ -136,8 +136,8 @@ void daemon_io_init(void)
         if (claim_rc == DAEMON_GPIO_CLAIM_LOCK_FAILED) {
             /* Lock INFRASTRUCTURE failure: exit 4 — systemd must
              * not restart-spin on a held/unusable pin lock. */
-            printf("[Daemon] GPIO-Sperren nicht erhältlich, beende "
-                   "(fail-closed, Exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
+            printf("[Daemon] GPIO locks unavailable, exiting "
+                   "(fail-closed, exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
             daemon_instance_lock_release();
             exit(LORAHAM_EXIT_LOCK_ERROR);
         }
@@ -148,29 +148,29 @@ void daemon_io_init(void)
              * line cannot be claimed (held by a process outside this daemon's
              * own pin locks). Every restart repeats the same failure, so this
              * exits 4 with the lock-infrastructure failures rather than 1. */
-            printf("[Daemon] GPIO/LED-Setup fehlgeschlagen, beende "
-                   "(fail-closed, Exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
+            printf("[Daemon] GPIO/LED setup failed, exiting "
+                   "(fail-closed, exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
             daemon_instance_lock_release();
             exit(LORAHAM_EXIT_LOCK_ERROR);
         }
     }
 
-    daemon_debug_ctx("SOCKET", "Socket-Dateien öffnen");
+    daemon_debug_ctx("SOCKET", "opening socket files");
     if (radio_channel_open_sockets(&channel) != 0) {
         perror(band->band == RADIO_BAND_433 ? "socket 433" : "socket 868");
-        printf("[Daemon] Socket-Setup %s fehlgeschlagen, beende.\n", band->tag);
+        printf("[Daemon] socket setup %s failed, exiting.\n", band->tag);
         daemon_io_startup_cleanup();
         exit(EXIT_FAILURE);
     }
 
     daemon_radio_controller_init();
 
-    daemon_debug_ctx("RADIO", "RadioLib initialisieren");
+    daemon_debug_ctx("RADIO", "initialising RadioLib");
     lora_init();
 
     daemon_log_active_radios();
     if (!daemon_selected_radio_ready()) {
-        printf("[Daemon] Kein ausgewähltes Radio bereit, beende.\n");
+        printf("[Daemon] no selected radio is ready, exiting.\n");
         daemon_io_startup_cleanup();
         /* Lock-infrastructure boot failures (unusable spi0.lock, missing
          * pin locks) exit 4 — not restartable; genuine radio hardware

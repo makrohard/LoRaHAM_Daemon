@@ -50,8 +50,8 @@ void daemon_led_flash_pin(int pin)
 
 
 
-// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
-// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+// Fake driver: overrides the virtual RadioDriver delegates and counts calls
+// exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
     int scan_count;
     int scan_state;

@@ -79,13 +79,13 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
     int fd = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 
     if (fd < 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrverzeichnis %s nicht nutzbar: %s\n",
+        fprintf(stderr, "[LOCK] error: lock directory %s unusable: %s\n",
                 dir, strerror(errno));
         return -1;
     }
 
     if (fstat(fd, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "[LOCK] Fehler: %s ist kein Verzeichnis\n", dir);
+        fprintf(stderr, "[LOCK] error: %s is not a directory\n", dir);
         close(fd);
         return -1;
     }
@@ -97,8 +97,8 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
      * the spi/gpio supplementary groups). */
     if (require_root && st.st_uid != 0 && st.st_uid != geteuid()) {
         fprintf(stderr,
-                "[LOCK] Fehler: Sperrverzeichnis %s gehoert weder root noch "
-                "dem Daemon-Nutzer (uid=%u)\n",
+                "[LOCK] error: lock directory %s is owned by neither root nor "
+                "the daemon user (uid=%u)\n",
                 dir, (unsigned)st.st_uid);
         close(fd);
         return -1;
@@ -106,7 +106,7 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
 
     if (st.st_mode & (S_IWGRP | S_IWOTH)) {
         fprintf(stderr,
-                "[LOCK] Fehler: Sperrverzeichnis %s gruppen-/weltbeschreibbar "
+                "[LOCK] error: lock directory %s is group- or world-writable "
                 "(mode=%04o)\n", dir, (unsigned)(st.st_mode & 07777));
         close(fd);
         return -1;
@@ -150,21 +150,20 @@ static inline int loraham_open_lock_file_at(int dirfd, const char *name)
     int fd = openat(dirfd, name, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
 
     if (fd < 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht nutzbar: %s\n",
+        fprintf(stderr, "[LOCK] error: lock file %s unusable: %s\n",
                 name, strerror(errno));
         return -1;
     }
 
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s ist keine regulaere Datei\n",
+        fprintf(stderr, "[LOCK] error: lock file %s is not a regular file\n",
                 name);
         close(fd);
         return -1;
     }
 
     if ((st.st_mode & 0777) != 0600 && fchmod(fd, 0600) != 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht auf 0600 "
-                "korrigierbar: %s\n", name, strerror(errno));
+        fprintf(stderr, "[LOCK] error: lock file %s cannot be corrected to 0600: %s\n", name, strerror(errno));
         close(fd);
         return -1;
     }

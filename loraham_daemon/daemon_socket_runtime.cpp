@@ -44,7 +44,7 @@ static void daemon_log_accept_delta(const char *ctx,
     if (after > before)
         daemon_debug_ctx(ctx, "%s-Client verbunden (%d)", kind, after);
     else
-        daemon_debug_ctx(ctx, "%s-Annahme ohne neuen Client", kind);
+        daemon_debug_ctx(ctx, "%s accept without a new client", kind);
 }
 
 void daemon_accept_channel_logged(RadioChannelIo *channel,
@@ -61,11 +61,11 @@ void daemon_accept_channel_logged(RadioChannelIo *channel,
     int conf_before = daemon_client_slot_count(channel->conf_slots, MAX_CLIENTS);
 
     if (data_ready)
-        daemon_debug_ctx(ctx, "DATA-Annahme bereit");
+        daemon_debug_ctx(ctx, "DATA accept ready");
     if (framed_ready)
-        daemon_debug_ctx(ctx, "DATAF-Annahme bereit");
+        daemon_debug_ctx(ctx, "DATAF accept ready");
     if (conf_ready)
-        daemon_debug_ctx(ctx, "CONF-Annahme bereit");
+        daemon_debug_ctx(ctx, "CONF accept ready");
 
     radio_channel_accept_ready(channel, readfds);
 
@@ -91,14 +91,14 @@ void daemon_flush_channel_logged(RadioChannelIo *channel,
                                         const char *ctx)
 {
     if (daemon_client_slots_output_ready(channel->data_slots, MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "DATA-Ausgabe bereit");
+        daemon_debug_ctx(ctx, "DATA output ready");
 
     if (daemon_client_slots_output_ready(channel->framed_data_slots,
                                          MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "DATAF-Ausgabe bereit");
+        daemon_debug_ctx(ctx, "DATAF output ready");
 
     if (daemon_client_slots_output_ready(channel->conf_slots, MAX_CLIENTS, readfds))
-        daemon_debug_ctx(ctx, "CONF-Ausgabe bereit");
+        daemon_debug_ctx(ctx, "CONF output ready");
 
     radio_channel_flush_ready(channel, readfds);
 }

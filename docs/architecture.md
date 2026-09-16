@@ -82,7 +82,7 @@ Four conditions are fatal at startup:
 | The selected radio does not become ready | Cleans up, then exits `4` (`LORAHAM_EXIT_LOCK_ERROR`) on a boot lock-infrastructure failure, otherwise `EXIT_FAILURE` |
 | Event-loop setup fails | Runs the shutdown cleanup, exits `EXIT_FAILURE` |
 
-Normal logs report the active radio once during startup, as `[Daemon] Aktive Radios: <tag>`
+Normal logs report the active radio once during startup, as `[Daemon] active radios: <tag>`
 (or `none`). Debug logs (`--debug`) additionally carry the selected-radio decisions
 (`Option --radio erkannt: …`, `Radio-Auswahl: …`).
 

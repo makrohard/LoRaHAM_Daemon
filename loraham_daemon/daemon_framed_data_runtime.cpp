@@ -169,7 +169,7 @@ static void daemon_framed_tx_error(const char *msg, void *ctx)
         return;
 
     daemon_debug_ctx(err->tag ? err->tag : "TXF",
-                     "Frame-Fehler: %s", msg ? msg : "");
+                     "frame error: %s", msg ? msg : "");
     if (daemon_queue_framed_error(err->slot, msg ? msg : "frame error") != 0)
         client_slot_close(err->slot);
 }
@@ -212,7 +212,7 @@ void daemon_process_framed_data_slots(const char *tag,
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 continue;
 
-            daemon_debug_ctx(tag, "Lesefehler, Client zu");
+            daemon_debug_ctx(tag, "read error, closing client");
             framed_data_tx_state_init(&states[i]);
             client_slot_close(slot);
             continue;
@@ -239,7 +239,7 @@ void daemon_process_framed_data_slots(const char *tag,
             i
         };
 
-        daemon_debug_ctx(tag, "Framed DATA: %zd Byte empfangen", n);
+        daemon_debug_ctx(tag, "framed DATA: %zd bytes received", n);
         if (framed_data_tx_feed_state(&states[i],
                                       buf,
                                       (size_t)n,
@@ -247,7 +247,7 @@ void daemon_process_framed_data_slots(const char *tag,
                                       &tx,
                                       daemon_framed_tx_error,
                                       &err) != 0) {
-            daemon_debug_ctx(tag, "TX-Handler Fehler, Client zu");
+            daemon_debug_ctx(tag, "TX handler error, closing client");
             framed_data_tx_state_init(&states[i]);
             client_slot_close(slot);
         }

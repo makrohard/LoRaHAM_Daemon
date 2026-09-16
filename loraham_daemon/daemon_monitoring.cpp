@@ -84,7 +84,7 @@ static void daemon_process_cad_status(RadioController *ctrl,
         daemon_debug_ctx(ctx, "Aktiv cad=BUSY rssi=%.1f", tick.rssi_dbm);
         client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
     } else if (tick.edge < 0) {
-        daemon_debug_ctx(ctx, "Inaktiv cad=FREE rssi=%.1f", tick.rssi_dbm);
+        daemon_debug_ctx(ctx, "inactive cad=FREE rssi=%.1f", tick.rssi_dbm);
         client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=0\n");
     }
 
@@ -107,7 +107,7 @@ static void daemon_radio_controller_getrssi_autostop(RadioChannelIo *io,
         const char *ctx = daemon_rssi_log_ctx(ctrl);
 
         ctrl->getrssi_active.store(false);
-        daemon_debug_ctx(ctx, "Auto-Stop: kein Client");
+        daemon_debug_ctx(ctx, "auto-stop: no client");
     }
 }
 
@@ -120,12 +120,12 @@ static void daemon_process_rssi_stream_one(RadioController *ctrl,
         return;
 
     if (ctrl->tx_busy.load()) {
-        daemon_debug_ctx(ctx, "TX aktiv, überspringe");
+        daemon_debug_ctx(ctx, "TX active, skipping");
         return;
     }
 
     if (!radio_controller_ready(ctrl) || !ctrl->driver) {
-        daemon_debug_ctx(ctx, "Radio nicht bereit");
+        daemon_debug_ctx(ctx, "radio not ready");
         return;
     }
 
@@ -134,14 +134,14 @@ static void daemon_process_rssi_stream_one(RadioController *ctrl,
     std::unique_lock<std::recursive_mutex> radio_lock(
         ctrl->radio_mutex, std::try_to_lock);
     if (!radio_lock.owns_lock()) {
-        daemon_debug_ctx(ctx, "Radio belegt, überspringe");
+        daemon_debug_ctx(ctx, "radio busy, skipping");
         return;
     }
 
     float rssi = ctrl->driver->readLiveRssi(ctrl->mode, ctrl->is_hf);
     char rssi_msg[32];
     snprintf(rssi_msg, sizeof(rssi_msg), "RSSI=%.2f\n", rssi);
-    daemon_debug_ctx(ctx, "Sende %.2f dBm", rssi);
+    daemon_debug_ctx(ctx, "sending %.2f dBm", rssi);
     client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, rssi_msg);
 }
 

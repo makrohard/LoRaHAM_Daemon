@@ -84,7 +84,7 @@ class LockingPiHal : public PiHal {
          * counter is only ever touched by one thread per instance. */
         if (_depth++ == 0) {
             if (_lockFd < 0)
-                fatal("SPI-Sperre nicht verfuegbar (fail-closed)");
+                fatal("SPI lock unavailable (fail-closed)");
 
             /* Bounded: a live-but-wedged peer must not block
              * this daemon forever. Expiry is fatal — systemd restarts a
@@ -92,9 +92,9 @@ class LockingPiHal : public PiHal {
             if (loraham_flock_acquire_ex_deadline(_lockFd, _flock,
                     LORAHAM_SPI_LOCK_TIMEOUT_MS) != 0) {
                 if (errno == ETIMEDOUT)
-                    fatal("SPI-Sperre nicht binnen Frist erhalten "
-                          "(Peer verklemmt?)");
-                fatal("flock(LOCK_EX) hart fehlgeschlagen");
+                    fatal("SPI lock not acquired within the deadline "
+                          "(peer wedged?)");
+                fatal("flock(LOCK_EX) failed hard");
             }
 
             _held = true;
@@ -114,7 +114,7 @@ class LockingPiHal : public PiHal {
         _ownSpiHandle = lgSpiOpen(_ownSpiDevice, _ownSpiChannel,
                                   _ownSpiSpeed, 0);
         if (_ownSpiHandle < 0)
-            fprintf(stderr, "[SPI] lgSpiOpen fehlgeschlagen: %s\n",
+            fprintf(stderr, "[SPI] lgSpiOpen failed: %s\n",
                     lguErrorText(_ownSpiHandle));
     }
 
@@ -128,16 +128,16 @@ class LockingPiHal : public PiHal {
     void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override {
         /* Hard invariant: never touch the shared SPI bus without the lock. */
         if (!_held)
-            fatal("SPI-Transfer ohne gehaltene Sperre");
+            fatal("SPI transfer without the lock held");
 
         if (_ownSpiHandle < 0)
             fatal("SPI-Transfer ohne offenes SPI-Handle");
 
         int result = lgSpiXfer(_ownSpiHandle, (char *)out, (char *)in, len);
         if (result < 0) {
-            fprintf(stderr, "[SPI] lgSpiXfer fehlgeschlagen: %s\n",
+            fprintf(stderr, "[SPI] lgSpiXfer failed: %s\n",
                     lguErrorText(result));
-            fatal("SPI-Transfer fehlgeschlagen (Bus-Fehler)");
+            fatal("SPI transfer failed (bus error)");
         }
     }
 
@@ -151,7 +151,7 @@ class LockingPiHal : public PiHal {
                  * believe it released -- that could wedge the peer band. Treat
                  * it as fatal: exit via the lock-error path so process teardown
                  * closes the fd and the kernel releases the lock. */
-                fatal("flock(LOCK_UN) hart fehlgeschlagen");
+                fatal("flock(LOCK_UN) failed hard");
             }
         }
     }
@@ -194,7 +194,7 @@ class LockingPiHal : public PiHal {
 
         int handle = lgGpiochipOpen(_ownGpioDevice);
         if (handle < 0) {
-            fprintf(stderr, "[GPIO] lgGpiochipOpen fehlgeschlagen: %s\n",
+            fprintf(stderr, "[GPIO] lgGpiochipOpen failed: %s\n",
                     lguErrorText(handle));
             /* Deliberately do NOT store the negative result: a later init()
              * must really retry, and no read may ever run against it. */
@@ -231,12 +231,12 @@ class LockingPiHal : public PiHal {
                 result = lgGpioClaimOutput(_ownGpioHandle, 0, (int)pin, LG_HIGH);
                 break;
             default:
-                gpio_failure("pinMode mit unbekanntem Modus");
+                gpio_failure("pinMode with an unknown mode");
                 return;
         }
 
         if (result < 0)
-            gpio_failure("lgGpioClaim* fehlgeschlagen");
+            gpio_failure("lgGpioClaim* failed");
     }
 
     void digitalWrite(uint32_t pin, uint32_t value) override {
@@ -246,7 +246,7 @@ class LockingPiHal : public PiHal {
             return;
 
         if (lgGpioWrite(_ownGpioHandle, (int)pin, (int)value) < 0)
-            gpio_failure("lgGpioWrite fehlgeschlagen");
+            gpio_failure("lgGpioWrite failed");
     }
 
     uint32_t digitalRead(uint32_t pin) override {
@@ -257,7 +257,7 @@ class LockingPiHal : public PiHal {
 
         int result = lgGpioRead(_ownGpioHandle, (int)pin);
         if (result < 0) {
-            gpio_failure("lgGpioRead fehlgeschlagen");
+            gpio_failure("lgGpioRead failed");
             /* Startup path only (gpio_failure() does not return once
              * operational). LOW is the safe answer: it lets a bounded wait
              * time out, whereas HIGH manufactures a finished TX or a free
@@ -281,7 +281,7 @@ class LockingPiHal : public PiHal {
             /* An unregistered RX callback is silent deafness: the radio
              * reports READY and no packet ever arrives. The base class only
              * printed here. */
-            gpio_failure("lgGpioClaimAlert fehlgeschlagen");
+            gpio_failure("lgGpioClaimAlert failed");
             return;
         }
 
@@ -292,7 +292,7 @@ class LockingPiHal : public PiHal {
 
         if (lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum,
                                 lgpioAlertHandler, (void *)this) < 0)
-            gpio_failure("lgGpioSetAlertsFunc fehlgeschlagen");
+            gpio_failure("lgGpioSetAlertsFunc failed");
     }
 
     void detachInterrupt(uint32_t interruptNum) override {
@@ -327,7 +327,7 @@ class LockingPiHal : public PiHal {
         if (_ownGpioHandle >= 0)
             return true;
         char why[96];
-        snprintf(why, sizeof(why), "%s ohne offenes GPIO-Handle", what);
+        snprintf(why, sizeof(why), "%s without an open GPIO handle", what);
         gpio_failure(why);
         return false;
     }
@@ -338,7 +338,7 @@ class LockingPiHal : public PiHal {
     void gpio_failure(const char *why) {
         if (_gpioOperational)
             fatal(why);
-        fprintf(stderr, "[GPIO] Startfehler: %s\n", why);
+        fprintf(stderr, "[GPIO] startup error: %s\n", why);
         _gpioStartupFailed = true;
     }
 
@@ -349,8 +349,8 @@ class LockingPiHal : public PiHal {
      * restart, while codes 3/4 stay non-restartable. */
     [[noreturn]] static void fatal(const char *why) {
         fprintf(stderr,
-                "[SPI] FATAL: %s - breche ab, um unsynchronisierten "
-                "SPI-Zugriff zu verhindern\n", why);
+                "[SPI] FATAL: %s - aborting to prevent unsynchronised "
+                "SPI access\n", why);
         fflush(stderr);
         _exit(LORAHAM_EXIT_RUNTIME_SPI_ERROR);
     }
@@ -378,7 +378,7 @@ class LockingPiHal : public PiHal {
         close(dirfd);
 
         if (_lockFd >= 0)
-            fprintf(stderr, "[SPI] SPI-Sperrdatei: %s/spi0.lock\n",
+            fprintf(stderr, "[SPI] SPI lock file: %s/spi0.lock\n",
                     loraham_runtime_dir());
     }
 

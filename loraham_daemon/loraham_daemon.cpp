@@ -61,17 +61,17 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 
     daemon_rflog_stop();
 
-    daemon_debug_ctx("LIFE", "Schließe Event-Backend");
+    daemon_debug_ctx("LIFE", "closing the event backend");
     event_loop_close(event_set);
 
-    daemon_debug_ctx("LIFE", "Schließe Clients");
+    daemon_debug_ctx("LIFE", "closing clients");
     daemon_io_shutdown_cleanup();
 
     daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
 
     /* Release per-band ownership only after all sockets are closed/unlinked, so
      * a same-band restart cannot bind sockets that this instance then deletes. */
-    daemon_debug_ctx("LIFE", "Gebe Instanz-Sperre frei");
+    daemon_debug_ctx("LIFE", "releasing the instance lock");
     daemon_instance_lock_release();
 }
 
@@ -93,7 +93,7 @@ static void daemon_runtime_init(EventLoopSet *event_set)
     // Initialize event backend.
     if (event_loop_init(event_set) != 0) {
         perror("epoll");
-        printf("[Daemon] Event-Backend konnte nicht gestartet werden, beende.\n");
+        printf("[Daemon] event backend could not be started, exiting.\n");
         daemon_shutdown_cleanup(event_set);
         exit(EXIT_FAILURE);
     }
@@ -152,17 +152,17 @@ typedef struct {
 
 static void daemon_main_context_init(DaemonMainContext *ctx)
 {
-    daemon_debug_ctx("LIFE", "Initialisiere Laufzeitkontext");
+    daemon_debug_ctx("LIFE", "initialising the runtime context");
     daemon_runtime_init(&ctx->event_set);
     daemon_loop_context_init(&ctx->loop_ctx);
     daemon_io_sync_event_fds(&ctx->event_set);
-    daemon_debug_ctx("LIFE", "Laufzeitkontext bereit");
+    daemon_debug_ctx("LIFE", "runtime context ready");
 }
 
 /* --- Main loop logging --------------------------------------------------- */
 static void daemon_log_loop_start(void)
 {
-    printf("[Daemon] Starte Polling-Loop für LoRa und Sockets (radio=%s)\n",
+    printf("[Daemon] starting the polling loop for LoRa and sockets (radio=%s)\n",
            daemon_radio_selection_name(daemon_radio_selection));
 }
 
@@ -258,31 +258,31 @@ static void daemon_print_usage(const char *argv0)
 {
     printf("%s\n", LORAHAM_DAEMON_VERSION_TEXT);
     printf("\n");
-    printf("Nutzung:\n");
-    printf("  %s [Optionen]\n", argv0);
+    printf("Usage:\n");
+    printf("  %s [options]\n", argv0);
     printf("\n");
-    printf("Optionen:\n");
-    printf("  -d, --daemon     Im Hintergrund starten, Log: /tmp/lora_daemon.log\n");
-    printf("  -v, --version    Version anzeigen und beenden\n");
-    printf("      --debug      Debug-Log aktivieren\n");
-    printf("      --radio MODE Radio wählen: 433, 868 (erforderlich)\n");
-    printf("      --hw PRESET  Hardware-Profil: %s\n",
+    printf("Options:\n");
+    printf("  -d, --daemon     run in the background, log: /tmp/lora_daemon.log\n");
+    printf("  -v, --version    print the version and exit\n");
+    printf("      --debug      enable the debug log\n");
+    printf("      --radio MODE select the radio: 433, 868 (required)\n");
+    printf("      --hw PRESET  hardware profile: %s\n",
            daemon_hardware_profile_known());
-    printf("                   (Standard: loraham)\n");
-    printf("      --tx-mode MODE      TX-Modus: direct, managed (Standard: managed)\n");
-    printf("      --cad-monitor VAL   CAD=0/1-Monitor: on, off (Standard: off)\n");
-    printf("      --cad-rssi DBM      CAD-Busy-Schwelle, Ganzzahl dBm -130..0 (Standard: -90)\n");
-    printf("  -h, --help       Diese Hilfe anzeigen und beenden\n");
+    printf("                   (default: loraham)\n");
+    printf("      --tx-mode MODE      TX mode: direct, managed (default: managed)\n");
+    printf("      --cad-monitor VAL   CAD=0/1 monitor: on, off (default: off)\n");
+    printf("      --cad-rssi DBM      CAD busy threshold, integer dBm -130..0 (default: -90)\n");
+    printf("  -h, --help       print this help and exit\n");
     printf("\n");
-    printf("Sockets (erzeugt werden nur die des gewählten Bandes):\n");
+    printf("Sockets (only those of the selected band are created):\n");
     printf("  DATA  433: %s\n", DATA433_SOCKET);
     printf("  DATA  868: %s\n", DATA868_SOCKET);
     printf("  DATAF 433: %s\n", DATA433_FRAMED_SOCKET);
     printf("  DATAF 868: %s\n", DATA868_FRAMED_SOCKET);
     printf("  CONF  433: %s\n", CONF433_SOCKET);
     printf("  CONF  868: %s\n", CONF868_SOCKET);
-    printf("  (Verzeichnis /run/loraham; Gruppe loraham fuer Client-Zugriff;\n");
-    printf("   LORAHAM_SOCKET_DIR uebersteuert nur fuer Dev/Test-Laeufe)\n");
+    printf("  (directory /run/loraham; group loraham for client access;\n");
+    printf("   LORAHAM_SOCKET_DIR overrides it for dev and test runs only)\n");
     printf("\n");
 }
 
@@ -331,8 +331,8 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1001:
                 if (!daemon_parse_radio_selection(optarg)) {
-                    fprintf(stderr, "Ungültiger Radio-Modus: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: 433, 868\n");
+                    fprintf(stderr, "invalid radio mode: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "allowed: 433, 868\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -341,8 +341,8 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1002:
                 if (!daemon_set_tx_mode_boot_global(optarg)) {
-                    fprintf(stderr, "Ungültiger TX-Modus: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: direct, managed\n");
+                    fprintf(stderr, "invalid TX mode: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "allowed: direct, managed\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -350,8 +350,8 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1005:
                 if (!daemon_set_cad_monitor_boot_global(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-Monitor-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: on, off\n");
+                    fprintf(stderr, "invalid CAD monitor value: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "allowed: on, off\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -359,8 +359,8 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1008:
                 if (!daemon_set_cad_rssi_boot_global(optarg)) {
-                    fprintf(stderr, "Ungültiger CAD-RSSI-Wert: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Erlaubt: Ganzzahl dBm zwischen -130 und 0\n");
+                    fprintf(stderr, "invalid CAD RSSI value: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "allowed: integer dBm between -130 and 0\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -368,8 +368,8 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1011:
                 if (!daemon_set_hardware_preset(optarg)) {
-                    fprintf(stderr, "Ungültiges Hardware-Profil: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "Bekannt: %s\n", daemon_hardware_profile_known());
+                    fprintf(stderr, "invalid hardware profile: %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "known: %s\n", daemon_hardware_profile_known());
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -377,14 +377,14 @@ static bool daemon_parse_args(int argc, char *argv[])
                 break;
             case 1012:
                 if (!daemon_set_rflog_switch_global(optarg)) {
-                    fprintf(stderr, "Ungültiger RF-Log-Schalter (on|off): %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "invalid RF log switch (on|off): %s\n", optarg ? optarg : "");
                     exit(EXIT_FAILURE);
                 }
                 daemon_debug_ctx("STARTUP", "Option --rflog erkannt: %s", optarg);
                 break;
             case 1013:
                 if (!daemon_set_rflog_path_global(optarg)) {
-                    fprintf(stderr, "Ungültiger RF-Log-Pfad (absolut erforderlich): %s\n", optarg ? optarg : "");
+                    fprintf(stderr, "invalid RF log path (an absolute path is required): %s\n", optarg ? optarg : "");
                     exit(EXIT_FAILURE);
                 }
                 daemon_debug_ctx("STARTUP", "Option --rflog-path erkannt: %s", optarg);
@@ -416,7 +416,7 @@ static bool daemon_parse_args(int argc, char *argv[])
     }
 
     if (!daemon_radio_selection_is_set()) {
-        fprintf(stderr, "Fehlende Option: --radio (433 oder 868)\n");
+        fprintf(stderr, "missing option: --radio (433 or 868)\n");
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -427,13 +427,13 @@ static bool daemon_parse_args(int argc, char *argv[])
     daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
                                                    : RADIO_BAND_868);
     if (!daemon_hardware_profile_resolve(daemon_band()->band_number)) {
-        fprintf(stderr, "Ungültiges Hardware-Profil: %s\n",
+        fprintf(stderr, "invalid hardware profile: %s\n",
                 daemon_hardware_preset_name());
-        fprintf(stderr, "Bekannt: %s\n", daemon_hardware_profile_known());
+        fprintf(stderr, "known: %s\n", daemon_hardware_profile_known());
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
-    daemon_debug_ctx("STARTUP", "Hardware-Profil: %s (%s)",
+    daemon_debug_ctx("STARTUP", "hardware profile: %s (%s)",
                      daemon_hw_profile.name,
                      daemon_chip_family_name(daemon_hw_profile.family));
 

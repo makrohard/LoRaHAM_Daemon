@@ -56,7 +56,7 @@ static void lora_print_tx_preview(const char *ctx,
     char msg[512];
     size_t pos = 0;
 
-    pos += snprintf(msg + pos, sizeof(msg) - pos, "%zu Byte: ", len);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "%zu bytes: ", len);
 
     for(size_t i = 0; i < len && pos < sizeof(msg); i++)
         pos += snprintf(msg + pos, sizeof(msg) - pos, "%c",
@@ -93,7 +93,7 @@ static void lora_debug_tx_first_bytes(const char *ctx,
     char msg[160];
     size_t pos = 0;
 
-    pos += snprintf(msg + pos, sizeof(msg) - pos, "Sende jetzt %zu Byte", len);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "sending %zu bytes now", len);
     if (preview_len > 0) {
         pos += snprintf(msg + pos, sizeof(msg) - pos, " (");
         for (size_t i = 0; i < preview_len && pos < sizeof(msg); i++) {
@@ -179,7 +179,7 @@ static TxResult lora_send_controller(RadioController *ctrl,
     }
 
     if (!lora_send_acquire_controller_tx(ctrl)) {
-        printf("[%s] TX BUSY - überspringen\n", tag);
+        printf("[%s] TX BUSY - skipping\n", tag);
         fflush(stdout);
         return TX_RESULT_BUSY;
     }
@@ -211,7 +211,7 @@ static TxResult lora_send_controller(RadioController *ctrl,
         int state = ctrl->driver->transmit(send_buf, len);
 
         if(state != RADIOLIB_ERR_NONE) {
-            daemon_debug_ctx(tx_ctx, "transmit Fehler %d", state);
+            daemon_debug_ctx(tx_ctx, "transmit error %d", state);
             if (ctrl->band == RADIO_BAND_433)
                 printf("[433] transmit ERROR: %d\n", state);
             else

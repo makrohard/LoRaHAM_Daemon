@@ -7,27 +7,27 @@
 
 #include "radio_driver.h"
 
-/* --- SX1262-Treiber -------------------------------------------------------- */
+/* --- SX1262 driver ---------------------------------------------------------- */
 /*
- * Konkreter RadioDriver für die SX126x-Familie (Waveshare SX1262 LoRaWAN
- * Node HAT, LF- und HF-Variante pin-identisch; das Band kommt aus --radio).
+ * The concrete RadioDriver for the SX126x family (Waveshare SX1262 LoRaWAN
+ * Node HAT; the LF and HF variants are pin-identical and the band comes from
+ * --radio).
  *
- * Chip-Besonderheiten gegenüber SX127x, hier gekapselt:
- *  - TCXO wird aus DIO3 gespeist: begin()/beginFSK() setzen die
- *    TCXO-Referenzspannung aus dem Hardware-Profil.
- *  - RX/TX-Umschaltung: DIO2 als RF-Switch (setDio2AsRfSwitch), TXEN/ANT_SW
- *    optional als GPIO über Module::setRfSwitchPins.
- *  - Sync-Word: RadioLib bildet das SX127x-Byte (0x12/0x2B) über die
- *    Kompatibilitäts-Steuerbits ab (setSyncWord(byte, 0x44)); die
- *    On-Air-Kompatibilität zu SX127x-Gegenstellen ist Bench-Punkt der
- *    Hardware-Session.
- *  - CRC: setCRC(len) — LoRa-CRC an == 2 Byte, aus == 0.
- *  - Leistungsbereich −9…+22 dBm (RadioLib validiert; CONF-Policy bleibt
- *    0…20 und damit innerhalb des Chip-Bereichs).
- *  - Kein OOK; FSK-RXBW-Rasterwerte weichen vom SX127x ab (RadioLib
- *    validiert den chip-eigenen Raster und lehnt fremde Werte ab).
- *  - Live-RSSI über das GetRssiInst-Kommando (RadioLib getRSSI(false)),
- *    niemals über SX127x-Registeradressen.
+ * The chip differences from SX127x, encapsulated here:
+ *  - TCXO is fed from DIO3: begin() and beginFSK() set the TCXO reference
+ *    voltage from the hardware profile.
+ *  - RX/TX switching: DIO2 as the RF switch (setDio2AsRfSwitch), with
+ *    TXEN/ANT_SW optionally as GPIO through Module::setRfSwitchPins.
+ *  - Sync word: RadioLib maps the SX127x byte (0x12/0x2B) through the
+ *    compatibility control bits (setSyncWord(byte, 0x44)); on-air
+ *    compatibility with SX127x peers is a bench item.
+ *  - CRC: setCRC(len) -- LoRa CRC on == 2 bytes, off == 0.
+ *  - Power range -9..+22 dBm (RadioLib validates; the CONF policy stays
+ *    0..20 and therefore inside the chip's range).
+ *  - No OOK, and the FSK RXBW raster differs from the SX127x (RadioLib
+ *    validates the chip's own raster and rejects foreign values).
+ *  - Live RSSI through the GetRssiInst command (RadioLib getRSSI(false)),
+ *    never through SX127x register addresses.
  */
 
 class Sx1262Driver : public RadioDriver {
@@ -60,10 +60,9 @@ RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,
                                   int txen_pin);
 
 /*
- * D8 (SX126x): genau eine profilbewusste Diagnosezeile für ein
- * fehlgeschlagenes begin(). Verlässt sich auf die RadioLib-eigene
- * Chip-Verifikation (Versionsstring + BUSY-Protokoll); keine
- * handgerollten Pre-begin-Kommandos.
+ * D8 (SX126x): exactly one profile-aware diagnostic line for a failed
+ * begin(). It relies on RadioLib's own chip verification (version string plus
+ * the BUSY protocol) and issues no hand-rolled pre-begin commands.
  */
 void sx1262_diagnose_begin_failure(const char *band, int state);
 

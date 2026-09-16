@@ -380,8 +380,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     int band = radio_controller_band_number(ctrl);
 
     if (!radio_controller_ready(ctrl)) {
-        daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
-        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
+        daemon_debug_ctx(tx->log_ctx, "radio not ready");
+        printf("[%s] DATA TX aborted: RADIO_NOT_READY\n", tag);
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
     }
 
@@ -396,8 +396,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     if (len > limit) {
         daemon_radio_stats_record_tx_result(&ctrl->stats,
                                             TX_RESULT_INVALID_PACKET);
-        daemon_debug_ctx(tx->log_ctx, "Payload zu gross");
-        printf("[%s] DATA-TX abgebrochen: %s (%zu Byte > %zu im Modus %s)\n",
+        daemon_debug_ctx(tx->log_ctx, "payload too large");
+        printf("[%s] DATA TX aborted: %s (%zu bytes > %zu in mode %s)\n",
                tag, tx_result_name(TX_RESULT_INVALID_PACKET), len, limit,
                radio_mode_name(ctrl->mode));
         return DAEMON_TX_OUTCOME_INVALID_PACKET;
@@ -410,8 +410,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         (daemon_tx_async_runtime_pending() > 0 ||
          daemon_tx_async_runtime_job_active())) {
         daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
-        daemon_debug_ctx(tx->log_ctx, "Rest-Queue aktiv");
-        printf("[%s] DATA-TX abgebrochen: %s (Rest-Queue aktiv)\n", tag,
+        daemon_debug_ctx(tx->log_ctx, "residual queue active");
+        printf("[%s] DATA TX aborted: %s (residual queue active)\n", tag,
                tx_result_name(TX_RESULT_BUSY));
         return DAEMON_TX_OUTCOME_BUSY;
     }
@@ -421,8 +421,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
                                           tx->tx_busy_wait_ticks,
                                           tx->tx_busy_sleep_usec)) {
         daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
-        daemon_debug_ctx(tx->log_ctx, "TX belegt");
-        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+        daemon_debug_ctx(tx->log_ctx, "TX busy");
+        printf("[%s] DATA TX aborted: %s\n", tag,
                tx_result_name(TX_RESULT_BUSY));
         return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
@@ -433,9 +433,9 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     // CAD guard: LoRa only. Queued TX runs CAD in the worker.
     if (ctrl->mode == RADIO_MODE_LORA) {
         if (queued_tx)
-            daemon_debug_ctx(tx->log_ctx, "CAD wird im Worker geprüft");
+            daemon_debug_ctx(tx->log_ctx, "CAD is checked in the worker");
         else
-            daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
+            daemon_debug_ctx(tx->log_ctx, "checking CAD");
     }
 
     if (!queued_tx) {
@@ -444,8 +444,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         if (cad_decision == DATA_TX_CAD_WAIT_ERROR) {
             TxResult err_result = TX_RESULT_RADIO_ERROR;
             daemon_radio_stats_record_tx_result(&ctrl->stats, err_result);
-            daemon_debug_ctx(tx->log_ctx, "CAD-Probe fehlgeschlagen");
-            printf("[%s] DATA-TX abgebrochen: %s (CAD UNAVAILABLE)\n", tag,
+            daemon_debug_ctx(tx->log_ctx, "CAD probe failed");
+            printf("[%s] DATA TX aborted: %s (CAD UNAVAILABLE)\n", tag,
                    tx_result_name(err_result));
             return DAEMON_TX_OUTCOME_RADIO_ERROR;
         }
@@ -454,20 +454,20 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
             // Only MANAGED can block now; DIRECT never reaches this path.
             TxResult busy_result = TX_RESULT_CAD_TIMEOUT;
             daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
-            daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
-            printf("[%s] Kanal belegt, Paket verworfen\n", tag);
-            printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+            daemon_debug_ctx(tx->log_ctx, "channel busy");
+            printf("[%s] channel busy, packet discarded\n", tag);
+            printf("[%s] DATA TX aborted: %s\n", tag,
                    tx_result_name(busy_result));
             return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
         }
 
         if (data_tx_cad_wait_timed_out(cad_decision)) {
             daemon_radio_stats_record_cad_timeout_send(&ctrl->stats);
-            daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
+            daemon_debug_ctx(tx->log_ctx, "CAD timeout, sending anyway");
         }
     }
 
-    daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
+    daemon_debug_ctx(tx->log_ctx, "chunk %zu bytes offset %zu", len, offset);
 
     DaemonTxJob job;
     DaemonTxJobResult result;
@@ -487,8 +487,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         data_tx_configure_job_cad_policy(tx, &job);
     data_tx_apply_cad_decision_flags(&job, cad_decision);
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
-        daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
-        printf("[%s] DATA-TX abgebrochen: INVALID_PACKET\n", tag);
+        daemon_debug_ctx(tx->log_ctx, "aborted: INVALID_PACKET");
+        printf("[%s] DATA TX aborted: INVALID_PACKET\n", tag);
         return DAEMON_TX_OUTCOME_INVALID_PACKET;
     }
 
@@ -497,14 +497,14 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
 
     if (daemon_tx_outcome_is_failure(result.outcome)) {
-        daemon_debug_ctx(tx->log_ctx, "Abbruch: %s",
+        daemon_debug_ctx(tx->log_ctx, "aborted: %s",
                          tx_result_name(result.tx_result));
-        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+        printf("[%s] DATA TX aborted: %s\n", tag,
                tx_result_name(result.tx_result));
         return result.outcome;
     }
 
-    daemon_debug_ctx(tx->log_ctx, "Chunk gesendet");
+    daemon_debug_ctx(tx->log_ctx, "chunk sent");
     return 0;
 }
 

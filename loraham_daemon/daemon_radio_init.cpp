@@ -58,8 +58,8 @@ static void hw_log_reset_note(const char *band)
     if (daemon_hw_profile.reset_wired)
         return;
 
-    printf("[%s] Hinweis: RESET nicht verdrahtet (Profil %s) – Warmstart, "
-           "vorheriger Chip-Zustand möglich; Recovery nur per Power-Cycle\n",
+    printf("[%s] note: RESET not wired (profile %s) - warm start, the previous "
+           "chip state may persist; recovery only by power cycle\n",
            band, daemon_hw_profile.name);
 }
 
@@ -79,33 +79,33 @@ void lora_init(void) {
 
     g_boot_lock_failed = false;
 
-    printf("[Init] Starte LoRa Receiver: radio=%s\n", tag);
-    daemon_debug_ctx("RADIO", "Funk-Init beginnt");
+    printf("[Init] starting LoRa receiver: radio=%s\n", tag);
+    daemon_debug_ctx("RADIO", "radio init starting");
 
     radio_controller.health = RADIO_HEALTH_UNINITIALIZED;
-    daemon_debug_ctx("RADIO", "Health zurückgesetzt");
+    daemon_debug_ctx("RADIO", "health reset");
 
     /* GPIO ownership is acquired in daemon_io_init() BEFORE the LED claim;
      * this is only the invariant check — a radio boot
      * without held pin locks would bypass the conflict gate. */
     if (daemon_gpio_locks_held() == 0) {
-        printf("[GPIO] Fehler: keine Pin-Sperren gehalten – Radio-Init "
-               "abgebrochen (fail-closed)\n");
+        printf("[GPIO] error: no pin locks held - radio init aborted "
+               "(fail-closed)\n");
         g_boot_lock_failed = true;
         radio_controller.health = RADIO_HEALTH_FAILED;
         return;
     }
 
     if (!daemon_led_ready()) {
-        printf("[GPIO] Fehler: LED/GPIO nicht bereit!\n");
-        daemon_debug_ctx("GPIO", "Nicht bereit");
+        printf("[GPIO] error: LED/GPIO not ready!\n");
+        daemon_debug_ctx("GPIO", "not ready");
         radio_controller.health = RADIO_HEALTH_FAILED;
         return;
     }
 
     daemon_radio_runtime_led(&radio_controller, 1);
 
-    daemon_debug_band(tag, "Objekte anlegen");
+    daemon_debug_band(tag, "creating objects");
     hw_log_reset_note(tag);
     radio_controller.hal.reset(new LockingPiHal(0));
     radio_controller.mod.reset(new Module(
@@ -127,8 +127,8 @@ void lora_init(void) {
     } else {
         state = RADIOLIB_ERR_SPI_CMD_FAILED;
         g_boot_lock_failed = true;
-        printf("[SPI] Fehler: SPI-Sperre für %s nicht verfügbar – "
-               "begin() übersprungen\n", tag);
+        printf("[SPI] error: SPI lock for %s unavailable - "
+               "begin() skipped\n", tag);
     }
     /*
      * READY = configured radio + usable IRQ path + armed RX.
@@ -150,26 +150,26 @@ void lora_init(void) {
     bool startup_ok = false;
 
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[%s] Init FEHLGESCHLAGEN: %d\n", tag, state);
+        printf("[%s] init FAILED: %d\n", tag, state);
         hw_diagnose_begin_failure(radio_controller.mod.get(), tag, state);
-        daemon_debug_band(tag, "begin() Fehler %d", state);
+        daemon_debug_band(tag, "begin() error %d", state);
     } else if (!hal->gpio_startup_ok()) {
-        printf("[%s] Init FEHLGESCHLAGEN: GPIO-Startfehler in begin()\n", tag);
-        daemon_debug_band(tag, "begin() GPIO-Startfehler");
+        printf("[%s] init FAILED: GPIO startup error in begin()\n", tag);
+        daemon_debug_band(tag, "begin() GPIO startup error");
     } else {
-        printf("[%s] Init OK\n", tag);
-        daemon_debug_ctx(tag, "Radio konfiguriert");
+        printf("[%s] init OK\n", tag);
+        daemon_debug_ctx(tag, "radio configured");
 
-        daemon_debug_band(tag, "LoRa-Default gesetzt");
+        daemon_debug_band(tag, "LoRa defaults applied");
         radio_controller.driver->setPacketReceivedAction(setFlag); // Callback nutzen
-        daemon_debug_band(tag, "Callback gesetzt");
+        daemon_debug_band(tag, "callback installed");
 
         if (hal->gpio_startup_ok()) {
             startup_ok = true;
         } else {
-            printf("[%s] IRQ-Pfad nicht nutzbar (Alert-Claim fehlgeschlagen) "
-                   "– kein READY\n", tag);
-            daemon_debug_band(tag, "Alert-Claim fehlgeschlagen");
+            printf("[%s] IRQ path unusable (alert claim failed) "
+                   "- no READY\n", tag);
+            daemon_debug_band(tag, "alert claim failed");
         }
     }
 
@@ -180,7 +180,7 @@ void lora_init(void) {
     daemon_radio_runtime_led(&radio_controller, 0);
 
     if (startup_ok) {
-        daemon_debug_band(tag, "RX starten");
+        daemon_debug_band(tag, "starting RX");
 
         /* daemon_rx_rearm_boot_result() keeps the boot policy in one place:
          * a radio that cannot enter RX is deaf and boot has no recovery
@@ -192,13 +192,13 @@ void lora_init(void) {
             /* startReceive() drives the DIO mapping and, on profiles with an
              * RF switch, GPIO -- so the latch is checked once more before the
              * radio is called ready. */
-            printf("[%s] GPIO-Startfehler beim RX-Start – kein READY\n", tag);
+            printf("[%s] GPIO startup error while arming RX - no READY\n", tag);
             startup_ok = false;
         }
     } else {
-        printf("[%s] RX nicht gestartet: %s\n",
+        printf("[%s] RX not started: %s\n",
                tag, radio_health_name(radio_controller.health));
-        daemon_debug_band(tag, "RX Start übersprungen");
+        daemon_debug_band(tag, "RX start skipped");
     }
 
     /* A startup GPIO failure is not a radio that deserves another try: the
@@ -216,9 +216,9 @@ void lora_init(void) {
          * already does. */
         hal->gpio_mark_operational();
         radio_controller.health = RADIO_HEALTH_READY;
-        daemon_debug_ctx(tag, "Radio bereit");
+        daemon_debug_ctx(tag, "radio ready");
     }
 
-    daemon_debug_ctx("RADIO", "Funk-Init abgeschlossen");
+    daemon_debug_ctx("RADIO", "radio init complete");
     fflush(stdout);
 }

@@ -701,7 +701,7 @@ static TEST_UNUSED int test_cli_invalid_option(const char *bin)
     if (exit_code == 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Nutzung:") == NULL &&
+    if (strstr(out, "Usage:") == NULL &&
         strstr(out, "invalid option") == NULL)
         return TEST_FAIL;
 
@@ -721,7 +721,7 @@ static TEST_UNUSED int test_cli_help_option(const char *bin,
     if (exit_code != 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Nutzung:") == NULL)
+    if (strstr(out, "Usage:") == NULL)
         return TEST_FAIL;
 
     return TEST_PASS;

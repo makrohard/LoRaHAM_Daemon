@@ -86,7 +86,7 @@ void data_tx_process_slots(const char *tag,
                 if(errno == EAGAIN || errno == EWOULDBLOCK)
                     continue;
 
-                data_tx_log_message(&log, "Lesefehler, Client zu");
+                data_tx_log_message(&log, "read error, closing client");
                 client_slot_close(slot);
                 continue;
             }

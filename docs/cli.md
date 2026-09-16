@@ -71,11 +71,11 @@ One process drives one band. The selection is unset until `--radio` is parsed, a
 refuses to start without it:
 
 ```
-Fehlende Option: --radio (433 oder 868)
+missing option: --radio (433 or 868)
 ```
 
-The value must be `433` or `868`; anything else is rejected with `Ungültiger Radio-Modus: <wert>`
-and `Erlaubt: 433, 868`. Both failures print the usage text and exit non-zero. Argument parsing
+The value must be `433` or `868`; anything else is rejected with `invalid radio mode: <value>`
+and `allowed: 433, 868`. Both failures print the usage text and exit non-zero. Argument parsing
 runs before any I/O setup, so a missing or invalid selection fails before locks, GPIO, sockets or
 RadioLib are touched.
 
@@ -142,13 +142,13 @@ Every rejected option prints a reason, then the usage text, then exits non-zero.
 
 | Cause | Message |
 | --- | --- |
-| Bad `--radio` value | `Ungültiger Radio-Modus: <wert>` + `Erlaubt: 433, 868` |
-| Bad `--tx-mode` value | `Ungültiger TX-Modus: <wert>` + `Erlaubt: direct, managed` |
-| Bad `--cad-monitor` value | `Ungültiger CAD-Monitor-Wert: <wert>` + `Erlaubt: on, off` |
-| Bad `--cad-rssi` value | `Ungültiger CAD-RSSI-Wert: <wert>` + `Erlaubt: Ganzzahl dBm zwischen -130 und 0` |
-| Bad `--hw` value | `Ungültiges Hardware-Profil: <wert>` + `Bekannt: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262` |
+| Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868` |
+| Bad `--tx-mode` value | `invalid TX mode: <value>` + `allowed: direct, managed` |
+| Bad `--cad-monitor` value | `invalid CAD monitor value: <value>` + `allowed: on, off` |
+| Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
+| Bad `--hw` value | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262` |
 | Any non-option argument | `Unbekanntes Argument: <arg>` |
-| `--radio` missing | `Fehlende Option: --radio (433 oder 868)` |
+| `--radio` missing | `missing option: --radio (433 or 868)` |
 
 ## Options removed in version 112
 

@@ -18,7 +18,7 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
     if (state == 0 /* RADIOLIB_ERR_NONE */) {
         ctrl->rx_rearm_consecutive_failures.store(0);
         if (ctrl->rx_rearm_pending.exchange(false)) {
-            printf("[%s] RX-Rearm wiederhergestellt (%s)\n",
+            printf("[%s] RX re-arm recovered (%s)\n",
                    radio_controller_tag(ctrl), ctx ? ctx : "?");
             fflush(stdout);
         }
@@ -35,7 +35,7 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
     if (consecutive >= DAEMON_RX_REARM_FAIL_LIMIT &&
         radio_controller_ready(ctrl)) {
         ctrl->health = RADIO_HEALTH_FAILED;
-        printf("[%s] RX-Rearm %u-mal in Folge fehlgeschlagen: RADIO=FAILED\n",
+        printf("[%s] RX re-arm failed %u times in a row: RADIO=FAILED\n",
                radio_controller_tag(ctrl), (unsigned)consecutive);
         fflush(stdout);
     }
@@ -44,7 +44,7 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
      * report failures concurrently (callers hold radio_mutex today, but the
      * latch must not depend on that). */
     if (!ctrl->rx_rearm_pending.exchange(true)) {
-        printf("[%s] RX-Rearm fehlgeschlagen: %d (%s) – Retry im Radio-Tick\n",
+        printf("[%s] RX re-arm failed: %d (%s) - retrying on the radio tick\n",
                radio_controller_tag(ctrl), (int)state, ctx ? ctx : "?");
         fflush(stdout);
     }
@@ -61,7 +61,7 @@ bool daemon_rx_rearm_boot_result(RadioController *ctrl, int16_t state)
     /* Fail closed: a READY radio that cannot enter RX is deaf; boot has no
      * recovery story, so treat it like a failed begin(). */
     ctrl->health = RADIO_HEALTH_FAILED;
-    printf("[%s] RX-Start fehlgeschlagen: %d\n",
+    printf("[%s] RX start failed: %d\n",
            radio_controller_tag(ctrl), (int)state);
     fflush(stdout);
     return false;

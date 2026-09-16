@@ -39,7 +39,7 @@ static inline void data_tx_log_bytes(const DataTxLog *log, ssize_t n)
 {
     char msg[64];
 
-    snprintf(msg, sizeof(msg), "%zd Byte empfangen", n);
+    snprintf(msg, sizeof(msg), "%zd bytes received", n);
     data_tx_log_message(log, msg);
 }
 
@@ -49,7 +49,7 @@ static inline void data_tx_log_processed(const DataTxLog *log,
 {
     char msg[96];
 
-    snprintf(msg, sizeof(msg), "Abbruch nach %zu/%zd Byte", processed, total);
+    snprintf(msg, sizeof(msg), "aborted after %zu/%zd bytes", processed, total);
     data_tx_log_message(log, msg);
 }
 

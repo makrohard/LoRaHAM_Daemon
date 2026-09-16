@@ -145,7 +145,7 @@ const DaemonBandDescriptor *daemon_band(void)
     if (!g_band) {
         /* Fail closed: reading the band before --radio resolution is a
          * programming error, never a recoverable runtime state. */
-        fprintf(stderr, "[Daemon] daemon_band() vor Auflösung gelesen\n");
+        fprintf(stderr, "[Daemon] daemon_band() read before resolution\n");
         abort();
     }
 

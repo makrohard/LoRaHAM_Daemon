@@ -279,7 +279,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
             } else {
                 int16_t state = radio.applyFskParam(tag, key, val);
                 if (state != RADIOLIB_ERR_NONE) {
-                    printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                    printf(" \033[91;5mABORT after %s (error %d)\033[0m\n",
                            key.c_str(), (int)state);
                     return CONFIG_APPLY_HW_ERROR;
                 }
@@ -294,7 +294,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 } else {
                     int16_t state = radio.applyLoraParam(tag, key, val);
                     if (state != RADIOLIB_ERR_NONE) {
-                        printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                        printf(" \033[91;5mABORT after %s (error %d)\033[0m\n",
                                key.c_str(), (int)state);
                         return CONFIG_APPLY_HW_ERROR;
                     }

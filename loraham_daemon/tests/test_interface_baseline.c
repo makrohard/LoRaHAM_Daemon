@@ -62,7 +62,7 @@ static int test_cli_radio_invalid(void)
     if (exit_code == 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Ungültiger Radio-Modus") == NULL)
+    if (strstr(out, "invalid radio mode") == NULL)
         return TEST_FAIL;
 
     return TEST_PASS;
@@ -83,7 +83,7 @@ static int test_cli_radio_required(void)
     if (exit_code == 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Fehlende Option: --radio") == NULL)
+    if (strstr(out, "missing option: --radio") == NULL)
         return TEST_FAIL;
 
     if (path_exists(SOCK_DATA_433) || path_exists(SOCK_DATA_868) ||
@@ -110,7 +110,7 @@ static int test_cli_hw_unknown_rejected(void)
     if (exit_code == 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Ungültiges Hardware-Profil") == NULL)
+    if (strstr(out, "invalid hardware profile") == NULL)
         return TEST_FAIL;
 
     return TEST_PASS;
@@ -160,7 +160,7 @@ static int test_cli_banded_flag_rejected(void)
         }
 
         if (strstr(out, "unrecognized option") == NULL &&
-            strstr(out, "Nutzung:") == NULL) {
+            strstr(out, "Usage:") == NULL) {
             fail_msg("no usage-error output for: %s", flags[i]);
             return TEST_FAIL;
         }
@@ -183,7 +183,7 @@ static int test_cli_radio_both_rejected(void)
     if (exit_code == 0)
         return TEST_FAIL;
 
-    if (strstr(out, "Ungültiger Radio-Modus") == NULL)
+    if (strstr(out, "invalid radio mode") == NULL)
         return TEST_FAIL;
 
     return TEST_PASS;

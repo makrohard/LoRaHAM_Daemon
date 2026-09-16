@@ -31,10 +31,10 @@ const char *Sx127xDriver::chipName() const
     return is_hf_ ? "RFM95" : "SX1278";
 }
 
-/* --- Boot-Init mit RF-Defaults -------------------------------------------- */
-// Reihenfolge der Setter exakt wie in der Vor-Treiber-Initialisierung
-// (daemon_radio_init): Frequenz, SF, BW, Sync, Preamble, CR, CRC, LDRO,
-// Leistung. LDRO <0 = nur autoLDRO(), >=0 = autoLDRO() + forceLDRO(Wert).
+/* --- Boot init with the RF defaults ---------------------------------------- */
+// The setter order is exactly that of the pre-driver initialisation
+// (daemon_radio_init): frequency, SF, BW, sync word, preamble, CR, CRC, LDRO,
+// power. LDRO < 0 means autoLDRO() only; >= 0 means forceLDRO(value).
 
 int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
 {
@@ -63,18 +63,18 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     };
     for (const BootStep &step : steps) {
         if (step.state != RADIOLIB_ERR_NONE) {
-            printf("[sx127x] Boot-Setter %s fehlgeschlagen: %d\n",
+            printf("[sx127x] boot setter %s failed: %d\n",
                    step.stage, (int)step.state);
             fflush(stdout);
             return step.state;
         }
     }
 
-    /* LDRO immer explizit ins Register schreiben: autoLDRO() setzt nur das
-     * Cache-Flag, und RadioLib schreibt nur bei Cache-Differenz. Ohne
-     * RESET-Leitung (Uputronics) überlebt ein zuvor forciertes LDRO-Bit
-     * sonst den Neustart im Chip, während der Cache vom POR-Zustand
-     * ausgeht (bench-verifiziert: korrupte Dekodierung bei SF11/BW250).
+    /* Always write LDRO to the register explicitly: autoLDRO() only sets the
+     * cache flag, and RadioLib writes only on a cache difference. Without a
+     * RESET line (Uputronics) a previously forced LDRO bit otherwise survives
+     * the restart in the chip while the cache assumes the power-on state
+     * (bench-verified: corrupt decoding at SF11/BW250).
      *
      * The SF/BW cache is seeded here, before the LDRO decision, because both
      * applyAutoLdro() and the CAD deadline read it. */
@@ -84,14 +84,14 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     state = (defaults->ldro >= 0) ? radio_->forceLDRO(defaults->ldro != 0)
                                   : applyAutoLdro();
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx127x] Boot-Setter LDRO fehlgeschlagen: %d\n", (int)state);
+        printf("[sx127x] boot setter LDRO failed: %d\n", (int)state);
         fflush(stdout);
         return state;
     }
 
     state = applyPowerAndOcp(defaults->power_dbm);
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx127x] Boot-Setter POWER/OCP fehlgeschlagen: %d\n",
+        printf("[sx127x] boot setter POWER/OCP failed: %d\n",
                (int)state);
         fflush(stdout);
         return state;
@@ -298,7 +298,7 @@ int16_t Sx127xDriver::scanChannel()
     }
 }
 
-/* --- D8-Diagnose für fehlgeschlagenes begin() ------------------------------ */
+/* --- D8 diagnosis for a failed begin() ------------------------------------- */
 /*
  * The read goes through Module::SPIgetRegValue and thus inherits the SPI
  * flock and runs only after begin() already failed.
@@ -315,22 +315,22 @@ void sx127x_diagnose_begin_failure(Module *mod, const char *band, int state)
         int16_t ver = mod->SPIgetRegValue(0x42, 7, 0);
 
         if (ver <= 0 || ver == 0x00 || ver == 0xFF) {
-            printf("[%s] Diagnose (Profil %s): keine Antwort auf CS=BCM%d – "
-                   "Modul fehlt, CE-Schalter falsch oder falsches Profil; "
-                   "Pins laut Profil: %s (hält ein anderer Prozess eine "
-                   "dieser Leitungen?)\n",
+            printf("[%s] diagnosis (profile %s): no answer on CS=BCM%d - module "
+                   "missing, wrong CE switch or wrong profile; pins per "
+                   "profile: %s (is another process holding one of these "
+                   "lines?)\n",
                    band, hw->name, hw->cs, pins);
         } else {
-            printf("[%s] Diagnose (Profil %s): Chip antwortet mit ID 0x%02X "
-                   "(erwartet 0x12) – falsche Chip-Familie oder falsches "
-                   "Profil; Pins laut Profil: %s\n",
+            printf("[%s] diagnosis (profile %s): chip answers with ID 0x%02X "
+                   "(expected 0x12) - wrong chip family or wrong profile; "
+                   "pins per profile: %s\n",
                    band, hw->name, (unsigned)ver, pins);
         }
         return;
     }
 
-    printf("[%s] Diagnose (Profil %s): begin() Fehler %d; Pins laut Profil: "
-           "%s (hält ein anderer Prozess eine dieser Leitungen?)\n",
+    printf("[%s] diagnosis (profile %s): begin() error %d; pins per profile: "
+           "%s (is another process holding one of these lines?)\n",
            band, hw->name, state, pins);
 }
 

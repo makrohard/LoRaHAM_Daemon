@@ -10,9 +10,9 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
-// Fake-Treiber: MODE-Wechsel und Parameter-Apply laufen über die virtuellen
-// RadioDriver-Methoden; die Zähler-Semantik entspricht dem alten
-// Template-Fake (begin()/beginFSK()-Zähler + Apply-Zähler).
+// Fake driver: mode switches and parameter applies go through the virtual
+// RadioDriver methods; the counter semantics match the old template fake
+// (begin()/beginFSK() counters plus apply counters).
 struct FakeRadio : public RadioDriver {
     int begin_count;
     int begin_fsk_count;
