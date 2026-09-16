@@ -21,12 +21,15 @@ struct FakeRadio : public RadioDriver {
     int callback_count;
     int start_receive_count;
     int clear_irq_count;
+    int rssi_probe_count;
+    int get_rssi_count;
     float rssi;
     void (*last_callback)(void);
 
     FakeRadio() : RadioDriver(NULL),
                   scan_result(0), scan_count(0), callback_count(0),
                   start_receive_count(0), clear_irq_count(0),
+                  rssi_probe_count(0), get_rssi_count(0),
                   rssi(-91.5f), last_callback(NULL) {}
 
     void setPacketReceivedAction(void (*cb)(void)) override
@@ -55,11 +58,13 @@ struct FakeRadio : public RadioDriver {
 
     float getRSSI() override
     {
+        get_rssi_count++;
         return rssi;
     }
 
     float rssiProbe() override
     {
+        rssi_probe_count++;
         return rssi;
     }
 
@@ -432,6 +437,77 @@ static void test_passive_probe_non_lora_unavailable(void)
     expect_int("passive fsk unavailable", result.status, RADIO_CAD_PROBE_UNAVAILABLE);
     expect_int("passive fsk no scan", fake(&ctrl)->scan_count, 0);
     expect_int("passive fsk no startReceive", fake(&ctrl)->start_receive_count, 0);
+
+    /* HW-3: not merely "no verdict" but no radio call AT ALL. The reading is
+     * the passive probe's entire output, so taking it and then discarding it
+     * would leave a value that describes the wrong modem one edit away from
+     * being used. */
+    expect_int("passive fsk makes zero radio probe calls",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count, 0);
+}
+
+/*
+ * HW-3, the second condition. The datasheet defines RSSI only while the
+ * receiver has been active for TS_RE + TS_RSSI, so a value read in standby is
+ * undefined. rx_rearm_pending is exactly that window, and it is a real state,
+ * not a hypothetical: the daemon retries a failed re-arm before escalating to
+ * FAILED, and config_status.cpp folds the flag into RXREADY, so READY with the
+ * receiver not armed is reachable. Without the guard an undefined reading
+ * becomes a FREE verdict -- and a false FREE is a transmission on top of
+ * whoever is already on the channel.
+ */
+static void test_passive_probe_during_rx_rearm_unavailable(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->rssi = -120.0f;   /* would read as a quiet channel */
+    ctrl.rx_rearm_pending.store(true);
+
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("passive probe during re-arm makes zero radio probe calls",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count, 0);
+
+    /* And the gate lifts again once the receiver is back. */
+    ctrl.rx_rearm_pending.store(false);
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive probe works again after the re-arm", result.status,
+               RADIO_CAD_PROBE_FREE);
+}
+
+/*
+ * The active probes keep their non-destructive RSSI snapshot -- GET CHANNEL
+ * reports it in every mode -- but must not run the CAD or the RX re-arm that
+ * follows it while the receiver is not armed.
+ */
+static void test_active_probe_during_rx_rearm_does_not_scan(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;   /* would be FREE if it ran */
+    ctrl.rx_rearm_pending.store(true);
+
+    result = radio_cad_probe(&ctrl);
+    expect_int("active probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("active probe during re-arm did not scan",
+               fake(&ctrl)->scan_count, 0);
+    expect_int("active probe during re-arm did not re-arm RX",
+               fake(&ctrl)->start_receive_count, 0);
+    expect_int("active probe during re-arm reports no scan",
+               result.scan_ran, 0);
+
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("try_probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("try_probe during re-arm did not scan",
+               fake(&ctrl)->scan_count, 0);
 }
 
 static void test_restore_clears_received_and_irq(void)
@@ -569,6 +645,8 @@ int main(int argc, char **argv)
     test_passive_probe_is_non_destructive();
     test_passive_probe_uses_per_band_threshold();
     test_passive_probe_non_lora_unavailable();
+    test_passive_probe_during_rx_rearm_unavailable();
+    test_active_probe_during_rx_rearm_does_not_scan();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();
 

@@ -123,7 +123,10 @@ Lifecycle/helper behavior:
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
-- `test_radio_cad_probe` (incl. capability gating: profiles without DIO1 never call scanChannel and answer from the passive RSSI probe)
+- `test_radio_cad_probe` (incl. capability gating: a profile that declares no trustworthy active CAD
+  never calls scanChannel and answers from the passive RSSI probe; and the HW-3 preconditions --
+  outside LoRa or while an RX re-arm is pending the passive probe makes ZERO radio calls and the
+  active probes keep their non-destructive snapshot but run neither the CAD nor the re-arm)
 - `test_sx127x_cad_register` (register-polled CAD on the REAL `Sx127xDriver` against the REAL pinned
   RadioLib, with `tests/fakes/sx127x_register_model.h` where the chip would be: CadDone alone is
   FREE, CadDone+CadDetected in the same sample is BUSY, a chip that never asserts CadDone is a

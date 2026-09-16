@@ -81,6 +81,39 @@ void radio_cad_restore_rx_after_probe(RadioController *ctrl)
                                 "CAD-Probe");
 }
 
+/*
+ * HW-3: the modem and the receiver must be checked BEFORE the radio is touched,
+ * not after.
+ *
+ * Both conditions make a reading meaningless, and both are reachable:
+ *
+ *   - Not in LoRa mode. Every probe here reads a LoRa RSSI register or runs a
+ *     LoRa CAD; in FSK the answer describes a different modem. The checks
+ *     existed, but they sat AFTER the register read.
+ *   - An RX re-arm is pending. The datasheet defines RSSI only while the
+ *     receiver has been active for TS_RE + TS_RSSI; a value read in standby is
+ *     undefined. This is not hypothetical: the daemon deliberately retries a
+ *     failed re-arm before escalating to FAILED, and config_status.cpp folds
+ *     rx_rearm_pending into RXREADY, so READY with the receiver temporarily not
+ *     armed is a real state. Without this guard an undefined standby reading
+ *     would become a FREE or BUSY verdict during a re-arm incident -- and a
+ *     false FREE is a transmission on top of someone else.
+ *
+ * UNAVAILABLE already means "state untouched, no verdict": the CAD monitor
+ * skips the sample and the TX gate ends the attempt rather than sending anyway.
+ * So no new state is needed, only the check in the right place.
+ *
+ * "The right place" differs by caller, and deliberately so. The passive probe
+ * consults it before touching the radio at all, because its whole output IS the
+ * reading. The two active probes take their non-destructive RSSI snapshot
+ * first -- GET CHANNEL reports that in every mode, including FSK -- and consult
+ * it in front of the destructive part: the CAD and the RX re-arm after it.
+ */
+static bool radio_cad_probe_preconditions_ok(const RadioController *ctrl)
+{
+    return ctrl->mode == RADIO_MODE_LORA && !ctrl->rx_rearm_pending.load();
+}
+
 RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
 {
     RadioCadProbeResult result = radio_cad_probe_unavailable();
@@ -92,6 +125,9 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
      * the main loop and must never block behind a TX holding radio_mutex.
      * UNAVAILABLE means "state untouched", so the CAD monitor simply skips
      * this sample. */
+    if (!radio_cad_probe_preconditions_ok(ctrl))
+        return result;   /* before the radio is touched at all */
+
     if (ctrl->tx_busy.load())
         return result;
 
@@ -107,9 +143,6 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
     // (current channel energy, not the stale last-packet RSSI) without
     // re-entering RX. Non-destructive, same source as the GETRSSI live stream.
     result.rssi_dbm = ctrl->driver->rssiProbe();
-
-    if (ctrl->mode != RADIO_MODE_LORA)
-        return result; // UNAVAILABLE for non-LoRa, like the active probe.
 
     /* Validity gate: the -200 sentinel (and anything below any
      * physical noise floor) means "no usable reading", not "quiet channel" —
@@ -133,10 +166,9 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
     if (!ctrl || !ctrl->driver || !radio_controller_ready(ctrl))
         return result;
 
-    /* Wiring without DIO1 (capability flag): the blocking SX127x
-     * scanChannel() could never observe CadDetected and would report
-     * false-FREE. Degrade defined: answer from the passive RSSI probe
-     * (scan_ran stays 0, so CADSCAN=0 marks the non-scan source). */
+    /* No trustworthy active CAD on this profile/driver combination: the
+     * capability flag says so. Degrade defined: answer from the passive RSSI
+     * probe (scan_ran stays 0, so CADSCAN=0 marks the non-scan source). */
     if (!ctrl->cad_scan_available)
         return radio_cad_probe_passive(ctrl);
 
@@ -167,7 +199,10 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
 
     result.rssi_dbm = ctrl->driver->getRSSI();
 
-    if (ctrl->mode != RADIO_MODE_LORA)
+    /* The snapshot above is a non-destructive register read and stays: GET
+     * CHANNEL reports it in every mode. The gate belongs HERE, in front of the
+     * destructive part -- the CAD itself and the RX re-arm that follows it. */
+    if (!radio_cad_probe_preconditions_ok(ctrl))
         return result;
 
     ctrl->cad_active.store(true);
@@ -188,9 +223,9 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
     if (!ctrl || !ctrl->driver || !radio_controller_ready(ctrl))
         return result;
 
-    /* No DIO1 → no trustworthy scanChannel (see radio_cad_try_probe).
-     * MANAGED TX gating then runs on the passive RSSI probe: BUSY/FREE by
-     * CADRSSI threshold, so LBT stays functional on such wiring. */
+    /* No trustworthy active CAD (see radio_cad_try_probe). MANAGED TX gating
+     * then runs on the passive RSSI probe: BUSY/FREE by CADRSSI threshold, so
+     * LBT stays functional on such a profile. */
     if (!ctrl->cad_scan_available)
         return radio_cad_probe_passive(ctrl);
 
@@ -212,7 +247,9 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
 
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);
 
-    if (ctrl->mode != RADIO_MODE_LORA)
+    /* As in radio_cad_try_probe: the snapshot stays, the gate sits in front of
+     * the destructive CAD and the RX re-arm. */
+    if (!radio_cad_probe_preconditions_ok(ctrl))
         return result;
 
     ctrl->cad_active.store(true);
