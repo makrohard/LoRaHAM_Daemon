@@ -69,10 +69,16 @@ public:
      * immediately before the transition, closes that window: the hardware flag
      * is set at RxDone regardless of when any thread is scheduled.
      *
-     * The base answer is false, which preserves today's behaviour for a driver
-     * that does not override it. SX127x does.
+     * Pure virtual on purpose. A default of `false` would silently preserve the
+     * defect in any driver that forgot to implement it -- which is exactly what
+     * happened to SX1262 in the first attempt at this repair. With no default,
+     * forgetting is a compile error. There are only two production drivers.
+     *
+     * Only meaningful once reception has been stopped: see
+     * radio_cad_quiesce_and_check_rx(), which calls standby() first so that the
+     * answer cannot change under the caller.
      */
-    virtual bool rxDonePending() { return false; }
+    virtual bool rxDonePending() = 0;
 
     /* --- Chip-specific (pure virtual) --- */
 

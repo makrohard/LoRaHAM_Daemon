@@ -131,7 +131,7 @@ class LockingPiHal : public PiHal {
             fatal("SPI transfer without the lock held");
 
         if (_ownSpiHandle < 0)
-            fatal("SPI-Transfer ohne offenes SPI-Handle");
+            fatal("SPI transfer without an open SPI handle");
 
         int result = lgSpiXfer(_ownSpiHandle, (char *)out, (char *)in, len);
         if (result < 0) {

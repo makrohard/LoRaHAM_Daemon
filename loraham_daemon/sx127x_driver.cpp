@@ -101,7 +101,7 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     return RADIOLIB_ERR_NONE;
 }
 
-/* --- LoRa <-> FSK Modemwechsel -------------------------------------------- */
+/* --- LoRa <-> FSK modem switch --------------------------------------------- */
 
 int16_t Sx127xDriver::switchMode(RadioMode_t mode,
                                  const RadioRfDefaults *defaults)
@@ -152,7 +152,7 @@ float Sx127xDriver::readLiveRssi(RadioMode_t mode, bool is_hf)
     return -((float)raw) / 2.0f;
 }
 
-/* --- Nicht-destruktive Sofort-RSSI-Probe ---------------------------------- */
+/* --- Non-destructive instant-RSSI probe ------------------------------------ */
 // Live channel RSSI: packet=false reads the instant RSSI register (current
 // channel energy, not the stale last-packet RSSI), skipReceive=true avoids
 // re-entering RX. Non-destructive, same source as the GETRSSI live stream.
@@ -184,16 +184,31 @@ int16_t Sx127xDriver::applyAutoLdro()
  * The two are one setting. See the header for why this exists and why it is
  * called from three places.
  *
- * Provenance of the numbers, so a later reader does not have to guess which are
- * datasheet and which are ours: the silicon OCP default is 100 mA; RadioLib
- * pins it to 60 mA; the datasheet IDDT typical is 87 mA at +17 dBm on
- * PA_BOOST. 120 mA is OUR selected margin above that operating point.
- * setCurrentLimit accepts 45-240 mA and represents the value exactly.
+ * Provenance, so a later reader does not have to guess which numbers are
+ * datasheet and which are ours:
  *
- * The validator keeps SX127x to 2..17 dBm, so PA_BOOST is the only path this
- * ever configures and one OCP value covers the whole range.
+ *   100 mA   the SX1276 silicon OCP default
+ *    60 mA   what RadioLib pins it to, inside begin() AND beginFSK()
+ *    87 mA   datasheet IDDT typical at +17 dBm on PA_BOOST
+ *
+ * The defect is that 60 mA sits BELOW the typical draw, so the protection can
+ * trip during ordinary transmission. Restoring the silicon default fixes that
+ * and asserts nothing of our own.
+ *
+ * An earlier version of this repair used 120 mA -- a margin we selected for
+ * temperature and VSWR headroom, explicitly subject to a bench measurement.
+ * That measurement needs a current meter on the PA supply, and no meter is
+ * available for this work. Rather than ship an unmeasured number of our own
+ * invention, the value is the chip's documented default: it needs no evidence
+ * beyond the datasheet, and it leaves the part exactly as protected as an
+ * unconfigured one. If a meter ever shows that +17 dBm into a real mismatch
+ * needs more headroom, the number can rise -- with evidence behind it.
+ *
+ * setCurrentLimit accepts 45-240 mA; 100 mA is OcpTrim 11. The validator keeps
+ * SX127x to 2..17 dBm, so PA_BOOST is the only path this configures and one
+ * value covers the whole range.
  */
-#define SX127X_OCP_PA_BOOST_MA 120
+#define SX127X_OCP_PA_BOOST_MA 100
 
 int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
 {

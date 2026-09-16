@@ -227,9 +227,16 @@ On an **SX127x** board the accepted range is `2`–`17` dBm, for two separate re
 
 Output power and the PA over-current limit (OCP) are applied together as one setting. RadioLib pins
 OCP to 60 mA inside both `begin()` and `beginFSK()`, below the datasheet typical draw of 87 mA at
-+17 dBm on PA_BOOST; the daemon sets it to **120 mA** — a project-selected margin above that
-operating point, not a Semtech figure — at boot, on every `SET POWER`, and after every LoRa/FSK
-switch, because `beginFSK()` re-pins it.
++17 dBm on PA_BOOST; the daemon sets it to **100 mA — the chip's own silicon default** — at boot, on
+every `SET POWER`, and after every LoRa/FSK switch, because `beginFSK()` re-pins it.
+
+The defect being fixed is that RadioLib's 60 mA sits *below* the typical draw, so the protection
+can trip during ordinary transmission. Restoring the silicon default corrects that and asserts no
+figure of the project's own: it leaves the part exactly as protected as an unconfigured one. An
+earlier revision used 120 mA as a selected margin for temperature and VSWR, conditional on a bench
+measurement; no current meter was available, so rather than ship an unmeasured number the value is
+the documented default. With a meter showing that +17 dBm into a real mismatch needs more headroom,
+it can rise — with evidence behind it.
 
 ## Worst-case airtime ceiling
 

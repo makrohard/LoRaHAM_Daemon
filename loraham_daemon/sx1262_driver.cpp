@@ -32,7 +32,7 @@ const char *Sx1262Driver::chipName() const
 
 
 
-/* --- RF-Switch-Verdrahtung nach begin()/beginFSK() ------------------------- */
+/* --- RF switch wiring, applied after begin()/beginFSK() -------------------- */
 
 static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 {
@@ -111,7 +111,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     return RADIOLIB_ERR_NONE;
 }
 
-/* --- LoRa <-> FSK Modemwechsel --------------------------------------------- */
+/* --- LoRa <-> FSK modem switch --------------------------------------------- */
 
 int16_t Sx1262Driver::switchMode(RadioMode_t mode,
                                  const RadioRfDefaults *defaults)
@@ -331,7 +331,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     }
 
     if (key == "OOK") {
-        /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt.
+        /* The SX126x has no OOK modulator: fail closed, rejected visibly.
          * Non-success state: prevalidation blocks every OOK
          * key for this family, but a direct driver call must never report
          * success for a missing capability. */
@@ -414,11 +414,27 @@ float Sx1262Driver::readLiveRssi(RadioMode_t mode, bool is_hf)
     return radio_->getRSSI(false);
 }
 
-/* --- Nicht-destruktive Sofort-RSSI-Probe ------------------------------------ */
+/* --- Non-destructive instant-RSSI probe ------------------------------------- */
 
 float Sx1262Driver::rssiProbe()
 {
     return radio_->getRSSI(false);
+}
+
+/* --- Pending-RX, asked of the chip ----------------------------------------- */
+
+/*
+ * The SX126x latches RxDone in its IRQ status the moment a packet finishes
+ * arriving, so it answers even when the alert thread has not run. The bit is
+ * the same in LoRa and FSK on this chip, so no modem check is needed.
+ *
+ * This exists because the first version of the repair gave RadioDriver a
+ * default of false and overrode it only on SX127x -- which left the Waveshare
+ * profile, whose active CAD is enabled, running the unprotected path.
+ */
+bool Sx1262Driver::rxDonePending()
+{
+    return (radio_->getIrqFlags() & RADIOLIB_SX126X_IRQ_RX_DONE) != 0;
 }
 
 /* --- D8 diagnosis for a failed begin() -------------------------------------- */

@@ -64,6 +64,45 @@ RadioCadProbeResult radio_cad_probe_unavailable(void)
 }
 
 /*
+ * Stop reception, then decide whether a packet is pending.
+ *
+ * Asking the chip for RxDone is only meaningful if the receiver can no longer
+ * produce a new one. An earlier version asked while RX was still running, which
+ * narrowed the window instead of closing it: the query could return false and a
+ * packet complete microseconds later, before the probe detached DIO0 and
+ * entered CAD -- and the restore path then cleared the IRQs and forced
+ * received=false, so the packet was gone.
+ *
+ * So: standby() first, with the IRQ flags untouched and the RX callback still
+ * installed, and only then look. After standby the answer cannot change under
+ * us. startChannelScan() would have gone to standby anyway, so this costs
+ * nothing on the path where no packet is pending.
+ *
+ * Returns true when the caller must abandon the probe. `pending` distinguishes
+ * "a packet is waiting" (report BUSY; the main loop drains the FIFO and re-arms)
+ * from "the radio would not quiesce" (report UNAVAILABLE, state untouched).
+ */
+static bool radio_cad_quiesce_and_check_rx(RadioController *ctrl, bool *pending)
+{
+    *pending = false;
+
+    if (ctrl->driver->standby() != RADIOLIB_ERR_NONE)
+        return true;   /* fail closed: no scan on a radio we could not stop */
+
+    if (!ctrl->received.load() && !ctrl->driver->rxDonePending())
+        return false;  /* nothing arrived; the probe may proceed */
+
+    /* A packet completed at or before the quiesce. Make sure the main loop
+     * knows: the chip's flag may be set while the software one is not, and the
+     * RX consumer keys off the software one. Nothing here clears the IRQs or
+     * re-arms -- the drain path does both, and doing either now would destroy
+     * the packet this check exists to protect. */
+    ctrl->received.store(true);
+    *pending = true;
+    return true;
+}
+
+/*
  * The other half of radio_cad_restore_rx_after_probe(), and the half that was
  * missing.
  *
@@ -250,18 +289,16 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
 
     result.rssi_dbm = ctrl->driver->getRSSI();
 
-    /*
-     * Last check before the destructive transition, and the only one that can
-     * be trusted here: `received` above is set by the alert thread, which does
-     * not take this mutex, so a packet can complete between that check and
-     * this line. The chip's own latched RxDone does not depend on thread
-     * scheduling. Without this the restore path would clear the flag and the
-     * IRQs and the packet would simply be gone.
-     */
-    if (ctrl->driver->rxDonePending()) {
-        result.scan_ran = 0;
-        result.status = RADIO_CAD_PROBE_BUSY;
-        return result;
+    /* Stop the receiver, THEN decide. See radio_cad_quiesce_and_check_rx(). */
+    {
+        bool pending = false;
+
+        if (radio_cad_quiesce_and_check_rx(ctrl, &pending)) {
+            result.scan_ran = 0;
+            result.status = pending ? RADIO_CAD_PROBE_BUSY
+                                    : RADIO_CAD_PROBE_UNAVAILABLE;
+            return result;
+        }
     }
 
     ctrl->cad_active.store(true);
@@ -319,18 +356,16 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
 
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);
 
-    /*
-     * Last check before the destructive transition, and the only one that can
-     * be trusted here: `received` above is set by the alert thread, which does
-     * not take this mutex, so a packet can complete between that check and
-     * this line. The chip's own latched RxDone does not depend on thread
-     * scheduling. Without this the restore path would clear the flag and the
-     * IRQs and the packet would simply be gone.
-     */
-    if (ctrl->driver->rxDonePending()) {
-        result.scan_ran = 0;
-        result.status = RADIO_CAD_PROBE_BUSY;
-        return result;
+    /* Stop the receiver, THEN decide. See radio_cad_quiesce_and_check_rx(). */
+    {
+        bool pending = false;
+
+        if (radio_cad_quiesce_and_check_rx(ctrl, &pending)) {
+            result.scan_ran = 0;
+            result.status = pending ? RADIO_CAD_PROBE_BUSY
+                                    : RADIO_CAD_PROBE_UNAVAILABLE;
+            return result;
+        }
     }
 
     ctrl->cad_active.store(true);

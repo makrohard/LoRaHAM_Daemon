@@ -43,6 +43,10 @@ public:
                        const std::string &val) override;
     float readLiveRssi(RadioMode_t mode, bool is_hf) override;
     float rssiProbe() override;
+
+    /* Reads the SX126x IRQ status and reports RxDone. See
+     * RadioDriver::rxDonePending(): only meaningful after standby(). */
+    bool rxDonePending() override;
     const char *chipName() const override;
     DaemonChipFamily chipFamily() const override
     {

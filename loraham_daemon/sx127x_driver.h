@@ -135,7 +135,7 @@ private:
     RadioMode_t mode_ = RADIO_MODE_LORA;
 };
 
-/* Fabrik: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */
+/* Factory: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */
 RadioDriver *sx127x_driver_create(Module *mod, bool is_hf);
 
 /*

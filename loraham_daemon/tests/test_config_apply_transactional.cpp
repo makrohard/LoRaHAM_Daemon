@@ -74,6 +74,17 @@ struct FakeRadio : public RadioDriver {
     int16_t clearIrq(uint32_t) override { return 0; }
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     float rssiProbe() override { return -200.0f; }
+    /* The active CAD probe now stops reception before deciding whether a
+     * packet is pending, so every fake needs both of these: the base class
+     * forwards to phy_, which is NULL here. */
+    int standby_count = 0;
+    int16_t standby() override { standby_count++; return 0; }
+
+    /* Mandatory since RadioDriver::rxDonePending() became pure virtual: a
+     * default of false silently preserved the RX-erasure defect in any driver
+     * that forgot it. These fakes never have a packet pending. */
+    bool rxDonePending() override { return false; }
+
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
     {

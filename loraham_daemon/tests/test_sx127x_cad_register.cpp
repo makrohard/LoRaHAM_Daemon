@@ -354,21 +354,26 @@ static void test_both_profiles_get_the_same_register_verdict(void)
  * SET POWER, and after a mode switch in both directions.
  *
  * RegOcp (0x0B): bit 5 enables the protection, bits 4:0 are OcpTrim. For
- * 45..120 mA the trim is (mA - 45)/5, so 120 mA is trim 15 with the enable bit
- * -> 0x2F, and RadioLib's 60 mA would be trim 3 -> 0x23.
+ * 45..120 mA the trim is (mA - 45)/5, so the silicon default 100 mA is trim 11
+ * with the enable bit -> 0x2B, and RadioLib's 60 mA would be trim 3 -> 0x23.
+ *
+ * 100 mA is the chip's own default, chosen over a margin of our own because no
+ * current meter was available to justify one. RadioLib's 60 mA is the defect:
+ * it sits below the 87 mA the PA typically draws at +17 dBm.
  */
 static const uint8_t REG_OCP = 0x0B;
-static const uint8_t OCP_120_MA = 0x20 | 15;   /* enabled, trim 15 */
+static const uint8_t OCP_DEFAULT_MA = 0x20 | 11;  /* enabled, trim 11 = 100 mA */
 static const uint8_t OCP_60_MA  = 0x20 | 3;    /* what RadioLib leaves behind */
 
 static void expect_ocp(const char *name, uint8_t got)
 {
     char detail[160];
     snprintf(detail, sizeof(detail),
-             "RegOcp = 0x%02X, expected 0x%02X (120 mA); 0x%02X is RadioLib's "
-             "60 mA, below the 87 mA the PA draws at +17 dBm",
-             got, OCP_120_MA, OCP_60_MA);
-    expect(name, got == OCP_120_MA, detail);
+             "RegOcp = 0x%02X, expected 0x%02X (100 mA, the silicon default); "
+             "0x%02X is RadioLib's 60 mA, below the 87 mA the PA draws at "
+             "+17 dBm",
+             got, OCP_DEFAULT_MA, OCP_60_MA);
+    expect(name, got == OCP_DEFAULT_MA, detail);
 }
 
 static void test_boot_sets_the_over_current_limit(void)
@@ -377,7 +382,7 @@ static void test_boot_sets_the_over_current_limit(void)
     RadioRfDefaults def = lora_defaults(12, 125.0f);
 
     expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
-    expect_ocp("boot leaves OCP at the project value", rig.model.peek(REG_OCP));
+    expect_ocp("boot leaves OCP at the silicon default", rig.model.peek(REG_OCP));
 }
 
 static void test_set_power_carries_the_limit_with_it(void)
