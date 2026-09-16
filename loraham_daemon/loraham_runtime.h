@@ -42,7 +42,9 @@
 
 /* Process exit codes (stable; referenced by the systemd unit). */
 #define LORAHAM_EXIT_INSTANCE_BUSY 3  /* same-band instance already running */
-#define LORAHAM_EXIT_LOCK_ERROR    4  /* STARTUP lock infrastructure failed;
+#define LORAHAM_EXIT_LOCK_ERROR    4  /* STARTUP prerequisite failed: lock
+                                        * infrastructure OR a GPIO open/claim.
+                                        * Neither is fixed by trying again, so
                                         * fail closed, not restartable */
 #define LORAHAM_EXIT_RUNTIME_SPI_ERROR 5 /* runtime SPI/bus-lock fatal after
                                           * operation began; systemd MAY

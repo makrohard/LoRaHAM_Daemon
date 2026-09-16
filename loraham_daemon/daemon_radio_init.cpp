@@ -130,31 +130,93 @@ void lora_init(void) {
         printf("[SPI] Fehler: SPI-Sperre für %s nicht verfügbar – "
                "begin() übersprungen\n", tag);
     }
-    if (state == RADIOLIB_ERR_NONE) {
-        radio_controller.health = RADIO_HEALTH_READY;
+    /*
+     * READY = configured radio + usable IRQ path + armed RX.
+     *
+     * Each of those three steps can fail through a HAL method that returns
+     * void, so each is followed by a check of the HAL's startup latch. The
+     * latch is the ONLY channel a GPIO failure has: PiHal's pinMode(),
+     * digitalWrite() and attachInterrupt() report nothing to the caller, and
+     * before this the daemon could publish READY on a radio whose IRQ line was
+     * never claimed -- silent deafness, indistinguishable from a quiet band.
+     *
+     * The HAL is marked OPERATIONAL only once all three have passed, and health
+     * is published READY only after that. The order matters: from the moment
+     * the HAL is operational a GPIO failure is radio-I/O integrity loss and
+     * exits the restartable way, so publishing READY first would leave a window
+     * in which a live, advertised radio still carried startup semantics.
+     */
+    LockingPiHal *hal = static_cast<LockingPiHal *>(radio_controller.hal.get());
+    bool startup_ok = false;
+
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[%s] Init FEHLGESCHLAGEN: %d\n", tag, state);
+        hw_diagnose_begin_failure(radio_controller.mod.get(), tag, state);
+        daemon_debug_band(tag, "begin() Fehler %d", state);
+    } else if (!hal->gpio_startup_ok()) {
+        printf("[%s] Init FEHLGESCHLAGEN: GPIO-Startfehler in begin()\n", tag);
+        daemon_debug_band(tag, "begin() GPIO-Startfehler");
+    } else {
         printf("[%s] Init OK\n", tag);
-        daemon_debug_ctx(tag, "Radio bereit");
+        daemon_debug_ctx(tag, "Radio konfiguriert");
 
         daemon_debug_band(tag, "LoRa-Default gesetzt");
         radio_controller.driver->setPacketReceivedAction(setFlag); // Callback nutzen
         daemon_debug_band(tag, "Callback gesetzt");
-    } else {
-        radio_controller.health = RADIO_HEALTH_FAILED;
-        printf("[%s] Init FEHLGESCHLAGEN: %d\n", tag, state);
-        hw_diagnose_begin_failure(radio_controller.mod.get(), tag, state);
-        daemon_debug_band(tag, "begin() Fehler %d", state);
+
+        if (hal->gpio_startup_ok()) {
+            startup_ok = true;
+        } else {
+            printf("[%s] IRQ-Pfad nicht nutzbar (Alert-Claim fehlgeschlagen) "
+                   "– kein READY\n", tag);
+            daemon_debug_band(tag, "Alert-Claim fehlgeschlagen");
+        }
     }
+
+    /* Not READY yet -- FAILED is the honest value until the RX is armed, and
+     * it is what the skip message below reports. */
+    radio_controller.health = RADIO_HEALTH_FAILED;
 
     daemon_radio_runtime_led(&radio_controller, 0);
 
-    if (radio_controller_ready(&radio_controller)) {
+    if (startup_ok) {
         daemon_debug_band(tag, "RX starten");
-        daemon_rx_rearm_boot_result(&radio_controller,
-                                    radio_controller.driver->startReceive());
+
+        /* daemon_rx_rearm_boot_result() keeps the boot policy in one place:
+         * a radio that cannot enter RX is deaf and boot has no recovery
+         * story, so it reports and marks FAILED. */
+        if (!daemon_rx_rearm_boot_result(
+                &radio_controller, radio_controller.driver->startReceive())) {
+            startup_ok = false;
+        } else if (!hal->gpio_startup_ok()) {
+            /* startReceive() drives the DIO mapping and, on profiles with an
+             * RF switch, GPIO -- so the latch is checked once more before the
+             * radio is called ready. */
+            printf("[%s] GPIO-Startfehler beim RX-Start – kein READY\n", tag);
+            startup_ok = false;
+        }
     } else {
         printf("[%s] RX nicht gestartet: %s\n",
                tag, radio_health_name(radio_controller.health));
         daemon_debug_band(tag, "RX Start übersprungen");
+    }
+
+    /* A startup GPIO failure is not a radio that deserves another try: the
+     * wiring, the permissions or a busy line are the same after every restart.
+     * Fold it into the same flag the unusable SPI lock uses, so
+     * daemon_io_init() exits 4 (RestartPreventExitStatus) instead of 1, which
+     * would restart-spin every two seconds forever. Checked here, after the
+     * last startup GPIO access, so no failure above can be missed. */
+    if (!hal->gpio_startup_ok())
+        g_boot_lock_failed = true;
+
+    if (startup_ok) {
+        /* Operational BEFORE READY: from here a negative lgpio result is loss
+         * of radio I/O integrity and exits 5, exactly as a failed SPI transfer
+         * already does. */
+        hal->gpio_mark_operational();
+        radio_controller.health = RADIO_HEALTH_READY;
+        daemon_debug_ctx(tag, "Radio bereit");
     }
 
     daemon_debug_ctx("RADIO", "Funk-Init abgeschlossen");

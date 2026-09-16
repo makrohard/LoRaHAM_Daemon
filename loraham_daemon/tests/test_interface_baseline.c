@@ -386,6 +386,33 @@ static int test_spi_lock_unusable_exits_lock_error(void)
                                             "unusable spi0.lock");
 }
 
+/*
+ * Audit HW-2: a startup GPIO failure must exit LORAHAM_EXIT_LOCK_ERROR (4,
+ * restart-suppressed), not the generic 1.
+ *
+ * gpiochip0 that cannot be opened -- wrong device, missing node, no permission
+ * -- is not transient: every restart repeats it, and with exit 1 and
+ * RestartSec=2 the unit spins forever. This ran as exit 1 before the repair.
+ *
+ * The condition is the host's, not the test's: where gpiochip0 IS usable the
+ * daemon gets past LED setup and this proves nothing, so it skips rather than
+ * pass for the wrong reason.
+ */
+static int test_gpio_unavailable_exits_lock_error(void)
+{
+    char dir[128];
+
+    if (access("/dev/gpiochip0", F_OK) == 0)
+        return TEST_SKIP;
+
+    ensure_test_runtime_dir();
+    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-gpio-%d", (int)getpid());
+    mkdir(dir, 0700);
+
+    return run_daemon_in_runtime_dir_expect(dir, LORAHAM_EXIT_LOCK_ERROR,
+                                            "unopenable gpiochip0");
+}
+
 static int test_waveshare_profile_fails_closed(void)
 {
     pid_t pid;
@@ -781,6 +808,8 @@ int main(int argc, char **argv)
              test_gpio_lock_held_exits_lock_error);
     run_test("unusable spi0.lock exits LOCK_ERROR",
              test_spi_lock_unusable_exits_lock_error);
+    run_test("unavailable gpiochip0 exits LOCK_ERROR",
+             test_gpio_unavailable_exits_lock_error);
 
     if (radio_hardware_missing())
         return skip_live_daemon_tests();

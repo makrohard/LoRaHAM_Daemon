@@ -54,6 +54,7 @@ test_binaries=(
   "$TEST_DIR/test_rflog"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
+  "$TEST_DIR/test_hal_gpio_failclosed"
   "$TEST_DIR/test_instance_lock"
   "$TEST_DIR/test_gpio_lock"
   "$TEST_DIR/test_runtime_lockdir"
@@ -621,6 +622,28 @@ build_one_locking_pihal_test() {
     -llgpio
 }
 
+build_one_hal_gpio_failclosed_test() {
+  local src="$1"
+  local out="$2"
+
+  # Same vtable need as the locking PiHal test, but this one injects lgpio
+  # FAILURES, so it must not link the real library: tests/fakes/lgpio.h goes
+  # ahead of the system header and the test supplies every body itself.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for HAL GPIO fail-closed test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    -I"$TEST_DIR/fakes" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "${radiolib_libs[@]}"
+}
+
 build_one_radio_cad_probe_test() {
   local src="$1"
   local out="$2"
@@ -982,6 +1005,7 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_rflog" "$TEST_DIR/test_rflog.cpp" "$SCRIPT_DIR/daemon_rflog.cpp"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
+  build_one_hal_gpio_failclosed_test "$TEST_DIR/test_hal_gpio_failclosed.cpp" "$TEST_DIR/test_hal_gpio_failclosed"
   build_one_instance_lock_test "$TEST_DIR/test_instance_lock.cpp" "$TEST_DIR/test_instance_lock"
   build_one_cpp_sources "$TEST_DIR/test_runtime_lockdir" "$TEST_DIR/test_runtime_lockdir.cpp"
   build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"

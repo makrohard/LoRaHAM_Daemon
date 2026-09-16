@@ -142,10 +142,16 @@ void daemon_io_init(void)
             exit(LORAHAM_EXIT_LOCK_ERROR);
         }
         if (claim_rc != 0) {
-            /* Genuine LED hardware failure: restartable exit 1. */
-            printf("[Daemon] LED-Setup fehlgeschlagen, beende.\n");
+            /* daemon_led_init() can only fail two ways, and both are startup
+             * GPIO prerequisites, not transient hardware: gpiochip0 cannot be
+             * opened (wrong device, missing node, no permission) or the LED
+             * line cannot be claimed (held by a process outside this daemon's
+             * own pin locks). Every restart repeats the same failure, so this
+             * exits 4 with the lock-infrastructure failures rather than 1. */
+            printf("[Daemon] GPIO/LED-Setup fehlgeschlagen, beende "
+                   "(fail-closed, Exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
             daemon_instance_lock_release();
-            exit(EXIT_FAILURE);
+            exit(LORAHAM_EXIT_LOCK_ERROR);
         }
     }
 

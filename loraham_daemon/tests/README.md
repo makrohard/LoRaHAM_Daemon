@@ -47,6 +47,11 @@ three further cases individually, because they too need a radio: the two
 single-radio socket modes, and the unusable-`spi0.lock` exit, which is only
 reached once the band gets as far as taking the SPI lock.
 
+One case runs on the opposite condition: `unavailable gpiochip0 exits
+LOCK_ERROR` needs a host WITHOUT `/dev/gpiochip0` and skips where the node
+exists, because there the daemon gets past LED setup and the case would pass
+without proving anything.
+
 The check is for the precondition, not for a daemon that failed: where an SPI
 device exists these tests run for real and a daemon that does not come up is a
 `FAIL`, so the skip cannot mask a regression. `test_multi_instance` uses the
@@ -126,13 +131,19 @@ Multi-instance (split per-band) operation:
 - `test_daemon_led` (selection-aware LED ownership: 433-only / 868-only claims, duplicate-band rejection is fatal, and profile-disabled LED (`led_pin` NC) stays healthy without claims)
 - `test_instance_lock` (per-band instance-ownership locks: 433/868 ownership, duplicate rejection, release-unblocks-restart, and shared-lock inode stability)
 - `test_locking_pihal` (process-shared SPI transaction lock: cross-process exclusion, recursion guard, fail-closed when the lock dir is unusable, no transfer without the lock, EINTR-retry vs hard-failure on both lock and unlock, and fatal-on-hard-unlock; no radio hardware needed)
+- `test_hal_gpio_failclosed` (HAL GPIO failure semantics: an lgpio read error is never surfaced as a pin
+  level and never as a truthy one -- RadioLib's TX and CAD waits are `while(!digitalRead(irq))`, so a
+  negative code read through `uint32_t` would end the wait at once and report success; a failed
+  gpiochip open does not proceed to SPI and does not block a retry; and a read on a pin whose alert was
+  detached stays legal, because every TX detaches and reinstalls it. Injects lgpio failures through
+  `tests/fakes/lgpio.h`, so no library and no hardware are involved)
 - `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)
 - `test_packaging` (deployment artifacts: `systemd/tmpfiles.d/loraham.conf` exists and documents `/run/lock/loraham`; the unit has no `RuntimeDirectory`/`EnvironmentFile` and keeps `RestartPreventExitStatus`)
 - `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware)
 
 Public integration baseline:
 
-- `test_interface_baseline` (CLI incl. `--hw` preset acceptance/rejection, per-band socket exposure, waveshare-profile fail-closed without HAT, LoRa/FSK config, RF write paths)
+- `test_interface_baseline` (CLI incl. `--hw` preset acceptance/rejection, per-band socket exposure, waveshare-profile fail-closed without HAT, LoRa/FSK config, RF write paths, and the startup exit codes: a held GPIO lock, an unusable `spi0.lock` and an unopenable `gpiochip0` all exit `LORAHAM_EXIT_LOCK_ERROR` (4, restart-suppressed), never the restartable 1)
 
 
 ## CAD/TX rework guardrail
