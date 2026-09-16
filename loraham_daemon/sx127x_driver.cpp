@@ -74,13 +74,15 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
      * Cache-Flag, und RadioLib schreibt nur bei Cache-Differenz. Ohne
      * RESET-Leitung (Uputronics) überlebt ein zuvor forciertes LDRO-Bit
      * sonst den Neustart im Chip, während der Cache vom POR-Zustand
-     * ausgeht (bench-verifiziert: korrupte Dekodierung bei SF11/BW250). */
-    bool ldro_needed = ((float)(1u << defaults->spreading_factor) /
-                        defaults->bandwidth_khz) >= 16.0f;
-    state = radio_->forceLDRO(defaults->ldro >= 0 ? (defaults->ldro != 0)
-                                                  : ldro_needed);
-    if (state == RADIOLIB_ERR_NONE && defaults->ldro < 0)
-        state = radio_->autoLDRO();
+     * ausgeht (bench-verifiziert: korrupte Dekodierung bei SF11/BW250).
+     *
+     * The SF/BW cache is seeded here, before the LDRO decision, because both
+     * applyAutoLdro() and the CAD deadline read it. */
+    sf_ = defaults->spreading_factor;
+    bw_khz_ = defaults->bandwidth_khz;
+
+    state = (defaults->ldro >= 0) ? radio_->forceLDRO(defaults->ldro != 0)
+                                  : applyAutoLdro();
     if (state != RADIOLIB_ERR_NONE) {
         printf("[sx127x] Boot-Setter LDRO fehlgeschlagen: %d\n", (int)state);
         fflush(stdout);
@@ -94,11 +96,6 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
         fflush(stdout);
         return state;
     }
-
-    /* Every setter above succeeded, so the chip is on these values: seed the
-     * CAD deadline's view of SF/BW from what was actually written. */
-    sf_ = defaults->spreading_factor;
-    bw_khz_ = defaults->bandwidth_khz;
 
     return RADIOLIB_ERR_NONE;
 }
@@ -160,6 +157,22 @@ float Sx127xDriver::readLiveRssi(RadioMode_t mode, bool is_hf)
 float Sx127xDriver::rssiProbe()
 {
     return radio_->getRSSI(false, true);
+}
+
+/* --- LDRO ----------------------------------------------------------------- */
+
+/* See the header for why autoLDRO() alone is not enough. */
+int16_t Sx127xDriver::applyAutoLdro()
+{
+    int16_t state =
+        radio_->forceLDRO(config_policy_lora_ldro_required(sf_, bw_khz_));
+
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
+
+    /* forceLDRO() clears ldroAuto, so this has to come after it -- and it is
+     * what keeps LDRO correct through later SET SF / SET BW. */
+    return radio_->autoLDRO();
 }
 
 /* --- Output power and PA over-current limit ------------------------------- */
@@ -417,7 +430,10 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
         std::string norm = config_value_lower_ascii(config_value_trim_ascii(val));
 
         if (norm == "auto") {
-            state = radio.autoLDRO();
+            /* Not radio.autoLDRO(): that only sets a flag. The register has to
+             * be written from the current SF/BW first, or a stale forced bit
+             * survives a command that reported success. */
+            state = applyAutoLdro();
             if (state == RADIOLIB_ERR_NONE)
                 printf(" LDRO=\033[92mAUTO\033[0m");
             else

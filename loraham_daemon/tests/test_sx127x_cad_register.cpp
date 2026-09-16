@@ -451,6 +451,127 @@ static void test_the_sx127x_power_range_applies(void)
     expect_int("SET POWER 0 wrote nothing", rig.model.peek(REG_OCP), 0);
 }
 
+/* ---- LDRO ---------------------------------------------------------------- */
+
+/*
+ * HW-4. RadioLib's autoLDRO() sets a flag and writes NO register -- verified
+ * above in SX1278.cpp, which does exactly `this->ldroAuto = true; return OK;`.
+ * RadioLib then only writes on a cache difference, so on a board with no RESET
+ * line (Uputronics) a previously forced LDRO bit survives the restart in the
+ * chip while the cache assumes the power-on state.
+ *
+ * The boot path already worked around this, with a comment naming a
+ * bench-verified corrupt decode at SF11/BW250. `SET LDRO=AUTO` did not: it
+ * called autoLDRO() alone and reported success while the stale bit stayed in
+ * the register.
+ *
+ * RegModemConfig3 (0x26) bit 3 is LowDataRateOptimize.
+ */
+static const uint8_t REG_MODEM_CONFIG_3 = 0x26;
+static const uint8_t LDRO_BIT = 0x08;
+
+static bool ldro_set(Rig &rig)
+{
+    return (rig.model.peek(REG_MODEM_CONFIG_3) & LDRO_BIT) != 0;
+}
+
+/*
+ * The boundary, at boot. LDRO is mandated from a symbol time of 16 ms:
+ * SF12/BW125 is 32.8 ms and needs it, SF7/BW500 is 0.26 ms and must not have
+ * it -- LDRO on a fast configuration costs payload symbols for nothing.
+ */
+static void test_boot_writes_the_ldro_bit_for_the_configuration(void)
+{
+    Rig slow;
+    RadioRfDefaults slow_def = lora_defaults(12, 125.0f);
+    expect_int("slow boot succeeds", slow.drv.begin(&slow_def),
+               RADIOLIB_ERR_NONE);
+    expect("SF12/BW125 (32.8 ms symbol) boots with LDRO on", ldro_set(slow),
+           "a long symbol without LDRO decodes corruptly as the crystal drifts");
+
+    Rig fast;
+    RadioRfDefaults fast_def = lora_defaults(7, 500.0f);
+    expect_int("fast boot succeeds", fast.drv.begin(&fast_def),
+               RADIOLIB_ERR_NONE);
+    expect("SF7/BW500 (0.26 ms symbol) boots with LDRO off", !ldro_set(fast),
+           "LDRO on a fast configuration spends payload symbols for nothing");
+}
+
+/*
+ * The defect itself: a stale bit in the chip and a SET LDRO=AUTO that must
+ * clear it. This is the no-RESET warm start, modelled exactly -- the register
+ * says one thing and RadioLib's cache says another.
+ */
+static void test_set_ldro_auto_writes_the_register(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(7, 500.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    /* The ghost: a forced bit left in the chip by a previous run. */
+    rig.model.poke(REG_MODEM_CONFIG_3,
+                   (uint8_t)(rig.model.peek(REG_MODEM_CONFIG_3) | LDRO_BIT));
+    expect("the stale bit is in place for the test", ldro_set(rig),
+           "the test did not set up the condition it claims to test");
+
+    expect_int("SET LDRO=AUTO accepted",
+               rig.drv.applyLoraParam("t", "LDRO", "AUTO"), RADIOLIB_ERR_NONE);
+    printf("\n");
+
+    expect("SET LDRO=AUTO cleared the stale bit", !ldro_set(rig),
+           "autoLDRO() alone sets a flag and writes nothing, so the register "
+           "keeps the previous run's value while the command reports success");
+}
+
+/*
+ * AUTO must also STAY automatic. forceLDRO() clears RadioLib's ldroAuto flag
+ * permanently, so the helper has to call it before autoLDRO(), not after -- get
+ * that order wrong and LDRO is correct once and then frozen.
+ */
+static void test_auto_keeps_tracking_later_sf_changes(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(7, 500.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect_int("SET LDRO=AUTO accepted",
+               rig.drv.applyLoraParam("t", "LDRO", "AUTO"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect("fast configuration starts without LDRO", !ldro_set(rig), "");
+
+    /* SF12 at BW500 is 8.2 ms -- still below the boundary. */
+    expect_int("SET SF=12 accepted",
+               rig.drv.applyLoraParam("t", "SF", "12"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect("SF12/BW500 (8.2 ms symbol) still needs no LDRO", !ldro_set(rig),
+           "the boundary is the symbol time, not the spreading factor");
+
+    /* Narrowing to 62.5 kHz makes it 65.5 ms, well past the boundary. */
+    expect_int("SET BW=62.5 accepted",
+               rig.drv.applyLoraParam("t", "BW", "62.5"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect("a later BW change turned LDRO on by itself", ldro_set(rig),
+           "AUTO stopped tracking: forceLDRO() must be called BEFORE "
+           "autoLDRO(), or it clears the auto flag again");
+}
+
+/* An explicit value stays explicit -- AUTO is opt-in, not a hijack. */
+static void test_explicit_ldro_is_not_overridden(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(12, 125.0f);   /* would need LDRO */
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect("boot turned LDRO on for SF12/BW125", ldro_set(rig), "");
+
+    expect_int("SET LDRO=0 accepted",
+               rig.drv.applyLoraParam("t", "LDRO", "0"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect("an explicit 0 turns the bit off even where AUTO would set it",
+           !ldro_set(rig), "explicit means explicit");
+}
+
 int main(void)
 {
     test_cad_done_alone_is_free();
@@ -466,6 +587,10 @@ int main(void)
     test_set_power_carries_the_limit_with_it();
     test_mode_switches_reapply_the_limit();
     test_the_sx127x_power_range_applies();
+    test_boot_writes_the_ldro_bit_for_the_configuration();
+    test_set_ldro_auto_writes_the_register();
+    test_auto_keeps_tracking_later_sf_changes();
+    test_explicit_ldro_is_not_overridden();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

@@ -48,6 +48,17 @@ bool config_policy_lora_sync_valid(uint32_t sync)
     return sync <= 0xFF;
 }
 
+bool config_policy_lora_ldro_required(int sf, float bw_khz)
+{
+    if (sf < 0 || bw_khz <= 0.0f)
+        return false;
+
+    /* Symbol time in ms: 2^SF / BW(Hz) * 1000. */
+    const double t_sym_ms = (double)(1u << sf) / ((double)bw_khz * 1000.0) * 1000.0;
+
+    return t_sym_ms >= 16.0;
+}
+
 bool config_policy_power_valid(int power)
 {
     return power >= 0 && power <= 20;
@@ -212,8 +223,8 @@ bool config_policy_fsk_encoding_valid_family(int encoding,
 }
 
 /* Standard Semtech LoRa airtime (explicit header, worst case CRC on).
- * LDRO active when the symbol time exceeds 16 ms, matching the drivers'
- * auto-LDRO rule. */
+ * LDRO comes from config_policy_lora_ldro_required(), the one definition of
+ * that boundary. */
 double config_policy_lora_airtime_ms(int sf, float bw_khz, int cr,
                                      int preamble, size_t payload_len)
 {
@@ -221,7 +232,7 @@ double config_policy_lora_airtime_ms(int sf, float bw_khz, int cr,
         return -1.0;
 
     double t_sym_ms = (double)(1u << sf) / ((double)bw_khz * 1000.0) * 1000.0;
-    int de = t_sym_ms > 16.0 ? 1 : 0;
+    int de = config_policy_lora_ldro_required(sf, bw_khz) ? 1 : 0;
     double num = 8.0 * (double)payload_len - 4.0 * sf + 28.0 + 16.0;
     double den = 4.0 * (double)(sf - 2 * de);
     double payload_sym = 8.0;

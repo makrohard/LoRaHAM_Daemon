@@ -72,6 +72,41 @@ static void test_lora_policy(void)
  *
  * SX1262 has one output path and no such restriction, so it keeps 0..20.
  */
+/*
+ * HW-4: the LDRO boundary, in one place. It lived in three -- the driver's boot
+ * path, RadioLib, and the airtime gate -- and the airtime gate used a strict
+ * `>` where the other two used `>=`. No SF/BW combination the validator accepts
+ * lands on exactly 16.000 ms, so nothing ever differed on air; the point of
+ * pinning it is that extracting a helper with an ambiguous boundary would only
+ * have moved the disagreement.
+ */
+static void test_ldro_boundary(void)
+{
+    /* SF12/BW125 = 32.8 ms; SF11/BW250 = 8.2 ms; SF12/BW250 = 16.384 ms, the
+     * closest the accepted raster comes to the boundary from above. */
+    expect_int("ldro required at SF12/BW125 (32.8 ms)",
+               config_policy_lora_ldro_required(12, 125.0f), 1);
+    expect_int("ldro required at SF12/BW250 (16.4 ms)",
+               config_policy_lora_ldro_required(12, 250.0f), 1);
+    expect_int("ldro not required at SF11/BW250 (8.2 ms)",
+               config_policy_lora_ldro_required(11, 250.0f), 0);
+    expect_int("ldro not required at SF7/BW500 (0.26 ms)",
+               config_policy_lora_ldro_required(7, 500.0f), 0);
+
+    /* The boundary itself is inclusive: 16 ms needs LDRO. SF12/BW256 is exactly
+     * 16.000 ms -- not a value the validator accepts, which is precisely why
+     * the two spellings never differed on air, and why the rule is pinned here
+     * instead of being left to a future reader to rediscover. */
+    expect_int("the 16 ms boundary is inclusive",
+               config_policy_lora_ldro_required(12, 256.0f), 1);
+    expect_int("just above the boundary does not require it",
+               config_policy_lora_ldro_required(12, 256.001f), 0);
+
+    /* Nonsense in, false out -- never a divide by zero. */
+    expect_int("zero bandwidth is not a reason to enable ldro",
+               config_policy_lora_ldro_required(12, 0.0f), 0);
+}
+
 static void test_power_policy_per_family(void)
 {
     expect_int("sx127x rejects 0 (RFO path, not the antenna)",
@@ -253,6 +288,7 @@ int main(int argc, char **argv)
     }
 
     test_lora_policy();
+    test_ldro_boundary();
     test_power_policy_per_family();
     test_fsk_policy();
 

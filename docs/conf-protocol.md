@@ -91,8 +91,18 @@ logged as ignored and the rest of the command still applies.
 | `SHAPING` | FSK | RadioLib default | exactly `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0`, case-insensitive |
 | `ENCODING` | FSK | RadioLib default | SX127x: `0`, `1`, `2`; SX1262: only `0` and `2` |
 
-The 868 boot default `LDRO=AUTO` is the descriptor field `ldro = -1`, meaning
-`autoLDRO()` only; the 433 default `1` additionally forces LDRO on.
+The 868 boot default `LDRO=AUTO` is the descriptor field `ldro = -1`; the 433 default `1` forces
+LDRO on regardless of the configuration.
+
+`AUTO` is not only a flag. RadioLib's `autoLDRO()` sets an internal flag and writes no register,
+and RadioLib writes only on a cache difference — so on a board without a RESET line (Uputronics)
+a forced LDRO bit from a previous run survives in the chip while the cache assumes the power-on
+state. `AUTO` therefore computes the value from the **current** `SF`/`BW`, writes it, and only then
+re-enables RadioLib's automatic tracking, so the register is right immediately **and** follows
+later `SET SF` / `SET BW` commands. An explicit `LDRO=0` or `LDRO=1` still wins and stays fixed.
+
+LDRO is required once the symbol time reaches **16 ms** (`2^SF / BW`), inclusive — 32.8 ms at
+SF12/BW125 needs it, 8.2 ms at SF11/BW250 does not. The same rule feeds the airtime gate.
 
 ## Chip-family differences
 

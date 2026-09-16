@@ -79,6 +79,25 @@ private:
     int16_t applyPowerAndOcp(int power_dbm);
 
     /*
+     * LDRO=AUTO, written to the register rather than only remembered.
+     *
+     * RadioLib's autoLDRO() sets a flag and writes NOTHING, and RadioLib only
+     * writes on a cache difference -- so on a board without a RESET line
+     * (Uputronics) a previously forced LDRO bit survives the restart in the
+     * chip while the cache assumes the power-on state. The boot path already
+     * worked around this, with a comment naming a bench-verified corrupt
+     * decode at SF11/BW250; the runtime SET LDRO=AUTO path did not, so the
+     * same stale bit could survive a CONFIG command that reported success.
+     *
+     * The fix is the boot rule, used by both: compute from the CURRENT SF/BW,
+     * forceLDRO(computed) so the register is definitely right NOW, then
+     * autoLDRO() so RadioLib keeps maintaining it across later SF/BW changes.
+     * Order matters -- forceLDRO() clears the auto flag permanently, so it must
+     * come first.
+     */
+    int16_t applyAutoLdro();
+
+    /*
      * Upper bound for one CAD, computed from the CURRENT SF/BW -- never a fixed
      * constant. The validator accepts SF 7-12 and BW 7.8-500 kHz, so the
      * physical bound spans roughly three orders of magnitude (0.58 ms to 1.05 s).

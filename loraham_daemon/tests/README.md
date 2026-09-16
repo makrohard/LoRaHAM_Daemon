@@ -140,7 +140,10 @@ Lifecycle/helper behavior:
   moved by a successful `SET`, NOT moved by one the chip rejected, and reset by LoRa re-entry.
   It also pins POWER+OCP as one setting: RegOcp reads 120 mA after boot, after `SET POWER` and
   after a switch in BOTH directions -- RadioLib re-pins it to 60 mA inside `beginFSK()`, below the
-  87 mA the PA draws at +17 dBm -- and `SET POWER` 0/18/19/20 write no register at all)
+  87 mA the PA draws at +17 dBm -- and `SET POWER` 0/18/19/20 write no register at all. And LDRO:
+  boot writes the bit the configuration needs, `SET LDRO=AUTO` CLEARS a stale bit left in the chip
+  by a previous run (RadioLib's `autoLDRO()` sets a flag and writes nothing), AUTO keeps tracking
+  later SF/BW changes, and an explicit `LDRO=0` still wins where AUTO would have set it)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:
