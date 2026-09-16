@@ -33,6 +33,7 @@
 #include "daemon_timing.h"
 #include "daemon_stats.h"
 #include "daemon_lifecycle.h"
+#include "daemon_stdout_stamp.h"
 #include "daemon_band.h"
 #include "daemon_radio_selection.h"
 #include "hardware_profile.h"
@@ -67,7 +68,7 @@ static void daemon_shutdown_cleanup(EventLoopSet *event_set)
     daemon_debug_ctx("LIFE", "closing clients");
     daemon_io_shutdown_cleanup();
 
-    daemon_debug_ctx("LIFE", "Entferne Socket-Dateien");
+    daemon_debug_ctx("LIFE", "removing socket files");
 
     /* Release per-band ownership only after all sockets are closed/unlinked, so
      * a same-band restart cannot bind sockets that this instance then deletes. */
@@ -195,7 +196,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
             return;
         case DAEMON_WAIT_ERROR_SILENT:
             daemon_debug_ctx("LIFE",
-                             "Event-Wait durch Signal unterbrochen (EINTR)");
+                             "event wait interrupted by a signal (EINTR)");
             return;
         case DAEMON_WAIT_ERROR_LOG:
             break;
@@ -226,7 +227,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
 static void daemon_run_polling_loop(DaemonMainContext *ctx)
 {
     daemon_log_loop_start();
-    daemon_debug_ctx("LIFE", "Polling aktiv");
+    daemon_debug_ctx("LIFE", "polling active");
 
     while (!daemon_lifecycle_stop_requested()) {
         daemon_process_loop_iteration(&ctx->event_set,
@@ -248,7 +249,9 @@ static void daemon_run(void)
     daemon_log("Stop angefordert");
     daemon_debug_ctx("LIFE", "Shutdown beginnt");
     daemon_shutdown_cleanup(&main_ctx.event_set);
-    daemon_debug_ctx("LIFE", "Shutdown abgeschlossen");
+    daemon_debug_ctx("LIFE", "shutdown complete");
+    /* A line that was built but never terminated would otherwise be lost. */
+    daemon_stdout_stamp_flush_partial();
 }
 
 
@@ -320,14 +323,14 @@ static bool daemon_parse_args(int argc, char *argv[])
         switch (opt) {
             case 'd':
                 is_daemon = true;
-                daemon_debug_ctx("STARTUP", "Option -d erkannt");
+                daemon_debug_ctx("STARTUP", "option -d recognised");
                 break;
             case 'v':
                 daemon_print_version();
                 exit(EXIT_SUCCESS);
             case 1000:
                 daemon_log_level = DAEMON_LOG_DEBUG;
-                daemon_debug_ctx("STARTUP", "Debug aktiv");
+                daemon_debug_ctx("STARTUP", "debug active");
                 break;
             case 1001:
                 if (!daemon_parse_radio_selection(optarg)) {
@@ -336,7 +339,7 @@ static bool daemon_parse_args(int argc, char *argv[])
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --radio erkannt: %s",
+                daemon_debug_ctx("STARTUP", "option --radio recognised: %s",
                                  daemon_radio_selection_name(daemon_radio_selection));
                 break;
             case 1002:
@@ -346,7 +349,7 @@ static bool daemon_parse_args(int argc, char *argv[])
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --tx-mode erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --tx-mode recognised: %s", optarg);
                 break;
             case 1005:
                 if (!daemon_set_cad_monitor_boot_global(optarg)) {
@@ -355,7 +358,7 @@ static bool daemon_parse_args(int argc, char *argv[])
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --cad-monitor erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --cad-monitor recognised: %s", optarg);
                 break;
             case 1008:
                 if (!daemon_set_cad_rssi_boot_global(optarg)) {
@@ -364,7 +367,7 @@ static bool daemon_parse_args(int argc, char *argv[])
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --cad-rssi erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --cad-rssi recognised: %s", optarg);
                 break;
             case 1011:
                 if (!daemon_set_hardware_preset(optarg)) {
@@ -373,21 +376,21 @@ static bool daemon_parse_args(int argc, char *argv[])
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --hw erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --hw recognised: %s", optarg);
                 break;
             case 1012:
                 if (!daemon_set_rflog_switch_global(optarg)) {
                     fprintf(stderr, "invalid RF log switch (on|off): %s\n", optarg ? optarg : "");
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --rflog erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --rflog recognised: %s", optarg);
                 break;
             case 1013:
                 if (!daemon_set_rflog_path_global(optarg)) {
                     fprintf(stderr, "invalid RF log path (an absolute path is required): %s\n", optarg ? optarg : "");
                     exit(EXIT_FAILURE);
                 }
-                daemon_debug_ctx("STARTUP", "Option --rflog-path erkannt: %s", optarg);
+                daemon_debug_ctx("STARTUP", "option --rflog-path recognised: %s", optarg);
                 break;
             case 'h':
                 daemon_print_usage(argv[0]);
@@ -457,7 +460,7 @@ static void daemon_apply_boot_tx_modes(void)
         daemon_boot_tx_mode_to_radio(daemon_tx_mode_boot_effective());
 
     radio_controller.tx_mode = mode;
-    daemon_debug_ctx("STARTUP", "TX-Modus %s=%s",
+    daemon_debug_ctx("STARTUP", "TX mode %s=%s",
                      daemon_band()->tag, radio_tx_mode_name(mode));
 }
 
@@ -486,27 +489,32 @@ static void daemon_apply_boot_cad_monitor(void)
 static void daemon_startup_sequence(int argc, char *argv[])
 {
     daemon_lifecycle_ignore_sigpipe();
-    daemon_debug_ctx("STARTUP", "SIGPIPE wird ignoriert");
+    daemon_debug_ctx("STARTUP", "SIGPIPE is ignored");
     bool is_daemon = daemon_parse_args(argc, argv);
 
-    daemon_debug_ctx("STARTUP", "Startmodus: %s", is_daemon ? "Daemon" : "Vordergrund");
-    daemon_debug_ctx("STARTUP", "Radio-Auswahl: %s",
+    daemon_debug_ctx("STARTUP", "start mode: %s", is_daemon ? "daemon" : "foreground");
+    daemon_debug_ctx("STARTUP", "radio selection: %s",
                      daemon_radio_selection_name(daemon_radio_selection));
-    daemon_debug_ctx("STARTUP", "Argumente verarbeitet");
+    daemon_debug_ctx("STARTUP", "arguments parsed");
 
     // Enter background mode when requested.
     if (is_daemon) {
         daemon_lifecycle_enter_background();
-        daemon_debug_ctx("STARTUP", "Daemon-Modus aktiv");
+        daemon_debug_ctx("STARTUP", "daemon mode active");
     }
+
+    /* After any redirection of stdout, and before the first line the operator
+     * will read: background mode re-opens the fd, so installing earlier would
+     * stamp into a stream that is about to be replaced. */
+    daemon_stdout_stamp_install();
 
     daemon_print_startup_version();
 
-    daemon_debug_ctx("STARTUP", "Starte Radio- und Socket-Init");
+    daemon_debug_ctx("STARTUP", "starting radio and socket init");
     daemon_io_init();
     daemon_apply_boot_tx_modes();
     daemon_apply_boot_cad_monitor();
-    daemon_debug_ctx("STARTUP", "Startup abgeschlossen");
+    daemon_debug_ctx("STARTUP", "startup complete");
 }
 
 /* --- Main entry ---------------------------------------------------------- */

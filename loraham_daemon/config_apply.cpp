@@ -275,7 +275,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
         if(mode_flag == RADIO_MODE_FSK) {
             // Ignore LoRa-only keys while in FSK mode.
             if(key=="SF" || key=="BW" || key=="CR" || key=="LDRO" || key=="CRC") {
-                printf(" \033[93m%s=IGNORIERT(LoRa-Key im FSK-Modus)\033[0m", key.c_str());
+                printf(" \033[93m%s=IGNORED(LoRa key in FSK mode)\033[0m", key.c_str());
             } else {
                 int16_t state = radio.applyFskParam(tag, key, val);
                 if (state != RADIOLIB_ERR_NONE) {
@@ -290,7 +290,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
             // Ignore FSK-only keys while in LoRa mode.
             if(key=="BR" || key=="FREQDEV" || key=="RXBW" || key=="OOK" ||
                 key=="SHAPING" || key=="ENCODING") {
-                printf(" \033[93m%s=IGNORIERT(FSK-Key im LoRa-Modus, SET MODE=FSK fehlt)\033[0m", key.c_str());
+                printf(" \033[93m%s=IGNORED(FSK key in LoRa mode, SET MODE=FSK missing)\033[0m", key.c_str());
                 } else {
                     int16_t state = radio.applyLoraParam(tag, key, val);
                     if (state != RADIOLIB_ERR_NONE) {

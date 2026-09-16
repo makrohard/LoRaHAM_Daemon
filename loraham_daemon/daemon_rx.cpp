@@ -39,7 +39,7 @@ static const char *daemon_rx_log_ctx(RadioController *ctrl)
 
 static void daemon_note_rx_flag_observed(RadioController *ctrl)
 {
-    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Flag gesetzt");
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "flag set");
 }
 
 /* --- RX special cases ---------------------------------------------------- */

@@ -82,9 +82,16 @@ Four conditions are fatal at startup:
 | The selected radio does not become ready | Cleans up, then exits `4` (`LORAHAM_EXIT_LOCK_ERROR`) on a boot lock-infrastructure failure, otherwise `EXIT_FAILURE` |
 | Event-loop setup fails | Runs the shutdown cleanup, exits `EXIT_FAILURE` |
 
+Every log line, on stdout **and** stderr, begins with a UTC timestamp in the same format the RF log
+uses — `2026-09-16T08:22:31.003Z `. A line is often built from several `printf` calls (the CONFIG
+apply prints one coloured fragment per key; the pin-lock line prints one call per pin), so the
+stamping is done by a stream wrapper that accumulates until the newline rather than per call, with
+a per-thread buffer so concurrent writers cannot splice their half-lines together. It is installed
+after any redirection, so background mode is stamped too.
+
 Normal logs report the active radio once during startup, as `[Daemon] active radios: <tag>`
 (or `none`). Debug logs (`--debug`) additionally carry the selected-radio decisions
-(`Option --radio erkannt: …`, `Radio-Auswahl: …`).
+(`option --radio recognised: …`, `radio selection: …`).
 
 On shutdown, only the selected radio's sockets and client slots are cleaned up — there is one
 band per process, frozen at startup. In the async TX worker, queued jobs that have not started

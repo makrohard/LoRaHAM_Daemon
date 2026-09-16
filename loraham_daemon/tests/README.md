@@ -165,6 +165,11 @@ Multi-instance (split per-band) operation:
   detached stays legal, because every TX detaches and reinstalls it. Injects lgpio failures through
   `tests/fakes/lgpio.h`, so no library and no hardware are involved)
 - `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)
+- `test_stdout_stamp` (UTC timestamps on the log: a line built from SIX printf calls comes out as
+  ONE stamped line -- which is why this is a stream wrapper and not a stamped printf -- stderr is
+  stamped too so a redirected log is not half-timed, two concurrent threads never splice their
+  half-lines together, and an unterminated line is still flushed at shutdown. Each case runs in a
+  forked child, because the wrapper replaces `stdout` for the whole process)
 - `test_packaging` (deployment artifacts: `systemd/tmpfiles.d/loraham.conf` exists and documents `/run/lock/loraham`; the unit has no `RuntimeDirectory`/`EnvironmentFile` and keeps `RestartPreventExitStatus`)
 - `test_multi_instance` (integration: duplicate same-band rejection with socket survival, simultaneous 433+868, and independent shutdown; requires radio hardware)
 

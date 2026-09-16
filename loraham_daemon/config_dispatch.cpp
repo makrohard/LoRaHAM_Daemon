@@ -60,7 +60,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     ConfigLineApplyContext *ctx =
         (ConfigLineApplyContext *)user;
 
-    config_dispatch_log_line(&ctx->log, "Zeile", line);
+    config_dispatch_log_line(&ctx->log, "line", line);
 
     /* Reserved-setter matching is case-insensitive like every documented
      * CONF key: the dedicated matchers and the invalid-value classifier all
@@ -300,7 +300,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         if (apply_status == CONFIG_APPLY_APPLIED) {
             // beginFSK()/begin() clears the IRQ callback.
             ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
-            config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
+            config_dispatch_log_message(&ctx->log, "callback reinstalled");
             daemon_rx_rearm_note_result(ctx->ctrl,
                                         ctx->ctrl->driver->startReceive(),
                                         "CONFIG");
@@ -391,7 +391,7 @@ void config_dispatch_client(ClientSlot *slots,
         }
 
         client_slot_close(slot);
-        config_dispatch_log_slot(&log, index, "Client geschlossen");
+        config_dispatch_log_slot(&log, index, "client closed");
         return;
     }
 

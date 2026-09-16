@@ -76,6 +76,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_monitoring.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/radio_tx_limit.cpp"
+  "$SCRIPT_DIR/daemon_stdout_stamp.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
   "$SCRIPT_DIR/radio_health.cpp"
 )
