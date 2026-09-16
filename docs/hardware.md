@@ -235,26 +235,6 @@ the driver is band-agnostic.
 | `sx1262_driver.cpp`, `sx1262_driver.h` | the SX126x driver: TCXO via DIO3, DIO2-as-RF-switch plus the inverse antenna-switch line, SX126x CRC/sync/power semantics, instantaneous-RSSI live RSSI |
 | `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state; the LED is a per-band hardware and activity resource, not the instance-ownership lock |
 
-* Live RSSI on SX1262 comes from the SX126x instantaneous-RSSI command, never from SX127x register
-  addresses.
-* LoRa sync word: RadioLib maps the SX127x byte (`0x12` / `0x2B`) onto SX1262 via the compatibility
-  control bits.
-* FSK receive bandwidth is validated against the active chip family's raster, and the two rasters
-  barely intersect. `12.5` and `6.3` kHz are on the SX127x raster only; an SX126x board rejects
-  them and uses its own values (`4.8`, `5.8`, `7.3`, `9.7`, `11.7`, `14.6`, `19.5`, `23.4`, and so
-  on). Any FSK example quoting an SX127x bandwidth is implicitly SX127x-only.
-* OOK is SX127x-only. On an SX126x chip every `OOK` key is rejected at prevalidation, including
-  `OOK=0`, because the chip has no OOK modulator.
-
-On-air behaviour that only a bench can establish, recorded in
-[`../loraham_daemon/HW-ONAIR-CHECKLIST.md`](../loraham_daemon/HW-ONAIR-CHECKLIST.md) rather than in
-code: compatibility with SX127x and SX126x counterparts for the LoRa-APRS, MeshCom and Meshtastic
-parameter sets; `0x2B` (the MeshCom raster) in both directions against an SX1262 station; SX1262 to
-SX127x cross-family decode in the RX direction; and the Waveshare LF/433 variant as fully
-on-air-validated with the HF/868 binding software-supported but on-air-untested. The last of these
-is an argument by analogy, and the code supports the premise: one pin set serves both variants and
-the driver is band-agnostic.
-
 ## Two processes on one Pi
 
 One process drives one radio, so dual-band operation is two processes. A pair works when the two

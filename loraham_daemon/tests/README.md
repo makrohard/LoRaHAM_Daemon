@@ -142,9 +142,10 @@ Lifecycle/helper behavior:
   standing, the chip is returned to standby, no pin is consulted on either the DIO1-routed or the
   DIO1-less profile, and the deadline is computed from the driver's cached SF/BW -- seeded at boot,
   moved by a successful `SET`, NOT moved by one the chip rejected, and reset by LoRa re-entry.
-  It also pins POWER+OCP as one setting: RegOcp reads 120 mA after boot, after `SET POWER` and
-  after a switch in BOTH directions -- RadioLib re-pins it to 60 mA inside `beginFSK()`, below the
-  87 mA the PA draws at +17 dBm -- and `SET POWER` 0/18/19/20 write no register at all. And LDRO:
+  It also pins POWER+OCP as one setting: RegOcp reads 100 mA -- the silicon default -- after boot,
+  after `SET POWER` and after a switch in BOTH directions, because RadioLib re-pins it to 60 mA
+  inside `beginFSK()`, below the 87 mA the PA draws at +17 dBm. And `SET POWER` 0/18/19/20 write no
+  register at all. And LDRO:
   boot writes the bit the configuration needs, `SET LDRO=AUTO` CLEARS a stale bit left in the chip
   by a previous run (RadioLib's `autoLDRO()` sets a flag and writes nothing), AUTO keeps tracking
   later SF/BW changes, and an explicit `LDRO=0` still wins where AUTO would have set it. Finally TX:

@@ -76,9 +76,11 @@ private:
      * alone would reintroduce the fault on every LoRa/FSK switch; this helper
      * is therefore called from begin(), from switchMode(), and from SET POWER.
      *
-     * 120 mA is a PROJECT CHOICE, not a Semtech recommendation: the +17 dBm
-     * operating point plus headroom for temperature and VSWR. It is subject to
-     * the bench gate.
+     * The value is 100 mA, the chip's own silicon default. An earlier revision
+     * used 120 mA as a project-selected margin for temperature and VSWR,
+     * conditional on a bench measurement; no current meter was available, so
+     * the default is used rather than an unmeasured number of our own. See
+     * SX127X_OCP_PA_BOOST_MA in the .cpp for the full provenance.
      */
     int16_t applyPowerAndOcp(int power_dbm);
 
