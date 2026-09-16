@@ -212,10 +212,10 @@ static TxResult lora_send_controller(RadioController *ctrl,
 
         if(state != RADIOLIB_ERR_NONE) {
             daemon_debug_ctx(tx_ctx, "transmit error %d", state);
-            if (ctrl->band == RADIO_BAND_433)
-                printf("[433] transmit ERROR: %d\n", state);
-            else
-                printf("[868] TX ERROR: %d\n", state);
+            /* One wording, and the tag from the controller: the two bands
+             * printed "transmit ERROR" and "TX ERROR" for the same event,
+             * which is a translation seam, not a distinction. */
+            printf("[%s] transmit ERROR: %d\n", radio_controller_tag(ctrl), state);
         } else {
             daemon_debug_ctx(tx_ctx, "transmit OK");
             // Logged only now: a CAD refusal or a radio error never radiated.

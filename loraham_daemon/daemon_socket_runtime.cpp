@@ -42,7 +42,7 @@ static void daemon_log_accept_delta(const char *ctx,
                                     int after)
 {
     if (after > before)
-        daemon_debug_ctx(ctx, "%s-Client verbunden (%d)", kind, after);
+        daemon_debug_ctx(ctx, "%s client connected (%d)", kind, after);
     else
         daemon_debug_ctx(ctx, "%s accept without a new client", kind);
 }

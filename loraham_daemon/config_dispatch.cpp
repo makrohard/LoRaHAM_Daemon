@@ -381,7 +381,7 @@ void config_dispatch_client(ClientSlot *slots,
     }
 
     if(n == 0) {
-        config_dispatch_log_slot(&log, index, "EOF, Stream flush");
+        config_dispatch_log_slot(&log, index, "EOF, stream flush");
         if(config_stream_flush(&slot->stream,
                                config_dispatch_apply_line,
                                &line_ctx) != 0) {

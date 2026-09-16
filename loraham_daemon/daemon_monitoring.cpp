@@ -81,7 +81,7 @@ static void daemon_process_cad_status(RadioController *ctrl,
         return;
 
     if (tick.edge > 0) {
-        daemon_debug_ctx(ctx, "Aktiv cad=BUSY rssi=%.1f", tick.rssi_dbm);
+        daemon_debug_ctx(ctx, "active cad=BUSY rssi=%.1f", tick.rssi_dbm);
         client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, "CAD=1\n");
     } else if (tick.edge < 0) {
         daemon_debug_ctx(ctx, "inactive cad=FREE rssi=%.1f", tick.rssi_dbm);

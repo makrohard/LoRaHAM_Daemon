@@ -20,7 +20,7 @@ void daemon_radio_controller_init(void)
 {
     const DaemonBandDescriptor *band = daemon_band();
 
-    daemon_debug_ctx("RADIO", "Controller initialisieren");
+    daemon_debug_ctx("RADIO", "initialising the controller");
 
     daemon_tx_async_runtime_init();
 
@@ -46,13 +46,13 @@ static void radio_controller_shutdown(RadioController *ctrl)
         return;
 
     tag = radio_controller_tag(ctrl);
-    daemon_debug_ctx(tag, "Radio-Shutdown");
+    daemon_debug_ctx(tag, "radio shutdown");
 
     if (ctrl->driver) {
         if (radio_controller_ready(ctrl)) {
             daemon_debug_band(tag, "callback off");
             ctrl->driver->clearPacketReceivedAction();
-            daemon_debug_band(tag, "Standby");
+            daemon_debug_band(tag, "standby");
             ctrl->driver->standby();
             daemon_debug_band(tag, "clearing IRQ");
             ctrl->driver->clearIrq(0xFFFFFFFF);
@@ -85,7 +85,7 @@ void daemon_radio_shutdown_cleanup(void)
 {
     daemon_tx_async_runtime_shutdown();
 
-    daemon_debug_ctx("RADIO", "Shutdown %s", daemon_band()->tag);
+    daemon_debug_ctx("RADIO", "shutdown %s", daemon_band()->tag);
     radio_controller_shutdown(&radio_controller);
 
     daemon_led_shutdown();

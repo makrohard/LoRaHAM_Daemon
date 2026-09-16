@@ -99,7 +99,7 @@ static void daemon_print_raw_rx_packet(const char *rx_ctx,
 {
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\033[%s%s%s\033[0m] %d Bytes ASCII: ",
+    printf("[\033[%s%s%s\033[0m] %d bytes ASCII: ",
            color, band, suffix ? suffix : "", len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
@@ -141,7 +141,7 @@ static void daemon_print_lora_packet(const char *rx_ctx,
                      hdrFlags, chHash, nextHop, rlyNodes, rssi);
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\033[%s%s\033[0m] %d Bytes ASCII: ", color, band, len);
+    printf("[\033[%s%s\033[0m] %d bytes ASCII: ", color, band, len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
 }
@@ -155,7 +155,7 @@ static void daemon_print_fsk_packet(const char *rx_ctx,
 {
     daemon_debug_hex_bytes(rx_ctx, buf, len);
 
-    printf("[\033[%s%s-FSK\033[0m] %d Bytes ASCII: ", color, band, len);
+    printf("[\033[%s%s-FSK\033[0m] %d bytes ASCII: ", color, band, len);
     daemon_print_ascii_bytes(buf, len);
     printf(" RSSI: %.2f dBm\n", rssi);
 }
@@ -250,10 +250,10 @@ static void daemon_broadcast_rx_data(RadioChannelIo *io,
 /* --- RX IRQ/FIFO sequence ------------------------------------------------ */
 static void daemon_restart_receive_after_empty_rx(RadioController *ctrl)
 {
-    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Leer-IRQ, RX neu starten");
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "empty IRQ, restarting RX");
     ctrl->driver->clearIrq(0xFFFFFFFF);
     daemon_rx_rearm_note_result(ctrl, ctrl->driver->startReceive(),
-                                "RX-Leer-IRQ");
+                                "RX empty IRQ");
 }
 
 static void daemon_finish_rx_packet(RadioController *ctrl,
@@ -353,7 +353,7 @@ static bool daemon_should_log_rx_drop(unsigned long drops)
 static void daemon_record_rx_drop(RadioController *ctrl, int16_t state)
 {
     daemon_radio_stats_record_rx_drop(&ctrl->stats);
-    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Drop %lu Status %d",
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "drop %lu status %d",
                      ctrl->stats.rx_drops, state);
 
     if (daemon_should_log_rx_drop(ctrl->stats.rx_drops)) {
@@ -493,7 +493,7 @@ static void daemon_process_radio_band(RadioController *ctrl,
         return;
     }
 
-    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "Read OK");
+    daemon_debug_ctx(daemon_rx_log_ctx(ctrl), "read OK");
 
     if (!daemon_rx_packet_ok(ctrl, rx_buf, len)) {
         daemon_finish_rx_packet(ctrl, rx_buf, sizeof(rx_buf));

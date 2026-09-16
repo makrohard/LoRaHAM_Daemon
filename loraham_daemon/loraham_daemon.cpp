@@ -84,7 +84,7 @@ static int daemon_wait_for_events(EventLoopSet *event_set,
                               DAEMON_EVENT_LOOP_TIMEOUT_USEC);
 
     if (ret > 0)
-        daemon_debug_ctx("SOCKET", "%d Event(s)", ret);
+        daemon_debug_ctx("SOCKET", "%d event(s)", ret);
 
     return ret;
 }
@@ -99,7 +99,7 @@ static void daemon_runtime_init(EventLoopSet *event_set)
         exit(EXIT_FAILURE);
     }
 
-    printf("[Daemon] Event-Backend: %s\n",
+    printf("[Daemon] event backend: %s\n",
            event_loop_backend_name(event_loop_backend(event_set)));
 
     /* Stop-signal handlers are installed earlier, in daemon_io_init(), right
@@ -247,7 +247,7 @@ static void daemon_run(void)
     daemon_run_polling_loop(&main_ctx);
 
     daemon_log("stop requested");
-    daemon_debug_ctx("LIFE", "Shutdown beginnt");
+    daemon_debug_ctx("LIFE", "shutdown starting");
     daemon_shutdown_cleanup(&main_ctx.event_set);
     daemon_debug_ctx("LIFE", "shutdown complete");
     /* A line that was built but never terminated would otherwise be lost. */
@@ -475,7 +475,7 @@ static void daemon_apply_boot_cad_monitor(void)
     bool rssi_set = daemon_cad_rssi_boot_effective(&rssi);
 
     radio_controller.cad_monitor_active.store(mon);
-    daemon_debug_ctx("STARTUP", "CAD-Monitor %s=%d",
+    daemon_debug_ctx("STARTUP", "CAD monitor %s=%d",
                      daemon_band()->tag, mon ? 1 : 0);
     // CAD RSSI threshold override (unset keeps the default).
     if (rssi_set) {

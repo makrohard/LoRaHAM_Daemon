@@ -24,7 +24,7 @@ static DaemonTxAsyncCompletionRecordCtx daemon_tx_async_completion_record;
 
 void daemon_tx_async_runtime_init(void)
 {
-    daemon_debug_ctx("TXASYNC", "Worker initialisieren");
+    daemon_debug_ctx("TXASYNC", "initialising the worker");
 
     daemon_tx_async_worker_init(&daemon_tx_async_worker);
     daemon_tx_completion_queue_init(&daemon_tx_async_completion_queue);
@@ -37,7 +37,7 @@ void daemon_tx_async_runtime_init(void)
 
 void daemon_tx_async_runtime_shutdown(void)
 {
-    daemon_debug_ctx("TXASYNC", "Worker stoppen");
+    daemon_debug_ctx("TXASYNC", "stopping the worker");
 
     daemon_tx_async_worker_stop(&daemon_tx_async_worker);
 
