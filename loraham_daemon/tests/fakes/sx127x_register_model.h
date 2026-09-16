@@ -99,7 +99,7 @@ class Sx127xRegisterModel : public RadioLibHal {
          * against the same chip for comparison. */
         digital_reads++;
 
-        if ((int)pin == dio0_pin) {
+        if ((int)pin == dio0_pin && lora_modem()) {
             advance_cad();
             return (regs_[REG_IRQ_FLAGS] & FLAG_CAD_DONE) ? 1 : 0;
         }
@@ -172,9 +172,19 @@ class Sx127xRegisterModel : public RadioLibHal {
     }
 
   private:
+    /*
+     * The register map is modem-dependent, and 0x12 is the trap: in LoRa it is
+     * RegIrqFlags, write-1-to-clear, but in FSK the same address is an ordinary
+     * configuration register that beginFSK() writes and RadioLib then verifies
+     * by reading back. Treating it as write-1-to-clear in both modems made
+     * beginFSK() fail with ERR_SPI_WRITE_FAILED against this model -- a model
+     * bug that would otherwise have been read as a driver bug.
+     */
+    bool lora_modem() const { return (regs_[REG_OP_MODE] & LONG_RANGE) != 0; }
+
     uint8_t read_reg(uint8_t addr)
     {
-        if (addr == REG_IRQ_FLAGS) {
+        if (addr == REG_IRQ_FLAGS && lora_modem()) {
             irq_flag_reads++;
             advance_cad();
         }
@@ -184,8 +194,8 @@ class Sx127xRegisterModel : public RadioLibHal {
 
     void write_reg(uint8_t addr, uint8_t value)
     {
-        if (addr == REG_IRQ_FLAGS) {
-            /* SX127x clears an IRQ flag by writing a 1 to it. */
+        if (addr == REG_IRQ_FLAGS && lora_modem()) {
+            /* In LoRa, an IRQ flag is cleared by writing a 1 to it. */
             irq_flag_clears++;
             last_irq_clear_mask = value;
             regs_[addr] = (uint8_t)(regs_[addr] & ~value);

@@ -55,6 +55,52 @@ static void test_lora_policy(void)
     expect_int("power rejects 21", config_policy_power_valid(21), 0);
 }
 
+/*
+ * HW-6: output power is family-specific in both directions, and the family-
+ * blind rule above was wrong on both ends for SX127x.
+ *
+ * Low end: RadioLib's SX1278::setOutputPower routes 2..17 to PA_BOOST and
+ * anything below 2 to the RFO pin -- a different output path, and not the one
+ * the antenna is on. POWER=0 did not mean "transmit quietly", it meant
+ * "transmit into an unconnected pin", and the caller was told it worked.
+ *
+ * High end: the datasheet allows continuous operation to +17 dBm but restricts
+ * +20 dBm to duty cycle <= 1 %, VSWR <= 3:1, VDD 2.4-3.7 V. This daemon has no
+ * duty-cycle governor, so 18..20 are deliberately unsupported rather than
+ * overlooked -- RadioLib reaches all three through the same PA_DAC-boosted
+ * path.
+ *
+ * SX1262 has one output path and no such restriction, so it keeps 0..20.
+ */
+static void test_power_policy_per_family(void)
+{
+    expect_int("sx127x rejects 0 (RFO path, not the antenna)",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 1 (RFO path, not the antenna)",
+               config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x accepts 2 (lowest PA_BOOST step)",
+               config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx127x accepts 17 (continuous-operation maximum)",
+               config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx127x rejects 18 (needs the +20 dBm boosted path)",
+               config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 19 (needs the +20 dBm boosted path)",
+               config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 20 (no duty-cycle governor exists)",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects -1",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX127X), 0);
+
+    expect_int("sx1262 keeps 0",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx1262 keeps 20",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx1262 rejects 21",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262), 0);
+    expect_int("sx1262 rejects -1",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262), 0);
+}
+
 static void test_fsk_policy(void)
 {
     expect_int("fsk br rejects 0.49", config_policy_fsk_bitrate_valid(0.49f), 0);
@@ -207,6 +253,7 @@ int main(int argc, char **argv)
     }
 
     test_lora_policy();
+    test_power_policy_per_family();
     test_fsk_policy();
 
     test_freq_band_policy();

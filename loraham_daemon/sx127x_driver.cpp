@@ -87,9 +87,10 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
         return state;
     }
 
-    state = radio_->setOutputPower(defaults->power_dbm);
+    state = applyPowerAndOcp(defaults->power_dbm);
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx127x] Boot-Setter POWER fehlgeschlagen: %d\n", (int)state);
+        printf("[sx127x] Boot-Setter POWER/OCP fehlgeschlagen: %d\n",
+               (int)state);
         fflush(stdout);
         return state;
     }
@@ -116,7 +117,16 @@ int16_t Sx127xDriver::switchMode(RadioMode_t mode,
         /* FSK modem params stay the established legacy values (RadioLib
          * defaults: 4.8 kbps / 5 kHz dev / family RXBW raster) — only the
          * frequency comes from the band so the process never parks off-band. */
-        return radio_->beginFSK(defaults->freq_mhz);
+        int16_t state = radio_->beginFSK(defaults->freq_mhz);
+
+        if (state != RADIOLIB_ERR_NONE)
+            return state;
+
+        /* beginFSK() re-pins OCP to RadioLib's 60 mA and resets the output
+         * power, so without this every LoRa->FSK switch would silently undo
+         * both. This is why power and OCP live in one helper called from three
+         * places rather than being set once at boot. */
+        return applyPowerAndOcp(defaults->power_dbm);
     }
 
     /* LoRa: land on the band boot defaults via the boot path (same setter
@@ -150,6 +160,36 @@ float Sx127xDriver::readLiveRssi(RadioMode_t mode, bool is_hf)
 float Sx127xDriver::rssiProbe()
 {
     return radio_->getRSSI(false, true);
+}
+
+/* --- Output power and PA over-current limit ------------------------------- */
+
+/*
+ * The two are one setting. See the header for why this exists and why it is
+ * called from three places.
+ *
+ * Provenance of the numbers, so a later reader does not have to guess which are
+ * datasheet and which are ours: the silicon OCP default is 100 mA; RadioLib
+ * pins it to 60 mA; the datasheet IDDT typical is 87 mA at +17 dBm on
+ * PA_BOOST. 120 mA is OUR selected margin above that operating point.
+ * setCurrentLimit accepts 45-240 mA and represents the value exactly.
+ *
+ * The validator keeps SX127x to 2..17 dBm, so PA_BOOST is the only path this
+ * ever configures and one OCP value covers the whole range.
+ */
+#define SX127X_OCP_PA_BOOST_MA 120
+
+int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
+{
+    int16_t state = radio_->setOutputPower((int8_t)power_dbm);
+
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
+
+    /* Order matters: power first, then the limit that protects it. A failure
+     * here is returned, not logged and swallowed -- a transmitter running on
+     * RadioLib's 60 mA cap is not a working radio. */
+    return radio_->setCurrentLimit(SX127X_OCP_PA_BOOST_MA);
 }
 
 /* --- Register-polled CAD --------------------------------------------------- */
@@ -395,8 +435,11 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
-            state = radio.setOutputPower(p);
+        if (config_value_parse_int_exact(val, &p) &&
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X)) {
+            /* OCP with it, always: RadioLib's 60 mA cap would otherwise
+             * survive every runtime power change. */
+            state = applyPowerAndOcp(p);
             driver_config_print_state_int("POWER", p, state);
         } else {
             driver_config_print_rejected("POWER", val);
@@ -432,8 +475,11 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
-            state = radio.setOutputPower(p);
+        if (config_value_parse_int_exact(val, &p) &&
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X)) {
+            /* OCP with it, always: RadioLib's 60 mA cap would otherwise
+             * survive every runtime power change. */
+            state = applyPowerAndOcp(p);
             driver_config_print_state_int("POWER", p, state);
         } else {
             driver_config_print_rejected("POWER", val);

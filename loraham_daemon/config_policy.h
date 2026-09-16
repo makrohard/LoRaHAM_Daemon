@@ -15,6 +15,11 @@ bool config_policy_lora_preamble_valid(int preamble);
 bool config_policy_lora_sync_valid(uint32_t sync);
 bool config_policy_power_valid(int power);
 
+/* Family-aware output power. SX127x: 2..17 -- below 2 RadioLib switches to the
+ * RFO pin, which is not the antenna path on these boards, and 18..20 need a
+ * duty-cycle contract this daemon does not enforce. SX1262: 0..20. */
+bool config_policy_power_valid_family(int power, DaemonChipFamily family);
+
 bool config_policy_fsk_bitrate_valid(float br);
 bool config_policy_fsk_freqdev_valid(float freqdev);
 bool config_policy_fsk_rxbw_valid(float bw);

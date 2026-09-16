@@ -75,7 +75,7 @@ logged as ignored and the rest of the command still applies.
 |---|---|---|---|
 | `MODE` | global | `LORA` | exactly `LORA` or `FSK`; anything else is rejected as `unknown mode` |
 | `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number in MHz inside the band policy — `430.0`–`440.0` in a 433 process, `863.0`–`870.0` in an 868 process; an off-band value is rejected with the reason `off-band frequency (band policy)` |
-| `POWER` | LORA/FSK | `10` | integer `0` to `20` dBm |
+| `POWER` | LORA/FSK | `10` | integer, per chip family: `2` to `17` dBm on SX127x, `0` to `20` dBm on SX126x (see `limits.md`) |
 | `GETRSSI` | global | `0` | exactly `0` or `1` |
 | `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048`; the airtime gate applies on top |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00`–`0xFF` or decimal `0`–`255`; FSK: one or two bytes up to `0xFFFF`, no zero byte |

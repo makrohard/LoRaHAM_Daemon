@@ -27,12 +27,29 @@ from the command line.
 |---|---:|---|
 | `MAX_CLIENTS` | `10` | Client slots per socket group; there are three groups (raw DATA, framed DATA, CONF), each with its own slot array |
 | `buf_SIZE` | `256` bytes | Internal RX buffer and CONF read scratch buffer; it is also the bound on a single CONF request line |
-| `DATA_TX_MAX_CHUNK_SIZE` | `255` bytes | Maximum RF chunk generated from raw DATA socket input |
-| `FRAMED_DATA_MAX_RF_PAYLOAD` | `255` bytes | Maximum RF payload accepted for `TX_PACKET` and carried inside `RX_PACKET` |
+| `DATA_TX_MAX_CHUNK_SIZE` | `255` bytes | Ceiling of the raw DATA chunker; the chunk actually generated is the radio's current limit (below) |
+| `FRAMED_DATA_MAX_RF_PAYLOAD` | `255` bytes | Storage ceiling for `TX_PACKET` / `RX_PACKET`; what the radio will accept is the limit below |
 | `DAEMON_TX_QUEUE_CAPACITY` | `8` jobs | Per-radio bounded async TX queue |
 | `DAEMON_TX_COMPLETION_QUEUE_CAPACITY` | `16` results | Per-band bounded async TX completion queue |
 | `LORAHAM_SPI_LOCK_TIMEOUT_MS` | `2000` ms | Bound on acquiring the shared SPI transaction lock |
 | `CONFIG_POLICY_MAX_AIRTIME_MS` | `20000.0` ms | Worst-case single-packet airtime a configuration may have |
+
+### RF payload limit
+
+The constants above are **storage** ceilings. What one frame may actually carry depends on the chip
+family and the modem:
+
+| Board / mode | Limit |
+|---|---:|
+| SX127x, LoRa | `255` bytes |
+| SX127x, FSK | `63` bytes |
+| SX126x, either | `255` bytes |
+
+The SX127x FSK FIFO is 64 bytes and variable-length packet mode puts the length byte into it, so 63
+is what fits. A `TX_PACKET` above the limit is rejected as `INVALID_PACKET` before anything is
+queued and before the radio is touched; raw DATA input is chunked to the limit instead. The limit
+also sets the byte bound on how much is read from a client at once, so the chunker cannot generate
+more jobs than the TX queue has room for.
 
 The two queues overflow in opposite directions, and a client that watches only one of them will
 draw the wrong conclusion from the other:
@@ -171,26 +188,46 @@ A `SET` outside these ranges is rejected before any hardware is touched.
 | `BW` | `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz |
 | `CR` | `5`–`8` |
 | `PREAMBLE` (LoRa) | `6`–`512` symbols |
-| `POWER` | `0`–`20` dBm |
+| `POWER` (SX127x board) | `2`–`17` dBm |
+| `POWER` (SX126x board) | `0`–`20` dBm |
 | `BR` (FSK) | `0.5`–`300` kbps |
 | `FREQDEV` (FSK) | greater than `0` and at most `200` kHz; on an SX126x board additionally at least `0.6` kHz |
 
 A frequency outside the band window is rejected with the distinct reason
 `off-band frequency (band policy)`.
 
-The `POWER` window is narrower than the hardware. The SX1262 chip itself covers -9 dBm to
-+22 dBm; the accepted policy range `0`–`20` dBm lies inside it, and the policy check runs before
-`setOutputPower()`.
+The `POWER` window is narrower than the hardware, and it is per chip family. The policy check runs
+before `setOutputPower()`.
+
+On an **SX126x** board the chip covers -9 dBm to +22 dBm and the accepted range `0`–`20` dBm lies
+inside it.
+
+On an **SX127x** board the accepted range is `2`–`17` dBm, for two separate reasons:
+
+- Below `2` dBm RadioLib drives the **RFO** pin instead of PA_BOOST. That is a different output
+  path, and it is not the one the antenna is connected to on these boards, so `POWER=0` would have
+  meant "transmit into an unconnected pin" while reporting success.
+- `18`–`20` dBm need the PA_DAC-boosted +20 dBm path, which the datasheet restricts to a duty cycle
+  of at most 1 %, VSWR at most 3:1 and VDD 2.4–3.7 V. The daemon has no duty-cycle governor, so this
+  is an **intentionally unsupported** high-power mode rather than an oversight. If it is ever
+  wanted it returns as a feature with that operating contract attached.
+
+Output power and the PA over-current limit (OCP) are applied together as one setting. RadioLib pins
+OCP to 60 mA inside both `begin()` and `beginFSK()`, below the datasheet typical draw of 87 mA at
++17 dBm on PA_BOOST; the daemon sets it to **120 mA** — a project-selected margin above that
+operating point, not a Semtech figure — at boot, on every `SET POWER`, and after every LoRa/FSK
+switch, because `beginFSK()` re-pins it.
 
 ## Worst-case airtime ceiling
 
 The daemon rejects any `SET` whose merged configuration would give a worst-case single-packet
-airtime above `CONFIG_POLICY_MAX_AIRTIME_MS`, that is 20 s. Worst case means a 255-byte payload
-with CRC on. The gate runs before any hardware side effect and logs the computed airtime together
+airtime above `CONFIG_POLICY_MAX_AIRTIME_MS`, that is 20 s. Worst case means the largest payload the
+daemon can actually send in the prospective mode, with CRC on: 255 bytes in LoRa, and 63 bytes in
+FSK on an SX127x board, where the 64-byte FIFO also holds the length byte. The gate runs before any hardware side effect and logs the computed airtime together
 with the rejection:
 
 ```
-[<band>] CONFIG rejected: worst-case airtime <ms> ms > 20000 ms (SF<n>/BW<khz>/CR<n>/PRE<n>, 255 B)
+[<band>] CONFIG rejected: worst-case airtime <ms> ms > 20000 ms (SF<n>/BW<khz>/CR<n>/PRE<n>, <n> B)
 ```
 
 The check is made against a merged shadow of the configuration, not against the single key being

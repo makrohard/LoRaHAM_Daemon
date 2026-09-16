@@ -340,6 +340,117 @@ static void test_both_profiles_get_the_same_register_verdict(void)
     }
 }
 
+/* ---- output power and the PA over-current limit -------------------------- */
+
+/*
+ * HW-6 + HW-7 are one transmitter invariant, and the register file is where
+ * that can be checked.
+ *
+ * RadioLib pins OCP to 60 mA inside BOTH begin() and beginFSK(), below the
+ * datasheet typical draw of 87 mA at +17 dBm on PA_BOOST, and the daemon never
+ * set it -- so the protection could trip during ordinary transmission. Because
+ * beginFSK() re-pins it, a fix at boot alone would be undone by every
+ * LoRa/FSK switch. These tests therefore check the register after boot, after
+ * SET POWER, and after a mode switch in both directions.
+ *
+ * RegOcp (0x0B): bit 5 enables the protection, bits 4:0 are OcpTrim. For
+ * 45..120 mA the trim is (mA - 45)/5, so 120 mA is trim 15 with the enable bit
+ * -> 0x2F, and RadioLib's 60 mA would be trim 3 -> 0x23.
+ */
+static const uint8_t REG_OCP = 0x0B;
+static const uint8_t OCP_120_MA = 0x20 | 15;   /* enabled, trim 15 */
+static const uint8_t OCP_60_MA  = 0x20 | 3;    /* what RadioLib leaves behind */
+
+static void expect_ocp(const char *name, uint8_t got)
+{
+    char detail[160];
+    snprintf(detail, sizeof(detail),
+             "RegOcp = 0x%02X, expected 0x%02X (120 mA); 0x%02X is RadioLib's "
+             "60 mA, below the 87 mA the PA draws at +17 dBm",
+             got, OCP_120_MA, OCP_60_MA);
+    expect(name, got == OCP_120_MA, detail);
+}
+
+static void test_boot_sets_the_over_current_limit(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(12, 125.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect_ocp("boot leaves OCP at the project value", rig.model.peek(REG_OCP));
+}
+
+static void test_set_power_carries_the_limit_with_it(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(12, 125.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    /* Put the register back where RadioLib would leave it, so the assertion
+     * below is about THIS call and not about the boot above. */
+    rig.model.poke(REG_OCP, OCP_60_MA);
+
+    expect_int("SET POWER 10 accepted",
+               rig.drv.applyLoraParam("t", "POWER", "10"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect_ocp("SET POWER re-applies the limit", rig.model.peek(REG_OCP));
+}
+
+/*
+ * The one that a boot-only fix would have missed. beginFSK() re-pins OCP to
+ * 60 mA and resets the output power, so every LoRa/FSK switch silently undid
+ * the setting.
+ */
+static void test_mode_switches_reapply_the_limit(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(12, 125.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    /* Put the register where RadioLib would leave it FIRST, or this passes on
+     * the value boot already wrote and proves nothing about the switch. */
+    rig.model.poke(REG_OCP, OCP_60_MA);
+    expect_int("switch to FSK succeeds",
+               rig.drv.switchMode(RADIO_MODE_FSK, &def), RADIOLIB_ERR_NONE);
+    expect_ocp("FSK switch re-applies the limit", rig.model.peek(REG_OCP));
+
+    rig.model.poke(REG_OCP, OCP_60_MA);
+    expect_int("switch back to LoRa succeeds",
+               rig.drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
+    expect_ocp("LoRa re-entry re-applies the limit", rig.model.peek(REG_OCP));
+}
+
+/* The SX127x power range the validator now enforces, applied for real. */
+static void test_the_sx127x_power_range_applies(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(12, 125.0f);
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    expect_int("SET POWER 2 accepted (lowest PA_BOOST step)",
+               rig.drv.applyLoraParam("t", "POWER", "2"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect_int("SET POWER 17 accepted (continuous maximum)",
+               rig.drv.applyLoraParam("t", "POWER", "17"), RADIOLIB_ERR_NONE);
+    printf("\n");
+
+    /* Rejected before the chip: the driver reports 0 (no hardware error) and
+     * prints the value as refused, and the register must not have moved. */
+    rig.model.poke(REG_OCP, 0x00);
+    expect_int("SET POWER 20 does not reach the chip",
+               rig.drv.applyLoraParam("t", "POWER", "20"), 0);
+    printf("\n");
+    expect_int("SET POWER 20 wrote nothing", rig.model.peek(REG_OCP), 0);
+
+    expect_int("SET POWER 0 does not reach the chip",
+               rig.drv.applyLoraParam("t", "POWER", "0"), 0);
+    printf("\n");
+    expect_int("SET POWER 0 wrote nothing", rig.model.peek(REG_OCP), 0);
+}
+
 int main(void)
 {
     test_cad_done_alone_is_free();
@@ -351,6 +462,10 @@ int main(void)
     test_successful_set_updates_the_cache();
     test_failed_set_does_not_update_the_cache();
     test_lora_reentry_resets_to_boot_defaults();
+    test_boot_sets_the_over_current_limit();
+    test_set_power_carries_the_limit_with_it();
+    test_mode_switches_reapply_the_limit();
+    test_the_sx127x_power_range_applies();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

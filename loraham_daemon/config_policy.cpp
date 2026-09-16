@@ -53,6 +53,35 @@ bool config_policy_power_valid(int power)
     return power >= 0 && power <= 20;
 }
 
+/*
+ * Output power is family-specific, in both directions.
+ *
+ * SX127x, low end: 0 and 1 dBm are not reachable on PA_BOOST at all. RadioLib's
+ * SX1278::setOutputPower maps 2..17 to PA_BOOST and anything below 2 to the RFO
+ * pin -- a different output path, which on these boards is not the one the
+ * antenna is connected to. Accepting 0 or 1 therefore did not mean "transmit
+ * quietly", it meant "transmit into an unconnected pin", and the caller was
+ * told the setting succeeded.
+ *
+ * SX127x, high end: the datasheet permits continuous operation to +17 dBm but
+ * restricts +20 dBm to duty cycle <= 1 %, VSWR <= 3:1 and VDD 2.4-3.7 V. This
+ * daemon has no duty-cycle governor -- not a weak one, none -- so offering
+ * POWER=20 as an ordinary setting would advertise an operating mode whose
+ * contract nothing enforces. It is deliberately unsupported, not overlooked; if
+ * it is ever wanted it comes back as a feature with that contract attached.
+ * 18 and 19 go with it: RadioLib reaches them through the same +20 dBm
+ * PA_DAC-boosted path.
+ *
+ * SX1262 keeps 0..20: its PA has a single output path and no such restriction.
+ */
+bool config_policy_power_valid_family(int power, DaemonChipFamily family)
+{
+    if (family == DAEMON_CHIP_FAMILY_SX127X)
+        return power >= 2 && power <= 17;
+
+    return config_policy_power_valid(power);
+}
+
 /* --- FSK CONFIG value policy -------------------------------------------- */
 
 bool config_policy_fsk_bitrate_valid(float br)

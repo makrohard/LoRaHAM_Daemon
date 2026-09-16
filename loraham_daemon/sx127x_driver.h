@@ -62,6 +62,23 @@ public:
 
 private:
     /*
+     * Output power and the PA over-current limit are ONE transmitter setting,
+     * applied together and never apart.
+     *
+     * RadioLib pins OCP to 60 mA inside both begin() and beginFSK(), which is
+     * below the datasheet typical draw of 87 mA at +17 dBm on PA_BOOST -- so
+     * the protection can trip during ordinary transmission, and the daemon
+     * never set it. Because beginFSK() re-pins it, fixing boot and runtime
+     * alone would reintroduce the fault on every LoRa/FSK switch; this helper
+     * is therefore called from begin(), from switchMode(), and from SET POWER.
+     *
+     * 120 mA is a PROJECT CHOICE, not a Semtech recommendation: the +17 dBm
+     * operating point plus headroom for temperature and VSWR. It is subject to
+     * the bench gate.
+     */
+    int16_t applyPowerAndOcp(int power_dbm);
+
+    /*
      * Upper bound for one CAD, computed from the CURRENT SF/BW -- never a fixed
      * constant. The validator accepts SF 7-12 and BW 7.8-500 kHz, so the
      * physical bound spans roughly three orders of magnitude (0.58 ms to 1.05 s).
