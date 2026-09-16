@@ -194,32 +194,15 @@ A pin value below zero means "not connected" and is passed to RadioLib as `RADIO
   that — only a decode from a second station can.
 * `tcxo_voltage` above zero means `begin()` must set the DIO3 TCXO voltage.
 
-  Where it is zero the board runs on a plain crystal, and that has a consequence for **FSK between
-  two such boards**: their carriers can sit further apart than RadioLib's default FSK receive
-  bandwidth tolerates, so one side hears a strong signal and demodulates nothing.
+  Where it is zero the board runs on a plain crystal rather than a temperature-compensated
+  oscillator, so two such boards can sit further apart in frequency than a narrowband FSK receiver
+  likes. Expect FSK to be less forgiving than LoRa between them: chirp demodulation tolerates far
+  more frequency error than an FSK discriminator does. If an FSK link is poor where LoRa is fine,
+  `SET RXBW=<khz>` on the receiving side is the control to reach for.
 
-  Measured between the two SX127x boards on 2026-09-16: the receiver's `LIVERSSI` rose from −105 to
-  **−78.5 dBm** — about 26 dB of signal — while `GET STATS` reported `RX=0` **and `RXDROPS=0`, so
-  not even a CRC failure**: no frame was demodulated at all. `SET RXBW=250.0` on the receiver fixed
-  it immediately and repeatably (4 of 4 frames, `RXDROPS=0`). A mode round trip did not help, so
-  this is not the warm-start state above.
-
-  Two things follow. **Zero `RXDROPS` alongside zero `RX` is the signature** — it separates "cannot
-  demodulate" from "receives and fails CRC", which is what a weak or noisy link looks like. And LoRa
-  is unaffected, because chirp demodulation tolerates far more frequency error than narrowband FSK;
-  in the same session LoRa decoded both directions at 2 dBm while FSK failed one direction at
-  17 dBm. If an FSK link works one way only, widen `RXBW` on the deaf side before suspecting power
-  or antennas.
-
-## Chip-family differences
-
-| File | Contents |
-|---|---|
-| `hardware_profile.cpp`, `hardware_profile.h` | the `--hw` preset table: wiring, chip family, capabilities, LED, claimed pins |
-| `sx127x_driver.cpp`, `sx127x_driver.h` | the SX1278/RFM9x driver; all SX127x register constants live there, including the `begin()`-failure diagnosis |
-| `sx1262_driver.cpp`, `sx1262_driver.h` | the SX126x driver: TCXO via DIO3, DIO2-as-RF-switch plus the inverse antenna-switch line, SX126x CRC/sync/power semantics, instantaneous-RSSI live RSSI |
-| `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state; the LED is a per-band hardware and activity resource, not the instance-ownership lock |
-
+  One diagnostic that is worth more than the RSSI: **`RX=0` together with `RXDROPS=0` means nothing
+  was demodulated at all**, whereas frames that arrive and fail CRC show up as `RXDROPS`. The first
+  points at configuration or frequency, the second at signal quality.
 * Live RSSI on SX1262 comes from the SX126x instantaneous-RSSI command, never from SX127x register
   addresses.
 * LoRa sync word: RadioLib maps the SX127x byte (`0x12` / `0x2B`) onto SX1262 via the compatibility
