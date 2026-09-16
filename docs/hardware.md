@@ -154,8 +154,30 @@ A pin value below zero means "not connected" and is passed to RadioLib as `RADIO
   — SX127x FSK stream modes need DIO1, which these boards do not route — but nothing enforces it
   the way scan-based CAD is enforced.
 * `reset_wired` is `false` where RESET is not routed. A daemon restart is then a warm start against
-  whatever state the chip is in; the condition is logged once at init, and recovery from a wedged
-  chip needs a power cycle.
+  whatever state the chip is in; the condition is logged once at init.
+
+  Observed on an `uputronics-ce1` 868 instance, 2026-09-16: after repeated restarts the receiver
+  went deaf while the daemon reported `RADIO=READY CADSCAN=1 RXREADY=1`. It transmitted normally
+  (`outcome=ok`), heard nothing at all — `LIVERSSI` flat and `CADSTATE=FREE` throughout a burst that
+  the other band reported `BUSY` for — and the stale state showed up as a wrong noise floor
+  (`RSSI=-86.00` where the band normally reads `-157.00`). RadioLib writes a register only when its
+  cache differs, so `begin()` alone need not correct a chip that survived the restart in an
+  unexpected state.
+
+  A power cycle is the documented recovery, but a **modem round trip recovers it without one**:
+
+  ```
+  SET MODE=FSK
+  SET MODE=LORA
+  ```
+
+  That runs `beginFSK()` and then the full `begin()` path, rewriting far more registers than a
+  repeated `begin()`. Reception resumed on the next frame and the reported floor returned to
+  `-157.00`.
+
+  The general point for operators: `RADIO=READY` means a configured radio, a usable IRQ path and an
+  armed receiver. It does **not** mean the antenna path works, and nothing in the daemon can assert
+  that — only a decode from a second station can.
 * `tcxo_voltage` above zero means `begin()` must set the DIO3 TCXO voltage.
 
 ## Chip-family differences
