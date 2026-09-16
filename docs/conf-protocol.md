@@ -244,10 +244,20 @@ without running a scan:
 |---|---|
 | A transmit is in flight | `BUSY=1 CADSTATE=UNAVAILABLE`, returned immediately, no radio scan |
 | A received packet has not been drained yet | `CADSTATE=PENDING CAD=0 CADSCAN=0`, and `BUSY` is `1` only if a TX is in flight or the live RSSI is at or above the `CADRSSI` threshold — an idle channel with a pending packet reports `BUSY=0`. The pending packet survives; the probe's IRQ-clear and re-arm never run |
-| Wiring without DIO1 | The answer comes from the passive RSSI probe, and `CADSCAN=0` marks the non-scan source |
+| A profile without trustworthy active CAD | The answer comes from the passive RSSI probe, and `CADSCAN=0` marks the non-scan source |
+| Outside LoRa, or while an RX re-arm is pending | `CADSCAN=0 CADSTATE=UNAVAILABLE`. `RSSI` and `PACKETRSSI` are still reported — the snapshot is a non-destructive register read — but no CAD verdict is produced from a modem or a receiver state that cannot support one |
 
 The MANAGED-TX gate uses its own probe, whose pending-RX guard returns an
 unconditional `BUSY` instead.
+
+**Do not poll `GET CHANNEL` back to back.** Each active probe takes the radio
+mutex, runs the scan and re-arms the receiver. A request that arrives before the
+previous one has finished cannot take the mutex, and the non-blocking probe then
+answers `CADSTATE=UNAVAILABLE` with `CADSCAN=0` — "state untouched, skip this
+sample" — rather than waiting behind the radio. A tight loop can therefore
+starve itself and see nothing but `UNAVAILABLE`, while the same poll at any
+realistic interval scans and answers normally. This is the contract, not a
+fault; leave a gap between samples.
 
 ## Reply and error vocabulary
 
