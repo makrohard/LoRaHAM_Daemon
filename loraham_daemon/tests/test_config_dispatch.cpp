@@ -27,6 +27,7 @@ static int g_fail = 0;
 // Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
 struct FakeRadio : public RadioDriver {
     int callback_count;
+    int clear_callback_count;
     int start_receive_count;
     int scan_result;
     int scan_count;
@@ -34,7 +35,7 @@ struct FakeRadio : public RadioDriver {
     void (*last_callback)(void);
 
     FakeRadio() : RadioDriver(NULL),
-                  callback_count(0), start_receive_count(0),
+                  callback_count(0), clear_callback_count(0), start_receive_count(0),
                   scan_result(0), scan_count(0), rssi(-82.5f),
                   last_callback(NULL) {}
 
@@ -42,6 +43,15 @@ struct FakeRadio : public RadioDriver {
     {
         last_callback = cb;
         callback_count++;
+    }
+
+    /* The base class forwards to phy_, which is NULL in these fakes: the CAD
+     * probe now takes the RX alert off DIO0 before scanning, so every fake
+     * driver needs this or the call dereferences null. */
+    void clearPacketReceivedAction() override
+    {
+        clear_callback_count++;
+        last_callback = NULL;
     }
 
     int16_t startReceive() override

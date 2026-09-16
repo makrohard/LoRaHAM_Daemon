@@ -21,6 +21,9 @@ struct FakeRadio : public RadioDriver {
     int callback_count;
     int start_receive_count;
     int clear_irq_count;
+    int clear_callback_count;
+    bool callback_attached;
+    bool attached_during_scan;
     int rssi_probe_count;
     int get_rssi_count;
     float rssi;
@@ -29,6 +32,8 @@ struct FakeRadio : public RadioDriver {
     FakeRadio() : RadioDriver(NULL),
                   scan_result(0), scan_count(0), callback_count(0),
                   start_receive_count(0), clear_irq_count(0),
+                  clear_callback_count(0), callback_attached(false),
+                  attached_during_scan(false),
                   rssi_probe_count(0), get_rssi_count(0),
                   rssi(-91.5f), last_callback(NULL) {}
 
@@ -36,6 +41,15 @@ struct FakeRadio : public RadioDriver {
     {
         last_callback = cb;
         callback_count++;
+        callback_attached = true;
+    }
+
+    void clearPacketReceivedAction() override
+    {
+        clear_callback_count++;
+        callback_attached = false;
+        /* Recorded at the moment the scan runs, which is what the ordering
+         * assertion below is actually about. */
     }
 
     int16_t startReceive() override
@@ -53,6 +67,8 @@ struct FakeRadio : public RadioDriver {
     int16_t scanChannel() override
     {
         scan_count++;
+        if (callback_attached)
+            attached_during_scan = true;
         return scan_result;
     }
 
@@ -510,6 +526,62 @@ static void test_active_probe_during_rx_rearm_does_not_scan(void)
                fake(&ctrl)->scan_count, 0);
 }
 
+/*
+ * The regression the live matrix caught, and the software suite did not.
+ *
+ * RadioLib's startChannelScan() remaps DIO0 from RxDone to CadDone. The
+ * daemon's packet-received alert sits on that same pin, so CAD completion fired
+ * the RX callback, `received` was set, and the main loop read a FIFO still
+ * holding the PREVIOUS packet -- delivering it to every client a second time.
+ *
+ * Measured between the two boxes: ten unique frames arrived as sixteen
+ * receptions, five exact duplicates with identical RSSI and SNR. The baseline
+ * daemon on the same board duplicated none, because its blocking scanChannel()
+ * spins on sched_yield() and never lets the alert thread run; polling the
+ * register with a real 1 ms sleep does, which turned a latent race into a
+ * reliable defect.
+ *
+ * So the probe must take the alert OFF DIO0 before the scan, exactly as the TX
+ * path has always done, and put it back after.
+ */
+static void test_probe_detaches_rx_callback_around_the_scan(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;
+
+    /* The daemon arms the callback at boot; model that starting state. */
+    ctrl.driver->setPacketReceivedAction(fake_rx_callback);
+    fake(&ctrl)->attached_during_scan = false;
+
+    (void)radio_cad_probe(&ctrl);
+
+    expect_int("the scan ran", fake(&ctrl)->scan_count, 1);
+    expect_int("the RX alert was taken off DIO0 before the scan",
+               fake(&ctrl)->attached_during_scan ? 1 : 0, 0);
+    expect_int("the alert was cleared exactly once",
+               fake(&ctrl)->clear_callback_count, 1);
+    expect_int("and reinstalled afterwards",
+               fake(&ctrl)->callback_attached ? 1 : 0, 1);
+
+    /* Same for the non-blocking entry point. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;
+    ctrl.driver->setPacketReceivedAction(fake_rx_callback);
+    fake(&ctrl)->attached_during_scan = false;
+
+    (void)radio_cad_try_probe(&ctrl);
+
+    expect_int("try_probe: the scan ran", fake(&ctrl)->scan_count, 1);
+    expect_int("try_probe: the RX alert was off DIO0 during the scan",
+               fake(&ctrl)->attached_during_scan ? 1 : 0, 0);
+    expect_int("try_probe: and reinstalled afterwards",
+               fake(&ctrl)->callback_attached ? 1 : 0, 1);
+}
+
 static void test_restore_clears_received_and_irq(void)
 {
     RadioController ctrl;
@@ -647,6 +719,7 @@ int main(int argc, char **argv)
     test_passive_probe_non_lora_unavailable();
     test_passive_probe_during_rx_rearm_unavailable();
     test_active_probe_during_rx_rearm_does_not_scan();
+    test_probe_detaches_rx_callback_around_the_scan();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();
 

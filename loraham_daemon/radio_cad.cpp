@@ -63,6 +63,38 @@ RadioCadProbeResult radio_cad_probe_unavailable(void)
     return result;
 }
 
+/*
+ * The other half of radio_cad_restore_rx_after_probe(), and the half that was
+ * missing.
+ *
+ * startChannelScan() remaps DIO0 from RxDone to **CadDone**. The daemon's
+ * packet-received alert is attached to that same pin, so when the scan
+ * completes and DIO0 rises, the RX callback fires and sets `received` -- and
+ * the main loop then reads a FIFO that still holds the PREVIOUS packet and
+ * delivers it to every client a second time.
+ *
+ * Measured, not reasoned: ten unique frames sent between the two boxes arrived
+ * as sixteen receptions, five of them exact duplicates with identical RSSI and
+ * SNR. The baseline daemon on the same board and the same test duplicated none
+ * -- its blocking scanChannel() spins on sched_yield() and never sleeps, so the
+ * alert thread rarely got to run before the flags were cleared again. Polling
+ * the result register with a real 1 ms sleep gives that thread the CPU every
+ * time, which turned a latent race into a reliable defect.
+ *
+ * The TX path has done exactly this since before the repair (daemon_tx.cpp:118)
+ * for the same reason; the CAD path simply never did.
+ */
+static void radio_cad_detach_rx_before_probe(RadioController *ctrl)
+{
+    if (!ctrl || !ctrl->driver)
+        return;
+
+    if (ctrl->mode != RADIO_MODE_LORA)
+        return;
+
+    ctrl->driver->clearPacketReceivedAction();
+}
+
 void radio_cad_restore_rx_after_probe(RadioController *ctrl)
 {
     if (!ctrl || !ctrl->driver || !radio_controller_ready(ctrl))
@@ -206,6 +238,9 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
         return result;
 
     ctrl->cad_active.store(true);
+    /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert
+     * must come off it first, or CAD completion re-delivers the last packet. */
+    radio_cad_detach_rx_before_probe(ctrl);
     result.scan_state = ctrl->driver->scanChannel();
     ctrl->cad_active.store(false);
     radio_cad_restore_rx_after_probe(ctrl);
@@ -253,6 +288,9 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
         return result;
 
     ctrl->cad_active.store(true);
+    /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert
+     * must come off it first, or CAD completion re-delivers the last packet. */
+    radio_cad_detach_rx_before_probe(ctrl);
     result.scan_state = ctrl->driver->scanChannel();
     ctrl->cad_active.store(false);
     radio_cad_restore_rx_after_probe(ctrl);

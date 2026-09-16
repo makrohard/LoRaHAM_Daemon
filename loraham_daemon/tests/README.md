@@ -127,6 +127,10 @@ Lifecycle/helper behavior:
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
+- `test_radio_cad_probe` also pins the duplicate-RX regression the live matrix caught: the probe
+  takes the packet-received alert OFF DIO0 before scanning and reinstalls it after, because
+  `startChannelScan()` remaps that pin from RxDone to CadDone -- leaving it attached made CAD
+  completion fire the RX callback and re-deliver the previous packet from a stale FIFO.
 - `test_radio_cad_probe` (incl. capability gating: a profile that declares no trustworthy active CAD
   never calls scanChannel and answers from the passive RSSI probe; and the HW-3 preconditions --
   outside LoRa or while an RX re-arm is pending the passive probe makes ZERO radio calls and the
