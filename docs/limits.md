@@ -99,8 +99,11 @@ and the reply contract are in [CONF protocol](conf-protocol.md).
 | `SET TXMODE=DIRECT\|MANAGED` | `DIRECT` or `MANAGED` | `MANAGED` |
 | `SET TXQUEUE=<0\|1>` | `0` or `1` | `1` |
 
-`CADRSSI` is not only a display threshold. On wiring without DIO1 it also gates whether `MANAGED`
-TX transmits at all; see [CAD probes](#cad-probes).
+`CADRSSI` is the busy threshold of the **passive** RSSI mechanism: the `CAD=0/1` monitor, and the
+degraded path a profile would take if it declared no trustworthy active CAD. Since the SX127x
+driver polls `RegIrqFlags` for the CAD verdict, every current preset has `CADSCAN=1` — including
+Uputronics, which routes no DIO1 — so `CADRSSI` no longer gates whether `MANAGED` TX transmits.
+See [CAD probes](#cad-probes).
 
 ## TX modes and the TX queue
 
@@ -145,11 +148,18 @@ gating and for the on-demand `GET CHANNEL` query. Two guards apply:
 
 - An RF packet that finished reception but has not been drained by the main loop yet makes the
   probe report `BUSY` without scanning, so the probe's IRQ-clear and RX re-arm can never destroy a
-  pending packet.
-- Without DIO1 there is no trustworthy `scanChannel()`. The probe then falls through to the
-  passive probe, so `MANAGED` TX gating degrades to passive listen-before-talk against the
-  `CADRSSI` threshold, and LBT stays functional on such wiring. On that hardware, changing
-  `CADRSSI` changes whether the radio transmits.
+  pending packet. This is checked **twice**: once against the daemon's own `received` flag, and
+  again against the chip's latched `RxDone` immediately before the probe detaches DIO0 and enters
+  CAD. The second check is the one that counts — `received` is set by the lgpio alert thread, which
+  does not hold the radio mutex, so a packet can complete between the first check and the
+  transition, and the chip's flag does not depend on when a thread is scheduled.
+- Outside LoRa, and while an RX re-arm is pending, the active probe returns `UNAVAILABLE` **before
+  any radio call**. In FSK it still reports an RSSI, but through the skip-receive read: the
+  ordinary `getRSSI()` re-enters RX in FSK, which rewrites the DIO mapping and clears every IRQ
+  flag, and that is exactly what must not happen here.
+- A profile that declared no trustworthy active CAD would fall through to the passive probe, so
+  `MANAGED` TX gating would degrade to listen-before-talk against the `CADRSSI` threshold. No
+  current preset does: the SX127x driver polls `RegIrqFlags` and needs no DIO1.
 
 **Passive RSSI probe.** Reads the live channel RSSI from the driver only. It never changes radio
 mode, never calls `scanChannel()`, and never re-arms RX, so it cannot disturb continuous RX. It is

@@ -203,7 +203,7 @@ static TxResult lora_send_controller(RadioController *ctrl,
             // Clear IRQs once more before TX.
             ctrl->driver->clearIrq(0xFFFFFFFF);
 
-            daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
+            daemon_debug_ctx(tx_ctx, "radio reconfigured");
             lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
         }
 

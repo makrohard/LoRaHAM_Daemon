@@ -58,6 +58,22 @@ public:
     }
     virtual int16_t scanChannel() { return phy_->scanChannel(); }
 
+    /*
+     * True when the CHIP's own IRQ state says a packet has finished arriving.
+     *
+     * The daemon's `received` flag is set by the lgpio alert thread, which does
+     * not take the radio mutex -- so it can become true between a probe's
+     * pending-RX check and the moment that probe detaches DIO0 and puts the
+     * chip into CAD. The restore path then clears the flag and the IRQs, and a
+     * genuinely received packet is gone. Asking the chip, inside the mutex and
+     * immediately before the transition, closes that window: the hardware flag
+     * is set at RxDone regardless of when any thread is scheduled.
+     *
+     * The base answer is false, which preserves today's behaviour for a driver
+     * that does not override it. SX127x does.
+     */
+    virtual bool rxDonePending() { return false; }
+
     /* --- Chip-specific (pure virtual) --- */
 
     /* Initialize the chip and apply the boot RF defaults in the chip's

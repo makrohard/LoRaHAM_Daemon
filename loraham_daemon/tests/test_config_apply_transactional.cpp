@@ -193,7 +193,7 @@ static void test_valid_lora_parameter_still_applies(void)
     expect_int("valid lora getrssi unchanged", getrssi.load(), false);
 }
 
-// SX1262-Variante: das Familien-Raster der Validierung folgt dem Treiber.
+// SX1262 variant: the validation raster follows the driver's family.
 struct FakeSx1262Radio : public FakeRadio {
     DaemonChipFamily chipFamily() const override
     {

@@ -127,7 +127,7 @@ happens at prevalidation, so nothing in the command is applied.
 | Key | SX127x | SX1262 |
 |---|---|---|
 | `FREQDEV` | `>0` to `200.0` kHz | same, plus a `0.6` kHz minimum |
-| `OOK` | `0` or `1` | every `OOK` key rejected, `OOK=0` included — the chip has no OOK modulator, so accepting a no-op setter would report success for a missing capability. The driver's own guard prints `(SX1262: OOK nicht verfügbar)` and returns `RADIOLIB_ERR_INVALID_MODULATION` |
+| `OOK` | `0` or `1` | every `OOK` key rejected, `OOK=0` included — the chip has no OOK modulator, so accepting a no-op setter would report success for a missing capability. The driver's own guard prints `(SX1262: OOK unavailable)` and returns `RADIOLIB_ERR_INVALID_MODULATION` |
 | `ENCODING` | `0`, `1`, `2` | `0` and `2` only; `1` would silently enable whitening instead of Manchester |
 | `CRC` | LoRa CRC off/on | mapped to SX126x CRC length `2` (on) or `0` (off), at boot and on every apply |
 
@@ -154,7 +154,7 @@ they answer the same way whether or not the radio is ready.
 | `SET TXMODE=MANAGED\|DIRECT` | `MANAGED`, `DIRECT` | `MANAGED` | Select the per-band TX mode |
 | `SET TXQUEUE=0\|1` | `0`, `1` | `1` | `1` routes DATA TX through the per-band bounded async TX queue; `0` keeps the direct DATA TX path |
 | `SET CADMONITOR=0\|1` | `0`, `1` | `0` | Per-band opt-in for the smoothed RSSI-based `CAD=0/1` broadcast. Disabling also clears the free-streak counter and the published CAD latch |
-| `SET CADRSSI=<dbm>` | integer `-130` to `0` | `-90` | Per-band busy threshold for the RSSI-based CAD indicator. On wiring without DIO1 the same threshold is the passive-LBT fallback that gates MANAGED TX |
+| `SET CADRSSI=<dbm>` | integer `-130` to `0` | `-90` | Per-band busy threshold for the RSSI-based CAD indicator, i.e. the passive `CAD=0/1` monitor. It is **not** the Uputronics listen-before-talk substitute any more: since the SX127x driver polls `RegIrqFlags` for the CAD verdict, every preset has trustworthy active CAD and `CADSCAN=1`. The threshold would only gate MANAGED TX on a profile that declared no trustworthy active CAD, of which there is currently none |
 | `SET CADWAIT=<ms>` | `50` to `5000` | `1500` | CAD wait timeout |
 | `SET CADIDLE=<ms>` | `0` to `2000` | `250` | Stable-idle window |
 | `SET CADPOLL=<ms>` | `10` to `500` | `50` | CAD poll interval |

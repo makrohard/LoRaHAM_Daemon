@@ -310,7 +310,7 @@ void config_dispatch_apply_line(const char *line, void *user)
              * v112, so the radio goes FAILED (TX/CONFIG gate closed, GET
              * STATUS reports it) instead of pretending READY. */
             ctx->ctrl->health = RADIO_HEALTH_FAILED;
-            printf("[%s] CONFIG-Hardwarefehler: RADIO=FAILED (fail-closed)\n",
+            printf("[%s] CONFIG hardware error: RADIO=FAILED (fail-closed)\n",
                    ctx->tag);
             fflush(stdout);
         }
@@ -400,7 +400,7 @@ void config_dispatch_client(ClientSlot *slots,
     if(config_stream_feed(&slot->stream, buf, (size_t)n,
                           config_dispatch_apply_line,
                           &line_ctx) != 0) {
-        config_dispatch_log_slot(&log, index, "Stream zu lang, Client zu");
+        config_dispatch_log_slot(&log, index, "stream too long, closing client");
         printf("[%s] CONFIG stream too long, client closed\n", tag);
         fflush(stdout);
         client_slot_close(slot);

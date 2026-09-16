@@ -166,7 +166,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
     ConfigCommand parsed = config_parse_command(cmd);
 
     if(!parsed.is_set) {
-        printf("[%s] Unbekannter Befehl: %s\n", tag, parsed.text.c_str());
+        printf("[%s] unknown command: %s\n", tag, parsed.text.c_str());
         return CONFIG_APPLY_UNKNOWN;
     }
 
@@ -229,7 +229,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+                printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
 
                 return CONFIG_APPLY_HW_ERROR;
             }
@@ -243,12 +243,12 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+                printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
 
                 return CONFIG_APPLY_HW_ERROR;
             }
         } else {
-            printf(" MODE=\033[91;5m%s\033[0m (unbekannt, ignoriert)", mode_val.c_str());
+            printf(" MODE=\033[91;5m%s\033[0m (unknown, ignored)", mode_val.c_str());
         }
     }
 

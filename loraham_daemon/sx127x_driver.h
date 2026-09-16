@@ -54,6 +54,10 @@ public:
      * let a sequence of broken scans reach send-anyway.
      */
     int16_t scanChannel() override;
+
+    /* Reads RegIrqFlags and reports RxDone. See RadioDriver::rxDonePending()
+     * for why a probe must ask the chip and not only the software flag. */
+    bool rxDonePending() override;
     const char *chipName() const override;
     DaemonChipFamily chipFamily() const override
     {
@@ -123,6 +127,12 @@ private:
      */
     int sf_ = 12;
     float bw_khz_ = 7.8f;
+
+    /* The modem the chip is on, tracked the same way and for the same reason
+     * as sf_/bw_khz_: RadioLib's getActiveModem() is protected, and rxDonePending()
+     * must know which register map RegIrqFlags belongs to. Set by begin() and
+     * by switchMode(), the only two places that change it. */
+    RadioMode_t mode_ = RADIO_MODE_LORA;
 };
 
 /* Fabrik: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */

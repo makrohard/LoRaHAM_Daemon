@@ -7,7 +7,7 @@
 #include "config_value.h"
 #include "hardware_profile.h"
 
-/* --- Konstruktion --------------------------------------------------------- */
+/* --- Construction ---------------------------------------------------------- */
 
 Sx1262Driver::Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin)
     : RadioDriver(nullptr),

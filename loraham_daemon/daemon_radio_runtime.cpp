@@ -50,7 +50,7 @@ static void radio_controller_shutdown(RadioController *ctrl)
 
     if (ctrl->driver) {
         if (radio_controller_ready(ctrl)) {
-            daemon_debug_band(tag, "Callback aus");
+            daemon_debug_band(tag, "callback off");
             ctrl->driver->clearPacketReceivedAction();
             daemon_debug_band(tag, "Standby");
             ctrl->driver->standby();

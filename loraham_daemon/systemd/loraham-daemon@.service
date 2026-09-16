@@ -43,7 +43,8 @@ RestartSec=2
 #   3 = same-band instance already running (duplicate)      -> no restart
 #   4 = STARTUP prerequisite unavailable: lock infrastructure OR a GPIO
 #       open/claim failure (fail closed)                      -> no restart
-#   5 = runtime SPI/bus-lock fatal after operation began    -> restart OK
+#   5 = runtime radio-I/O fatal after operation began (SPI, the bus lock,
+#       or a GPIO call once the radio was live)              -> restart OK
 # 3/4 are not fixed by restarting; 5 (e.g. transient bus fault, wedged peer
 # that has since been power-cycled) legitimately benefits from a restart.
 RestartPreventExitStatus=3 4

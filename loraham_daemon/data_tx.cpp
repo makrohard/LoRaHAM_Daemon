@@ -92,7 +92,7 @@ void data_tx_process_slots(const char *tag,
             }
 
             if(n == 0) {
-                data_tx_log_message(&log, "EOF, Client zu");
+                data_tx_log_message(&log, "EOF, closing client");
                 client_slot_close(slot);
                 continue;
             }

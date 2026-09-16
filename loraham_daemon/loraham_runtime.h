@@ -46,9 +46,16 @@
                                         * infrastructure OR a GPIO open/claim.
                                         * Neither is fixed by trying again, so
                                         * fail closed, not restartable */
-#define LORAHAM_EXIT_RUNTIME_SPI_ERROR 5 /* runtime SPI/bus-lock fatal after
-                                          * operation began; systemd MAY
-                                          * restart (Restart=on-failure) */
+#define LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR 5 /* runtime radio-I/O fatal after
+                                               * operation began: SPI, the bus
+                                               * lock, or a GPIO call once the
+                                               * radio was live. systemd MAY
+                                               * restart (Restart=on-failure) */
+
+/* Former name, kept so an out-of-tree caller does not break silently. The
+ * concept was widened from "SPI" to "radio I/O" when GPIO failures started
+ * exiting through it, which they always did in practice. */
+#define LORAHAM_EXIT_RUNTIME_SPI_ERROR LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR
 
 static inline const char *loraham_runtime_dir(void)
 {

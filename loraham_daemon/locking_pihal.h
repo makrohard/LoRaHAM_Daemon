@@ -308,9 +308,20 @@ class LockingPiHal : public PiHal {
         /* Freeing the alert leaves the line unclaimed. A later digitalRead on
          * it is ORDINARY, not a violation: every LoRa TX clears the packet
          * callback, reads DIO0 in the blocking wait, and reinstalls it
-         * afterwards. lgpio claims an unallocated line as input on read. */
-        lgGpioFree(_ownGpioHandle, (int)interruptNum);
-        lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum, NULL, NULL);
+         * afterwards. lgGpioRead() claims an unallocated line as input before
+         * reading, and lgpio's same-mode claim is idempotent, so the
+         * attach -> detach -> blocking read -> re-attach lifecycle is valid.
+         *
+         * Both results are checked. The contract of this HAL is that an
+         * unexpected negative lgpio result means radio-I/O integrity is gone;
+         * swallowing it here would have been the one place that quietly broke
+         * that rule. */
+        if (lgGpioFree(_ownGpioHandle, (int)interruptNum) < 0)
+            gpio_failure("lgGpioFree failed");
+
+        if (lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum,
+                                NULL, NULL) < 0)
+            gpio_failure("lgGpioSetAlertsFunc (detach) failed");
     }
 
     /* True until a GPIO operation failed during startup. The daemon checks
@@ -342,17 +353,21 @@ class LockingPiHal : public PiHal {
         _gpioStartupFailed = true;
     }
 
-    /* Runtime fatal: every fatal in this HAL fires AFTER
-     * operation began (transfer without lock/handle, bus error, wedged-peer
-     * timeout, hard un/lock failure). Exit 5 — distinct from the startup
-     * lock-infrastructure code 4 — so systemd's Restart=on-failure may
-     * restart, while codes 3/4 stay non-restartable. */
+    /* Runtime fatal: every fatal in this HAL fires AFTER operation began -- a
+     * transfer without the lock or without a handle, a bus error, a
+     * wedged-peer timeout, a hard un/lock failure, or a GPIO call that failed
+     * once the radio was live. Exit 5 — distinct from the startup
+     * prerequisite code 4 — so systemd's Restart=on-failure may restart, while
+     * codes 3/4 stay non-restartable.
+     *
+     * The tag says RADIO and not SPI: GPIO failures come through here too, and
+     * labelling those "[SPI] FATAL" sent operators looking at the wrong bus. */
     [[noreturn]] static void fatal(const char *why) {
         fprintf(stderr,
-                "[SPI] FATAL: %s - aborting to prevent unsynchronised "
-                "SPI access\n", why);
+                "[RADIO] FATAL: %s - aborting to prevent unsynchronised "
+                "radio I/O\n", why);
         fflush(stderr);
-        _exit(LORAHAM_EXIT_RUNTIME_SPI_ERROR);
+        _exit(LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR);
     }
 
     int _ownSpiHandle = -1;

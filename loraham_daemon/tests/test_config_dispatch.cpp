@@ -88,7 +88,7 @@ struct FakeRadio : public RadioDriver {
                            const std::string &) override { return 0; }
     int16_t applyFskParam(const char *, const std::string &,
                           const std::string &) override { return 0; }
-    // Kein Module hinter dem Fake: Live-RSSI unavailable wie zuvor (-200).
+    // No Module behind the fake: live RSSI unavailable as before (-200).
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override

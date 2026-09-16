@@ -10,7 +10,7 @@
 #include "config_value.h"
 #include "hardware_profile.h"
 
-/* --- Konstruktion --------------------------------------------------------- */
+/* --- Construction ---------------------------------------------------------- */
 
 Sx127xDriver::Sx127xDriver(Module *mod, bool is_hf)
     : RadioDriver(nullptr),
@@ -80,6 +80,7 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
      * applyAutoLdro() and the CAD deadline read it. */
     sf_ = defaults->spreading_factor;
     bw_khz_ = defaults->bandwidth_khz;
+    mode_ = RADIO_MODE_LORA;
 
     state = (defaults->ldro >= 0) ? radio_->forceLDRO(defaults->ldro != 0)
                                   : applyAutoLdro();
@@ -118,6 +119,8 @@ int16_t Sx127xDriver::switchMode(RadioMode_t mode,
 
         if (state != RADIOLIB_ERR_NONE)
             return state;
+
+        mode_ = RADIO_MODE_FSK;
 
         /* beginFSK() re-pins OCP to RadioLib's 60 mA and resets the output
          * power, so without this every LoRa->FSK switch would silently undo
@@ -203,6 +206,26 @@ int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
      * here is returned, not logged and swallowed -- a transmitter running on
      * RadioLib's 60 mA cap is not a working radio. */
     return radio_->setCurrentLimit(SX127X_OCP_PA_BOOST_MA);
+}
+
+/* --- Pending-RX, asked of the chip ----------------------------------------- */
+
+/*
+ * RxDone in RegIrqFlags is latched by the hardware the instant a packet
+ * finishes arriving, so it is true even when the alert thread has not been
+ * scheduled yet. That is what makes it the right question to ask immediately
+ * before a probe destroys the receive state.
+ *
+ * FSK is not covered: the flag lives in different registers there and this
+ * daemon's CAD is LoRa-only, so a probe never reaches the transition in FSK.
+ */
+bool Sx127xDriver::rxDonePending()
+{
+    if (mode_ != RADIO_MODE_LORA)
+        return false;
+
+    return (radio_->getIRQFlags() &
+            RADIOLIB_SX127X_CLEAR_IRQ_FLAG_RX_DONE) != 0;
 }
 
 /* --- Register-polled CAD --------------------------------------------------- */

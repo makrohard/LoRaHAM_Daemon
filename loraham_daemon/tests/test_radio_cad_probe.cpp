@@ -72,6 +72,19 @@ struct FakeRadio : public RadioDriver {
         return scan_result;
     }
 
+    /* Scripted chip-level RxDone. `rx_done_after_checks` lets a test make the
+     * chip report a packet only AFTER the probe's software check has passed,
+     * which is the race P1-B is about. */
+    int rx_done_queries = 0;
+    int rx_done_after_checks = -1;   /* -1 = never */
+    bool rxDonePending() override
+    {
+        const bool pending = (rx_done_after_checks >= 0 &&
+                              rx_done_queries >= rx_done_after_checks);
+        rx_done_queries++;
+        return pending;
+    }
+
     float getRSSI() override
     {
         get_rssi_count++;
@@ -582,6 +595,111 @@ static void test_probe_detaches_rx_callback_around_the_scan(void)
                fake(&ctrl)->callback_attached ? 1 : 0, 1);
 }
 
+/*
+ * P1-A. The audit found my first HW-3 implementation was wrong in the active
+ * paths: it kept the RSSI snapshot ahead of the gate on the reasoning that a
+ * snapshot is a harmless register read. In FSK it is not.
+ * RadioDriver::getRSSI() delegates to RadioLib's ordinary getRSSI(), whose FSK
+ * branch calls startReceive() -- rewriting the DIO mapping and clearing ALL
+ * IRQ flags, which can discard a received packet -- then standby(). Only
+ * rssiProbe() (getRSSI(false, true)) skips the receive.
+ *
+ * GET CHANNEL runs through radio_cad_try_probe, so this was live.
+ */
+static void test_active_probe_in_fsk_uses_only_the_nondestructive_read(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->rssi = -84.5f;
+
+    result = radio_cad_try_probe(&ctrl);
+
+    expect_int("fsk active probe is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("fsk active probe still reports an RSSI",
+               (int)(result.rssi_dbm * 100.0f), -8450);
+    expect_int("it used the skip-receive probe", fake(&ctrl)->rssi_probe_count, 1);
+    expect_int("and NEVER the ordinary getRSSI, which re-enters RX in FSK",
+               fake(&ctrl)->get_rssi_count, 0);
+    expect_int("no scan", fake(&ctrl)->scan_count, 0);
+    expect_int("no re-arm", fake(&ctrl)->start_receive_count, 0);
+
+    /* Same for the blocking entry point, which the MANAGED TX gate uses. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    ctrl.cad_scan_available = true;
+    result = radio_cad_probe(&ctrl);
+    expect_int("blocking probe: skip-receive only",
+               fake(&ctrl)->rssi_probe_count, 1);
+    expect_int("blocking probe: no ordinary getRSSI",
+               fake(&ctrl)->get_rssi_count, 0);
+    expect_int("blocking probe: no re-arm",
+               fake(&ctrl)->start_receive_count, 0);
+}
+
+/* A pending re-arm must stop the active probe before ANY radio call, including
+ * the snapshot -- the reading is undefined while the receiver is not armed. */
+static void test_active_probe_during_rearm_makes_no_radio_call_at_all(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    ctrl.rx_rearm_pending.store(true);
+
+    RadioCadProbeResult result = radio_cad_try_probe(&ctrl);
+
+    expect_int("re-arm pending -> unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("and zero radio calls of any kind",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count +
+                   fake(&ctrl)->scan_count + fake(&ctrl)->start_receive_count, 0);
+}
+
+/*
+ * P1-B. The software `received` flag is set by the lgpio alert thread, which
+ * does not take the radio mutex -- so a packet can complete between the
+ * probe's check of that flag and the moment the probe detaches DIO0 and puts
+ * the chip into CAD. The restore path then clears the flag and the IRQs, and a
+ * genuinely received packet is gone.
+ *
+ * The fake reports `received` false (so the software check passes) but has the
+ * CHIP report RxDone on the first query, which is exactly the window.
+ */
+static void test_a_packet_arriving_after_the_software_check_is_not_erased(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    ctrl.received.store(false);            /* software check will pass */
+    fake(&ctrl)->rx_done_after_checks = 0; /* the chip says: packet present */
+    fake(&ctrl)->scan_result = 0;
+
+    RadioCadProbeResult result = radio_cad_try_probe(&ctrl);
+
+    expect_int("the chip was asked", fake(&ctrl)->rx_done_queries >= 1, 1);
+    expect_int("a packet that landed in the window is reported BUSY",
+               result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("the CAD never ran, so nothing cleared the IRQs",
+               fake(&ctrl)->scan_count, 0);
+    expect_int("the RX callback was never detached",
+               fake(&ctrl)->clear_callback_count, 0);
+    expect_int("and the receiver was not re-armed over the packet",
+               fake(&ctrl)->start_receive_count, 0);
+
+    /* Positive control: chip reports nothing pending -> the scan proceeds. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->rx_done_after_checks = -1;
+    fake(&ctrl)->scan_result = 0;
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("with no packet pending the scan runs", fake(&ctrl)->scan_count, 1);
+    expect_int("and answers FREE", result.status, RADIO_CAD_PROBE_FREE);
+}
+
 static void test_restore_clears_received_and_irq(void)
 {
     RadioController ctrl;
@@ -720,6 +838,9 @@ int main(int argc, char **argv)
     test_passive_probe_during_rx_rearm_unavailable();
     test_active_probe_during_rx_rearm_does_not_scan();
     test_probe_detaches_rx_callback_around_the_scan();
+    test_active_probe_in_fsk_uses_only_the_nondestructive_read();
+    test_active_probe_during_rearm_makes_no_radio_call_at_all();
+    test_a_packet_arriving_after_the_software_check_is_not_erased();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();
 

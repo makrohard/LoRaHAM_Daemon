@@ -57,6 +57,8 @@ struct FakeGpio {
     int  claim_input_result = 0;
     int  claim_alert_result = 0;
     int  write_result       = 0;
+    int  free_result        = 0;
+    int  set_alerts_result  = 0;
     int  reads              = 0;
     int  chip_opens         = 0;
     int  spi_opens          = 0;
@@ -79,10 +81,10 @@ int lgGpiochipClose(int)                      { return 0; }
 int lgGpioClaimInput(int, int, int)           { return g.claim_input_result; }
 int lgGpioClaimOutput(int, int, int, int)     { return 0; }
 int lgGpioClaimAlert(int, int, int, int, int) { return g.claim_alert_result; }
-int lgGpioFree(int, int)                      { return 0; }
+int lgGpioFree(int, int)                      { return g.free_result; }
 int lgGpioRead(int, int)                      { g.reads++; return g.read_result; }
 int lgGpioWrite(int, int, int)                { return g.write_result; }
-int lgGpioSetAlertsFunc(int, int, lgGpioAlertsFunc_t, void *) { return 0; }
+int lgGpioSetAlertsFunc(int, int, lgGpioAlertsFunc_t, void *) { return g.set_alerts_result; }
 
 int lgTxPwm(int, int, float, float, int, int) { return 0; }
 
@@ -259,15 +261,54 @@ static void test_operational_gpio_failure_exits_five(void)
     int status = 0;
     bool waited = (pid > 0) && (waitpid(pid, &status, 0) == pid);
     bool exited_five = waited && WIFEXITED(status) &&
-                       WEXITSTATUS(status) == LORAHAM_EXIT_RUNTIME_SPI_ERROR;
+                       WEXITSTATUS(status) == LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR;
     char detail[160];
     snprintf(detail, sizeof(detail),
-             "expected exit %d, got %s %d", LORAHAM_EXIT_RUNTIME_SPI_ERROR,
+             "expected exit %d, got %s %d", LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR,
              waited && WIFEXITED(status) ? "exit" : "signal/none",
              waited ? (WIFEXITED(status) ? WEXITSTATUS(status) : WTERMSIG(status))
                     : -1);
     expect("an operational GPIO failure is restartable-fatal, not a level",
            exited_five, detail);
+}
+
+/*
+ * The HAL's contract is that an unexpected negative lgpio result means
+ * radio-I/O integrity is gone. detachInterrupt() was the one place that broke
+ * it: it called lgGpioFree() and lgGpioSetAlertsFunc() and looked at neither
+ * result. A detach happens before every LoRa transmission, so a failure there
+ * would have been silent on the busiest path in the daemon.
+ */
+static void test_a_failed_detach_is_not_swallowed(void)
+{
+    reset_fake();
+
+    LockingPiHal hal(0, 2000000, 0, 0, fake_flock);
+    hal.init();
+    hal.attachInterrupt(25, NULL, LG_RISING_EDGE);
+
+    g.free_result = LG_GPIO_NOT_ALLOCATED;
+    hal.detachInterrupt(25);
+
+    expect("a failed lgGpioFree during detach is reported",
+           !hal.gpio_startup_ok(),
+           "the detach swallowed the error, so the contract that a negative "
+           "lgpio result is never ignored does not hold on the TX path");
+}
+
+static void test_a_failed_alert_clear_is_not_swallowed(void)
+{
+    reset_fake();
+
+    LockingPiHal hal(0, 2000000, 0, 0, fake_flock);
+    hal.init();
+    hal.attachInterrupt(25, NULL, LG_RISING_EDGE);
+
+    g.set_alerts_result = LG_BAD_HANDLE;
+    hal.detachInterrupt(25);
+
+    expect("a failed lgGpioSetAlertsFunc during detach is reported",
+           !hal.gpio_startup_ok(), "the detach swallowed the error");
 }
 
 int main(void)
@@ -278,6 +319,8 @@ int main(void)
     test_read_after_alert_detach_is_ordinary();
     test_startup_latch_reports_the_failure();
     test_operational_gpio_failure_exits_five();
+    test_a_failed_detach_is_not_swallowed();
+    test_a_failed_alert_clear_is_not_swallowed();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

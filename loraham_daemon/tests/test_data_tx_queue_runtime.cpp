@@ -1026,7 +1026,7 @@ static void test_managed_busy_timeout_send_when_opt_in(void)
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    fake(&ctrl)->scan_state = 1;   /* Kanal bleibt belegt */
+    fake(&ctrl)->scan_state = 1;   /* channel stays busy */
 
     /* Opt-in: nach CAD-Timeout trotzdem senden. */
     expect_int("managed busy timeout sends when opt-in",
@@ -1034,7 +1034,7 @@ static void test_managed_busy_timeout_send_when_opt_in(void)
                DATA_TX_CAD_WAIT_TIMEOUT_SEND);
     expect_int("managed busy timeout send probe count", fake(&ctrl)->scan_count, 2);
 
-    /* Queued-Snapshot traegt das Opt-in mit. */
+    /* The queued snapshot carries the opt-in too. */
     ctrl.cad_send_after_timeout.store(true);
     daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 81);
     data_tx_configure_job_cad_policy(&ctx, &job);
@@ -1056,9 +1056,9 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    fake(&ctrl)->scan_state = 1;   /* Kanal fuer beide Jobs belegt */
+    fake(&ctrl)->scan_state = 1;   /* channel busy for both jobs */
 
-    /* Job A laeuft beschraenkt in den CAD-Timeout, nicht 20 s. */
+    /* Job A runs into a bounded CAD timeout, not 20 s. */
     ctx.completion_seq = 60;
     expect_int("starve guard job A accepted",
                send_data_chunk(payload_a, sizeof(payload_a), 0, &ctx),
@@ -1070,12 +1070,12 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
                send_data_chunk(payload_b, sizeof(payload_b), 0, &ctx),
                0);
 
-    /* Beide muessen abgearbeitet werden: A blockiert B nicht. */
+    /* Both must be processed: A does not block B. */
     expect_int("starve guard both processed", wait_async_processed(2), 1);
     expect_size("starve guard processed count",
                 daemon_tx_async_runtime_processed(), 2);
 
-    /* Pro Job auf cad_wait_ticks (2) beschraenkt -> Gesamtprobes beschraenkt. */
+    /* Bounded per job by cad_wait_ticks (2) -> total probes bounded. */
     expect_int("starve guard bounded probes",
                fake(&ctrl)->scan_count <= 4 ? 1 : 0, 1);
     expect_int("starve guard no transmit on busy", sender.calls, 0);

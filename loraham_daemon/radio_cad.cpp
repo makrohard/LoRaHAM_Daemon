@@ -135,11 +135,21 @@ void radio_cad_restore_rx_after_probe(RadioController *ctrl)
  * skips the sample and the TX gate ends the attempt rather than sending anyway.
  * So no new state is needed, only the check in the right place.
  *
- * "The right place" differs by caller, and deliberately so. The passive probe
- * consults it before touching the radio at all, because its whole output IS the
- * reading. The two active probes take their non-destructive RSSI snapshot
- * first -- GET CHANNEL reports that in every mode, including FSK -- and consult
- * it in front of the destructive part: the CAD and the RX re-arm after it.
+ * "The right place" is BEFORE any radio call, in EVERY probe. An earlier
+ * version of this repair let the two active probes take their RSSI snapshot
+ * first, reasoning that a snapshot is a harmless register read. It is not, in
+ * FSK: RadioDriver::getRSSI() delegates to RadioLib's ordinary getRSSI(),
+ * whose FSK branch calls startReceive() -- which rewrites the DIO mapping and
+ * clears ALL IRQ flags, so it can discard a received packet -- reads the
+ * register, and drops the chip back to standby. That is exactly the
+ * destructive sequence HW-3 exists to remove, and GET CHANNEL runs through
+ * this path. Only Sx127xDriver::rssiProbe(), which calls getRSSI(false, true),
+ * skips the receive.
+ *
+ * So: gate first. Outside LoRa, take the snapshot with rssiProbe() -- GET
+ * CHANNEL keeps reporting an FSK RSSI -- and return UNAVAILABLE without
+ * scanning. Inside LoRa the existing call is a pure register read and keeps
+ * the packet-RSSI semantics GET CHANNEL has always reported.
  */
 static bool radio_cad_probe_preconditions_ok(const RadioController *ctrl)
 {
@@ -229,13 +239,30 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
         return result;
     }
 
+    /* Gate BEFORE any radio call (see the note above radio_cad_detach...). */
+    if (ctrl->rx_rearm_pending.load())
+        return result;
+
+    if (ctrl->mode != RADIO_MODE_LORA) {
+        result.rssi_dbm = ctrl->driver->rssiProbe();
+        return result;
+    }
+
     result.rssi_dbm = ctrl->driver->getRSSI();
 
-    /* The snapshot above is a non-destructive register read and stays: GET
-     * CHANNEL reports it in every mode. The gate belongs HERE, in front of the
-     * destructive part -- the CAD itself and the RX re-arm that follows it. */
-    if (!radio_cad_probe_preconditions_ok(ctrl))
+    /*
+     * Last check before the destructive transition, and the only one that can
+     * be trusted here: `received` above is set by the alert thread, which does
+     * not take this mutex, so a packet can complete between that check and
+     * this line. The chip's own latched RxDone does not depend on thread
+     * scheduling. Without this the restore path would clear the flag and the
+     * IRQs and the packet would simply be gone.
+     */
+    if (ctrl->driver->rxDonePending()) {
+        result.scan_ran = 0;
+        result.status = RADIO_CAD_PROBE_BUSY;
         return result;
+    }
 
     ctrl->cad_active.store(true);
     /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert
@@ -280,12 +307,31 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
         return result;
     }
 
+    /* Same order, same reason: radio_controller_packet_rssi() ends in the very
+     * getRSSI() whose FSK branch re-enters RX. */
+    if (ctrl->rx_rearm_pending.load())
+        return result;
+
+    if (ctrl->mode != RADIO_MODE_LORA) {
+        result.rssi_dbm = ctrl->driver->rssiProbe();
+        return result;
+    }
+
     result.rssi_dbm = radio_controller_packet_rssi(ctrl);
 
-    /* As in radio_cad_try_probe: the snapshot stays, the gate sits in front of
-     * the destructive CAD and the RX re-arm. */
-    if (!radio_cad_probe_preconditions_ok(ctrl))
+    /*
+     * Last check before the destructive transition, and the only one that can
+     * be trusted here: `received` above is set by the alert thread, which does
+     * not take this mutex, so a packet can complete between that check and
+     * this line. The chip's own latched RxDone does not depend on thread
+     * scheduling. Without this the restore path would clear the flag and the
+     * IRQs and the packet would simply be gone.
+     */
+    if (ctrl->driver->rxDonePending()) {
+        result.scan_ran = 0;
+        result.status = RADIO_CAD_PROBE_BUSY;
         return result;
+    }
 
     ctrl->cad_active.store(true);
     /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert

@@ -138,16 +138,30 @@ A pin value below zero means "not connected" and is passed to RadioLib as `RADIO
 
 | Flag | `loraham` | `uputronics-ce0/-ce1` | `waveshare-sx1262` |
 |---|---|---|---|
-| `cad_scan_available` | `true` | `false` | `true` |
+| `cad_scan_available` | `true` | `true` | `true` |
 | `fsk_stream_available` | `true` | `false` | `false` |
 | `reset_wired` | `true` | `false` | `true` |
 | `tcxo_voltage` | `0.0` | `0.0` | `1.8` |
 
-* `cad_scan_available` is the only flag the runtime acts on. On the Uputronics profiles DIO1 is not
-  routed, so the blocking SX127x `scanChannel()` could never observe `CadDetected` and would report
-  false-FREE. Both scan paths therefore degrade to the passive live-RSSI probe: `GET CHANNEL` and
-  MANAGED TX gating answer from the `CADRSSI` threshold, and `CADSCAN=0` marks the non-scan source.
-  Changing `CADRSSI` on such wiring changes whether the hardware transmits at all.
+* `cad_scan_available` is the only flag the runtime acts on, and it means **"this profile and
+  driver combination has trustworthy active CAD"** — deliberately the combination and not the chip
+  family, since a future board could carry a CAD-capable chip on wiring that does not support it.
+
+  It is `true` on **all three** presets, Uputronics included. That is a change: it used to be
+  `false` there because the blocking SX127x `scanChannel()` waits on DIO0 and polls DIO1 for the
+  detection, and those boards do not route DIO1, so every scan reported false-FREE. The SX127x
+  driver now polls the latched `CadDone`/`CadDetected` bits in `RegIrqFlags` instead, so the verdict
+  comes off the chip rather than off the wiring and needs no DIO1. Uputronics therefore reports
+  `CADSCAN=1` and runs real listen-before-talk.
+
+  Measured on the air when the flag was flipped: on a 433 channel whose noise floor forced the old
+  RSSI fallback to report `BUSY` at rest (`LIVERSSI ≈ −81 dBm` against a −90 dBm `CADRSSI`), the
+  same box at the same noise level now reports `CADSTATE=FREE` — and reports `BUSY` for 25 of 25
+  polls while another station actually occupies the channel.
+
+  `CADRSSI` still exists and still matters, but for the **passive** mechanism — the `CAD=0/1`
+  monitor and the degraded path a profile would take if it ever declared no trustworthy CAD. It is
+  no longer the Uputronics substitute for listen-before-talk.
 * `fsk_stream_available` is documentation only. It is set by the preset table and read nowhere in
   the daemon outside the unit tests, so it gates nothing: `SET MODE=FSK` is accepted on the
   Uputronics and Waveshare profiles exactly as on any other. The underlying board fact still holds

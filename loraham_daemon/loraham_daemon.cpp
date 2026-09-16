@@ -57,7 +57,7 @@
 /* --- Shutdown cleanup ---------------------------------------------------- */
 static void daemon_shutdown_cleanup(EventLoopSet *event_set)
 {
-    daemon_debug_ctx("LIFE", "Stoppe Funkmodule");
+    daemon_debug_ctx("LIFE", "stopping the radio modules");
     daemon_radio_shutdown_cleanup();
 
     daemon_rflog_stop();
@@ -192,7 +192,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
         switch (daemon_lifecycle_classify_wait_error(
                     errno, daemon_lifecycle_stop_requested())) {
         case DAEMON_WAIT_ERROR_STOPPING:
-            daemon_debug_ctx("LIFE", "Event-Wait durch Stop unterbrochen");
+            daemon_debug_ctx("LIFE", "event wait interrupted by stop");
             return;
         case DAEMON_WAIT_ERROR_SILENT:
             daemon_debug_ctx("LIFE",
@@ -246,7 +246,7 @@ static void daemon_run(void)
 
     daemon_run_polling_loop(&main_ctx);
 
-    daemon_log("Stop angefordert");
+    daemon_log("stop requested");
     daemon_debug_ctx("LIFE", "Shutdown beginnt");
     daemon_shutdown_cleanup(&main_ctx.event_set);
     daemon_debug_ctx("LIFE", "shutdown complete");
@@ -413,7 +413,7 @@ static bool daemon_parse_args(int argc, char *argv[])
     }
 
     if (optind < argc) {
-        fprintf(stderr, "Unbekanntes Argument: %s\n", argv[optind]);
+        fprintf(stderr, "unknown argument: %s\n", argv[optind]);
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }

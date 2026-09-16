@@ -147,7 +147,7 @@ static int daemon_framed_tx_packet(uint8_t *payload, size_t len, void *ctx)
                                           flags,
                                           seq) != 0) {
             daemon_debug_ctx(tx->tag ? tx->tag : "TXF",
-                             "TX_RESULT queue failed, Client zu");
+                             "TX_RESULT queue failed, closing client");
             if (tx->slot)
                 client_slot_close(tx->slot);
         }
@@ -219,7 +219,7 @@ void daemon_process_framed_data_slots(const char *tag,
         }
 
         if (n == 0) {
-            daemon_debug_ctx(tag, "EOF, Client zu");
+            daemon_debug_ctx(tag, "EOF, closing client");
             framed_data_tx_state_init(&states[i]);
             client_slot_close(slot);
             continue;
