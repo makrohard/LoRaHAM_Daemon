@@ -1,6 +1,7 @@
 #ifndef LORAHAM_SX127X_DRIVER_H
 #define LORAHAM_SX127X_DRIVER_H
 
+#include <chrono>
 #include <memory>
 
 #include <RadioLib.h>
@@ -31,6 +32,28 @@ public:
                        const std::string &val) override;
     float readLiveRssi(RadioMode_t mode, bool is_hf) override;
     float rssiProbe() override;
+
+    /*
+     * Register-polled CAD, replacing RadioLib's SX127x::scanChannel().
+     *
+     * RadioLib's version waits on `while(!digitalRead(DIO0))` and polls DIO1
+     * for the detection, so a board that does not route DIO1 -- the Uputronics
+     * expansion board -- can never observe CadDetected and reports CHANNEL_FREE
+     * for every scan, including a busy channel. The datasheet (SX1276/77/78/79,
+     * p.44) states that CadDone and CadDetected are asserted TOGETHER on a
+     * successful correlation, and both are latched in RegIrqFlags -- so one
+     * register read yields the complete verdict, with no ordering question and
+     * no wired interrupt line. This is what RadioLib itself does on SX126x and
+     * LR11x0; SX127x is the sole outlier.
+     *
+     * Returns RADIOLIB_CHANNEL_FREE, RADIOLIB_PREAMBLE_DETECTED (the same value
+     * the blocking implementation returned when DIO1 fired), or a negative
+     * RadioLib error. A hardware-deadline expiry is RADIOLIB_ERR_RX_TIMEOUT,
+     * which the daemon maps to UNAVAILABLE: an indeterminate scan ends the TX
+     * attempt and must never be flattened into BUSY, or CADTXAFTERTIMEOUT would
+     * let a sequence of broken scans reach send-anyway.
+     */
+    int16_t scanChannel() override;
     const char *chipName() const override;
     DaemonChipFamily chipFamily() const override
     {
@@ -38,9 +61,32 @@ public:
     }
 
 private:
+    /*
+     * Upper bound for one CAD, computed from the CURRENT SF/BW -- never a fixed
+     * constant. The validator accepts SF 7-12 and BW 7.8-500 kHz, so the
+     * physical bound spans roughly three orders of magnitude (0.58 ms to 1.05 s).
+     */
+    std::chrono::microseconds cadDeadline() const;
+
     Module *mod_;
     std::unique_ptr<SX1278> radio_;
     bool is_hf_;
+
+    /*
+     * The CAD bound needs the SF/BW the chip is on NOW, not the boot defaults.
+     * config_apply.cpp tracks the CONFIG shadow, but that belongs to that module
+     * -- pushing it down here would tangle the layers. These two fields are the
+     * driver's own truth instead: seeded from the boot/mode-switch defaults and
+     * updated only after a SUCCESSFUL setter, so they describe the chip and not
+     * an intent.
+     *
+     * The seed is the slowest configuration the validator accepts. An
+     * over-long deadline only delays noticing a completed CAD -- the flag is
+     * latched, so nothing is lost -- while an under-long one manufactures a
+     * timeout out of a scan that was still running.
+     */
+    int sf_ = 12;
+    float bw_khz_ = 7.8f;
 };
 
 /* Fabrik: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */

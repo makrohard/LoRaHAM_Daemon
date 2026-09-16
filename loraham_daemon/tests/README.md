@@ -124,6 +124,13 @@ Lifecycle/helper behavior:
 - `test_daemon_lifecycle`
 - `test_radio_health`
 - `test_radio_cad_probe` (incl. capability gating: profiles without DIO1 never call scanChannel and answer from the passive RSSI probe)
+- `test_sx127x_cad_register` (register-polled CAD on the REAL `Sx127xDriver` against the REAL pinned
+  RadioLib, with `tests/fakes/sx127x_register_model.h` where the chip would be: CadDone alone is
+  FREE, CadDone+CadDetected in the same sample is BUSY, a chip that never asserts CadDone is a
+  bounded error and not a verdict, the flags are tested before they are cleared and none are left
+  standing, the chip is returned to standby, no pin is consulted on either the DIO1-routed or the
+  DIO1-less profile, and the deadline is computed from the driver's cached SF/BW -- seeded at boot,
+  moved by a successful `SET`, NOT moved by one the chip rejected, and reset by LoRa re-entry)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:

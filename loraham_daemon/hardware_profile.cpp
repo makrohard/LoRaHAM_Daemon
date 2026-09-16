@@ -106,7 +106,13 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->txen = DAEMON_HW_PIN_NC;
         p->rxen = DAEMON_HW_PIN_NC;
         p->tcxo_voltage = 0.0f;
-        p->cad_scan_available = false;  /* no DIO1: scanChannel would lie */
+        /* DIO1 is still not routed, but active CAD no longer needs it: the
+         * SX127x driver reads the latched CadDone/CadDetected bits out of
+         * RegIrqFlags. Before that repair the blocking scanChannel() could
+         * never see CadDetected on this board and reported FREE for every
+         * scan, so the flag had to be false and LBT fell back to the RSSI
+         * threshold. */
+        p->cad_scan_available = true;
         p->fsk_stream_available = false;
         p->reset_wired = false;
         profile_claimed_finish(p);

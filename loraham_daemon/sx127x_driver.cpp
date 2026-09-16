@@ -2,6 +2,9 @@
 
 #include <stdio.h>
 
+#include <chrono>
+#include <thread>
+
 #include "config_policy.h"
 #include "driver_config_print.h"
 #include "config_value.h"
@@ -91,6 +94,11 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
         return state;
     }
 
+    /* Every setter above succeeded, so the chip is on these values: seed the
+     * CAD deadline's view of SF/BW from what was actually written. */
+    sf_ = defaults->spreading_factor;
+    bw_khz_ = defaults->bandwidth_khz;
+
     return RADIOLIB_ERR_NONE;
 }
 
@@ -142,6 +150,99 @@ float Sx127xDriver::readLiveRssi(RadioMode_t mode, bool is_hf)
 float Sx127xDriver::rssiProbe()
 {
     return radio_->getRSSI(false, true);
+}
+
+/* --- Register-polled CAD --------------------------------------------------- */
+
+/*
+ * Datasheet SX1276/77/78/79 p.44. The receiver-active part of a CAD is
+ *
+ *     t_receive = (2^SF + 32) / BW
+ *
+ * but that is not the whole operation: "The radio receiver and the PLL turn
+ * off, and the modem digital processing starts... This correlation process
+ * takes a little bit less than a symbol period to perform", and only THEN is
+ * CadDone asserted. So the physical upper bound is the receive phase plus
+ * roughly one more symbol period:
+ *
+ *     t_process      = 2^SF / BW
+ *     physical_upper = t_receive + t_process
+ *     deadline       = 2 x physical_upper, floor 10 ms
+ *
+ * The factor of two and the floor are an engineering choice, not a datasheet
+ * figure: the deadline exists to stop an indefinite wait on a wedged chip, not
+ * to time the operation, so it sits clear of the physical bound. The floor
+ * matters at the fast end, where 2x is under a millisecond and any scheduling
+ * hiccup would look like a hardware fault.
+ *
+ * Worked ends: SF7/500 kHz -> 0.58 ms upper, so the 10 ms floor applies.
+ * SF12/7.8 kHz -> 1.05 s upper, deadline about 2.1 s.
+ */
+std::chrono::microseconds Sx127xDriver::cadDeadline() const
+{
+    const double symbols = (double)(1u << sf_);
+    const double bw_hz = (double)bw_khz_ * 1000.0;
+
+    if (!(bw_hz > 0.0))   /* never divide by a value a bad cache could hold */
+        return std::chrono::milliseconds(10);
+
+    const double upper_s = (symbols + 32.0) / bw_hz + symbols / bw_hz;
+    double deadline_us = 2.0 * upper_s * 1e6;
+
+    if (deadline_us < 10000.0)
+        deadline_us = 10000.0;
+
+    return std::chrono::microseconds((long long)deadline_us);
+}
+
+int16_t Sx127xDriver::scanChannel()
+{
+    /* startChannelScan() checks the active modem itself (ERR_WRONG_MODEM),
+     * puts the chip in standby, clears the IRQ flags and enters CAD mode. */
+    int16_t state = radio_->startChannelScan();
+
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
+
+    /* steady_clock, not RadioLib's hal->micros(): PiHal builds that from a
+     * uint32_t and it wraps about every 72 minutes. */
+    const std::chrono::steady_clock::time_point deadline =
+        std::chrono::steady_clock::now() + cadDeadline();
+
+    for (;;) {
+        /* Read the flags BEFORE testing the deadline, every iteration: if
+         * Linux descheduled us and the CAD completed meanwhile, that result
+         * must be observed on wake, not turned into a manufactured timeout
+         * because the scheduler was late. */
+        const uint16_t flags = radio_->getIRQFlags();
+
+        if (flags & RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DONE) {
+            /* Test CadDetected BEFORE clearing. Both bits come from the one
+             * read above, so there is no window between them. */
+            const bool detected =
+                (flags & RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DETECTED) != 0;
+
+            radio_->clearIrqFlags(RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DONE |
+                                  RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DETECTED);
+
+            return detected ? RADIOLIB_PREAMBLE_DETECTED
+                            : RADIOLIB_CHANNEL_FREE;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            /* Leave CAD mode rather than abandon the chip in it. The verdict
+             * is indeterminate, never FREE and never BUSY. */
+            radio_->standby();
+            return RADIOLIB_ERR_RX_TIMEOUT;
+        }
+
+        /* A real sleep. hal->yield() is sched_yield(), not a sleep: on the slow
+         * configurations it would hammer the CPU and the shared SPI bus, and
+         * LockingPiHal takes a process-wide flock per transaction, so the 433
+         * and 868 daemons would contend. 1 ms fixed -- the flags are latched,
+         * so poll resolution costs latency, never correctness. */
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 }
 
 /* --- D8-Diagnose für fehlgeschlagenes begin() ------------------------------ */
@@ -196,6 +297,8 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
         int sf = 0;
         if (config_value_parse_int_exact(val, &sf) && config_policy_lora_sf_valid(sf)) {
             state = radio.setSpreadingFactor(sf);
+            if (state == RADIOLIB_ERR_NONE)
+                sf_ = sf;   /* only a written value describes the chip */
             driver_config_print_state_int("SF", sf, state);
         } else {
             driver_config_print_rejected("SF", val);
@@ -206,6 +309,8 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
         float bw = 0.0f;
         if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
             state = radio.setBandwidth(bw);
+            if (state == RADIOLIB_ERR_NONE)
+                bw_khz_ = bw;   /* only a written value describes the chip */
             driver_config_print_state_float("BW", bw, state);
         } else {
             driver_config_print_rejected("BW", val);

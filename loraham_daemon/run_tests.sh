@@ -61,6 +61,7 @@ test_binaries=(
   "$TEST_DIR/test_packaging"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_sx127x_cad_register"
   "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
@@ -684,6 +685,31 @@ build_one_radio_cad_probe_test() {
     -llgpio
 }
 
+build_one_sx127x_cad_register_test() {
+  local src="$1"
+  local out="$2"
+
+  # The real Sx127xDriver against the real pinned RadioLib, with
+  # tests/fakes/sx127x_register_model.h where the chip would be. The model is a
+  # RadioLibHal, not a PiHal, so no lgpio and no hardware are involved.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for SX127x register CAD test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/sx127x_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "${radiolib_libs[@]}"
+}
+
 build_one_cad_monitor_state_test() {
   local src="$1"
   local out="$2"
@@ -1011,6 +1037,7 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
+  build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_cad_register.cpp" "$TEST_DIR/test_sx127x_cad_register"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
   build_one_gpio_lock_test "$TEST_DIR/test_gpio_lock.cpp" "$TEST_DIR/test_gpio_lock"

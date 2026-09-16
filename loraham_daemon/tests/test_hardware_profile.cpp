@@ -81,7 +81,10 @@ static void test_uputronics_ce0(void)
     expect_int("ce0 dio1 NC", daemon_hw_profile.gpio < 0, 1);
     expect_int("ce0 aux dio5 doc", daemon_hw_profile.aux, 24);
     expect_int("ce0 led", daemon_hw_profile.led_pin, 6);
-    expect_int("ce0 no cad scan", daemon_hw_profile.cad_scan_available, 0);
+    /* Register-polled CAD needs no DIO1, so this board has trustworthy
+     * active CAD despite gpio=NC asserted just above. */
+    expect_int("ce0 cad scan despite no DIO1",
+               daemon_hw_profile.cad_scan_available, 1);
     expect_int("ce0 no fsk stream", daemon_hw_profile.fsk_stream_available, 0);
     expect_int("ce0 reset not wired", daemon_hw_profile.reset_wired, 0);
     expect_int("ce0 claims cs", claimed_contains(&daemon_hw_profile, 8), 1);
@@ -104,7 +107,10 @@ static void test_uputronics_ce1(void)
     expect_int("ce1 dio1 NC", daemon_hw_profile.gpio < 0, 1);
     expect_int("ce1 aux dio5 doc", daemon_hw_profile.aux, 12);
     expect_int("ce1 led", daemon_hw_profile.led_pin, 13);
-    expect_int("ce1 no cad scan", daemon_hw_profile.cad_scan_available, 0);
+    /* Register-polled CAD needs no DIO1, so this board has trustworthy
+     * active CAD despite gpio=NC asserted just above. */
+    expect_int("ce1 cad scan despite no DIO1",
+               daemon_hw_profile.cad_scan_available, 1);
 }
 
 static void test_waveshare(void)
