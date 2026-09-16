@@ -65,6 +65,7 @@ test_binaries=(
   "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
+  "$TEST_DIR/test_radio_tx_limit"
   "$TEST_DIR/test_framed_data"
   "$TEST_DIR/test_framed_rx_contract"
   "$TEST_DIR/test_framed_data_tx"
@@ -180,6 +181,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_monitoring.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
+  "$SCRIPT_DIR/radio_tx_limit.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
   "$SCRIPT_DIR/radio_health.cpp"
 )
@@ -440,6 +442,7 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/tx_result.cpp" \
     "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/framed_data.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
@@ -645,6 +648,29 @@ build_one_hal_gpio_failclosed_test() {
     "${radiolib_libs[@]}"
 }
 
+build_one_radio_tx_limit_test() {
+  local src="$1"
+  local out="$2"
+
+  # The live wrapper reaches through RadioController into the driver, so the
+  # RadioLib headers are needed for the type; no radio is touched.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for radio TX limit test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
+}
+
 build_one_radio_cad_probe_test() {
   local src="$1"
   local out="$2"
@@ -669,6 +695,7 @@ build_one_radio_cad_probe_test() {
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
@@ -930,6 +957,7 @@ build_one_config_apply_transactional_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_apply.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/config_validate.cpp" \
@@ -1042,6 +1070,7 @@ build_tests() {
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
   build_one_gpio_lock_test "$TEST_DIR/test_gpio_lock.cpp" "$TEST_DIR/test_gpio_lock"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
+  build_one_radio_tx_limit_test "$TEST_DIR/test_radio_tx_limit.cpp" "$TEST_DIR/test_radio_tx_limit"
   build_one_framed_data_test "$TEST_DIR/test_framed_data.cpp" "$TEST_DIR/test_framed_data"
   build_one_framed_data_test "$TEST_DIR/test_framed_rx_contract.cpp" "$TEST_DIR/test_framed_rx_contract"
   build_one_framed_data_tx_test "$TEST_DIR/test_framed_data_tx.cpp" "$TEST_DIR/test_framed_data_tx"

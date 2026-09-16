@@ -1,5 +1,7 @@
 #include "config_apply.h"
 
+#include "radio_tx_limit.h"
+
 #include "daemon_band.h"
 
 #include <vector>
@@ -74,6 +76,7 @@ static ConfigApplyEffective *config_apply_effective(void)
  * Returns false (reject) when it exceeds CONFIG_POLICY_MAX_AIRTIME_MS. */
 static bool config_apply_airtime_ok(const ConfigCommand &parsed,
                                     RadioMode_t target_mode,
+                                    DaemonChipFamily family,
                                     const char *tag)
 {
     ConfigApplyEffective merged = *config_apply_effective();
@@ -100,21 +103,30 @@ static bool config_apply_airtime_ok(const ConfigCommand &parsed,
             config_value_parse_float_exact(val, &merged.fsk_br_kbps);
     }
 
+    /* Worst case means the largest packet the daemon can actually SEND in the
+     * prospective mode, not the largest the buffers could hold. The pure form
+     * of the rule is required here: `SET MODE=FSK ...` is validated while the
+     * controller still reports LoRa, so asking the controller would judge the
+     * command against the old 255-byte limit and let a configuration through
+     * on airtime the daemon will never produce. */
+    const size_t worst_case_len = radio_tx_payload_limit(family, target_mode);
+
     double airtime_ms = (target_mode == RADIO_MODE_LORA)
         ? config_policy_lora_airtime_ms(merged.sf, merged.bw_khz, merged.cr,
                                         merged.preamble,
-                                        RF_PACKET_MAX_PAYLOAD_LEN)
+                                        worst_case_len)
         : config_policy_fsk_airtime_ms(merged.fsk_br_kbps,
                                        merged.fsk_preamble_bits,
-                                       RF_PACKET_MAX_PAYLOAD_LEN);
+                                       worst_case_len);
 
     if (airtime_ms < 0.0 || airtime_ms > CONFIG_POLICY_MAX_AIRTIME_MS) {
         printf("[%s] CONFIG rejected: worst-case airtime %.0f ms > %.0f ms "
-               "(SF%d/BW%.1f/CR%d/PRE%d, 255 B)\n",
+               "(SF%d/BW%.1f/CR%d/PRE%d, %zu B)\n",
                tag, airtime_ms, CONFIG_POLICY_MAX_AIRTIME_MS,
                merged.sf, (double)merged.bw_khz, merged.cr,
                target_mode == RADIO_MODE_LORA ? merged.preamble
-                                              : merged.fsk_preamble_bits);
+                                              : merged.fsk_preamble_bits,
+               worst_case_len);
         fflush(stdout);
         return false;
     }
@@ -183,7 +195,8 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
 
     /* Airtime gate: merged current+command worst case, checked
      * BEFORE any hardware side effect. */
-    if (!config_apply_airtime_ok(parsed, validation.target_mode, tag))
+    if (!config_apply_airtime_ok(parsed, validation.target_mode,
+                                 radio.chipFamily(), tag))
         return CONFIG_APPLY_REJECTED_INVALID;
 
     bool printed = false;

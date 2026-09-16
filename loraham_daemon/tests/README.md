@@ -97,6 +97,10 @@ DATA/RF/TX:
 - `test_daemon_tx_worker`
 - `test_daemon_tx_async_worker`
 - `test_daemon_tx_async_runtime`
+- `test_radio_tx_limit` (the payload rule: SX127x+FSK is 63 -- the 64-byte FIFO minus the length
+  byte that variable-length mode puts in it -- and nothing else narrows; the live wrapper answers
+  with the maximum when there is no radio to ask; and the three 255 storage ceilings stay 255,
+  because narrowing them would cripple LoRa and turn a radio constraint into a wire-protocol one)
 - `test_rf_packet`
 - `test_framed_data` (including `TX_RESULT` layout)
 - `test_framed_data_tx`
@@ -173,6 +177,9 @@ Public integration baseline:
 
 - `test_daemon_tx_worker` verifies the synchronous TX worker test facade and drain seam.
 
+- `test_data_tx_queue_runtime` also pins the FSK payload boundary at the consumer that matters:
+  62 and 63 bytes are sent, 64 and 255 are rejected as INVALID_PACKET before the sender is called
+  and before anything is queued, and LoRa still carries the full 255.
 - `test_data_tx_queue_runtime` verifies the opt-in DATA TX async queue path, last-completion bookkeeping, target/sequence/generation propagation, completion queue handoff, RAW/MANAGED CAD wait policy behavior, MANAGED stable-idle enforcement, CAD-timeout flag preservation, and synchronous TX-busy timeout behavior with fast bounded test limits while keeping default DATA TX direct.
 
 - `test_daemon_tx_async_worker` verifies the standalone async TX worker lifecycle.

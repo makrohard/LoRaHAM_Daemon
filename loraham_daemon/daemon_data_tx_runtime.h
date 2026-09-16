@@ -86,6 +86,7 @@ RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx);
  * byte read chunks into up to 9 jobs but the queue holds 8 — consumed bytes
  * past capacity were silently dropped. */
 size_t data_tx_queue_capacity_bytes(void *ctx);
+size_t data_tx_chunk_limit_bytes(void *ctx);
 
 int data_tx_wait_channel_free_with_limits_ex(
     DataTxDaemonContext *tx,

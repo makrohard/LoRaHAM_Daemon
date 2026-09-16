@@ -347,6 +347,45 @@ static void test_airtime_gate_merged_config(void)
     config_apply_effective_reset();
 }
 
+/*
+ * HW-5, consumer 5: the airtime gate must compute its worst case from the
+ * payload the daemon can actually SEND in the PROSPECTIVE mode, via the pure
+ * radio_tx_payload_limit(family, target_mode). `SET MODE=FSK ...` is validated
+ * while the controller still reports LoRa, so a controller-based helper would
+ * judge it against the old limit.
+ *
+ * What this pins is the LoRa half, and it is the half that can be pinned: at
+ * SF9/BW10.4/CR8 a 255-byte packet is 30.1 s and a 63-byte one 8.5 s, so the
+ * 20 s cap separates them. If the SX127x FSK limit ever leaked into the LoRa
+ * path, this command would start being accepted.
+ *
+ * The FSK half has no equivalent case today and the test does not pretend
+ * otherwise: at every bit rate the validator accepts (0.5 to 300 kbps) even a
+ * 255-byte frame stays under 20 s, so in FSK the narrower worst case changes
+ * the gate's arithmetic and its rejection message but cannot change any
+ * accept/reject outcome. It is still the correct input -- and it is what keeps
+ * the gate honest if the cap or the bit-rate range ever moves.
+ */
+static void test_airtime_gate_uses_the_mode_payload_limit(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    daemon_band_resolve(RADIO_BAND_433);
+    config_apply_effective_reset();
+
+    ConfigApplyStatus st =
+        parse_and_apply_config_generic(radio, "TEST", "SET SF=9 BW=10.4 CR=8",
+                                       mode, getrssi);
+    expect_int("airtime: LoRa is still judged on the full 255-byte payload",
+               st == CONFIG_APPLY_REJECTED_INVALID, 1);
+    expect_int("airtime: nothing applied for the rejected command",
+               radio.lora_apply_count, 0);
+
+    config_apply_effective_reset();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -381,6 +420,7 @@ int main(int argc, char **argv)
     test_mode_switch_applies_before_explicit_params();
 
     test_airtime_gate_merged_config();
+    test_airtime_gate_uses_the_mode_payload_limit();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

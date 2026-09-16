@@ -249,6 +249,77 @@ static void test_default_direct_path(void)
                 daemon_tx_async_runtime_pending(), 0);
 }
 
+/*
+ * HW-5, at the consumer that matters. init_context() puts this controller in
+ * SX127x FSK, where the FIFO allows 63 payload bytes.
+ *
+ * The raw DATA path chunks to the limit and never arrives oversized, but a
+ * framed client sends its own length: a 64-byte TX_PACKET parses correctly
+ * into the 255-byte frame buffer, and before this repair only the radio's FIFO
+ * said it was too big. It must be refused BEFORE any queue or radio mutation
+ * -- so the assertions are not only on the return value but on the sender
+ * never being called and the queue staying empty.
+ */
+static void test_fsk_payload_boundary(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+    uint8_t payload[256];
+
+    memset(payload, 0x5A, sizeof(payload));
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+
+    expect_int("fsk 63 bytes is sent", send_data_chunk(payload, 63, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("fsk 63 reached the sender", sender.calls, 1);
+
+    expect_int("fsk 64 bytes is rejected as invalid",
+               send_data_chunk(payload, 64, 0, &ctx),
+               DAEMON_TX_OUTCOME_INVALID_PACKET);
+    expect_int("fsk 64 never reached the sender", sender.calls, 1);
+
+    expect_int("fsk 255 bytes is rejected as invalid",
+               send_data_chunk(payload, 255, 0, &ctx),
+               DAEMON_TX_OUTCOME_INVALID_PACKET);
+    expect_int("fsk 255 never reached the sender", sender.calls, 1);
+
+    /* And nothing was queued on the way to being rejected. */
+    expect_size("rejected frames queued nothing",
+                daemon_tx_async_runtime_accepted(), 0);
+
+    /* 62 for the lower boundary: the limit is a ceiling, not a fixed size. */
+    expect_int("fsk 62 bytes is sent", send_data_chunk(payload, 62, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("fsk 62 reached the sender", sender.calls, 2);
+}
+
+/* The other half of the same rule: LoRa must not lose a single byte to it. */
+static void test_lora_keeps_the_full_payload(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+    uint8_t payload[256];
+
+    memset(payload, 0x5A, sizeof(payload));
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;   /* no CAD wait in this test */
+
+    expect_int("lora 255 bytes is sent", send_data_chunk(payload, 255, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("lora 255 reached the sender", sender.calls, 1);
+
+    expect_int("lora 64 bytes is sent", send_data_chunk(payload, 64, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("lora 64 reached the sender", sender.calls, 2);
+}
+
 /* Audit item 1 (defense in depth): with the queue disabled but residual
  * async work present, the direct path rejects BUSY instead of waiting
  * behind or interleaving with queued CAD+TX. */
@@ -890,6 +961,8 @@ int main(int argc, char **argv)
     }
 
     test_default_direct_path();
+    test_fsk_payload_boundary();
+    test_lora_keeps_the_full_payload();
     test_direct_refuses_residual_async_work();
     test_txqueue_optin_path();
     test_txqueue_direct_full_rejects_newest();

@@ -1,5 +1,7 @@
 #include "daemon_data_tx_runtime.h"
 
+#include "radio_tx_limit.h"
+
 #include "rf_packet.h"
 
 #include "daemon_band.h"
@@ -99,7 +101,19 @@ size_t data_tx_queue_capacity_bytes(void *ctx)
     if (pending >= DAEMON_TX_QUEUE_CAPACITY)
         return 0;
 
-    return (DAEMON_TX_QUEUE_CAPACITY - pending) * RF_PACKET_MAX_PAYLOAD_LEN;
+    /* The same limit the chunker uses, or the two disagree: 63-byte chunks
+     * counted against 255-byte slots let one read produce about four times
+     * as many jobs as there is room for. */
+    return (DAEMON_TX_QUEUE_CAPACITY - pending) * radio_tx_payload_limit(ctrl);
+}
+
+/* The largest payload the radio will accept right now (data_tx.h's
+ * DataTxChunkLimitFn). Paired with data_tx_queue_capacity_bytes() above. */
+size_t data_tx_chunk_limit_bytes(void *ctx)
+{
+    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
+
+    return radio_tx_payload_limit(tx ? tx->ctrl : NULL);
 }
 
 RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx)
@@ -369,6 +383,24 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
         printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
+    }
+
+    /* Payload limit, before ANY queue or radio mutation. The raw path chunks
+     * to this limit and never arrives here oversized, but a framed client
+     * sends its own length: a 64-byte TX_PACKET parses correctly into the
+     * 255-byte frame buffer and only the radio's FIFO says it is too big. It
+     * is rejected here instead, so no job is queued and the chip is not
+     * touched. */
+    size_t limit = radio_tx_payload_limit(ctrl);
+
+    if (len > limit) {
+        daemon_radio_stats_record_tx_result(&ctrl->stats,
+                                            TX_RESULT_INVALID_PACKET);
+        daemon_debug_ctx(tx->log_ctx, "Payload zu gross");
+        printf("[%s] DATA-TX abgebrochen: %s (%zu Byte > %zu im Modus %s)\n",
+               tag, tx_result_name(TX_RESULT_INVALID_PACKET), len, limit,
+               radio_mode_name(ctrl->mode));
+        return DAEMON_TX_OUTCOME_INVALID_PACKET;
     }
 
     /* Defense in depth: with the queue disabled but the

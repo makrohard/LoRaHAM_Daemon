@@ -1,5 +1,6 @@
 #include "daemon_tx.h"
 #include "daemon_rflog.h"
+#include "radio_tx_limit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -160,6 +161,19 @@ static TxResult lora_send_controller(RadioController *ctrl,
     if (packet_state != RF_PACKET_VALID) {
         printf("[SEND %d] invalid TX packet: %s (%zu bytes)\n",
                band, rf_packet_validation_message(packet_state), len);
+        fflush(stdout);
+        return TX_RESULT_INVALID_PACKET;
+    }
+
+    /* Defence in depth at the last boundary before the chip. Callers already
+     * chunk to this limit or reject against it; this is the one place no TX
+     * can bypass, and it costs a comparison. */
+    size_t payload_limit = radio_tx_payload_limit(ctrl);
+
+    if (len > payload_limit) {
+        printf("[SEND %d] invalid TX packet: %zu bytes exceed the %zu-byte "
+               "limit in mode %s\n",
+               band, len, payload_limit, radio_mode_name(ctrl->mode));
         fflush(stdout);
         return TX_RESULT_INVALID_PACKET;
     }
