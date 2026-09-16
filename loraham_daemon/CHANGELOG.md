@@ -1,10 +1,18 @@
 # Changelog
 
-## 0.11.0
+## 1.0.0
 
-The reliability run. Seven repairs from an external hardware audit, three review
-rounds on top of them, and two hygiene changes. Proven on two boxes and on the
-air; the open item is recorded at the end.
+The reliability run, and the first release the maintainer calls 1.0. Seven
+repairs from an external hardware audit, three review rounds on top of them,
+and three hygiene changes. Proven on two boxes and on the air; the open item is
+recorded at the end.
+
+Why 1.0 rather than 0.11: what this release removed was not a set of bugs but a
+set of *assumptions* — that a pin reports a CAD result, that a GPIO error is a
+logic level, that a configured power level reaches the antenna, that a 200-byte
+FSK write fits a 64-byte FIFO, that a log line an operator reads is in their
+language. The daemon now fails closed where it used to guess, and says so
+through exit codes and `RADIO=FAILED` rather than through silence.
 
 Breaking:
 - `POWER` on SX127x boards is now `2`–`17` dBm, not `0`–`20`. Below `2`,
