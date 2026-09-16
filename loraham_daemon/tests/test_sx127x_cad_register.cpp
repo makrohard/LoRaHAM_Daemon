@@ -572,6 +572,62 @@ static void test_explicit_ldro_is_not_overridden(void)
            !ldro_set(rig), "explicit means explicit");
 }
 
+/* ---- TX must never report success off a dead IRQ line -------------------- */
+
+/*
+ * Harness contract item 2. RadioLib's SX127x::transmit() waits
+ * `while(!digitalRead(irq))`, and before the HAL repair a GPIO read error came
+ * back through uint32_t as a large positive number -- so the condition was
+ * false immediately, the loop never ran once, and control fell straight into
+ * finishTransmit(), which clears the flags, goes to standby and returns
+ * ERR_NONE. The daemon cut the transmission short on air and logged the frame
+ * as sent.
+ *
+ * The HAL repair answers LOW instead, and these two tests are the other half of
+ * that argument: LOW is only safe because the wait is BOUNDED. It is -- 150 %
+ * of the computed time-on-air in LoRa -- so a DIO0 that never asserts produces
+ * ERR_TX_TIMEOUT, never ERR_NONE. Checked here against the pinned library
+ * rather than asserted in a comment.
+ */
+static void test_transmit_times_out_when_dio0_never_asserts(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(7, 500.0f);   /* short time-on-air */
+    uint8_t payload[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    rig.model.tx_completes = false;   /* the line never rises */
+    const int16_t state = rig.drv.transmit(payload, sizeof(payload));
+
+    expect("a transmission with a dead IRQ line is not reported as sent",
+           state != RADIOLIB_ERR_NONE,
+           "this is how a cut-short transmission gets logged as successful");
+    expect_int("it is specifically a timeout", state, RADIOLIB_ERR_TX_TIMEOUT);
+    expect_int("the chip really was put into TX", rig.model.tx_entries, 1);
+    expect("the chip is left in standby afterwards",
+           (rig.model.peek(Sx127xRegisterModel::REG_OP_MODE) &
+            Sx127xRegisterModel::MODE_MASK) ==
+               Sx127xRegisterModel::MODE_STANDBY,
+           "finishTransmit() must still park the transmitter");
+}
+
+/* The positive control: the same path succeeds when the line does assert, so
+ * the test above is about the dead line and not about the rig. */
+static void test_transmit_succeeds_when_dio0_asserts(void)
+{
+    Rig rig;
+    RadioRfDefaults def = lora_defaults(7, 500.0f);
+    uint8_t payload[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+
+    expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+
+    rig.model.tx_completes = true;
+    expect_int("a normal transmission reports success",
+               rig.drv.transmit(payload, sizeof(payload)), RADIOLIB_ERR_NONE);
+    expect_int("the chip really was put into TX", rig.model.tx_entries, 1);
+}
+
 int main(void)
 {
     test_cad_done_alone_is_free();
@@ -591,6 +647,8 @@ int main(void)
     test_set_ldro_auto_writes_the_register();
     test_auto_keeps_tracking_later_sf_changes();
     test_explicit_ldro_is_not_overridden();
+    test_transmit_times_out_when_dio0_never_asserts();
+    test_transmit_succeeds_when_dio0_asserts();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

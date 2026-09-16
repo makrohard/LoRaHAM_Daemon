@@ -871,6 +871,141 @@ static void test_controller_cad_policy_snapshot(void)
     daemon_tx_async_runtime_shutdown();
 }
 
+/*
+ * Harness contract item 4. CADTXAFTERTIMEOUT is an opt-in to transmit after a
+ * sequence of VALID busy observations. A hardware CAD error is not an
+ * observation at all, and it must never be flattened into one -- otherwise a
+ * radio whose scan is broken transmits on every attempt, which is the exact
+ * failure the register-CAD deadline exists to surface rather than hide.
+ *
+ * The scan returns a negative RadioLib error here, which
+ * radio_cad_status_from_scan_state() maps to UNAVAILABLE.
+ */
+static void test_cad_error_is_never_converted_into_a_transmission(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.cad_send_after_timeout.store(true);      /* the opt-in is ON */
+    fake(&ctrl)->scan_state = RADIOLIB_ERR_RX_TIMEOUT;  /* the scan is broken */
+
+    expect_int("a CAD error ends the attempt even with the opt-in on",
+               data_tx_wait_channel_free_with_limits_ex(&ctx, 4, 1, 0, true),
+               DATA_TX_CAD_WAIT_ERROR);
+
+    /* And it stops at the FIRST error rather than burning the whole window. */
+    expect_int("the error is not retried to the end of the window",
+               fake(&ctrl)->scan_count, 1);
+
+    /* Contrast: a genuinely busy channel with the same opt-in still sends. */
+    fake(&ctrl)->scan_count = 0;
+    fake(&ctrl)->scan_state = 1;                  /* busy, a valid reading */
+    expect_int("a genuinely busy channel still follows the opt-in",
+               data_tx_wait_channel_free_with_limits_ex(&ctx, 2, 1, 0, true),
+               DATA_TX_CAD_WAIT_TIMEOUT_SEND);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
+/*
+ * Harness contract item 12. There are two CAD wait loops -- the synchronous one
+ * in daemon_data_tx_runtime.cpp and the executor's, used by the queued worker.
+ * They must reach the same decision from the same scripted sequence, or the
+ * TXQUEUE setting quietly changes listen-before-talk behaviour.
+ *
+ * This is a parity check, not a merge: one round of it is worth more than a
+ * framework built to unify two loops that are each simple.
+ */
+static void test_sync_and_queued_cad_paths_agree(void)
+{
+    struct Case {
+        const char *name;
+        int pattern[4];
+        int pattern_len;
+        bool opt_in;
+        int sync_expected;       /* DATA_TX_CAD_WAIT_* */
+        int queued_expected;     /* DAEMON_TX_OUTCOME_* */
+    } cases[] = {
+        { "free", { 0, 0, 0, 0 }, 4, false,
+          DATA_TX_CAD_WAIT_FREE, DAEMON_TX_OUTCOME_OK },
+        { "busy without the opt-in", { 1, 1, 1, 1 }, 4, false,
+          DATA_TX_CAD_WAIT_BLOCK, DAEMON_TX_OUTCOME_CHANNEL_BUSY },
+        { "busy with the opt-in", { 1, 1, 1, 1 }, 4, true,
+          DATA_TX_CAD_WAIT_TIMEOUT_SEND, DAEMON_TX_OUTCOME_OK },
+        { "error with the opt-in", { RADIOLIB_ERR_RX_TIMEOUT, 0, 0, 0 }, 4, true,
+          DATA_TX_CAD_WAIT_ERROR, DAEMON_TX_OUTCOME_RADIO_ERROR },
+        { "busy then free", { 1, 1, 0, 0 }, 4, false,
+          DATA_TX_CAD_WAIT_FREE, DAEMON_TX_OUTCOME_OK },
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const Case &c = cases[i];
+        char name[128];
+
+        /* --- the synchronous path --- */
+        {
+            RadioController ctrl;
+            DataTxDaemonContext ctx;
+            FakeSender sender;
+
+            init_context(&ctrl, &ctx, &sender);
+            ctrl.mode = RADIO_MODE_LORA;
+            ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+            memcpy(fake(&ctrl)->scan_pattern, c.pattern, sizeof(c.pattern));
+            fake(&ctrl)->scan_pattern_len = c.pattern_len;
+            fake(&ctrl)->scan_state = c.pattern[c.pattern_len - 1];
+
+            snprintf(name, sizeof(name), "sync path: %s", c.name);
+            expect_int(name,
+                       data_tx_wait_channel_free_with_limits_ex(
+                           &ctx, 4, 1, 0, c.opt_in),
+                       c.sync_expected);
+            daemon_tx_async_runtime_shutdown();
+        }
+
+        /* --- the queued worker's path, same script --- */
+        {
+            RadioController ctrl;
+            DataTxDaemonContext ctx;
+            FakeSender sender;
+            DaemonTxJob job;
+            uint8_t payload[] = { 7 };
+
+            init_context(&ctrl, &ctx, &sender);
+            ctrl.mode = RADIO_MODE_LORA;
+            ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+            memcpy(fake(&ctrl)->scan_pattern, c.pattern, sizeof(c.pattern));
+            fake(&ctrl)->scan_pattern_len = c.pattern_len;
+            fake(&ctrl)->scan_state = c.pattern[c.pattern_len - 1];
+
+            daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 90);
+            daemon_tx_job_set_payload(&job, payload, sizeof(payload));
+            /* Without this the executor skips the CAD loop entirely and every
+             * case "passes" as a plain send -- which is how the first version
+             * of this test went green on two cases it was not exercising. */
+            job.cad_enabled = 1;
+            job.cad_wait_ticks = 4;
+            job.cad_idle_stable_ticks = 1;
+            job.cad_poll_interval_usec = 0;
+            job.cad_send_after_timeout = c.opt_in ? 1 : 0;
+
+            DaemonTxJobResult result =
+                daemon_tx_execute_job_with_sender_and_cad(
+                    &job, fake_send, &sender,
+                    daemon_data_tx_worker_cad_probe, &ctrl,
+                    daemon_data_tx_worker_cad_sleep, NULL);
+
+            snprintf(name, sizeof(name), "queued path: %s", c.name);
+            expect_int(name, (int)result.outcome, c.queued_expected);
+            daemon_tx_async_runtime_shutdown();
+        }
+    }
+}
+
 static void test_managed_busy_timeout_send_when_opt_in(void)
 {
     RadioController ctrl;
@@ -983,6 +1118,8 @@ int main(int argc, char **argv)
     test_runtime_switch_direct_then_managed();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();
+    test_cad_error_is_never_converted_into_a_transmission();
+    test_sync_and_queued_cad_paths_agree();
     test_managed_busy_timeout_send_when_opt_in();
     test_queue_long_wait_does_not_starve_later_job();
 

@@ -143,7 +143,10 @@ Lifecycle/helper behavior:
   87 mA the PA draws at +17 dBm -- and `SET POWER` 0/18/19/20 write no register at all. And LDRO:
   boot writes the bit the configuration needs, `SET LDRO=AUTO` CLEARS a stale bit left in the chip
   by a previous run (RadioLib's `autoLDRO()` sets a flag and writes nothing), AUTO keeps tracking
-  later SF/BW changes, and an explicit `LDRO=0` still wins where AUTO would have set it)
+  later SF/BW changes, and an explicit `LDRO=0` still wins where AUTO would have set it. Finally TX:
+  a transmission whose DIO0 never asserts returns `ERR_TX_TIMEOUT`, never `ERR_NONE` -- which is
+  what makes the HAL's "answer LOW on a read error" safe, since the wait is bounded at 150 % of
+  the computed time-on-air -- and the chip is still parked in standby afterwards)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:
@@ -183,6 +186,11 @@ Public integration baseline:
 
 - `test_daemon_tx_worker` verifies the synchronous TX worker test facade and drain seam.
 
+- `test_data_tx_queue_runtime` also pins two listen-before-talk invariants: a hardware CAD error is
+  never converted into a transmission by `CADTXAFTERTIMEOUT` (which is an opt-in over valid BUSY
+  observations, not over broken scans), while a genuinely busy channel still follows the opt-in;
+  and the synchronous and queued CAD wait loops reach the SAME decision from the same scripted
+  FREE/BUSY/ERROR sequence, so the `TXQUEUE` setting does not quietly change LBT behaviour.
 - `test_data_tx_queue_runtime` also pins the FSK payload boundary at the consumer that matters:
   62 and 63 bytes are sent, 64 and 255 are rejected as INVALID_PACKET before the sender is called
   and before anything is queued, and LoRa still carries the full 255.

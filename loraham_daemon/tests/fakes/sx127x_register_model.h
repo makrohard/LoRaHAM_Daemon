@@ -37,10 +37,12 @@ class Sx127xRegisterModel : public RadioLibHal {
 
     static const uint8_t FLAG_CAD_DETECTED = 0x01;
     static const uint8_t FLAG_CAD_DONE     = 0x04;
+    static const uint8_t FLAG_TX_DONE      = 0x08;
 
     static const uint8_t MODE_MASK     = 0x07;
     static const uint8_t MODE_STANDBY  = 0x01;
     static const uint8_t MODE_CAD      = 0x07;
+    static const uint8_t MODE_TX       = 0x03;
     static const uint8_t LONG_RANGE    = 0x80;
 
     /* --- CAD script ------------------------------------------------------ */
@@ -49,9 +51,15 @@ class Sx127xRegisterModel : public RadioLibHal {
     int  cad_reads_until_done = 0;
     bool cad_detects = false;
 
+    /* Transmission: true = TxDone asserts as soon as the chip enters TX.
+     * false = it never does, which is what a dead DIO0 line looks like to
+     * RadioLib's bounded wait. */
+    bool tx_completes = true;
+
     /* --- observations ---------------------------------------------------- */
     int irq_flag_reads = 0;
     int cad_entries = 0;        /* transitions into CAD mode */
+    int tx_entries = 0;         /* transitions into TX mode */
     int standby_entries = 0;    /* transitions into STANDBY */
     int irq_flag_clears = 0;
     uint8_t last_irq_clear_mask = 0;
@@ -75,6 +83,7 @@ class Sx127xRegisterModel : public RadioLibHal {
         cad_reads_left_ = 0;
         irq_flag_reads = 0;
         cad_entries = 0;
+        tx_entries = 0;
         standby_entries = 0;
         irq_flag_clears = 0;
         last_irq_clear_mask = 0;
@@ -101,7 +110,11 @@ class Sx127xRegisterModel : public RadioLibHal {
 
         if ((int)pin == dio0_pin && lora_modem()) {
             advance_cad();
-            return (regs_[REG_IRQ_FLAGS] & FLAG_CAD_DONE) ? 1 : 0;
+            /* DIO0's meaning follows RegDioMapping1: CadDone during a scan,
+             * TxDone during a transmission. Reading both is enough for a model
+             * that never has two operations in flight. */
+            return (regs_[REG_IRQ_FLAGS] & (FLAG_CAD_DONE | FLAG_TX_DONE))
+                       ? 1 : 0;
         }
 
         if ((int)pin == dio1_pin && dio1_routed)
@@ -212,7 +225,11 @@ class Sx127xRegisterModel : public RadioLibHal {
             const uint8_t was = before & MODE_MASK;
             const uint8_t now = value & MODE_MASK;
 
-            if (now == MODE_CAD && was != MODE_CAD) {
+            if (now == MODE_TX && was != MODE_TX) {
+                tx_entries++;
+                if (tx_completes)
+                    regs_[REG_IRQ_FLAGS] |= FLAG_TX_DONE;
+            } else if (now == MODE_CAD && was != MODE_CAD) {
                 cad_entries++;
                 cad_pending_ = true;
                 cad_reads_left_ = cad_reads_until_done;
