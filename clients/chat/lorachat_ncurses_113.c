@@ -49,6 +49,11 @@ static const char *loraham_sockpath(const char *runp, const char *tmpp)
 
 #define SOCKET_PATH loraham_sockpath("/run/loraham/lora433.sock", "/tmp/lora433.sock")
 #define CONFIG_SOCKET_PATH loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
+
+/* How long to wait for a transmission to complete (see wait_for_tx_complete). */
+#define TX_WAIT_POLL_US      100000   /* 100 ms between counter reads          */
+#define TX_WAIT_MAX_POLLS    300      /* backstop: 30 s, then retune regardless */
+#define TX_WAIT_FALLBACK_US  3000000  /* 3 s, only if the daemon cannot be asked */
 #define CONFIG_FILE "lorachat.conf"
 #define CHAT_LOG "lorachat.log"
 #define MAX_MSG_LEN 256
@@ -198,6 +203,104 @@ void send_lora_config(const char* freq) {
         send(cfg_fd, config_cmd, strlen(config_cmd), 0);
     }
     close(cfg_fd);
+}
+
+/*
+ * Ask the daemon one question and read its answer. `send_lora_config` above
+ * deliberately stays write-only (it is called from the receive thread too);
+ * this is the read path used to find out when a transmission has finished.
+ */
+static int config_query(const char *cmd, char *out, size_t out_len) {
+    int fd;
+    struct sockaddr_un addr;
+    ssize_t n;
+    if (!out || out_len == 0) return -1;
+    fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return -1;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, CONFIG_SOCKET_PATH, sizeof(addr.sun_path)-1);
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) { close(fd); return -1; }
+    if (send(fd, cmd, strlen(cmd), 0) < 0) { close(fd); return -1; }
+    n = recv(fd, out, out_len - 1, 0);
+    close(fd);
+    if (n <= 0) return -1;
+    out[n] = '\0';
+    return 0;
+}
+
+/*
+ * How many transmissions the daemon has FINISHED WITH, by any route: TXOK+TXERR
+ * plus TXBUSY. TXBUSY counts a frame the daemon refused because the radio was
+ * already busy -- it never becomes TXOK or TXERR, so leaving it out would mean a
+ * refused frame moves no counter at all and we would sit out the whole backstop
+ * before retuning. The frame is gone in that case too, so retuning at once is
+ * both quicker and the honest answer.
+ *
+ * Returns -1 when the daemon cannot be asked. GET STATS is a counter read: it
+ * never touches the radio, so polling it is free.
+ */
+static long tx_completed_count(void) {
+    char buf[512];
+    const char *ok, *err, *busy;
+    if (config_query("GET STATS\n", buf, sizeof(buf)) != 0) return -1;
+    ok   = strstr(buf, "TXOK=");
+    err  = strstr(buf, "TXERR=");
+    busy = strstr(buf, "TXBUSY=");
+    if (!ok || !err || !busy) return -1;
+    return strtol(ok + 5, NULL, 10)
+         + strtol(err + 6, NULL, 10)
+         + strtol(busy + 7, NULL, 10);
+}
+
+/*
+ * Block until the frame we just handed over has actually left the radio.
+ *
+ * A fixed sleep cannot do this. Time-on-air alone is ~2.6 s for a short frame at
+ * SF12/BW125, and in MANAGED mode the daemon additionally waits for a clear
+ * channel (CAD/LBT) and may queue behind another stack — a delay with no upper
+ * bound that any constant would eventually lose to. So wait on the daemon's own
+ * completion counter instead, and treat the timeout purely as a backstop.
+ */
+static int tx_busy_state(void) {
+    char buf[512];
+    const char *b;
+    /* NOSCAN: the passive form. The plain GET CHANNEL runs a CAD scan, which
+       would fight the very transmission we are waiting on. */
+    if (config_query("GET CHANNEL NOSCAN\n", buf, sizeof(buf)) != 0) return -1;
+    b = strstr(buf, "BUSY=");
+    if (!b) return -1;
+    return strtol(b + 5, NULL, 10) != 0 ? 1 : 0;
+}
+
+static void wait_for_tx_complete(long before) {
+    int i;
+    if (before < 0) {          /* stats unavailable: fall back to a generous wait */
+        usleep(TX_WAIT_FALLBACK_US);
+        return;
+    }
+    for (i = 0; i < TX_WAIT_MAX_POLLS; i++) {
+        long now;
+        usleep(TX_WAIT_POLL_US);
+        now = tx_completed_count();
+        if (now < 0 || now <= before) continue;
+        /* The counter belongs to the BAND daemon, not to us: another client of the
+           same band moves it too. The BUSY check below catches the case where such
+           a frame finishes while OURS is in the air.
+
+           It does not catch the other one -- a foreign frame finishing while ours
+           is still queued behind the channel-free wait, because tx_busy is only
+           set at acquire, after that wait, so BUSY reads 0 for a frame that has
+           not started. What makes this safe is not the check but the product
+           rule: one app stack per band daemon (chat is refused while another
+           holds 433), so in a supported deployment this counter IS ours alone. A
+           second client started by hand on the same band sits outside that rule.
+
+           Closing it properly belongs in the daemon, which is the only party that
+           knows when its TX worker released the radio -- a daemon behaviour
+           change, not a client patch. So: rule is the proof, check is the belt. */
+        if (tx_busy_state() != 1) return;
+    }
 }
 
 void add_to_history(const char* sender, const char* text, int pair) {
@@ -350,7 +453,15 @@ void open_config_menu() {
 }
 
 void send_aprs(const char *text) {
+    long tx_before;
+    int split_freq;
     if (strlen(text) == 0) return;
+    /* With TX == RX there is nothing to retune, so there is nothing to wait for:
+       skip the whole dance and keep that configuration as fast as it ever was. */
+    split_freq = (strcmp(TX_FREQ, RX_FREQ) != 0);
+    /* Snapshot BEFORE retuning: we wait for this number to move, so a stale
+       read here would be indistinguishable from a completed transmit. */
+    tx_before = split_freq ? tx_completed_count() : -2;
     send_lora_config(TX_FREQ);
     usleep(50000);
     unsigned char packet[1024];
@@ -359,8 +470,13 @@ void send_aprs(const char *text) {
     len += sprintf((char*)&packet[len], "%s%s%s%s%s:%s",
                    CALL_SIGN, CALL_SIGN_STOP, APRS_PATH, SEPERATOR, destination_callsign, text);
     send(sock_fd, packet, len, 0);
-    usleep(100000);
-    send_lora_config(RX_FREQ);
+    if (split_freq) {
+        /* The frame is only QUEUED at this point. Retuning now would move the
+           radio out from under a transmission still in progress -- that is the
+           bug this waits out. */
+        wait_for_tx_complete(tx_before);
+        send_lora_config(RX_FREQ);
+    }
     add_to_history("Ich", text, 2);
     redraw_chat();
 }
