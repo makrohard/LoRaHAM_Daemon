@@ -41,6 +41,14 @@ static inline int config_status_is_get_channel(const char *line)
     return config_status_command_equals(line, "GET CHANNEL");
 }
 
+/* The same CHANNEL line without the channel-activity scan. `config_status_command_equals` is an
+ * exact whole-line compare (trim + uppercase + strcmp), so this and "GET CHANNEL" are distinct
+ * commands and neither can prefix-match the other. */
+static inline int config_status_is_get_channel_noscan(const char *line)
+{
+    return config_status_command_equals(line, "GET CHANNEL NOSCAN");
+}
+
 int config_status_is_set_txresult(const char *line,
                                                int *enabled);
 
@@ -117,6 +125,12 @@ int config_status_classify_reserved_setter(const char *line);
 void config_status_format_channel(char *buf,
                                                 size_t buf_size,
                                                 RadioController *ctrl);
+
+/* CHANNEL without a CAD scan: safe to call periodically, and safe with a null/unready `ctrl`.
+ * Reports CADSCAN=0 and CADSTATE=NOTSCANNED, or PENDING when a received packet is undrained. */
+void config_status_format_channel_passive(char *buf,
+                                                        size_t buf_size,
+                                                        RadioController *ctrl);
 
 void config_status_format_stats(char *buf,
                                              size_t buf_size,

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <atomic>
+#include <mutex>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -71,8 +72,14 @@ struct FakeRadio : public RadioDriver {
         return scan_result;
     }
 
+    /* Counted: radio_controller_packet_rssi() reaches the driver through here, and it takes
+     * radio_mutex with a BLOCKING lock_guard. No main-loop path may do that (radio_controller.h),
+     * so the periodic NOSCAN read must never call it. Counting is the only way a test can see
+     * that -- a bare return value is invisible. */
+    int get_rssi_count = 0;
     float getRSSI() override
     {
+        get_rssi_count++;
         return rssi;
     }
 
@@ -88,8 +95,19 @@ struct FakeRadio : public RadioDriver {
                            const std::string &) override { return 0; }
     int16_t applyFskParam(const char *, const std::string &,
                           const std::string &) override { return 0; }
+    /* Deterministic drain-during-format hook. The CHANNEL formatter reads the live RSSI AFTER
+     * its caller has already decided whether a packet is pending, so clearing `received` here
+     * reproduces the real race -- the RX drain landing between the decision and the reply --
+     * without any timing dependence. */
+    std::atomic<bool> *drain_on_live_rssi = nullptr;
+
     // No Module behind the fake: live RSSI unavailable as before (-200).
-    float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    float readLiveRssi(RadioMode_t, bool) override
+    {
+        if (drain_on_live_rssi)
+            drain_on_live_rssi->store(false);
+        return -200.0f;
+    }
     /* The active CAD probe now stops reception before deciding whether a
      * packet is pending, so every fake needs both of these: the base class
      * forwards to phy_, which is NULL here. */
@@ -794,6 +812,240 @@ static void test_get_channel_pending_rx_guard(void)
                strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
     expect_int("get channel pending cadscan 0",
                strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+}
+
+static void test_get_channel_noscan_never_scans(void)
+{
+    RadioController ctrl;
+    char ch[256];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    // Idle: NOSCAN must NOT scan, and must say so rather than imply a verdict.
+    ctrl.received.store(false);
+    int before = fake(&ctrl)->scan_count;
+    config_status_format_channel_passive(ch, sizeof(ch), &ctrl);
+    expect_int("noscan idle no scan", fake(&ctrl)->scan_count, before);
+    expect_int("noscan idle state",
+               strstr(ch, "CADSTATE=NOTSCANNED") != NULL ? 1 : 0, 1);
+    expect_int("noscan idle cadscan 0",
+               strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+    expect_int("noscan idle cad 0", strstr(ch, "CAD=0") != NULL ? 1 : 0, 1);
+    // It still carries the fields a periodic reader actually wants.
+    expect_int("noscan reports liverssi", strstr(ch, "LIVERSSI=") != NULL ? 1 : 0, 1);
+    expect_int("noscan reports mode", strstr(ch, "MODE=") != NULL ? 1 : 0, 1);
+
+    // The intersection case: a completed, undrained packet is strictly more informative than
+    // "no verdict was requested", so PENDING wins -- and still without scanning.
+    before = fake(&ctrl)->scan_count;
+    ctrl.received.store(true);
+    config_status_format_channel_passive(ch, sizeof(ch), &ctrl);
+    expect_int("noscan pending no scan", fake(&ctrl)->scan_count, before);
+    expect_int("noscan pending beats notscanned",
+               strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
+    expect_int("noscan pending cadscan 0",
+               strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+}
+
+static void test_get_channel_noscan_null_controller(void)
+{
+    char ch[256];
+
+    // config_dispatch answers GET CHANNEL *before* any readiness gate, so the formatter can be
+    // reached with no controller at all. As an inner branch this code was safe only because of
+    // the enclosing `ctrl && ctrl->received` test; hoisted, it must guard itself. Without that
+    // guard this dereferences null and takes the daemon down.
+    memset(ch, 0, sizeof(ch));
+    config_status_format_channel_passive(ch, sizeof(ch), NULL);
+    expect_int("noscan null ctrl emits a line", strncmp(ch, "CHANNEL ", 8) == 0 ? 1 : 0, 1);
+    expect_int("noscan null ctrl cadscan 0",
+               strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+    expect_int("noscan null ctrl notscanned",
+               strstr(ch, "CADSTATE=NOTSCANNED") != NULL ? 1 : 0, 1);
+    expect_int("noscan null ctrl newline terminated",
+               ch[strlen(ch) - 1] == '\n' ? 1 : 0, 1);
+}
+
+static void test_dispatch_get_channel_noscan_touches_nothing(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+    char out[256];
+    ssize_t n;
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    fake(&ctrl)->scan_result = 1;          /* a scan, if one ran, would report BUSY */
+    fake(&ctrl)->rssi = -77.25f;
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+    memset(out, 0, sizeof(out));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+
+    client_slot_set_fd(&slots[0], sv[1]);
+
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        printf("[FAIL] config GET CHANNEL NOSCAN init\n");
+        return;
+    }
+
+    /* Through the real CONF socket, not just the formatter: the whole point of the command is
+     * that a client can poll it, so the dispatch path is what has to be proven harmless. */
+    const char *cmd = "GET CHANNEL NOSCAN\n";
+    SEND(write(sv[0], cmd, strlen(cmd)));
+
+    event_loop_reset(&set);
+    event_loop_add_fd(&set, sv[1]);
+    expect_int("noscan dispatch wait", event_loop_wait(&set, &readfds, 100000), 1);
+
+    ConfigDispatchContext ctx =
+        make_context(slots, &ctrl);
+
+    config_dispatch_context(&ctx, 2, &readfds, buf);
+
+    n = read(sv[0], out, sizeof(out) - 1);
+    if (n < 0)
+        n = 0;
+    out[n] = '\0';
+
+    /* THE point of the command: no mode-changing or destructive radio operation, and no CAD.
+     * The live-RSSI read is still performed -- it is a passive register read behind a tx_busy
+     * gate and a try_to_lock, which is what makes it safe on the main loop. */
+    expect_int("noscan dispatch: no scan", fake(&ctrl)->scan_count, 0);
+    expect_int("noscan dispatch: no startReceive", fake(&ctrl)->start_receive_count, 0);
+    expect_int("noscan dispatch: no callback re-register", fake(&ctrl)->callback_count, 0);
+    expect_int("noscan dispatch: no standby", fake(&ctrl)->standby_count, 0);
+    expect_int("noscan dispatch: no callback clear", fake(&ctrl)->clear_callback_count, 0);
+    expect_int("noscan dispatch: no config apply", g_apply_state.calls, 0);
+
+    /* It still answers, as one data line, with the fields a periodic reader wants. */
+    expect_contains("noscan dispatch prefix", out, "CHANNEL RADIO=READY");
+    expect_contains("noscan dispatch cad", out, "CAD=0");
+    expect_contains("noscan dispatch cadscan", out, "CADSCAN=0");
+    expect_contains("noscan dispatch cadstate", out, "CADSTATE=NOTSCANNED");
+    expect_contains("noscan dispatch live rssi", out, "LIVERSSI=-200.00");
+    expect_contains("noscan dispatch mode", out, "MODE=LORA");
+    expect_contains("noscan dispatch txmode", out, "TXMODE=MANAGED");
+    expect_int("noscan dispatch: single line", strchr(out, '\n') == out + strlen(out) - 1 ? 1 : 0, 1);
+    expect_int("noscan dispatch client open", client_slot_has_client(&slots[0]), 1);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_legacy_channel_pending_survives_a_drain(void)
+{
+    RadioController ctrl;
+    char ch[256];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    /* Legacy GET CHANNEL tests `received`, commits to its non-scanning branch, and has ALWAYS
+     * answered PENDING unconditionally from there. If the packet is drained while the reply is
+     * being formatted, it must still answer PENDING: NOTSCANNED is a state this command has never
+     * emitted and no existing client expects, so producing it here would break the additive
+     * contract. A formatter that re-reads `received` instead of consuming the caller's snapshot
+     * answers NOTSCANNED and fails this test. */
+    ctrl.received.store(true);
+    fake(&ctrl)->drain_on_live_rssi = &ctrl.received;
+    int before = fake(&ctrl)->scan_count;
+    config_status_format_channel(ch, sizeof(ch), &ctrl);
+    fake(&ctrl)->drain_on_live_rssi = nullptr;
+
+    expect_int("legacy pending drained: still no scan", fake(&ctrl)->scan_count, before);
+    expect_int("legacy pending drained: stays PENDING",
+               strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
+    expect_int("legacy pending drained: never NOTSCANNED",
+               strstr(ch, "NOTSCANNED") == NULL ? 1 : 0, 1);
+    expect_int("legacy pending drained: the drain really happened",
+               ctrl.received.load() ? 1 : 0, 0);
+
+    /* The same snapshot discipline on the NOSCAN side: decided once, then formatted. */
+    ctrl.received.store(true);
+    fake(&ctrl)->drain_on_live_rssi = &ctrl.received;
+    config_status_format_channel_passive(ch, sizeof(ch), &ctrl);
+    fake(&ctrl)->drain_on_live_rssi = nullptr;
+    expect_int("noscan pending drained: stays PENDING",
+               strstr(ch, "CADSTATE=PENDING") != NULL ? 1 : 0, 1);
+}
+
+static void test_noscan_never_blocks_on_a_transmit(void)
+{
+    RadioController ctrl;
+    char ch[256];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    /* radio_controller.h's access rule: the TX worker may hold radio_mutex across the blocking
+     * transmit() -- seconds at SF12 -- so NO main-loop path may block on that mutex. NOSCAN is
+     * dispatched on the main loop and is the one command a client polls.
+     *
+     * The assertion that carries this is get_rssi_count: radio_controller_packet_rssi() reaches
+     * the driver through getRSSI() and takes radio_mutex with a blocking lock_guard, so the ONLY
+     * way NOSCAN is safe here is by never calling it. Do NOT try to prove this by holding
+     * radio_mutex in the test and checking the call returns: radio_mutex is RECURSIVE, so a
+     * same-thread lock_guard re-enters and returns immediately. Such a test passes on the
+     * blocking implementation too and proves nothing. */
+    ctrl.tx_busy.store(true);
+    ctrl.received.store(false);
+
+    int scans = fake(&ctrl)->scan_count;
+    int rearms = fake(&ctrl)->start_receive_count;
+    int rssi_calls = fake(&ctrl)->get_rssi_count;
+
+    config_status_format_channel_passive(ch, sizeof(ch), &ctrl);
+
+    ctrl.tx_busy.store(false);
+
+    expect_int("noscan under TX: answered", strncmp(ch, "CHANNEL ", 8) == 0 ? 1 : 0, 1);
+    expect_int("noscan under TX: never takes the blocking packet-RSSI path",
+               fake(&ctrl)->get_rssi_count, rssi_calls);
+    expect_int("noscan under TX: no scan", fake(&ctrl)->scan_count, scans);
+    expect_int("noscan under TX: no re-arm", fake(&ctrl)->start_receive_count, rearms);
+    expect_int("noscan under TX: no verdict claimed",
+               strstr(ch, "CADSCAN=0") != NULL ? 1 : 0, 1);
+    expect_int("noscan under TX: reports the busy transmit",
+               strstr(ch, "BUSY=1") != NULL ? 1 : 0, 1);
+    /* tx_busy short-circuits the live read, so the sentinel is what a caller sees. */
+    expect_contains("noscan under TX: live rssi sentinel", ch, "LIVERSSI=-200.00");
+
+    /* And on the ordinary idle path too -- the blocking call must be absent always, not only
+     * while a transmit happens to be in flight. */
+    rssi_calls = fake(&ctrl)->get_rssi_count;
+    config_status_format_channel_passive(ch, sizeof(ch), &ctrl);
+    expect_int("noscan idle: never takes the blocking packet-RSSI path",
+               fake(&ctrl)->get_rssi_count, rssi_calls);
+}
+
+static void test_get_channel_command_matching_is_exact(void)
+{
+    // The two commands must never prefix-match each other in either direction, or a NOSCAN poll
+    // silently becomes a scanning poll and the whole repair is undone.
+    expect_int("plain matches plain", config_status_is_get_channel("GET CHANNEL"), 1);
+    expect_int("plain rejects noscan", config_status_is_get_channel("GET CHANNEL NOSCAN"), 0);
+    expect_int("noscan matches noscan",
+               config_status_is_get_channel_noscan("GET CHANNEL NOSCAN"), 1);
+    expect_int("noscan rejects plain", config_status_is_get_channel_noscan("GET CHANNEL"), 0);
+    // Matching is on a trimmed, uppercased copy, like every other command.
+    expect_int("noscan case insensitive",
+               config_status_is_get_channel_noscan("get channel noscan"), 1);
+    expect_int("noscan trims",
+               config_status_is_get_channel_noscan("  GET CHANNEL NOSCAN  "), 1);
+    expect_int("noscan rejects trailing junk",
+               config_status_is_get_channel_noscan("GET CHANNEL NOSCANX"), 0);
 }
 
 static void test_set_cadrssi_parser(void)
@@ -1678,6 +1930,12 @@ int main(int argc, char **argv)
     test_dispatch_ignores_not_ready_client();
     test_dispatch_sets_txmode_without_radio();
     test_get_channel_pending_rx_guard();
+    test_get_channel_noscan_never_scans();
+    test_get_channel_noscan_null_controller();
+    test_dispatch_get_channel_noscan_touches_nothing();
+    test_legacy_channel_pending_survives_a_drain();
+    test_noscan_never_blocks_on_a_transmit();
+    test_get_channel_command_matching_is_exact();
     test_set_cadrssi_parser();
     test_dispatch_sets_cadmonitor_optin();
     test_status_uses_cad_broadcast_latch();

@@ -39,13 +39,20 @@ SET CADTXAFTERTIMEOUT=0|1
 GET STATUS
 GET STATS
 GET CHANNEL
+GET CHANNEL NOSCAN
 ```
 
 `SET KEY=VALUE ...` carries one or more space-separated tokens for the radio
 parameters in [CONFIG parameters](#config-parameters). The nine reserved
 `SET` forms above are runtime setters that do not touch the radio; they are
 matched as exact literals and are described in [Runtime setters](#runtime-setters).
-`GET STATUS`, `GET STATS` and `GET CHANNEL` are the only recognised queries.
+`GET STATUS`, `GET STATS`, `GET CHANNEL` and `GET CHANNEL NOSCAN` are the only
+recognised queries. **They do not cost the same.** `GET STATUS` and `GET STATS`
+format cached fields and counters and never touch the radio. `GET CHANNEL` runs
+a channel-activity scan: it takes the radio mutex, puts the chip into CAD and
+re-arms RX afterwards, so it **destroys a frame that is arriving**. `GET CHANNEL
+NOSCAN` answers the same line without ever scanning. See
+[Which queries cost the radio](#which-queries-cost-the-radio).
 
 ## Line framing and parsing
 
@@ -249,6 +256,51 @@ without running a scan:
 
 The MANAGED-TX gate uses its own probe, whose pending-RX guard returns an
 unconditional `BUSY` instead.
+
+### `GET CHANNEL NOSCAN`
+
+The same `CHANNEL` line, **never** running a channel-activity scan. This is what
+any periodic or automatic reader must use — an RSSI meter, a noise-floor poller,
+a settings read-back.
+
+| Situation | `CADSTATE` |
+|---|---|
+| A received packet has not been drained yet | `PENDING` — the stronger, genuinely informative state wins |
+| Otherwise | `NOTSCANNED` |
+
+`CAD=0` and `CADSCAN=0` in **both** cases. Read them carefully:
+
+- `CADSCAN=0` here means **no CAD verdict was taken**, not "the scan found nothing".
+- `CAD=0` must therefore **not** be read as "CAD says the channel is free".
+- `BUSY` is only the TX-busy / live-RSSI-versus-`CADRSSI` estimate, exactly as in
+  the pending-packet case above.
+
+`RSSI`, `PACKETRSSI`, `LIVERSSI`, `MODE` and `TXMODE` are reported as usual — the three RSSI fields
+all carry the live reading here, exactly as the pending-packet answer has always reported them.
+
+The live read is gated on `tx_busy` and taken with a *try*-lock, so this command **never blocks on
+a transmission**: while the TX worker owns the radio it answers immediately with the `-200`
+sentinel rather than waiting out the airtime. That is deliberate — it is the command clients poll,
+and it is dispatched on the daemon's main loop. The command is also valid, and answers, with an
+absent or unready radio.
+
+Listen-before-talk is **unaffected**: the MANAGED-TX gate runs its own CAD before
+every transmission regardless of what any client queries.
+
+### Which queries cost the radio
+
+| Query | Touches the radio? | Use on a timer? |
+|---|---|---|
+| `GET STATUS` | no | yes |
+| `GET STATS` | no | yes |
+| `GET CHANNEL NOSCAN` | no scan; passive register reads only | yes |
+| `GET CHANNEL` | **yes — CAD scan, destroys an arriving frame** | **no** |
+
+`GET CHANNEL` is for a deliberate, operator-invoked measurement. A client that
+polls it pays for the verdict in lost receptions: measured on a Zero 2 W at
+SF12/BW125, a ~0.58 Hz poll cost **46 %** of delivered frames (54 % delivery
+against 100 % with the poll stopped). The cost scales with airtime, so it is
+worst exactly where the link is longest-range.
 
 **A tight `GET CHANNEL` poll can return `UNAVAILABLE` with `CADSCAN=0`.** The
 active probe takes the radio mutex with a *try*-lock and declines rather than

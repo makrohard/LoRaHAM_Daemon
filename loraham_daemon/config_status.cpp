@@ -418,34 +418,103 @@ float config_status_live_rssi_dbm(RadioController *ctrl)
     return ctrl->driver->readLiveRssi(ctrl->mode, ctrl->is_hf);
 }
 
+/* The CHANNEL line for an already-decided pending state. `pending` is a SNAPSHOT taken by the
+ * caller, exactly once per request: `received` can be cleared by the RX drain at any moment, and
+ * a second load here could contradict the decision the caller already acted on. Legacy
+ * GET CHANNEL in particular commits to its non-scanning branch on that load, so re-reading could
+ * make it answer NOTSCANNED -- a state that command has never emitted. */
+static void config_status_format_channel_snapshot(char *buf,
+                                                                size_t buf_size,
+                                                                RadioController *ctrl,
+                                                                bool pending,
+                                                                float live_rssi)
+{
+    // The CHANNEL line WITHOUT a channel-activity scan. Never calls scanChannel(), never takes
+    // the radio out of RX, and is therefore safe to answer on a timer -- a scan destroys a frame
+    // that is arriving, so a status poll must never run one.
+    //
+    // NULL/UNREADY SAFE, and it has to be: config_dispatch answers GET CHANNEL before any
+    // readiness gate, so `ctrl` can be absent entirely. The health and mode accessors already
+    // tolerate that; the threshold and tx_mode reads need their own guards. (As an inner branch
+    // this code was safe only because of the enclosing `ctrl && ctrl->received` test.)
+    int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
+
+    // `pending` is the caller's snapshot -- deliberately NOT re-read here. PENDING outranks
+    // NOTSCANNED: "a completed, undrained packet is waiting" is real information, strictly
+    // stronger than "no verdict was requested".
+    float thr = ctrl ? ctrl->cad_rssi_threshold_dbm.load()
+                     : (float)RADIO_CAD_RSSI_BUSY_THRESHOLD_DBM;
+    int busy = (tx_busy || live_rssi >= thr) ? 1 : 0;
+
+    snprintf(buf,
+             buf_size,
+             "CHANNEL RADIO=%s BUSY=%d CAD=0 CADSCAN=0 CADSTATE=%s "
+             "RSSI=%.2f PACKETRSSI=%.2f LIVERSSI=%.2f MODE=%s TXMODE=%s\n",
+             radio_health_name(radio_controller_health(ctrl)),
+             busy,
+             pending ? "PENDING" : "NOTSCANNED",
+             live_rssi,
+             live_rssi,
+             live_rssi,
+             radio_mode_name(radio_controller_mode(ctrl)),
+             radio_tx_mode_name(ctrl ? ctrl->tx_mode : RADIO_TX_MODE_MANAGED));
+}
+
+void config_status_format_channel_passive(char *buf,
+                                                        size_t buf_size,
+                                                        RadioController *ctrl)
+{
+    /* Snapshot `received` FIRST, into a local, before the RSSI read. Two reasons, and the second
+     * is why this is a local rather than an argument expression:
+     *   - the RX drain can clear it at any moment, so loading it afterwards would report
+     *     NOTSCANNED for a packet that was pending when the request arrived;
+     *   - argument evaluation order is UNSPECIFIED in C++, so passing the load as one argument
+     *     beside the RSSI read would leave the ordering up to the compiler.
+     *
+     * The RSSI fields all carry the live reading, exactly as the pending branch has always
+     * reported them. This command must NOT reach for a truer packet RSSI:
+     * radio_controller_packet_rssi() takes radio_mutex with a BLOCKING lock_guard, and
+     * radio_controller.h's access rule is that no main-loop path may block on that mutex while a
+     * TX can be in flight -- the TX worker holds it across transmit(), seconds at SF12. This is
+     * the periodic status read, dispatched on the main loop, so blocking here would stall the
+     * daemon for a whole transmission and blow the client's 1 s read timeout.
+     * config_status_live_rssi_dbm() is safe precisely because it gates on tx_busy and uses
+     * try_to_lock. A genuine last-packet RSSI belongs to the RX path that already has the value,
+     * not to an opportunistic reread during a 3-second poll. */
+    bool pending = (ctrl && ctrl->received.load());
+    float live_rssi = config_status_live_rssi_dbm(ctrl);
+
+    config_status_format_channel_snapshot(buf, buf_size, ctrl, pending, live_rssi);
+}
+
 void config_status_format_channel(char *buf,
                                                 size_t buf_size,
                                                 RadioController *ctrl)
 {
-    int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
-    float live_rssi = config_status_live_rssi_dbm(ctrl);
-
     // Pending RX guard: a just-arrived RX packet is waiting to be read. The
     // active scanChannel probe + RX re-arm would discard it, so answer
     // non-destructively (no scanChannel) with CADSTATE=PENDING and a live-RSSI
-    // based busy hint.
+    // based busy hint. Same formatter the NOSCAN command uses.
+    //
+    // Checked BEFORE the reads below, so a pending reply does not read the live-RSSI register
+    // twice for one response.
+    //
+    // The snapshot is passed DOWN rather than re-read: this command has now committed to its
+    // non-scanning branch, and a second load could see the packet already drained and answer
+    // NOTSCANNED -- a state legacy GET CHANNEL has never emitted and no existing client expects.
+    // Its pending branch has always meant PENDING unconditionally, and still does.
     if (ctrl && ctrl->received.load()) {
-        float thr = ctrl->cad_rssi_threshold_dbm.load();
-        int busy = (tx_busy || live_rssi >= thr) ? 1 : 0;
-
-        snprintf(buf,
-                 buf_size,
-                 "CHANNEL RADIO=%s BUSY=%d CAD=0 CADSCAN=0 CADSTATE=PENDING "
-                 "RSSI=%.2f PACKETRSSI=%.2f LIVERSSI=%.2f MODE=%s TXMODE=%s\n",
-                 radio_health_name(radio_controller_health(ctrl)),
-                 busy,
-                 live_rssi,
-                 live_rssi,
-                 live_rssi,
-                 radio_mode_name(radio_controller_mode(ctrl)),
-                 radio_tx_mode_name(ctrl->tx_mode));
+        /* Legacy GET CHANNEL's pending branch has ALWAYS reported the live reading in all three
+         * RSSI fields. Unchanged here on purpose: this command's observable behaviour is not part
+         * of the repair, and neither command reaches for a truer packet RSSI -- see the note in
+         * the passive entry point above for why that would be unsafe here. */
+        float live_rssi = config_status_live_rssi_dbm(ctrl);
+        config_status_format_channel_snapshot(buf, buf_size, ctrl, true, live_rssi);
         return;
     }
+
+    int tx_busy = (ctrl && ctrl->tx_busy.load()) ? 1 : 0;
+    float live_rssi = config_status_live_rssi_dbm(ctrl);
 
     RadioCadProbeResult probe = radio_cad_try_probe(ctrl);
 

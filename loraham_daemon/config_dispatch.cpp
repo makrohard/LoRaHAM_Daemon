@@ -10,8 +10,8 @@
 
 /* Stable per-command CONF reply: exactly one newline-
  * terminated response per complete command, delivered only to the requesting
- * client. GET STATUS/STATS/CHANNEL answer with their data line instead and
- * never get a trailing OK. Queue-append failure closes the client (existing
+ * client. GET STATUS/STATS/CHANNEL and GET CHANNEL NOSCAN answer with their
+ * data line instead and never get a trailing OK. Queue-append failure closes the client (existing
  * slow-client policy). */
 static void config_dispatch_reply(ClientSlot *slot, const char *reply)
 {
@@ -101,6 +101,26 @@ void config_dispatch_apply_line(const char *line, void *user)
             return;
         }
         client_slot_flush_output(ctx->slot);
+        return;
+    }
+
+    /* NOSCAN first for readability only: `config_status_command_equals` compares the whole
+     * trimmed line, so "GET CHANNEL" and "GET CHANNEL NOSCAN" are distinct and neither can
+     * prefix-match the other whichever order they are tested in. */
+    if(config_status_is_get_channel_noscan(upper_line)) {
+        char channel[192];
+
+        /* Answers the same line as GET CHANNEL but never scans the channel, so a client may poll
+         * it without destroying frames that are arriving. Safe with an absent/unready ctrl. */
+        config_status_format_channel_passive(channel, sizeof(channel), ctx->ctrl);
+        if(!client_output_queue_append(&ctx->slot->output,
+                                       (const uint8_t *)channel,
+                                       strlen(channel))) {
+            client_slot_close(ctx->slot);
+            return;
+        }
+        client_slot_flush_output(ctx->slot);
+
         return;
     }
 

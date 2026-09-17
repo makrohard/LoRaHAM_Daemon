@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0
+
+- `GET CHANNEL NOSCAN`: the `CHANNEL` line without a channel-activity scan. `GET CHANNEL` runs a
+  CAD scan — it takes the radio mutex, puts the chip into CAD and re-arms RX — so a client that
+  polls it destroys frames that are arriving. Measured on a Zero 2 W at SF12/BW125, a ~0.58 Hz
+  poll cost 46 % of delivered frames (54 % delivery, against 100 % with the poll stopped); the
+  loss scales with airtime, so it is worst on the longest-range settings. The new command reports
+  the same fields — `RSSI`, `PACKETRSSI`, `LIVERSSI`, `MODE`, `TXMODE` — with `CAD=0 CADSCAN=0`
+  and `CADSTATE=NOTSCANNED`, or `PENDING` when a received packet is undrained, since that state is
+  strictly more informative. `CADSCAN=0` means no verdict was taken, so `CAD=0` must not be read
+  as "the channel is free". It answers with an absent or unready radio.
+- `GET CHANNEL` is unchanged, and listen-before-talk is untouched: the MANAGED-TX gate still runs
+  its own CAD before every transmission. What changes is that a *status reader* no longer has to
+  pay for a verdict it did not ask for.
+
 ## 1.0.0
 
 The reliability run, and the first release the maintainer calls 1.0. Seven
