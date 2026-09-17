@@ -70,16 +70,18 @@ static bool config_validate_freq_value(const std::string &val,
            config_policy_freq_valid_band(f, freq_min_mhz, freq_max_mhz);
 }
 
-static bool config_validate_power_value(const std::string &val)
+static bool config_validate_power_value(const std::string &val,
+                                        DaemonChipFamily chip_family)
 {
     int p = 0;
 
     return config_value_parse_int_exact(val, &p) &&
-           config_policy_power_valid(p);
+           config_policy_power_valid_family(p, chip_family);
 }
 
 static bool config_validate_lora_value(const std::string &key,
                                        const std::string &val,
+                                       DaemonChipFamily chip_family,
                                        float freq_min_mhz,
                                        float freq_max_mhz)
 {
@@ -87,7 +89,7 @@ static bool config_validate_lora_value(const std::string &key,
         return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
-        return config_validate_power_value(val);
+        return config_validate_power_value(val, chip_family);
 
     if (key == "SF") {
         int sf = 0;
@@ -161,7 +163,7 @@ static bool config_validate_fsk_value(const std::string &key,
         return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
-        return config_validate_power_value(val);
+        return config_validate_power_value(val, chip_family);
 
     if (key == "BR") {
         float br = 0.0f;
@@ -325,7 +327,7 @@ bool config_validate_command(const ConfigCommand &cmd,
             if (config_is_fsk_only_key(key))
                 continue;
 
-            if (!config_validate_lora_value(key, val,
+            if (!config_validate_lora_value(key, val, chip_family,
                                             freq_min_mhz, freq_max_mhz)) {
                 config_validation_reject(result, key, val,
                                          config_validate_reject_reason(

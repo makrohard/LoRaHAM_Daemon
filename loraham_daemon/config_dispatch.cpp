@@ -29,7 +29,7 @@ void config_dispatch_log_bytes(const ConfigDispatchLog *log,
 {
     char msg[64];
 
-    snprintf(msg, sizeof(msg), "%zd Byte empfangen", n);
+    snprintf(msg, sizeof(msg), "%zd bytes received", n);
     config_dispatch_log_message(log, msg);
 }
 
@@ -60,7 +60,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     ConfigLineApplyContext *ctx =
         (ConfigLineApplyContext *)user;
 
-    config_dispatch_log_line(&ctx->log, "Zeile", line);
+    config_dispatch_log_line(&ctx->log, "line", line);
 
     /* Reserved-setter matching is case-insensitive like every documented
      * CONF key: the dedicated matchers and the invalid-value classifier all
@@ -138,7 +138,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         if (txqueue_enabled == 0 &&
             (daemon_tx_async_runtime_pending() > 0 ||
              daemon_tx_async_runtime_job_active())) {
-            printf("[%s] TXQUEUE=0 abgelehnt: Queue aktiv (%zu pending%s)\n",
+            printf("[%s] TXQUEUE=0 rejected: queue active (%zu pending%s)\n",
                    ctx->tag, daemon_tx_async_runtime_pending(),
                    daemon_tx_async_runtime_job_active() ? ", 1 executing"
                                                         : "");
@@ -253,7 +253,7 @@ void config_dispatch_apply_line(const char *line, void *user)
 
     if(!ctx->ctrl || !ctx->ctrl->driver ||
        !radio_controller_ready(ctx->ctrl)) {
-        config_dispatch_log_message(&ctx->log, "Radio nicht bereit");
+        config_dispatch_log_message(&ctx->log, "radio not ready");
         printf("[%s] RADIO=%s CONFIG ignored\n",
                ctx->tag,
                radio_health_name(radio_controller_health(ctx->ctrl)));
@@ -273,7 +273,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         int executing = daemon_tx_async_runtime_job_active();
 
         if (queued > 0 || executing) {
-            config_dispatch_log_message(&ctx->log, "Abgelehnt: TX-Queue aktiv");
+            config_dispatch_log_message(&ctx->log, "rejected: TX queue active");
             printf("[%s] CONFIG rejected: TX queue busy "
                    "(%zu pending%s) – retry when drained\n",
                    ctx->tag, queued, executing ? ", 1 executing" : "");
@@ -283,7 +283,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         }
     }
 
-    config_dispatch_log_message(&ctx->log, "Apply startet");
+    config_dispatch_log_message(&ctx->log, "apply starting");
 
     ConfigApplyStatus apply_status;
 
@@ -300,7 +300,7 @@ void config_dispatch_apply_line(const char *line, void *user)
         if (apply_status == CONFIG_APPLY_APPLIED) {
             // beginFSK()/begin() clears the IRQ callback.
             ctx->ctrl->driver->setPacketReceivedAction(ctx->ctrl->rx_callback);
-            config_dispatch_log_message(&ctx->log, "Callback neu gesetzt");
+            config_dispatch_log_message(&ctx->log, "callback reinstalled");
             daemon_rx_rearm_note_result(ctx->ctrl,
                                         ctx->ctrl->driver->startReceive(),
                                         "CONFIG");
@@ -310,16 +310,16 @@ void config_dispatch_apply_line(const char *line, void *user)
              * v112, so the radio goes FAILED (TX/CONFIG gate closed, GET
              * STATUS reports it) instead of pretending READY. */
             ctx->ctrl->health = RADIO_HEALTH_FAILED;
-            printf("[%s] CONFIG-Hardwarefehler: RADIO=FAILED (fail-closed)\n",
+            printf("[%s] CONFIG hardware error: RADIO=FAILED (fail-closed)\n",
                    ctx->tag);
             fflush(stdout);
         }
     }
 
     if (apply_status == CONFIG_APPLY_APPLIED)
-        config_dispatch_log_message(&ctx->log, "RX neu gestartet");
+        config_dispatch_log_message(&ctx->log, "RX restarted");
     else
-        config_dispatch_log_message(&ctx->log, "Kein RX-Neustart (kein Apply)");
+        config_dispatch_log_message(&ctx->log, "no RX restart (no apply)");
 
     switch (apply_status) {
     case CONFIG_APPLY_OK_NO_RADIO:
@@ -363,7 +363,7 @@ void config_dispatch_client(ClientSlot *slots,
         log
     };
 
-    config_dispatch_log_slot(&log, index, "Client bereit");
+    config_dispatch_log_slot(&log, index, "client ready");
 
     ssize_t n;
 
@@ -375,23 +375,23 @@ void config_dispatch_client(ClientSlot *slots,
         if(errno == EAGAIN || errno == EWOULDBLOCK)
             return;
 
-        config_dispatch_log_slot(&log, index, "Lesefehler, Client zu");
+        config_dispatch_log_slot(&log, index, "read error, closing client");
         client_slot_close(slot);
         return;
     }
 
     if(n == 0) {
-        config_dispatch_log_slot(&log, index, "EOF, Stream flush");
+        config_dispatch_log_slot(&log, index, "EOF, stream flush");
         if(config_stream_flush(&slot->stream,
                                config_dispatch_apply_line,
                                &line_ctx) != 0) {
-            config_dispatch_log_slot(&log, index, "Flush-Fehler");
+            config_dispatch_log_slot(&log, index, "flush error");
             printf("[%s] CONFIG stream flush error\n", tag);
             fflush(stdout);
         }
 
         client_slot_close(slot);
-        config_dispatch_log_slot(&log, index, "Client geschlossen");
+        config_dispatch_log_slot(&log, index, "client closed");
         return;
     }
 
@@ -400,7 +400,7 @@ void config_dispatch_client(ClientSlot *slots,
     if(config_stream_feed(&slot->stream, buf, (size_t)n,
                           config_dispatch_apply_line,
                           &line_ctx) != 0) {
-        config_dispatch_log_slot(&log, index, "Stream zu lang, Client zu");
+        config_dispatch_log_slot(&log, index, "stream too long, closing client");
         printf("[%s] CONFIG stream too long, client closed\n", tag);
         fflush(stdout);
         client_slot_close(slot);

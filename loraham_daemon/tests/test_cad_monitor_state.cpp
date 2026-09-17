@@ -22,8 +22,8 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
-// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
-// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+// Fake driver: overrides the virtual RadioDriver delegates and counts calls
+// exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
     int scan_result;
     int scan_count;
@@ -80,6 +80,17 @@ struct FakeRadio : public RadioDriver {
     int16_t applyFskParam(const char *, const std::string &,
                           const std::string &) override { return 0; }
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    /* The active CAD probe now stops reception before deciding whether a
+     * packet is pending, so every fake needs both of these: the base class
+     * forwards to phy_, which is NULL here. */
+    int standby_count = 0;
+    int16_t standby() override { standby_count++; return 0; }
+
+    /* Mandatory since RadioDriver::rxDonePending() became pure virtual: a
+     * default of false silently preserved the RX-erasure defect in any driver
+     * that forgot it. These fakes never have a packet pending. */
+    bool rxDonePending() override { return false; }
+
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
     {

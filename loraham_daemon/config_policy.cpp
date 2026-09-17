@@ -48,9 +48,53 @@ bool config_policy_lora_sync_valid(uint32_t sync)
     return sync <= 0xFF;
 }
 
+bool config_policy_lora_ldro_required(int sf, float bw_khz)
+{
+    if (sf < 0 || bw_khz <= 0.0f)
+        return false;
+
+    /* Symbol time in ms: 2^SF / BW(Hz) * 1000. */
+    const double t_sym_ms = (double)(1u << sf) / ((double)bw_khz * 1000.0) * 1000.0;
+
+    return t_sym_ms >= 16.0;
+}
+
 bool config_policy_power_valid(int power)
 {
     return power >= 0 && power <= 20;
+}
+
+/*
+ * Output power is family-specific, in both directions.
+ *
+ * SX127x, low end: 0 and 1 dBm are not reachable on PA_BOOST at all. RadioLib's
+ * SX1278::setOutputPower maps 2..17 to PA_BOOST and anything below 2 to the RFO
+ * pin -- a different output path, which on these boards is not the one the
+ * antenna is connected to. Accepting 0 or 1 therefore did not mean "transmit
+ * quietly", it meant "transmit into an unconnected pin", and the caller was
+ * told the setting succeeded.
+ *
+ * SX127x, high end: RadioLib's own checkOutputPower accepts 2..17 on PA_BOOST
+ * and special-cases exactly 20; 18 and 19 are rejected by the library itself
+ * with ERR_INVALID_OUTPUT_POWER and were never reachable. Rejecting them here
+ * turns a late, opaque driver error into an early, specific one.
+ *
+ * 20 is the value that WAS reachable, through the PA_DAC-boosted path, and it
+ * is dropped on purpose: the datasheet permits continuous operation to +17 dBm
+ * but restricts +20 dBm to duty cycle <= 1 %, VSWR <= 3:1 and VDD 2.4-3.7 V.
+ * This daemon has no duty-cycle governor -- not a weak one, none -- so offering
+ * POWER=20 as an ordinary setting would advertise an operating mode whose
+ * contract nothing enforces. If it is ever wanted it comes back as a feature
+ * with that contract attached.
+ *
+ * SX1262 keeps 0..20: its PA has a single output path and no such restriction.
+ */
+bool config_policy_power_valid_family(int power, DaemonChipFamily family)
+{
+    if (family == DAEMON_CHIP_FAMILY_SX127X)
+        return power >= 2 && power <= 17;
+
+    return config_policy_power_valid(power);
 }
 
 /* --- FSK CONFIG value policy -------------------------------------------- */
@@ -183,8 +227,8 @@ bool config_policy_fsk_encoding_valid_family(int encoding,
 }
 
 /* Standard Semtech LoRa airtime (explicit header, worst case CRC on).
- * LDRO active when the symbol time exceeds 16 ms, matching the drivers'
- * auto-LDRO rule. */
+ * LDRO comes from config_policy_lora_ldro_required(), the one definition of
+ * that boundary. */
 double config_policy_lora_airtime_ms(int sf, float bw_khz, int cr,
                                      int preamble, size_t payload_len)
 {
@@ -192,7 +236,7 @@ double config_policy_lora_airtime_ms(int sf, float bw_khz, int cr,
         return -1.0;
 
     double t_sym_ms = (double)(1u << sf) / ((double)bw_khz * 1000.0) * 1000.0;
-    int de = t_sym_ms > 16.0 ? 1 : 0;
+    int de = config_policy_lora_ldro_required(sf, bw_khz) ? 1 : 0;
     double num = 8.0 * (double)payload_len - 4.0 * sf + 28.0 + 16.0;
     double den = 4.0 * (double)(sf - 2 * de);
     double payload_sym = 8.0;

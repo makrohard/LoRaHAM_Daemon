@@ -46,11 +46,27 @@ static void expect_int(const char *name, int actual, int expected)
 
 static void test_chunk_size(void)
 {
-    expect_size("zero remaining", data_tx_chunk_size(0), 0);
-    expect_size("one byte", data_tx_chunk_size(1), 1);
-    expect_size("max exact", data_tx_chunk_size(255), 255);
-    expect_size("max plus one", data_tx_chunk_size(256), 255);
-    expect_size("large input", data_tx_chunk_size(2048), 255);
+    expect_size("zero remaining", data_tx_chunk_size(0, 255), 0);
+    expect_size("one byte", data_tx_chunk_size(1, 255), 1);
+    expect_size("max exact", data_tx_chunk_size(255, 255), 255);
+    expect_size("max plus one", data_tx_chunk_size(256, 255), 255);
+    expect_size("large input", data_tx_chunk_size(2048, 255), 255);
+
+    /* The chunker now takes the radio's limit, so SX127x+FSK cuts at 63. A
+     * chunk larger than the FIFO would be rejected at the radio -- or worse,
+     * sent partially -- instead of being split here. */
+    expect_size("fsk limit exact", data_tx_chunk_size(63, 63), 63);
+    expect_size("fsk limit plus one", data_tx_chunk_size(64, 63), 63);
+    expect_size("fsk limit large input", data_tx_chunk_size(2048, 63), 63);
+    expect_size("below the fsk limit is untouched",
+                data_tx_chunk_size(20, 63), 20);
+
+    /* Fail safe on a nonsense limit: fall back to the ceiling rather than
+     * chunk to zero and spin. */
+    expect_size("zero limit falls back to the ceiling",
+                data_tx_chunk_size(2048, 0), 255);
+    expect_size("limit above the ceiling is capped",
+                data_tx_chunk_size(2048, 4096), 255);
 }
 
 typedef struct {
@@ -99,7 +115,7 @@ static void test_chunk_iterator(void)
     ChunkRecorder rec = {0, {0}, {0}};
 
     expect_size("iterator all bytes",
-                data_tx_for_each_chunk(buf, sizeof(buf), record_chunk, &rec),
+                data_tx_for_each_chunk(buf, sizeof(buf), 255, record_chunk, &rec),
                 sizeof(buf));
     expect_int("iterator call count", rec.calls, 3);
     expect_size("iterator first size", rec.sizes[0], 255);
@@ -115,7 +131,7 @@ static void test_chunk_iterator_stop(void)
     ChunkRecorder rec = {0, {0}, {0}};
 
     expect_size("iterator stop returns sent bytes",
-                data_tx_for_each_chunk(buf, sizeof(buf), stop_on_second_chunk, &rec),
+                data_tx_for_each_chunk(buf, sizeof(buf), 255, stop_on_second_chunk, &rec),
                 255);
     expect_int("iterator stop call count", rec.calls, 2);
 }
@@ -164,7 +180,7 @@ static void test_process_slots_epoll(void)
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots(name, slots, 2, &ready, record_chunk, &rec,
-                          null_data_tx_log(), NULL);
+                          null_data_tx_log(), NULL, NULL);
 
     expect_int("process slots call count", rec.calls, 2);
     expect_size("process slots first chunk", rec.sizes[0], 255);
@@ -219,7 +235,7 @@ static void test_process_slots_abort_on_handler_error(void)
     expect_int(name, event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots(name, slots, 2, &ready, stop_on_second_chunk, &rec,
-                          null_data_tx_log(), NULL);
+                          null_data_tx_log(), NULL, NULL);
 
     expect_int("process abort call count", rec.calls, 2);
     expect_size("process abort first chunk", rec.sizes[0], 255);
@@ -267,7 +283,7 @@ static void test_process_slots_eof_closes_and_resets_output(void)
     expect_int("slot eof wait", event_loop_wait(&set, &ready, 100000), 1);
 
     data_tx_process_slots("TEST", slots, 1, &ready, record_chunk, &rec,
-                          null_data_tx_log(), NULL);
+                          null_data_tx_log(), NULL, NULL);
 
     expect_int("slot eof no chunks", rec.calls, 0);
     expect_int("slot eof client closed", slots[0].fd, -1);

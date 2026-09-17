@@ -138,35 +138,74 @@ A pin value below zero means "not connected" and is passed to RadioLib as `RADIO
 
 | Flag | `loraham` | `uputronics-ce0/-ce1` | `waveshare-sx1262` |
 |---|---|---|---|
-| `cad_scan_available` | `true` | `false` | `true` |
+| `cad_scan_available` | `true` | `true` | `true` |
 | `fsk_stream_available` | `true` | `false` | `false` |
 | `reset_wired` | `true` | `false` | `true` |
 | `tcxo_voltage` | `0.0` | `0.0` | `1.8` |
 
-* `cad_scan_available` is the only flag the runtime acts on. On the Uputronics profiles DIO1 is not
-  routed, so the blocking SX127x `scanChannel()` could never observe `CadDetected` and would report
-  false-FREE. Both scan paths therefore degrade to the passive live-RSSI probe: `GET CHANNEL` and
-  MANAGED TX gating answer from the `CADRSSI` threshold, and `CADSCAN=0` marks the non-scan source.
-  Changing `CADRSSI` on such wiring changes whether the hardware transmits at all.
+* `cad_scan_available` is the only flag the runtime acts on, and it means **"this profile and
+  driver combination has trustworthy active CAD"** — deliberately the combination and not the chip
+  family, since a future board could carry a CAD-capable chip on wiring that does not support it.
+
+  It is `true` on **all three** presets, Uputronics included. That is a change: it used to be
+  `false` there because the blocking SX127x `scanChannel()` waits on DIO0 and polls DIO1 for the
+  detection, and those boards do not route DIO1, so every scan reported false-FREE. The SX127x
+  driver now polls the latched `CadDone`/`CadDetected` bits in `RegIrqFlags` instead, so the verdict
+  comes off the chip rather than off the wiring and needs no DIO1. Uputronics therefore reports
+  `CADSCAN=1` and runs real listen-before-talk.
+
+  Measured on the air when the flag was flipped: on a 433 channel whose noise floor forced the old
+  RSSI fallback to report `BUSY` at rest (`LIVERSSI ≈ −81 dBm` against a −90 dBm `CADRSSI`), the
+  same box at the same noise level now reports `CADSTATE=FREE` — and reports `BUSY` for 25 of 25
+  polls while another station actually occupies the channel.
+
+  `CADRSSI` still exists and still matters, but for the **passive** mechanism — the `CAD=0/1`
+  monitor and the degraded path a profile would take if it ever declared no trustworthy CAD. It is
+  no longer the Uputronics substitute for listen-before-talk.
 * `fsk_stream_available` is documentation only. It is set by the preset table and read nowhere in
   the daemon outside the unit tests, so it gates nothing: `SET MODE=FSK` is accepted on the
   Uputronics and Waveshare profiles exactly as on any other. The underlying board fact still holds
   — SX127x FSK stream modes need DIO1, which these boards do not route — but nothing enforces it
   the way scan-based CAD is enforced.
 * `reset_wired` is `false` where RESET is not routed. A daemon restart is then a warm start against
-  whatever state the chip is in; the condition is logged once at init, and recovery from a wedged
-  chip needs a power cycle.
+  whatever state the chip is in; the condition is logged once at init.
+
+  Observed on an `uputronics-ce1` 868 instance, 2026-09-16: after repeated restarts the receiver
+  went deaf while the daemon reported `RADIO=READY CADSCAN=1 RXREADY=1`. It transmitted normally
+  (`outcome=ok`), heard nothing at all — `LIVERSSI` flat and `CADSTATE=FREE` throughout a burst that
+  the other band reported `BUSY` for — and the stale state showed up as a wrong noise floor
+  (`RSSI=-86.00` where the band normally reads `-157.00`). RadioLib writes a register only when its
+  cache differs, so `begin()` alone need not correct a chip that survived the restart in an
+  unexpected state.
+
+  A power cycle is the documented recovery, but a **modem round trip recovers it without one**:
+
+  ```
+  SET MODE=FSK
+  SET MODE=LORA
+  ```
+
+  That runs `beginFSK()` and then the full `begin()` path, rewriting far more registers than a
+  repeated `begin()`. Reception resumed on the next frame and the reported floor returned to
+  `-157.00`.
+
+  The general point for operators: `RADIO=READY` means a configured radio, a usable IRQ path and an
+  armed receiver. It does **not** mean the antenna path works, and nothing in the daemon can assert
+  that — only a decode from a second station can.
 * `tcxo_voltage` above zero means `begin()` must set the DIO3 TCXO voltage.
 
-## Chip-family differences
+  Where it is zero the board runs on a plain crystal rather than a temperature-compensated
+  oscillator, so two such boards can sit further apart in frequency than a narrowband FSK receiver
+  likes. Expect FSK to be less forgiving than LoRa between them: chirp demodulation tolerates far
+  more frequency error than an FSK discriminator does. If an FSK link is poor where LoRa is fine,
+  `SET RXBW=<khz>` on the receiving side is the control to reach for.
 
-| File | Contents |
-|---|---|
-| `hardware_profile.cpp`, `hardware_profile.h` | the `--hw` preset table: wiring, chip family, capabilities, LED, claimed pins |
-| `sx127x_driver.cpp`, `sx127x_driver.h` | the SX1278/RFM9x driver; all SX127x register constants live there, including the `begin()`-failure diagnosis |
-| `sx1262_driver.cpp`, `sx1262_driver.h` | the SX126x driver: TCXO via DIO3, DIO2-as-RF-switch plus the inverse antenna-switch line, SX126x CRC/sync/power semantics, instantaneous-RSSI live RSSI |
-| `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state; the LED is a per-band hardware and activity resource, not the instance-ownership lock |
-
+  One diagnostic that is worth more than the RSSI: **`RX=0` together with `RXDROPS=0` means no
+  completed frame reached the daemon's counted read-and-validate path**, whereas frames that arrive
+  and fail CRC show up as `RXDROPS`. The first points at configuration or frequency, the second at
+  signal quality. It is a strong hint, not a measurement of the front end — an RX indication with a
+  non-positive length is re-armed without recording a drop, so "nothing was demodulated at all" is
+  more than the counters can prove.
 * Live RSSI on SX1262 comes from the SX126x instantaneous-RSSI command, never from SX127x register
   addresses.
 * LoRa sync word: RadioLib maps the SX127x byte (`0x12` / `0x2B`) onto SX1262 via the compatibility
@@ -186,6 +225,15 @@ SX127x cross-family decode in the RX direction; and the Waveshare LF/433 variant
 on-air-validated with the HF/868 binding software-supported but on-air-untested. The last of these
 is an argument by analogy, and the code supports the premise: one pin set serves both variants and
 the driver is band-agnostic.
+
+## Chip-family differences
+
+| File | Contents |
+|---|---|
+| `hardware_profile.cpp`, `hardware_profile.h` | the `--hw` preset table: wiring, chip family, capabilities, LED, claimed pins |
+| `sx127x_driver.cpp`, `sx127x_driver.h` | the SX1278/RFM9x driver; all SX127x register constants live there, including the `begin()`-failure diagnosis |
+| `sx1262_driver.cpp`, `sx1262_driver.h` | the SX126x driver: TCXO via DIO3, DIO2-as-RF-switch plus the inverse antenna-switch line, SX126x CRC/sync/power semantics, instantaneous-RSSI live RSSI |
+| `daemon_led.cpp`, `daemon_led.h` | Raspberry Pi GPIO LED setup and per-radio LED pin state; the LED is a per-band hardware and activity resource, not the instance-ownership lock |
 
 ## Two processes on one Pi
 

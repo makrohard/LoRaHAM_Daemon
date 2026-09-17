@@ -50,10 +50,20 @@ typedef struct {
     int led_pin;               /* < 0: no status LED for this process */
 
     /* Capabilities. */
-    bool cad_scan_available;   /* true: scanChannel()-based CAD usable
-                                * (SX127x needs DIO1 wired: without it the
-                                * blocking scanChannel can never see
-                                * CadDetected and would report false-FREE). */
+    bool cad_scan_available;   /* true: this profile/driver combination has
+                                * TRUSTWORTHY active CAD.
+                                *
+                                * Deliberately a property of the combination,
+                                * not of the chip family: a future board could
+                                * carry a CAD-capable chip on wiring that does
+                                * not support it, and a family-wide answer
+                                * would have no way to say so.
+                                *
+                                * SX127x no longer needs DIO1 for this. The
+                                * driver polls the latched CadDone/CadDetected
+                                * bits in RegIrqFlags instead of waiting on the
+                                * pin, so the verdict comes off the chip and
+                                * not off the wiring. */
     bool fsk_stream_available; /* SX127x FSK stream modes need DIO1. */
     bool reset_wired;          /* false: log warm-start note once at init */
 

@@ -21,7 +21,7 @@ typedef struct {
     size_t head;
     size_t tail;
     size_t count;
-    size_t dropped; /* Beim Stop verworfen. */
+    size_t dropped; /* Discarded at stop. */
 } DaemonTxQueue;
 
 void daemon_tx_queue_init(DaemonTxQueue *queue);

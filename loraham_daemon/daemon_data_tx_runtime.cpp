@@ -1,5 +1,7 @@
 #include "daemon_data_tx_runtime.h"
 
+#include "radio_tx_limit.h"
+
 #include "rf_packet.h"
 
 #include "daemon_band.h"
@@ -99,7 +101,19 @@ size_t data_tx_queue_capacity_bytes(void *ctx)
     if (pending >= DAEMON_TX_QUEUE_CAPACITY)
         return 0;
 
-    return (DAEMON_TX_QUEUE_CAPACITY - pending) * RF_PACKET_MAX_PAYLOAD_LEN;
+    /* The same limit the chunker uses, or the two disagree: 63-byte chunks
+     * counted against 255-byte slots let one read produce about four times
+     * as many jobs as there is room for. */
+    return (DAEMON_TX_QUEUE_CAPACITY - pending) * radio_tx_payload_limit(ctrl);
+}
+
+/* The largest payload the radio will accept right now (data_tx.h's
+ * DataTxChunkLimitFn). Paired with data_tx_queue_capacity_bytes() above. */
+size_t data_tx_chunk_limit_bytes(void *ctx)
+{
+    DataTxDaemonContext *tx = (DataTxDaemonContext *)ctx;
+
+    return radio_tx_payload_limit(tx ? tx->ctrl : NULL);
 }
 
 RadioCadProbeStatus data_tx_probe_channel_state(DataTxDaemonContext *tx)
@@ -137,6 +151,27 @@ int data_tx_wait_channel_free_with_limits_ex(
 
         if (probe_status == RADIO_CAD_PROBE_UNAVAILABLE)
             return DATA_TX_CAD_WAIT_ERROR;
+
+        /*
+         * A packet of OUR OWN is waiting to be read. Waiting cannot clear it:
+         * this loop runs on the main thread, which is also the thread that
+         * drains RX -- and it drains AFTER socket processing, so the packet
+         * cannot be collected until this call returns. Every further probe
+         * would see the same pending packet and report BUSY, burn the CAD
+         * budget, and end in the timeout decision.
+         *
+         * That is the dangerous part: with CADTXAFTERTIMEOUT=1 the timeout
+         * then permits a send, and the TX preparation clears `received` and
+         * the IRQ flags -- destroying a completed packet that no client ever
+         * saw. The probe protects it and the caller then erased it.
+         *
+         * So a pending local packet ends the attempt at once and never reaches
+         * the timeout opt-in. BLOCK is the honest answer: the channel just
+         * delivered something, we decline to transmit over it, and returning
+         * now is what lets the main loop drain it.
+         */
+        if (ctrl->received.load())
+            return DATA_TX_CAD_WAIT_BLOCK;
 
         if (probe_status != RADIO_CAD_PROBE_BUSY) {
             free_ticks++;
@@ -366,9 +401,27 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     int band = radio_controller_band_number(ctrl);
 
     if (!radio_controller_ready(ctrl)) {
-        daemon_debug_ctx(tx->log_ctx, "Radio nicht bereit");
-        printf("[%s] DATA-TX abgebrochen: RADIO_NOT_READY\n", tag);
+        daemon_debug_ctx(tx->log_ctx, "radio not ready");
+        printf("[%s] DATA TX aborted: RADIO_NOT_READY\n", tag);
         return DAEMON_TX_OUTCOME_RADIO_NOT_READY;
+    }
+
+    /* Payload limit, before ANY queue or radio mutation. The raw path chunks
+     * to this limit and never arrives here oversized, but a framed client
+     * sends its own length: a 64-byte TX_PACKET parses correctly into the
+     * 255-byte frame buffer and only the radio's FIFO says it is too big. It
+     * is rejected here instead, so no job is queued and the chip is not
+     * touched. */
+    size_t limit = radio_tx_payload_limit(ctrl);
+
+    if (len > limit) {
+        daemon_radio_stats_record_tx_result(&ctrl->stats,
+                                            TX_RESULT_INVALID_PACKET);
+        daemon_debug_ctx(tx->log_ctx, "payload too large");
+        printf("[%s] DATA TX aborted: %s (%zu bytes > %zu in mode %s)\n",
+               tag, tx_result_name(TX_RESULT_INVALID_PACKET), len, limit,
+               radio_mode_name(ctrl->mode));
+        return DAEMON_TX_OUTCOME_INVALID_PACKET;
     }
 
     /* Defense in depth: with the queue disabled but the
@@ -378,8 +431,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         (daemon_tx_async_runtime_pending() > 0 ||
          daemon_tx_async_runtime_job_active())) {
         daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
-        daemon_debug_ctx(tx->log_ctx, "Rest-Queue aktiv");
-        printf("[%s] DATA-TX abgebrochen: %s (Rest-Queue aktiv)\n", tag,
+        daemon_debug_ctx(tx->log_ctx, "residual queue active");
+        printf("[%s] DATA TX aborted: %s (residual queue active)\n", tag,
                tx_result_name(TX_RESULT_BUSY));
         return DAEMON_TX_OUTCOME_BUSY;
     }
@@ -389,8 +442,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
                                           tx->tx_busy_wait_ticks,
                                           tx->tx_busy_sleep_usec)) {
         daemon_radio_stats_record_tx_result(&ctrl->stats, TX_RESULT_BUSY);
-        daemon_debug_ctx(tx->log_ctx, "TX belegt");
-        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+        daemon_debug_ctx(tx->log_ctx, "TX busy");
+        printf("[%s] DATA TX aborted: %s\n", tag,
                tx_result_name(TX_RESULT_BUSY));
         return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
     }
@@ -401,9 +454,9 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
     // CAD guard: LoRa only. Queued TX runs CAD in the worker.
     if (ctrl->mode == RADIO_MODE_LORA) {
         if (queued_tx)
-            daemon_debug_ctx(tx->log_ctx, "CAD wird im Worker geprüft");
+            daemon_debug_ctx(tx->log_ctx, "CAD is checked in the worker");
         else
-            daemon_debug_ctx(tx->log_ctx, "CAD prüfen");
+            daemon_debug_ctx(tx->log_ctx, "checking CAD");
     }
 
     if (!queued_tx) {
@@ -412,8 +465,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         if (cad_decision == DATA_TX_CAD_WAIT_ERROR) {
             TxResult err_result = TX_RESULT_RADIO_ERROR;
             daemon_radio_stats_record_tx_result(&ctrl->stats, err_result);
-            daemon_debug_ctx(tx->log_ctx, "CAD-Probe fehlgeschlagen");
-            printf("[%s] DATA-TX abgebrochen: %s (CAD UNAVAILABLE)\n", tag,
+            daemon_debug_ctx(tx->log_ctx, "CAD probe failed");
+            printf("[%s] DATA TX aborted: %s (CAD UNAVAILABLE)\n", tag,
                    tx_result_name(err_result));
             return DAEMON_TX_OUTCOME_RADIO_ERROR;
         }
@@ -422,20 +475,20 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
             // Only MANAGED can block now; DIRECT never reaches this path.
             TxResult busy_result = TX_RESULT_CAD_TIMEOUT;
             daemon_radio_stats_record_tx_result(&ctrl->stats, busy_result);
-            daemon_debug_ctx(tx->log_ctx, "Kanal belegt");
-            printf("[%s] Kanal belegt, Paket verworfen\n", tag);
-            printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+            daemon_debug_ctx(tx->log_ctx, "channel busy");
+            printf("[%s] channel busy, packet discarded\n", tag);
+            printf("[%s] DATA TX aborted: %s\n", tag,
                    tx_result_name(busy_result));
             return DAEMON_TX_OUTCOME_CHANNEL_BUSY;
         }
 
         if (data_tx_cad_wait_timed_out(cad_decision)) {
             daemon_radio_stats_record_cad_timeout_send(&ctrl->stats);
-            daemon_debug_ctx(tx->log_ctx, "CAD Timeout, sende trotzdem");
+            daemon_debug_ctx(tx->log_ctx, "CAD timeout, sending anyway");
         }
     }
 
-    daemon_debug_ctx(tx->log_ctx, "Chunk %zu Byte Offset %zu", len, offset);
+    daemon_debug_ctx(tx->log_ctx, "chunk %zu bytes offset %zu", len, offset);
 
     DaemonTxJob job;
     DaemonTxJobResult result;
@@ -455,8 +508,8 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         data_tx_configure_job_cad_policy(tx, &job);
     data_tx_apply_cad_decision_flags(&job, cad_decision);
     if (daemon_tx_job_set_payload(&job, chunk, len) != 0) {
-        daemon_debug_ctx(tx->log_ctx, "Abbruch: INVALID_PACKET");
-        printf("[%s] DATA-TX abgebrochen: INVALID_PACKET\n", tag);
+        daemon_debug_ctx(tx->log_ctx, "aborted: INVALID_PACKET");
+        printf("[%s] DATA TX aborted: INVALID_PACKET\n", tag);
         return DAEMON_TX_OUTCOME_INVALID_PACKET;
     }
 
@@ -465,14 +518,14 @@ int send_data_chunk(uint8_t *chunk, size_t len, size_t offset, void *ctx)
         daemon_radio_stats_record_tx_result(&ctrl->stats, result.tx_result);
 
     if (daemon_tx_outcome_is_failure(result.outcome)) {
-        daemon_debug_ctx(tx->log_ctx, "Abbruch: %s",
+        daemon_debug_ctx(tx->log_ctx, "aborted: %s",
                          tx_result_name(result.tx_result));
-        printf("[%s] DATA-TX abgebrochen: %s\n", tag,
+        printf("[%s] DATA TX aborted: %s\n", tag,
                tx_result_name(result.tx_result));
         return result.outcome;
     }
 
-    daemon_debug_ctx(tx->log_ctx, "Chunk gesendet");
+    daemon_debug_ctx(tx->log_ctx, "chunk sent");
     return 0;
 }
 

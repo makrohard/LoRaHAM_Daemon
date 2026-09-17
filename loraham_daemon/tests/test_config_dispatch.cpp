@@ -23,10 +23,11 @@ static int g_fail = 0;
 
 /* --- Fake radio --- */
 
-// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
-// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+// Fake driver: overrides the virtual RadioDriver delegates and counts calls
+// exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
     int callback_count;
+    int clear_callback_count;
     int start_receive_count;
     int scan_result;
     int scan_count;
@@ -34,7 +35,7 @@ struct FakeRadio : public RadioDriver {
     void (*last_callback)(void);
 
     FakeRadio() : RadioDriver(NULL),
-                  callback_count(0), start_receive_count(0),
+                  callback_count(0), clear_callback_count(0), start_receive_count(0),
                   scan_result(0), scan_count(0), rssi(-82.5f),
                   last_callback(NULL) {}
 
@@ -42,6 +43,15 @@ struct FakeRadio : public RadioDriver {
     {
         last_callback = cb;
         callback_count++;
+    }
+
+    /* The base class forwards to phy_, which is NULL in these fakes: the CAD
+     * probe now takes the RX alert off DIO0 before scanning, so every fake
+     * driver needs this or the call dereferences null. */
+    void clearPacketReceivedAction() override
+    {
+        clear_callback_count++;
+        last_callback = NULL;
     }
 
     int16_t startReceive() override
@@ -78,8 +88,19 @@ struct FakeRadio : public RadioDriver {
                            const std::string &) override { return 0; }
     int16_t applyFskParam(const char *, const std::string &,
                           const std::string &) override { return 0; }
-    // Kein Module hinter dem Fake: Live-RSSI unavailable wie zuvor (-200).
+    // No Module behind the fake: live RSSI unavailable as before (-200).
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    /* The active CAD probe now stops reception before deciding whether a
+     * packet is pending, so every fake needs both of these: the base class
+     * forwards to phy_, which is NULL here. */
+    int standby_count = 0;
+    int16_t standby() override { standby_count++; return 0; }
+
+    /* Mandatory since RadioDriver::rxDonePending() became pure virtual: a
+     * default of false silently preserved the RX-erasure defect in any driver
+     * that forgot it. These fakes never have a packet pending. */
+    bool rxDonePending() override { return false; }
+
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
     {

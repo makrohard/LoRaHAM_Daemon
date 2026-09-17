@@ -50,21 +50,22 @@ void daemon_led_flash_pin(int pin)
 
 
 
-// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
-// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+// Fake driver: overrides the virtual RadioDriver delegates and counts calls
+// exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
     int scan_count;
     int scan_state;
     int scan_pattern[16];
     int scan_pattern_len;
     int callback_count;
+    int clear_callback_count;
     int start_receive_count;
     float rssi;
     void (*last_callback)(void);
 
     FakeRadio() : RadioDriver(NULL),
                   scan_count(0), scan_state(0), scan_pattern_len(0),
-                  callback_count(0), start_receive_count(0), rssi(-81.0f),
+                  callback_count(0), clear_callback_count(0), start_receive_count(0), rssi(-81.0f),
                   last_callback(NULL)
     {
         memset(scan_pattern, 0, sizeof(scan_pattern));
@@ -76,6 +77,15 @@ struct FakeRadio : public RadioDriver {
         callback_count++;
     }
 
+    /* The base class forwards to phy_, which is NULL in these fakes: the CAD
+     * probe now takes the RX alert off DIO0 before scanning, so every fake
+     * driver needs this or the call dereferences null. */
+    void clearPacketReceivedAction() override
+    {
+        clear_callback_count++;
+        last_callback = NULL;
+    }
+
     int16_t startReceive() override
     {
         start_receive_count++;
@@ -84,6 +94,7 @@ struct FakeRadio : public RadioDriver {
 
     int16_t clearIrq(uint32_t) override
     {
+        rx_packet_pending = false;
         return 0;
     }
 
@@ -116,6 +127,24 @@ struct FakeRadio : public RadioDriver {
     int16_t applyFskParam(const char *, const std::string &,
                           const std::string &) override { return 0; }
     float readLiveRssi(RadioMode_t, bool) override { return -200.0f; }
+    /* The active CAD probe now stops reception before deciding whether a
+     * packet is pending, so every fake needs both of these: the base class
+     * forwards to phy_, which is NULL here. */
+    int standby_count = 0;
+    bool rx_completes_on_standby = false;
+    bool rx_packet_pending = false;
+
+    int16_t standby() override
+    {
+        if (standby_count++ == 0 && rx_completes_on_standby)
+            rx_packet_pending = true;   /* a packet landed as RX was stopped */
+        return 0;
+    }
+
+    bool rxDonePending() override { return rx_packet_pending; }
+
+
+
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override
     {
@@ -247,6 +276,77 @@ static void test_default_direct_path(void)
                 daemon_tx_async_runtime_processed(), 0);
     expect_size("direct async pending",
                 daemon_tx_async_runtime_pending(), 0);
+}
+
+/*
+ * HW-5, at the consumer that matters. init_context() puts this controller in
+ * SX127x FSK, where the FIFO allows 63 payload bytes.
+ *
+ * The raw DATA path chunks to the limit and never arrives oversized, but a
+ * framed client sends its own length: a 64-byte TX_PACKET parses correctly
+ * into the 255-byte frame buffer, and before this repair only the radio's FIFO
+ * said it was too big. It must be refused BEFORE any queue or radio mutation
+ * -- so the assertions are not only on the return value but on the sender
+ * never being called and the queue staying empty.
+ */
+static void test_fsk_payload_boundary(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+    uint8_t payload[256];
+
+    memset(payload, 0x5A, sizeof(payload));
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+
+    expect_int("fsk 63 bytes is sent", send_data_chunk(payload, 63, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("fsk 63 reached the sender", sender.calls, 1);
+
+    expect_int("fsk 64 bytes is rejected as invalid",
+               send_data_chunk(payload, 64, 0, &ctx),
+               DAEMON_TX_OUTCOME_INVALID_PACKET);
+    expect_int("fsk 64 never reached the sender", sender.calls, 1);
+
+    expect_int("fsk 255 bytes is rejected as invalid",
+               send_data_chunk(payload, 255, 0, &ctx),
+               DAEMON_TX_OUTCOME_INVALID_PACKET);
+    expect_int("fsk 255 never reached the sender", sender.calls, 1);
+
+    /* And nothing was queued on the way to being rejected. */
+    expect_size("rejected frames queued nothing",
+                daemon_tx_async_runtime_accepted(), 0);
+
+    /* 62 for the lower boundary: the limit is a ceiling, not a fixed size. */
+    expect_int("fsk 62 bytes is sent", send_data_chunk(payload, 62, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("fsk 62 reached the sender", sender.calls, 2);
+}
+
+/* The other half of the same rule: LoRa must not lose a single byte to it. */
+static void test_lora_keeps_the_full_payload(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+    uint8_t payload[256];
+
+    memset(payload, 0x5A, sizeof(payload));
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.tx_queue_active.store(false);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_DIRECT;   /* no CAD wait in this test */
+
+    expect_int("lora 255 bytes is sent", send_data_chunk(payload, 255, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("lora 255 reached the sender", sender.calls, 1);
+
+    expect_int("lora 64 bytes is sent", send_data_chunk(payload, 64, 0, &ctx),
+               DAEMON_TX_OUTCOME_OK);
+    expect_int("lora 64 reached the sender", sender.calls, 2);
 }
 
 /* Audit item 1 (defense in depth): with the queue disabled but residual
@@ -800,6 +900,209 @@ static void test_controller_cad_policy_snapshot(void)
     daemon_tx_async_runtime_shutdown();
 }
 
+/*
+ * Harness contract item 4. CADTXAFTERTIMEOUT is an opt-in to transmit after a
+ * sequence of VALID busy observations. A hardware CAD error is not an
+ * observation at all, and it must never be flattened into one -- otherwise a
+ * radio whose scan is broken transmits on every attempt, which is the exact
+ * failure the register-CAD deadline exists to surface rather than hide.
+ *
+ * The scan returns a negative RadioLib error here, which
+ * radio_cad_status_from_scan_state() maps to UNAVAILABLE.
+ */
+/*
+ * A completed packet must survive the WHOLE synchronous send, not only the
+ * probe.
+ *
+ * Found by an upstream diff review, and it is the caller's half of the race the
+ * probe already handles. The probe correctly preserves the packet and reports
+ * BUSY -- but the synchronous CAD wait runs on the main thread, which is also
+ * the thread that drains RX, and it drains only AFTER socket processing. So the
+ * packet cannot be collected while this loop spins: every probe sees it, every
+ * probe says BUSY, the CAD budget is exhausted, and with CADTXAFTERTIMEOUT=1
+ * the timeout then permits a send whose TX preparation clears `received` and
+ * the IRQ flags. The packet no client ever saw is gone.
+ *
+ * Measured before the fix, through the production send path:
+ *   outcome=0 (OK), transmissions=1, undrained RX clears=1, received=0
+ *
+ * Both timeout policies are covered, because the opt-in is what turns a
+ * preserved packet into a destroyed one.
+ */
+static void test_pending_rx_survives_synchronous_managed_tx(void)
+{
+    for (int opt_in = 0; opt_in <= 1; opt_in++) {
+        RadioController ctrl;
+        DataTxDaemonContext ctx;
+        FakeSender sender;
+        uint8_t payload[] = { 1, 2, 3 };
+        char name[128];
+
+        init_context(&ctrl, &ctx, &sender);
+        ctrl.mode = RADIO_MODE_LORA;
+        ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+        ctrl.tx_queue_active.store(false);      /* the synchronous path */
+        ctrl.cad_scan_available = true;
+        ctrl.cad_wait_timeout_ms.store(50u);
+        ctrl.cad_poll_interval_ms.store(10u);
+        ctrl.cad_idle_stable_ms.store(0u);
+        ctrl.cad_send_after_timeout.store(opt_in != 0);
+        fake(&ctrl)->rx_completes_on_standby = true;
+
+        const int outcome = send_data_chunk(payload, sizeof(payload), 0, &ctx);
+
+        /* Only assertions that can actually fail in this harness. This test
+         * injects a fake sender, so the production TX preparation -- the code
+         * that clears `received` and the IRQ flags, i.e. the step that destroys
+         * the packet -- is never reached here, and counting driver transmits or
+         * IRQ clears would assert nothing. Those are covered by the upstream
+         * review's reproduction, which links the production lora_send(). What
+         * this test owns is the DECISION: the send must be refused before the
+         * timeout opt-in can permit it. */
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: it is still flagged for the main loop",
+                 opt_in);
+        expect_int(name, ctrl.received.load() ? 1 : 0, 1);
+
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: the send is refused, not reported OK",
+                 opt_in);
+        expect_int(name, outcome != DAEMON_TX_OUTCOME_OK ? 1 : 0, 1);
+
+        snprintf(name, sizeof(name),
+                 "CADTXAFTERTIMEOUT=%d: and the sender was never called",
+                 opt_in);
+        expect_int(name, sender.calls, 0);
+
+        daemon_tx_async_runtime_shutdown();
+    }
+}
+
+static void test_cad_error_is_never_converted_into_a_transmission(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext ctx;
+    FakeSender sender;
+
+    init_context(&ctrl, &ctx, &sender);
+    ctrl.mode = RADIO_MODE_LORA;
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    ctrl.cad_send_after_timeout.store(true);      /* the opt-in is ON */
+    fake(&ctrl)->scan_state = RADIOLIB_ERR_RX_TIMEOUT;  /* the scan is broken */
+
+    expect_int("a CAD error ends the attempt even with the opt-in on",
+               data_tx_wait_channel_free_with_limits_ex(&ctx, 4, 1, 0, true),
+               DATA_TX_CAD_WAIT_ERROR);
+
+    /* And it stops at the FIRST error rather than burning the whole window. */
+    expect_int("the error is not retried to the end of the window",
+               fake(&ctrl)->scan_count, 1);
+
+    /* Contrast: a genuinely busy channel with the same opt-in still sends. */
+    fake(&ctrl)->scan_count = 0;
+    fake(&ctrl)->scan_state = 1;                  /* busy, a valid reading */
+    expect_int("a genuinely busy channel still follows the opt-in",
+               data_tx_wait_channel_free_with_limits_ex(&ctx, 2, 1, 0, true),
+               DATA_TX_CAD_WAIT_TIMEOUT_SEND);
+
+    daemon_tx_async_runtime_shutdown();
+}
+
+/*
+ * Harness contract item 12. There are two CAD wait loops -- the synchronous one
+ * in daemon_data_tx_runtime.cpp and the executor's, used by the queued worker.
+ * They must reach the same decision from the same scripted sequence, or the
+ * TXQUEUE setting quietly changes listen-before-talk behaviour.
+ *
+ * This is a parity check, not a merge: one round of it is worth more than a
+ * framework built to unify two loops that are each simple.
+ */
+static void test_sync_and_queued_cad_paths_agree(void)
+{
+    struct Case {
+        const char *name;
+        int pattern[4];
+        int pattern_len;
+        bool opt_in;
+        int sync_expected;       /* DATA_TX_CAD_WAIT_* */
+        int queued_expected;     /* DAEMON_TX_OUTCOME_* */
+    } cases[] = {
+        { "free", { 0, 0, 0, 0 }, 4, false,
+          DATA_TX_CAD_WAIT_FREE, DAEMON_TX_OUTCOME_OK },
+        { "busy without the opt-in", { 1, 1, 1, 1 }, 4, false,
+          DATA_TX_CAD_WAIT_BLOCK, DAEMON_TX_OUTCOME_CHANNEL_BUSY },
+        { "busy with the opt-in", { 1, 1, 1, 1 }, 4, true,
+          DATA_TX_CAD_WAIT_TIMEOUT_SEND, DAEMON_TX_OUTCOME_OK },
+        { "error with the opt-in", { RADIOLIB_ERR_RX_TIMEOUT, 0, 0, 0 }, 4, true,
+          DATA_TX_CAD_WAIT_ERROR, DAEMON_TX_OUTCOME_RADIO_ERROR },
+        { "busy then free", { 1, 1, 0, 0 }, 4, false,
+          DATA_TX_CAD_WAIT_FREE, DAEMON_TX_OUTCOME_OK },
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const Case &c = cases[i];
+        char name[128];
+
+        /* --- the synchronous path --- */
+        {
+            RadioController ctrl;
+            DataTxDaemonContext ctx;
+            FakeSender sender;
+
+            init_context(&ctrl, &ctx, &sender);
+            ctrl.mode = RADIO_MODE_LORA;
+            ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+            memcpy(fake(&ctrl)->scan_pattern, c.pattern, sizeof(c.pattern));
+            fake(&ctrl)->scan_pattern_len = c.pattern_len;
+            fake(&ctrl)->scan_state = c.pattern[c.pattern_len - 1];
+
+            snprintf(name, sizeof(name), "sync path: %s", c.name);
+            expect_int(name,
+                       data_tx_wait_channel_free_with_limits_ex(
+                           &ctx, 4, 1, 0, c.opt_in),
+                       c.sync_expected);
+            daemon_tx_async_runtime_shutdown();
+        }
+
+        /* --- the queued worker's path, same script --- */
+        {
+            RadioController ctrl;
+            DataTxDaemonContext ctx;
+            FakeSender sender;
+            DaemonTxJob job;
+            uint8_t payload[] = { 7 };
+
+            init_context(&ctrl, &ctx, &sender);
+            ctrl.mode = RADIO_MODE_LORA;
+            ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+            memcpy(fake(&ctrl)->scan_pattern, c.pattern, sizeof(c.pattern));
+            fake(&ctrl)->scan_pattern_len = c.pattern_len;
+            fake(&ctrl)->scan_state = c.pattern[c.pattern_len - 1];
+
+            daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 90);
+            daemon_tx_job_set_payload(&job, payload, sizeof(payload));
+            /* Without this the executor skips the CAD loop entirely and every
+             * case "passes" as a plain send -- which is how the first version
+             * of this test went green on two cases it was not exercising. */
+            job.cad_enabled = 1;
+            job.cad_wait_ticks = 4;
+            job.cad_idle_stable_ticks = 1;
+            job.cad_poll_interval_usec = 0;
+            job.cad_send_after_timeout = c.opt_in ? 1 : 0;
+
+            DaemonTxJobResult result =
+                daemon_tx_execute_job_with_sender_and_cad(
+                    &job, fake_send, &sender,
+                    daemon_data_tx_worker_cad_probe, &ctrl,
+                    daemon_data_tx_worker_cad_sleep, NULL);
+
+            snprintf(name, sizeof(name), "queued path: %s", c.name);
+            expect_int(name, (int)result.outcome, c.queued_expected);
+            daemon_tx_async_runtime_shutdown();
+        }
+    }
+}
+
 static void test_managed_busy_timeout_send_when_opt_in(void)
 {
     RadioController ctrl;
@@ -810,7 +1113,7 @@ static void test_managed_busy_timeout_send_when_opt_in(void)
     init_context(&ctrl, &ctx, &sender);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    fake(&ctrl)->scan_state = 1;   /* Kanal bleibt belegt */
+    fake(&ctrl)->scan_state = 1;   /* channel stays busy */
 
     /* Opt-in: nach CAD-Timeout trotzdem senden. */
     expect_int("managed busy timeout sends when opt-in",
@@ -818,7 +1121,7 @@ static void test_managed_busy_timeout_send_when_opt_in(void)
                DATA_TX_CAD_WAIT_TIMEOUT_SEND);
     expect_int("managed busy timeout send probe count", fake(&ctrl)->scan_count, 2);
 
-    /* Queued-Snapshot traegt das Opt-in mit. */
+    /* The queued snapshot carries the opt-in too. */
     ctrl.cad_send_after_timeout.store(true);
     daemon_tx_job_init(&job, 433, RADIO_TX_MODE_MANAGED, 81);
     data_tx_configure_job_cad_policy(&ctx, &job);
@@ -840,9 +1143,9 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
     ctrl.tx_queue_active.store(true);
     ctrl.mode = RADIO_MODE_LORA;
     ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
-    fake(&ctrl)->scan_state = 1;   /* Kanal fuer beide Jobs belegt */
+    fake(&ctrl)->scan_state = 1;   /* channel busy for both jobs */
 
-    /* Job A laeuft beschraenkt in den CAD-Timeout, nicht 20 s. */
+    /* Job A runs into a bounded CAD timeout, not 20 s. */
     ctx.completion_seq = 60;
     expect_int("starve guard job A accepted",
                send_data_chunk(payload_a, sizeof(payload_a), 0, &ctx),
@@ -854,12 +1157,12 @@ static void test_queue_long_wait_does_not_starve_later_job(void)
                send_data_chunk(payload_b, sizeof(payload_b), 0, &ctx),
                0);
 
-    /* Beide muessen abgearbeitet werden: A blockiert B nicht. */
+    /* Both must be processed: A does not block B. */
     expect_int("starve guard both processed", wait_async_processed(2), 1);
     expect_size("starve guard processed count",
                 daemon_tx_async_runtime_processed(), 2);
 
-    /* Pro Job auf cad_wait_ticks (2) beschraenkt -> Gesamtprobes beschraenkt. */
+    /* Bounded per job by cad_wait_ticks (2) -> total probes bounded. */
     expect_int("starve guard bounded probes",
                fake(&ctrl)->scan_count <= 4 ? 1 : 0, 1);
     expect_int("starve guard no transmit on busy", sender.calls, 0);
@@ -890,6 +1193,8 @@ int main(int argc, char **argv)
     }
 
     test_default_direct_path();
+    test_fsk_payload_boundary();
+    test_lora_keeps_the_full_payload();
     test_direct_refuses_residual_async_work();
     test_txqueue_optin_path();
     test_txqueue_direct_full_rejects_newest();
@@ -910,6 +1215,9 @@ int main(int argc, char **argv)
     test_runtime_switch_direct_then_managed();
     test_not_ready_still_short_circuits();
     test_controller_cad_policy_snapshot();
+    test_pending_rx_survives_synchronous_managed_tx();
+    test_cad_error_is_never_converted_into_a_transmission();
+    test_sync_and_queued_cad_paths_agree();
     test_managed_busy_timeout_send_when_opt_in();
     test_queue_long_wait_does_not_starve_later_job();
 

@@ -9,7 +9,7 @@
 
 /* --- Boot-RF-Defaults ------------------------------------------------------ */
 // Per-band boot defaults, applied inside RadioDriver::begin() in the exact
-// pre-driver setter order. LDRO: 433 = autoLDRO()+forceLDRO(1), 868 = nur
+// pre-driver setter order. LDRO: 433 = autoLDRO()+forceLDRO(1), 868 = only
 // autoLDRO() (Feld ldro: >=0 forciert, <0 auto).
 
 // LoRa-APRS:
@@ -53,7 +53,7 @@ static const RadioRfDefaults rf_defaults_868 = {
     16,         /* preamble_len */
     5,          /* coding_rate */
     true,       /* crc_on */
-    -1,         /* ldro: nur autoLDRO() */
+    -1,         /* ldro: autoLDRO() only */
     10          /* power_dbm */
 };
 
@@ -145,7 +145,7 @@ const DaemonBandDescriptor *daemon_band(void)
     if (!g_band) {
         /* Fail closed: reading the band before --radio resolution is a
          * programming error, never a recoverable runtime state. */
-        fprintf(stderr, "[Daemon] daemon_band() vor Auflösung gelesen\n");
+        fprintf(stderr, "[Daemon] daemon_band() read before resolution\n");
         abort();
     }
 

@@ -50,13 +50,15 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250
 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1
 
-CHANNEL RADIO=READY BUSY=1 CAD=0 CADSCAN=0 CADSTATE=BUSY RSSI=-81.00 PACKETRSSI=-81.00
+CHANNEL RADIO=READY BUSY=0 CAD=1 CADSCAN=1 CADSTATE=FREE RSSI=-164.00 PACKETRSSI=-164.00
 LIVERSSI=-81.00 MODE=LORA TXMODE=MANAGED
 ```
 
-(One line each; wrapped here to fit.) That capture is from a board on the `uputronics-ce0` preset,
-which has no DIO1 and therefore no scan-based CAD — hence `CADSCAN=0`. On a board that does have
-it, such as the default `loraham` preset, that field reports a real scan.
+(One line each; wrapped here to fit.) That capture is from a board on the `uputronics-ce0` preset.
+`CADSCAN=1` because the SX127x driver polls the latched CAD bits in `RegIrqFlags` and needs no
+DIO1, which this board does not route. Note the pairing worth understanding: `LIVERSSI=-81.00` is a
+noisy channel — above the default `CADRSSI=-90` busy threshold — yet `CADSTATE=FREE`, because the
+scan found no LoRa preamble. An RSSI threshold alone would have called that channel busy.
 
 `GET CHANNEL` is the interesting one to poll while you move an antenna around — `LIVERSSI` follows
 the noise floor.

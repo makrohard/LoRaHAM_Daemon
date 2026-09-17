@@ -17,7 +17,7 @@ int daemon_tx_queue_push(DaemonTxQueue *queue,
         return -1;
 
     if (daemon_tx_queue_full(queue)) {
-        /* Voll: Übergabe abgewiesen, kein Paket verworfen. */
+        /* Full: the submission is refused; no packet is discarded. */
         return -1;
     }
 

@@ -191,15 +191,23 @@ The unit sets `Restart=on-failure`, `RestartSec=2` and `RestartPreventExitStatus
 
 | Code | Name | Meaning | Restart |
 |---:|---|---|---|
-| `1` | — | genuine radio or LED hardware failure | yes |
+| `1` | — | genuine radio hardware failure (chip not found, transient init error) | yes |
 | `3` | `LORAHAM_EXIT_INSTANCE_BUSY` | same-band instance already running | no |
-| `4` | `LORAHAM_EXIT_LOCK_ERROR` | startup lock infrastructure unavailable, fail closed | no |
-| `5` | `LORAHAM_EXIT_RUNTIME_SPI_ERROR` | runtime SPI or bus-lock fatal after operation began | yes |
+| `4` | `LORAHAM_EXIT_LOCK_ERROR` | startup prerequisite unavailable — lock infrastructure **or** GPIO — fail closed | no |
+| `5` | `LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR` | runtime radio-I/O fatal after operation began: SPI, the bus lock, or a GPIO call once the radio was live | yes |
+
+Code `4` covers both startup prerequisites, because neither is fixed by trying again: an unusable
+lock directory or lock file, and a GPIO open or claim that fails during startup — `gpiochip0` that
+cannot be opened (wrong device, missing node, no permission) or a line held by a process outside
+this daemon's own pin locks. A wrongly wired or unpermitted box therefore stops with a diagnosis
+instead of restarting every two seconds forever.
 
 Codes `3` and `4` are not fixed by restarting, so systemd does not restart-spin on them. Code `5`
 is deliberately distinct from `4`: a hard, non-`EINTR` `flock` failure on lock or unlock, a bus
-error, a wedged-peer timeout, or any transfer attempt without the lock held is a controlled fatal
-that exits `5`, and a restart can legitimately clear it.
+error, a wedged-peer timeout, any transfer attempt without the lock held, **or a GPIO call that
+fails once the radio is operational**, is a controlled fatal that exits `5`, and a restart can
+legitimately clear it. The log line is tagged `[RADIO] FATAL` — it was `[SPI] FATAL`, which sent
+operators looking at the wrong bus when the failure was a GPIO one.
 
 A duplicate same-band start prints
 

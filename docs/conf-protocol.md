@@ -75,7 +75,7 @@ logged as ignored and the rest of the command still applies.
 |---|---|---|---|
 | `MODE` | global | `LORA` | exactly `LORA` or `FSK`; anything else is rejected as `unknown mode` |
 | `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number in MHz inside the band policy — `430.0`–`440.0` in a 433 process, `863.0`–`870.0` in an 868 process; an off-band value is rejected with the reason `off-band frequency (band policy)` |
-| `POWER` | LORA/FSK | `10` | integer `0` to `20` dBm |
+| `POWER` | LORA/FSK | `10` | integer, per chip family: `2` to `17` dBm on SX127x, `0` to `20` dBm on SX126x (see `limits.md`) |
 | `GETRSSI` | global | `0` | exactly `0` or `1` |
 | `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048`; the airtime gate applies on top |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00`–`0xFF` or decimal `0`–`255`; FSK: one or two bytes up to `0xFFFF`, no zero byte |
@@ -91,8 +91,18 @@ logged as ignored and the rest of the command still applies.
 | `SHAPING` | FSK | RadioLib default | exactly `off`, `none`, `0.0`, `0.3`, `0.5`, `0.7`, `1.0`, case-insensitive |
 | `ENCODING` | FSK | RadioLib default | SX127x: `0`, `1`, `2`; SX1262: only `0` and `2` |
 
-The 868 boot default `LDRO=AUTO` is the descriptor field `ldro = -1`, meaning
-`autoLDRO()` only; the 433 default `1` additionally forces LDRO on.
+The 868 boot default `LDRO=AUTO` is the descriptor field `ldro = -1`; the 433 default `1` forces
+LDRO on regardless of the configuration.
+
+`AUTO` is not only a flag. RadioLib's `autoLDRO()` sets an internal flag and writes no register,
+and RadioLib writes only on a cache difference — so on a board without a RESET line (Uputronics)
+a forced LDRO bit from a previous run survives in the chip while the cache assumes the power-on
+state. `AUTO` therefore computes the value from the **current** `SF`/`BW`, writes it, and only then
+re-enables RadioLib's automatic tracking, so the register is right immediately **and** follows
+later `SET SF` / `SET BW` commands. An explicit `LDRO=0` or `LDRO=1` still wins and stays fixed.
+
+LDRO is required once the symbol time reaches **16 ms** (`2^SF / BW`), inclusive — 32.8 ms at
+SF12/BW125 needs it, 8.2 ms at SF11/BW250 does not. The same rule feeds the airtime gate.
 
 ## Chip-family differences
 
@@ -117,7 +127,7 @@ happens at prevalidation, so nothing in the command is applied.
 | Key | SX127x | SX1262 |
 |---|---|---|
 | `FREQDEV` | `>0` to `200.0` kHz | same, plus a `0.6` kHz minimum |
-| `OOK` | `0` or `1` | every `OOK` key rejected, `OOK=0` included — the chip has no OOK modulator, so accepting a no-op setter would report success for a missing capability. The driver's own guard prints `(SX1262: OOK nicht verfügbar)` and returns `RADIOLIB_ERR_INVALID_MODULATION` |
+| `OOK` | `0` or `1` | every `OOK` key rejected, `OOK=0` included — the chip has no OOK modulator, so accepting a no-op setter would report success for a missing capability. The driver's own guard prints `(SX1262: OOK unavailable)` and returns `RADIOLIB_ERR_INVALID_MODULATION` |
 | `ENCODING` | `0`, `1`, `2` | `0` and `2` only; `1` would silently enable whitening instead of Manchester |
 | `CRC` | LoRa CRC off/on | mapped to SX126x CRC length `2` (on) or `0` (off), at boot and on every apply |
 
@@ -144,7 +154,7 @@ they answer the same way whether or not the radio is ready.
 | `SET TXMODE=MANAGED\|DIRECT` | `MANAGED`, `DIRECT` | `MANAGED` | Select the per-band TX mode |
 | `SET TXQUEUE=0\|1` | `0`, `1` | `1` | `1` routes DATA TX through the per-band bounded async TX queue; `0` keeps the direct DATA TX path |
 | `SET CADMONITOR=0\|1` | `0`, `1` | `0` | Per-band opt-in for the smoothed RSSI-based `CAD=0/1` broadcast. Disabling also clears the free-streak counter and the published CAD latch |
-| `SET CADRSSI=<dbm>` | integer `-130` to `0` | `-90` | Per-band busy threshold for the RSSI-based CAD indicator. On wiring without DIO1 the same threshold is the passive-LBT fallback that gates MANAGED TX |
+| `SET CADRSSI=<dbm>` | integer `-130` to `0` | `-90` | Per-band busy threshold for the RSSI-based CAD indicator, i.e. the passive `CAD=0/1` monitor. It is **not** the Uputronics listen-before-talk substitute any more: since the SX127x driver polls `RegIrqFlags` for the CAD verdict, every preset has trustworthy active CAD and `CADSCAN=1`. The threshold would only gate MANAGED TX on a profile that declared no trustworthy active CAD, of which there is currently none |
 | `SET CADWAIT=<ms>` | `50` to `5000` | `1500` | CAD wait timeout |
 | `SET CADIDLE=<ms>` | `0` to `2000` | `250` | Stable-idle window |
 | `SET CADPOLL=<ms>` | `10` to `500` | `50` | CAD poll interval |
@@ -234,10 +244,24 @@ without running a scan:
 |---|---|
 | A transmit is in flight | `BUSY=1 CADSTATE=UNAVAILABLE`, returned immediately, no radio scan |
 | A received packet has not been drained yet | `CADSTATE=PENDING CAD=0 CADSCAN=0`, and `BUSY` is `1` only if a TX is in flight or the live RSSI is at or above the `CADRSSI` threshold — an idle channel with a pending packet reports `BUSY=0`. The pending packet survives; the probe's IRQ-clear and re-arm never run |
-| Wiring without DIO1 | The answer comes from the passive RSSI probe, and `CADSCAN=0` marks the non-scan source |
+| A profile without trustworthy active CAD | The answer comes from the passive RSSI probe, and `CADSCAN=0` marks the non-scan source |
+| Outside LoRa, or while an RX re-arm is pending | `CADSCAN=0 CADSTATE=UNAVAILABLE`. `RSSI` and `PACKETRSSI` are still reported — the snapshot is a non-destructive register read — but no CAD verdict is produced from a modem or a receiver state that cannot support one |
 
 The MANAGED-TX gate uses its own probe, whose pending-RX guard returns an
 unconditional `BUSY` instead.
+
+**A tight `GET CHANNEL` poll can return `UNAVAILABLE` with `CADSCAN=0`.** The
+active probe takes the radio mutex with a *try*-lock and declines rather than
+waiting: if the TX worker holds the radio, or a received packet has not been
+drained, the answer is "state untouched, skip this sample". Under rapid polling
+those conditions are simply met more often — each probe leaves the receiver
+re-armed and a packet may land between samples, and a queued transmission can
+hold the radio for the whole of a long frame's airtime.
+
+Requests on one CONF connection are handled in sequence by the main loop, so a
+poll does not contend with *itself*; what it contends with is the TX worker and
+the receive state. Leave a realistic gap between samples and the probe scans and
+answers normally.
 
 ## Reply and error vocabulary
 

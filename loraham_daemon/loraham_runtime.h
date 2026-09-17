@@ -42,11 +42,20 @@
 
 /* Process exit codes (stable; referenced by the systemd unit). */
 #define LORAHAM_EXIT_INSTANCE_BUSY 3  /* same-band instance already running */
-#define LORAHAM_EXIT_LOCK_ERROR    4  /* STARTUP lock infrastructure failed;
+#define LORAHAM_EXIT_LOCK_ERROR    4  /* STARTUP prerequisite failed: lock
+                                        * infrastructure OR a GPIO open/claim.
+                                        * Neither is fixed by trying again, so
                                         * fail closed, not restartable */
-#define LORAHAM_EXIT_RUNTIME_SPI_ERROR 5 /* runtime SPI/bus-lock fatal after
-                                          * operation began; systemd MAY
-                                          * restart (Restart=on-failure) */
+#define LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR 5 /* runtime radio-I/O fatal after
+                                               * operation began: SPI, the bus
+                                               * lock, or a GPIO call once the
+                                               * radio was live. systemd MAY
+                                               * restart (Restart=on-failure) */
+
+/* Former name, kept so an out-of-tree caller does not break silently. The
+ * concept was widened from "SPI" to "radio I/O" when GPIO failures started
+ * exiting through it, which they always did in practice. */
+#define LORAHAM_EXIT_RUNTIME_SPI_ERROR LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR
 
 static inline const char *loraham_runtime_dir(void)
 {
@@ -77,13 +86,13 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
     int fd = open(dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 
     if (fd < 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrverzeichnis %s nicht nutzbar: %s\n",
+        fprintf(stderr, "[LOCK] error: lock directory %s unusable: %s\n",
                 dir, strerror(errno));
         return -1;
     }
 
     if (fstat(fd, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        fprintf(stderr, "[LOCK] Fehler: %s ist kein Verzeichnis\n", dir);
+        fprintf(stderr, "[LOCK] error: %s is not a directory\n", dir);
         close(fd);
         return -1;
     }
@@ -95,8 +104,8 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
      * the spi/gpio supplementary groups). */
     if (require_root && st.st_uid != 0 && st.st_uid != geteuid()) {
         fprintf(stderr,
-                "[LOCK] Fehler: Sperrverzeichnis %s gehoert weder root noch "
-                "dem Daemon-Nutzer (uid=%u)\n",
+                "[LOCK] error: lock directory %s is owned by neither root nor "
+                "the daemon user (uid=%u)\n",
                 dir, (unsigned)st.st_uid);
         close(fd);
         return -1;
@@ -104,7 +113,7 @@ static inline int loraham_open_lock_dir(const char *dir, int require_root)
 
     if (st.st_mode & (S_IWGRP | S_IWOTH)) {
         fprintf(stderr,
-                "[LOCK] Fehler: Sperrverzeichnis %s gruppen-/weltbeschreibbar "
+                "[LOCK] error: lock directory %s is group- or world-writable "
                 "(mode=%04o)\n", dir, (unsigned)(st.st_mode & 07777));
         close(fd);
         return -1;
@@ -148,21 +157,20 @@ static inline int loraham_open_lock_file_at(int dirfd, const char *name)
     int fd = openat(dirfd, name, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
 
     if (fd < 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht nutzbar: %s\n",
+        fprintf(stderr, "[LOCK] error: lock file %s unusable: %s\n",
                 name, strerror(errno));
         return -1;
     }
 
     if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s ist keine regulaere Datei\n",
+        fprintf(stderr, "[LOCK] error: lock file %s is not a regular file\n",
                 name);
         close(fd);
         return -1;
     }
 
     if ((st.st_mode & 0777) != 0600 && fchmod(fd, 0600) != 0) {
-        fprintf(stderr, "[LOCK] Fehler: Sperrdatei %s nicht auf 0600 "
-                "korrigierbar: %s\n", name, strerror(errno));
+        fprintf(stderr, "[LOCK] error: lock file %s cannot be corrected to 0600: %s\n", name, strerror(errno));
         close(fd);
         return -1;
     }

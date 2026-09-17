@@ -1,5 +1,6 @@
 #include "daemon_tx.h"
 #include "daemon_rflog.h"
+#include "radio_tx_limit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -55,7 +56,7 @@ static void lora_print_tx_preview(const char *ctx,
     char msg[512];
     size_t pos = 0;
 
-    pos += snprintf(msg + pos, sizeof(msg) - pos, "%zu Byte: ", len);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "%zu bytes: ", len);
 
     for(size_t i = 0; i < len && pos < sizeof(msg); i++)
         pos += snprintf(msg + pos, sizeof(msg) - pos, "%c",
@@ -92,7 +93,7 @@ static void lora_debug_tx_first_bytes(const char *ctx,
     char msg[160];
     size_t pos = 0;
 
-    pos += snprintf(msg + pos, sizeof(msg) - pos, "Sende jetzt %zu Byte", len);
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "sending %zu bytes now", len);
     if (preview_len > 0) {
         pos += snprintf(msg + pos, sizeof(msg) - pos, " (");
         for (size_t i = 0; i < preview_len && pos < sizeof(msg); i++) {
@@ -164,8 +165,21 @@ static TxResult lora_send_controller(RadioController *ctrl,
         return TX_RESULT_INVALID_PACKET;
     }
 
+    /* Defence in depth at the last boundary before the chip. Callers already
+     * chunk to this limit or reject against it; this is the one place no TX
+     * can bypass, and it costs a comparison. */
+    size_t payload_limit = radio_tx_payload_limit(ctrl);
+
+    if (len > payload_limit) {
+        printf("[SEND %d] invalid TX packet: %zu bytes exceed the %zu-byte "
+               "limit in mode %s\n",
+               band, len, payload_limit, radio_mode_name(ctrl->mode));
+        fflush(stdout);
+        return TX_RESULT_INVALID_PACKET;
+    }
+
     if (!lora_send_acquire_controller_tx(ctrl)) {
-        printf("[%s] TX BUSY - überspringen\n", tag);
+        printf("[%s] TX BUSY - skipping\n", tag);
         fflush(stdout);
         return TX_RESULT_BUSY;
     }
@@ -189,7 +203,7 @@ static TxResult lora_send_controller(RadioController *ctrl,
             // Clear IRQs once more before TX.
             ctrl->driver->clearIrq(0xFFFFFFFF);
 
-            daemon_debug_ctx(tx_ctx, "Radio neu konfiguriert");
+            daemon_debug_ctx(tx_ctx, "radio reconfigured");
             lora_debug_tx_first_bytes(tx_ctx, send_buf, len);
         }
 
@@ -197,11 +211,11 @@ static TxResult lora_send_controller(RadioController *ctrl,
         int state = ctrl->driver->transmit(send_buf, len);
 
         if(state != RADIOLIB_ERR_NONE) {
-            daemon_debug_ctx(tx_ctx, "transmit Fehler %d", state);
-            if (ctrl->band == RADIO_BAND_433)
-                printf("[433] transmit ERROR: %d\n", state);
-            else
-                printf("[868] TX ERROR: %d\n", state);
+            daemon_debug_ctx(tx_ctx, "transmit error %d", state);
+            /* One wording, and the tag from the controller: the two bands
+             * printed "transmit ERROR" and "TX ERROR" for the same event,
+             * which is a translation seam, not a distinction. */
+            printf("[%s] transmit ERROR: %d\n", radio_controller_tag(ctrl), state);
         } else {
             daemon_debug_ctx(tx_ctx, "transmit OK");
             // Logged only now: a CAD refusal or a radio error never radiated.

@@ -27,12 +27,29 @@ from the command line.
 |---|---:|---|
 | `MAX_CLIENTS` | `10` | Client slots per socket group; there are three groups (raw DATA, framed DATA, CONF), each with its own slot array |
 | `buf_SIZE` | `256` bytes | Internal RX buffer and CONF read scratch buffer; it is also the bound on a single CONF request line |
-| `DATA_TX_MAX_CHUNK_SIZE` | `255` bytes | Maximum RF chunk generated from raw DATA socket input |
-| `FRAMED_DATA_MAX_RF_PAYLOAD` | `255` bytes | Maximum RF payload accepted for `TX_PACKET` and carried inside `RX_PACKET` |
+| `DATA_TX_MAX_CHUNK_SIZE` | `255` bytes | Ceiling of the raw DATA chunker; the chunk actually generated is the radio's current limit (below) |
+| `FRAMED_DATA_MAX_RF_PAYLOAD` | `255` bytes | Storage ceiling for `TX_PACKET` / `RX_PACKET`; what the radio will accept is the limit below |
 | `DAEMON_TX_QUEUE_CAPACITY` | `8` jobs | Per-radio bounded async TX queue |
 | `DAEMON_TX_COMPLETION_QUEUE_CAPACITY` | `16` results | Per-band bounded async TX completion queue |
 | `LORAHAM_SPI_LOCK_TIMEOUT_MS` | `2000` ms | Bound on acquiring the shared SPI transaction lock |
 | `CONFIG_POLICY_MAX_AIRTIME_MS` | `20000.0` ms | Worst-case single-packet airtime a configuration may have |
+
+### RF payload limit
+
+The constants above are **storage** ceilings. What one frame may actually carry depends on the chip
+family and the modem:
+
+| Board / mode | Limit |
+|---|---:|
+| SX127x, LoRa | `255` bytes |
+| SX127x, FSK | `63` bytes |
+| SX126x, either | `255` bytes |
+
+The SX127x FSK FIFO is 64 bytes and variable-length packet mode puts the length byte into it, so 63
+is what fits. A `TX_PACKET` above the limit is rejected as `INVALID_PACKET` before anything is
+queued and before the radio is touched; raw DATA input is chunked to the limit instead. The limit
+also sets the byte bound on how much is read from a client at once, so the chunker cannot generate
+more jobs than the TX queue has room for.
 
 The two queues overflow in opposite directions, and a client that watches only one of them will
 draw the wrong conclusion from the other:
@@ -82,8 +99,11 @@ and the reply contract are in [CONF protocol](conf-protocol.md).
 | `SET TXMODE=DIRECT\|MANAGED` | `DIRECT` or `MANAGED` | `MANAGED` |
 | `SET TXQUEUE=<0\|1>` | `0` or `1` | `1` |
 
-`CADRSSI` is not only a display threshold. On wiring without DIO1 it also gates whether `MANAGED`
-TX transmits at all; see [CAD probes](#cad-probes).
+`CADRSSI` is the busy threshold of the **passive** RSSI mechanism: the `CAD=0/1` monitor, and the
+degraded path a profile would take if it declared no trustworthy active CAD. Since the SX127x
+driver polls `RegIrqFlags` for the CAD verdict, every current preset has `CADSCAN=1` — including
+Uputronics, which routes no DIO1 — so `CADRSSI` no longer gates whether `MANAGED` TX transmits.
+See [CAD probes](#cad-probes).
 
 ## TX modes and the TX queue
 
@@ -128,11 +148,18 @@ gating and for the on-demand `GET CHANNEL` query. Two guards apply:
 
 - An RF packet that finished reception but has not been drained by the main loop yet makes the
   probe report `BUSY` without scanning, so the probe's IRQ-clear and RX re-arm can never destroy a
-  pending packet.
-- Without DIO1 there is no trustworthy `scanChannel()`. The probe then falls through to the
-  passive probe, so `MANAGED` TX gating degrades to passive listen-before-talk against the
-  `CADRSSI` threshold, and LBT stays functional on such wiring. On that hardware, changing
-  `CADRSSI` changes whether the radio transmits.
+  pending packet. This is checked **twice**: once against the daemon's own `received` flag, and
+  again against the chip's latched `RxDone` immediately before the probe detaches DIO0 and enters
+  CAD. The second check is the one that counts — `received` is set by the lgpio alert thread, which
+  does not hold the radio mutex, so a packet can complete between the first check and the
+  transition, and the chip's flag does not depend on when a thread is scheduled.
+- Outside LoRa, and while an RX re-arm is pending, the active probe returns `UNAVAILABLE` **before
+  any radio call**. In FSK it still reports an RSSI, but through the skip-receive read: the
+  ordinary `getRSSI()` re-enters RX in FSK, which rewrites the DIO mapping and clears every IRQ
+  flag, and that is exactly what must not happen here.
+- A profile that declared no trustworthy active CAD would fall through to the passive probe, so
+  `MANAGED` TX gating would degrade to listen-before-talk against the `CADRSSI` threshold. No
+  current preset does: the SX127x driver polls `RegIrqFlags` and needs no DIO1.
 
 **Passive RSSI probe.** Reads the live channel RSSI from the driver only. It never changes radio
 mode, never calls `scanChannel()`, and never re-arms RX, so it cannot disturb continuous RX. It is
@@ -171,26 +198,56 @@ A `SET` outside these ranges is rejected before any hardware is touched.
 | `BW` | `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz |
 | `CR` | `5`–`8` |
 | `PREAMBLE` (LoRa) | `6`–`512` symbols |
-| `POWER` | `0`–`20` dBm |
+| `POWER` (SX127x board) | `2`–`17` dBm |
+| `POWER` (SX126x board) | `0`–`20` dBm |
 | `BR` (FSK) | `0.5`–`300` kbps |
 | `FREQDEV` (FSK) | greater than `0` and at most `200` kHz; on an SX126x board additionally at least `0.6` kHz |
 
 A frequency outside the band window is rejected with the distinct reason
 `off-band frequency (band policy)`.
 
-The `POWER` window is narrower than the hardware. The SX1262 chip itself covers -9 dBm to
-+22 dBm; the accepted policy range `0`–`20` dBm lies inside it, and the policy check runs before
-`setOutputPower()`.
+The `POWER` window is narrower than the hardware, and it is per chip family. The policy check runs
+before `setOutputPower()`.
+
+On an **SX126x** board the chip covers -9 dBm to +22 dBm and the accepted range `0`–`20` dBm lies
+inside it.
+
+On an **SX127x** board the accepted range is `2`–`17` dBm, for two separate reasons:
+
+- Below `2` dBm RadioLib drives the **RFO** pin instead of PA_BOOST. That is a different output
+  path, and it is not the one the antenna is connected to on these boards, so `POWER=0` would have
+  meant "transmit into an unconnected pin" while reporting success.
+- `18` and `19` dBm are rejected by RadioLib itself (`checkOutputPower` accepts `2`–`17` on PA_BOOST
+  and special-cases exactly `20`), so they were never reachable; rejecting them here only makes the
+  error early and specific instead of a late driver code.
+- `20` dBm **was** reachable, through the PA_DAC-boosted path, and is dropped deliberately: the
+  datasheet restricts it to a duty cycle of at most 1 %, VSWR at most 3:1 and VDD 2.4–3.7 V, and the
+  daemon has no duty-cycle governor. This is an **intentionally unsupported** high-power mode, not
+  an oversight. If it is ever wanted it returns as a feature with that operating contract attached.
+
+Output power and the PA over-current limit (OCP) are applied together as one setting. RadioLib pins
+OCP to 60 mA inside both `begin()` and `beginFSK()`, below the datasheet typical draw of 87 mA at
++17 dBm on PA_BOOST; the daemon sets it to **100 mA — the chip's own silicon default** — at boot, on
+every `SET POWER`, and after every LoRa/FSK switch, because `beginFSK()` re-pins it.
+
+The defect being fixed is that RadioLib's 60 mA sits *below* the typical draw, so the protection
+can trip during ordinary transmission. Restoring the silicon default corrects that and asserts no
+figure of the project's own: it leaves the part exactly as protected as an unconfigured one. An
+earlier revision used 120 mA as a selected margin for temperature and VSWR, conditional on a bench
+measurement; no current meter was available, so rather than ship an unmeasured number the value is
+the documented default. With a meter showing that +17 dBm into a real mismatch needs more headroom,
+it can rise — with evidence behind it.
 
 ## Worst-case airtime ceiling
 
 The daemon rejects any `SET` whose merged configuration would give a worst-case single-packet
-airtime above `CONFIG_POLICY_MAX_AIRTIME_MS`, that is 20 s. Worst case means a 255-byte payload
-with CRC on. The gate runs before any hardware side effect and logs the computed airtime together
+airtime above `CONFIG_POLICY_MAX_AIRTIME_MS`, that is 20 s. Worst case means the largest payload the
+daemon can actually send in the prospective mode, with CRC on: 255 bytes in LoRa, and 63 bytes in
+FSK on an SX127x board, where the 64-byte FIFO also holds the length byte. The gate runs before any hardware side effect and logs the computed airtime together
 with the rejection:
 
 ```
-[<band>] CONFIG rejected: worst-case airtime <ms> ms > 20000 ms (SF<n>/BW<khz>/CR<n>/PRE<n>, 255 B)
+[<band>] CONFIG rejected: worst-case airtime <ms> ms > 20000 ms (SF<n>/BW<khz>/CR<n>/PRE<n>, <n> B)
 ```
 
 The check is made against a merged shadow of the configuration, not against the single key being

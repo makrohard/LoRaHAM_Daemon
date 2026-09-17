@@ -52,7 +52,7 @@ static int daemon_led_claim_pin(int pin, int *claimed)
     rc = lgGpioClaimOutput(daemon_led_chip, 0, pin, 0);
 
     if (rc < 0) {
-        printf("[GPIO] Fehler: LED GPIO %d konnte nicht belegt werden: %d\n",
+        printf("[GPIO] error: LED GPIO %d could not be claimed: %d\n",
                pin, rc);
         return rc;
     }
@@ -85,15 +85,15 @@ static int daemon_led_claim_band(int pin, int *claimed, const char *band)
 {
     /* Profile without an LED line: feature cleanly disabled, not an error. */
     if (pin < 0) {
-        printf("[GPIO] Hinweis: Kein LED-GPIO im Hardware-Profil für Band %s "
-               "– LED deaktiviert\n", band);
+        printf("[GPIO] note: no LED GPIO in the hardware profile for band %s "
+               "- LED disabled\n", band);
         return 0;
     }
 
     if (daemon_led_claim_pin(pin, claimed) < 0) {
-        printf("[GPIO] Fehler: LED-GPIO %d (Band %s, Profil %s) konnte nicht "
-               "belegt werden – vermutlich hält ein anderer loraham-/GPIO-"
-               "Prozess diese Leitung\n",
+        printf("[GPIO] error: LED GPIO %d (band %s, profile %s) could not be "
+               "claimed - most likely another loraham or GPIO process holds "
+               "this line\n",
                pin, band, daemon_hardware_preset_name());
         return -1;
     }
@@ -110,7 +110,7 @@ int daemon_led_init(void)
     daemon_led_chip = lgGpiochipOpen(0);
 
     if (daemon_led_chip < 0) {
-        printf("[GPIO] Fehler: gpiochip0 konnte nicht geöffnet werden!\n");
+        printf("[GPIO] error: gpiochip0 could not be opened!\n");
         return -1;
     }
 

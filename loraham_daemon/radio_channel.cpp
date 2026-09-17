@@ -147,6 +147,6 @@ void radio_channel_flush_ready(RadioChannelIo *ch, const EventLoopReadySet *read
 }
 
 /* --- Channel RSSI -------------------------------------------------------- */
-// Live-RSSI liegt jetzt im chip-spezifischen Treiber
-// (RadioDriver::readLiveRssi); hier bleibt nur Socket-/Client-Logik.
+// Live RSSI now lives in the chip-specific driver
+// (RadioDriver::readLiveRssi); only socket and client logic remains here.
 

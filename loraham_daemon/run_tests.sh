@@ -54,15 +54,19 @@ test_binaries=(
   "$TEST_DIR/test_rflog"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
+  "$TEST_DIR/test_hal_gpio_failclosed"
   "$TEST_DIR/test_instance_lock"
   "$TEST_DIR/test_gpio_lock"
   "$TEST_DIR/test_runtime_lockdir"
   "$TEST_DIR/test_packaging"
+  "$TEST_DIR/test_stdout_stamp"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_sx127x_cad_register"
   "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
+  "$TEST_DIR/test_radio_tx_limit"
   "$TEST_DIR/test_framed_data"
   "$TEST_DIR/test_framed_rx_contract"
   "$TEST_DIR/test_framed_data_tx"
@@ -178,6 +182,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_monitoring.cpp"
   "$SCRIPT_DIR/data_tx.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
+  "$SCRIPT_DIR/radio_tx_limit.cpp"
   "$SCRIPT_DIR/tx_result.cpp"
   "$SCRIPT_DIR/radio_health.cpp"
 )
@@ -438,6 +443,7 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/tx_result.cpp" \
     "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/framed_data.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
@@ -621,6 +627,58 @@ build_one_locking_pihal_test() {
     -llgpio
 }
 
+build_one_hal_gpio_failclosed_test() {
+  local src="$1"
+  local out="$2"
+
+  # Same vtable need as the locking PiHal test, but this one injects lgpio
+  # FAILURES, so it must not link the real library: tests/fakes/lgpio.h goes
+  # ahead of the system header and the test supplies every body itself.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for HAL GPIO fail-closed test." >&2
+      exit 1
+    fi
+  fi
+
+  # The real Sx127xDriver is linked in: the GPIO-open regression has to run
+  # through RadioLib's own Module::init() and chip detection, because that is
+  # where the defect lived -- a test that stops at hal.init() cannot see it.
+  build_one_cpp_sources \
+    "$out" \
+    -I"$TEST_DIR/fakes" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/sx127x_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "${radiolib_libs[@]}"
+}
+
+build_one_radio_tx_limit_test() {
+  local src="$1"
+  local out="$2"
+
+  # The live wrapper reaches through RadioController into the driver, so the
+  # RadioLib headers are needed for the type; no radio is touched.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for radio TX limit test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
+}
+
 build_one_radio_cad_probe_test() {
   local src="$1"
   local out="$2"
@@ -645,6 +703,7 @@ build_one_radio_cad_probe_test() {
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/data_tx.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
@@ -659,6 +718,31 @@ build_one_radio_cad_probe_test() {
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "${radiolib_libs[@]}" \
     -llgpio
+}
+
+build_one_sx127x_cad_register_test() {
+  local src="$1"
+  local out="$2"
+
+  # The real Sx127xDriver against the real pinned RadioLib, with
+  # tests/fakes/sx127x_register_model.h where the chip would be. The model is a
+  # RadioLibHal, not a PiHal, so no lgpio and no hardware are involved.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for SX127x register CAD test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/sx127x_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "${radiolib_libs[@]}"
 }
 
 build_one_cad_monitor_state_test() {
@@ -881,6 +965,7 @@ build_one_config_apply_transactional_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_apply.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/config_validate.cpp" \
@@ -982,15 +1067,19 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_rflog" "$TEST_DIR/test_rflog.cpp" "$SCRIPT_DIR/daemon_rflog.cpp"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
+  build_one_hal_gpio_failclosed_test "$TEST_DIR/test_hal_gpio_failclosed.cpp" "$TEST_DIR/test_hal_gpio_failclosed"
   build_one_instance_lock_test "$TEST_DIR/test_instance_lock.cpp" "$TEST_DIR/test_instance_lock"
   build_one_cpp_sources "$TEST_DIR/test_runtime_lockdir" "$TEST_DIR/test_runtime_lockdir.cpp"
   build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_stdout_stamp" "$TEST_DIR/test_stdout_stamp.cpp" "$SCRIPT_DIR/daemon_stdout_stamp.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
+  build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_cad_register.cpp" "$TEST_DIR/test_sx127x_cad_register"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
   build_one_gpio_lock_test "$TEST_DIR/test_gpio_lock.cpp" "$TEST_DIR/test_gpio_lock"
   build_one_rf_packet_test "$TEST_DIR/test_rf_packet.cpp" "$TEST_DIR/test_rf_packet"
+  build_one_radio_tx_limit_test "$TEST_DIR/test_radio_tx_limit.cpp" "$TEST_DIR/test_radio_tx_limit"
   build_one_framed_data_test "$TEST_DIR/test_framed_data.cpp" "$TEST_DIR/test_framed_data"
   build_one_framed_data_test "$TEST_DIR/test_framed_rx_contract.cpp" "$TEST_DIR/test_framed_rx_contract"
   build_one_framed_data_tx_test "$TEST_DIR/test_framed_data_tx.cpp" "$TEST_DIR/test_framed_data_tx"

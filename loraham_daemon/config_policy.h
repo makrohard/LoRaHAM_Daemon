@@ -13,7 +13,30 @@ bool config_policy_lora_bandwidth_valid(float bw);
 bool config_policy_lora_cr_valid(int cr);
 bool config_policy_lora_preamble_valid(int preamble);
 bool config_policy_lora_sync_valid(uint32_t sync);
+/* --- LoRa low-data-rate optimisation ------------------------------------- */
+/*
+ * LDRO is mandated once the symbol time reaches 16 ms, because the crystal
+ * drift over a long symbol stops being negligible. The boundary is
+ * INCLUSIVE -- symbol time >= 16 ms -- matching RadioLib's own autoLDRO test.
+ *
+ * It lived in three places with two different boundaries: the driver's boot
+ * path and RadioLib both used >=, while the airtime gate below used a strict >.
+ * No SF/BW combination the validator accepts lands on exactly 16.000 ms, so
+ * nothing ever differed on air -- but extracting a helper while leaving the
+ * boundary ambiguous would only have preserved the disagreement in a new place.
+ * This is the one definition; every caller uses it.
+ */
+bool config_policy_lora_ldro_required(int sf, float bw_khz);
+
 bool config_policy_power_valid(int power);
+
+/* Family-aware output power. SX127x: 2..17. Below 2 RadioLib switches to the
+ * RFO pin, which is not the antenna path on these boards. Above 17 there are
+ * two DIFFERENT reasons: RadioLib itself rejects 18 and 19 (checkOutputPower
+ * ranges 2..17 and special-cases exactly 20), while 20 IS reachable and is
+ * declined here because its +20 dBm path carries a duty-cycle contract this
+ * daemon does not enforce. SX1262: 0..20. */
+bool config_policy_power_valid_family(int power, DaemonChipFamily family);
 
 bool config_policy_fsk_bitrate_valid(float br);
 bool config_policy_fsk_freqdev_valid(float freqdev);

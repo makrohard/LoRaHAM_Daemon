@@ -22,7 +22,8 @@ void daemon_process_ready_sockets(ConfigDispatchContext *config_ctx,
     data_tx_process_slots(band->tag, client_data_slots, MAX_CLIENTS,
                           readfds, send_data_chunk, data_tx_ctx,
                           daemon_data_tx_log(band->tx_log_ctx),
-                          data_tx_queue_capacity_bytes);
+                          data_tx_queue_capacity_bytes,
+                          data_tx_chunk_limit_bytes);
     daemon_process_framed_data_slots(band->framed_log_ctx,
                                      client_data_framed_slots,
                                      client_framed_states,

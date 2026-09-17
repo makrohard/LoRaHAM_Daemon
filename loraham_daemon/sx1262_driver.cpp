@@ -7,7 +7,7 @@
 #include "config_value.h"
 #include "hardware_profile.h"
 
-/* --- Konstruktion --------------------------------------------------------- */
+/* --- Construction ---------------------------------------------------------- */
 
 Sx1262Driver::Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin)
     : RadioDriver(nullptr),
@@ -32,16 +32,16 @@ const char *Sx1262Driver::chipName() const
 
 
 
-/* --- RF-Switch-Verdrahtung nach begin()/beginFSK() ------------------------- */
+/* --- RF switch wiring, applied after begin()/beginFSK() -------------------- */
 
 static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 {
-    /* Der HAT schaltet TX intern über DIO2. Die als "TXEN" beschriftete
-     * GPIO-Leitung (BCM 6) muss laut Waveshare-Referenztreiber (LoRaRF
-     * SX126x.py) im TX LOW und im RX HIGH liegen — invers zur Beschriftung.
-     * Als rxEn registriert fährt RadioLib genau dieses Muster; als txEn
-     * registriert blockiert die Leitung den Antennenpfad während des
-     * Sendens (bench-verifiziert: TX_RESULT OK, aber keine Abstrahlung).
+    /* The HAT switches TX internally through DIO2. The GPIO line labelled
+     * "TXEN" (BCM 6) must be LOW in TX and HIGH in RX according to the
+     * Waveshare reference driver (LoRaRF SX126x.py) -- the inverse of its
+     * label. Registered as rxEn, RadioLib drives exactly that pattern;
+     * registered as txEn, the line blocks the antenna path while
+     * transmitting (bench-verified: TX_RESULT OK, but nothing radiated).
      *
      * Checked: a failed DIO2 switch command means TX_RESULT OK
      * with zero radiated RF — that must fail the boot/mode-switch closed,
@@ -49,7 +49,7 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
      * check there.) */
     int16_t state = radio->setDio2AsRfSwitch(true);
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx1262] RF-Switch (DIO2) fehlgeschlagen: %d\n", (int)state);
+        printf("[sx1262] RF switch (DIO2) failed: %d\n", (int)state);
         fflush(stdout);
         return state;
     }
@@ -60,11 +60,11 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
     return RADIOLIB_ERR_NONE;
 }
 
-/* --- Boot-Init mit RF-Defaults --------------------------------------------- */
-// begin() trägt Frequenz/SF/BW/CR/Sync/Leistung/Preamble und die
-// TCXO-Spannung (DIO3) in einem Aufruf; danach RF-Switch, CRC und LDRO wie
-// im SX127x-Treiber explizit, damit die effektive Konfiguration identisch
-// deterministisch ist.
+/* --- Boot init with the RF defaults ---------------------------------------- */
+// begin() applies frequency, SF, BW, CR, sync word, power, preamble and the
+// TCXO voltage (DIO3) in one call; the RF switch, CRC and LDRO follow
+// explicitly, as in the SX127x driver, so that the effective configuration is
+// deterministic in the same way.
 
 int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
 {
@@ -94,7 +94,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
      * mandatory boot configuration — check them like begin() itself. */
     state = radio_->setCRC(defaults->crc_on ? 2 : 0);
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx1262] Boot-Setter CRC fehlgeschlagen: %d\n", (int)state);
+        printf("[sx1262] boot setter CRC failed: %d\n", (int)state);
         fflush(stdout);
         return state;
     }
@@ -103,7 +103,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     if (state == RADIOLIB_ERR_NONE && defaults->ldro >= 0)
         state = radio_->forceLDRO(defaults->ldro != 0);
     if (state != RADIOLIB_ERR_NONE) {
-        printf("[sx1262] Boot-Setter LDRO fehlgeschlagen: %d\n", (int)state);
+        printf("[sx1262] boot setter LDRO failed: %d\n", (int)state);
         fflush(stdout);
         return state;
     }
@@ -111,7 +111,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     return RADIOLIB_ERR_NONE;
 }
 
-/* --- LoRa <-> FSK Modemwechsel --------------------------------------------- */
+/* --- LoRa <-> FSK modem switch --------------------------------------------- */
 
 int16_t Sx1262Driver::switchMode(RadioMode_t mode,
                                  const RadioRfDefaults *defaults)
@@ -194,7 +194,8 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "CRC") {
         int crc = 0;
         if (config_value_parse_bool01_exact(val, &crc)) {
-            /* SX126x: CRC-Länge in Bytes; an == 2 (CCITT wie LoRa-Standard). */
+            /* SX126x: CRC length in bytes; on == 2 (CCITT, as the LoRa
+             * standard uses). */
             state = radio.setCRC(crc != 0 ? 2 : 0);
             driver_config_print_state_int("CRC", crc, state);
         } else {
@@ -215,8 +216,8 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "SYNC") {
         uint32_t sw = 0;
         if (config_value_parse_hex_or_dec_u32_exact(val, &sw) && config_policy_lora_sync_valid(sw)) {
-            /* RadioLib bildet das SX127x-Kompatibilitätsbyte ab
-             * (Steuerbits 0x44); On-Air-Kompatibilität = Bench-Punkt. */
+            /* RadioLib maps the SX127x compatibility byte (control bits
+             * 0x44); on-air compatibility is a bench item. */
             state = radio.setSyncWord((uint8_t)sw);
             if (state == RADIOLIB_ERR_NONE)
                 printf(" SYNC=\033[92m0x%02X\033[0m", (unsigned)sw);
@@ -250,8 +251,8 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "POWER") {
         int p = 0;
         if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
-            /* Chip-Bereich −9…+22 dBm; die CONF-Policy (0…20) liegt darin,
-             * RadioLib validiert zusätzlich. */
+            /* Chip range -9..+22 dBm; the CONF policy (0..20) lies inside
+             * it, and RadioLib validates on top. */
             state = radio.setOutputPower((int8_t)p);
             driver_config_print_state_int("POWER", p, state);
         } else {
@@ -318,9 +319,9 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
 
     if (key == "RXBW") {
         float bw = 0.0f;
-        /* SX126x-RXBW-Raster weicht vom SX127x ab; RadioLib validiert den
-         * chip-eigenen Raster und liefert für fremde Werte einen Fehler
-         * (roter Zustand statt stiller Übernahme). */
+        /* The SX126x RXBW raster differs from the SX127x; RadioLib
+         * validates the chip's own raster and returns an error for foreign
+         * values (a red state rather than a silent acceptance). */
         if (config_value_parse_float_exact(val, &bw) && bw > 0.0f) {
             state = radio.setRxBandwidth(bw);
             driver_config_print_state_float("RXBW", bw, state);
@@ -330,12 +331,12 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     }
 
     if (key == "OOK") {
-        /* SX126x hat keinen OOK-Modus: fail closed, deutlich abgelehnt.
+        /* The SX126x has no OOK modulator: fail closed, rejected visibly.
          * Non-success state: prevalidation blocks every OOK
          * key for this family, but a direct driver call must never report
          * success for a missing capability. */
         driver_config_print_rejected("OOK", val);
-        printf(" (SX1262: OOK nicht verfügbar)");
+        printf(" (SX1262: OOK unavailable)");
         state = RADIOLIB_ERR_INVALID_MODULATION;
     }
 
@@ -400,10 +401,10 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     return (int16_t)state;
 }
 
-/* --- Live-RSSI (GetRssiInst-Kommando) --------------------------------------- */
-// SX126x: instantane Kanal-RSSI über das RadioLib-Kommando, niemals über
-// SX127x-Registeradressen. Modus-unabhängig; is_hf ist hier ohne Belang
-// (kein Offset-Split wie beim SX127x).
+/* --- Live RSSI (the GetRssiInst command) ----------------------------------- */
+// SX126x: instantaneous channel RSSI through the RadioLib command, never
+// through SX127x register addresses. Mode-independent, and is_hf is irrelevant
+// here (there is no offset split as on the SX127x).
 
 float Sx1262Driver::readLiveRssi(RadioMode_t mode, bool is_hf)
 {
@@ -413,14 +414,30 @@ float Sx1262Driver::readLiveRssi(RadioMode_t mode, bool is_hf)
     return radio_->getRSSI(false);
 }
 
-/* --- Nicht-destruktive Sofort-RSSI-Probe ------------------------------------ */
+/* --- Non-destructive instant-RSSI probe ------------------------------------- */
 
 float Sx1262Driver::rssiProbe()
 {
     return radio_->getRSSI(false);
 }
 
-/* --- D8-Diagnose für fehlgeschlagenes begin() -------------------------------- */
+/* --- Pending-RX, asked of the chip ----------------------------------------- */
+
+/*
+ * The SX126x latches RxDone in its IRQ status the moment a packet finishes
+ * arriving, so it answers even when the alert thread has not run. The bit is
+ * the same in LoRa and FSK on this chip, so no modem check is needed.
+ *
+ * This exists because the first version of the repair gave RadioDriver a
+ * default of false and overrode it only on SX127x -- which left the Waveshare
+ * profile, whose active CAD is enabled, running the unprotected path.
+ */
+bool Sx1262Driver::rxDonePending()
+{
+    return (radio_->getIrqFlags() & RADIOLIB_SX126X_IRQ_RX_DONE) != 0;
+}
+
+/* --- D8 diagnosis for a failed begin() -------------------------------------- */
 
 void sx1262_diagnose_begin_failure(const char *band, int state)
 {
@@ -431,15 +448,15 @@ void sx1262_diagnose_begin_failure(const char *band, int state)
              hw->cs, hw->irq, hw->rst, hw->gpio, hw->txen);
 
     if (state == RADIOLIB_ERR_CHIP_NOT_FOUND) {
-        printf("[%s] Diagnose (Profil %s): SX1262 antwortet nicht "
-               "(Versionsstring/BUSY-Verifikation fehlgeschlagen) – HAT "
-               "fehlt, falsches Profil oder Verdrahtung; Pins laut Profil: "
-               "%s (hält ein anderer Prozess eine dieser Leitungen?)\n",
+        printf("[%s] diagnosis (profile %s): SX1262 does not answer (version "
+               "string / BUSY verification failed) - HAT missing, wrong "
+               "profile or wiring; pins per profile: %s (is another process "
+               "holding one of these lines?)\n",
                band, hw->name, pins);
         return;
     }
 
-    printf("[%s] Diagnose (Profil %s): begin() Fehler %d; Pins laut Profil: "
-           "%s (hält ein anderer Prozess eine dieser Leitungen?)\n",
+    printf("[%s] diagnosis (profile %s): begin() error %d; pins per profile: "
+           "%s (is another process holding one of these lines?)\n",
            band, hw->name, state, pins);
 }

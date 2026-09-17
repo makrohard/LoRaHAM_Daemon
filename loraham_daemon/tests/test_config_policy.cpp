@@ -55,6 +55,88 @@ static void test_lora_policy(void)
     expect_int("power rejects 21", config_policy_power_valid(21), 0);
 }
 
+/*
+ * HW-6: output power is family-specific in both directions, and the family-
+ * blind rule above was wrong on both ends for SX127x.
+ *
+ * Low end: RadioLib's SX1278::setOutputPower routes 2..17 to PA_BOOST and
+ * anything below 2 to the RFO pin -- a different output path, and not the one
+ * the antenna is on. POWER=0 did not mean "transmit quietly", it meant
+ * "transmit into an unconnected pin", and the caller was told it worked.
+ *
+ * High end: RadioLib's checkOutputPower accepts 2..17 on PA_BOOST and
+ * special-cases exactly 20, so 18 and 19 are rejected by the library itself and
+ * were never reachable -- rejecting them here only makes the error early and
+ * specific. 20 was reachable, via the PA_DAC-boosted path, and is dropped
+ * deliberately: the datasheet restricts +20 dBm to duty cycle <= 1 %, VSWR
+ * <= 3:1 and VDD 2.4-3.7 V, and this daemon has no duty-cycle governor.
+ *
+ * SX1262 has one output path and no such restriction, so it keeps 0..20.
+ */
+/*
+ * HW-4: the LDRO boundary, in one place. It lived in three -- the driver's boot
+ * path, RadioLib, and the airtime gate -- and the airtime gate used a strict
+ * `>` where the other two used `>=`. No SF/BW combination the validator accepts
+ * lands on exactly 16.000 ms, so nothing ever differed on air; the point of
+ * pinning it is that extracting a helper with an ambiguous boundary would only
+ * have moved the disagreement.
+ */
+static void test_ldro_boundary(void)
+{
+    /* SF12/BW125 = 32.8 ms; SF11/BW250 = 8.2 ms; SF12/BW250 = 16.384 ms, the
+     * closest the accepted raster comes to the boundary from above. */
+    expect_int("ldro required at SF12/BW125 (32.8 ms)",
+               config_policy_lora_ldro_required(12, 125.0f), 1);
+    expect_int("ldro required at SF12/BW250 (16.4 ms)",
+               config_policy_lora_ldro_required(12, 250.0f), 1);
+    expect_int("ldro not required at SF11/BW250 (8.2 ms)",
+               config_policy_lora_ldro_required(11, 250.0f), 0);
+    expect_int("ldro not required at SF7/BW500 (0.26 ms)",
+               config_policy_lora_ldro_required(7, 500.0f), 0);
+
+    /* The boundary itself is inclusive: 16 ms needs LDRO. SF12/BW256 is exactly
+     * 16.000 ms -- not a value the validator accepts, which is precisely why
+     * the two spellings never differed on air, and why the rule is pinned here
+     * instead of being left to a future reader to rediscover. */
+    expect_int("the 16 ms boundary is inclusive",
+               config_policy_lora_ldro_required(12, 256.0f), 1);
+    expect_int("just above the boundary does not require it",
+               config_policy_lora_ldro_required(12, 256.001f), 0);
+
+    /* Nonsense in, false out -- never a divide by zero. */
+    expect_int("zero bandwidth is not a reason to enable ldro",
+               config_policy_lora_ldro_required(12, 0.0f), 0);
+}
+
+static void test_power_policy_per_family(void)
+{
+    expect_int("sx127x rejects 0 (RFO path, not the antenna)",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 1 (RFO path, not the antenna)",
+               config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x accepts 2 (lowest PA_BOOST step)",
+               config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx127x accepts 17 (continuous-operation maximum)",
+               config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X), 1);
+    expect_int("sx127x rejects 18 (RadioLib rejects it too; early beats late)",
+               config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 19 (RadioLib rejects it too; early beats late)",
+               config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects 20 (reachable, but no duty-cycle governor exists)",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X), 0);
+    expect_int("sx127x rejects -1",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX127X), 0);
+
+    expect_int("sx1262 keeps 0",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx1262 keeps 20",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262), 1);
+    expect_int("sx1262 rejects 21",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262), 0);
+    expect_int("sx1262 rejects -1",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262), 0);
+}
+
 static void test_fsk_policy(void)
 {
     expect_int("fsk br rejects 0.49", config_policy_fsk_bitrate_valid(0.49f), 0);
@@ -207,6 +289,8 @@ int main(int argc, char **argv)
     }
 
     test_lora_policy();
+    test_ldro_boundary();
+    test_power_policy_per_family();
     test_fsk_policy();
 
     test_freq_band_policy();

@@ -9,12 +9,12 @@
 
 #include "config_value.h"
 
-/* --- Gemeinsame Ausgabe-/Parse-Helfer der Radio-Treiber -------------------- */
+/* --- Output and parse helpers shared by the radio drivers ------------------ */
 /*
- * Farbige Per-Key-Zustandsausgabe des CONFIG-Apply (grün = übernommen,
- * rot blinkend = abgelehnt) und der FSK-SHAPING-Parser. Von allen konkreten
- * RadioDriver-Implementierungen geteilt, damit das Ausgabeformat
- * byte-identisch bleibt.
+ * The coloured per-key state output of a CONFIG apply (green = accepted,
+ * blinking red = rejected) and the FSK SHAPING parser. Shared by every
+ * concrete RadioDriver implementation so that the output format stays
+ * byte-identical.
  */
 
 static inline void driver_config_print_rejected(const char *key,

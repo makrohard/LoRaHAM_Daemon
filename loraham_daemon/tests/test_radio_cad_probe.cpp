@@ -13,26 +13,43 @@
 static int g_ok = 0;
 static int g_fail = 0;
 
-// Fake-Treiber: überschreibt die virtuellen RadioDriver-Delegates und zählt
-// Aufrufe wie der frühere Template-Fake (Zähler-Semantik unverändert).
+// Fake driver: overrides the virtual RadioDriver delegates and counts calls
+// exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
     int scan_result;
     int scan_count;
     int callback_count;
     int start_receive_count;
     int clear_irq_count;
+    int clear_callback_count;
+    bool callback_attached;
+    bool attached_during_scan;
+    int rssi_probe_count;
+    int get_rssi_count;
     float rssi;
     void (*last_callback)(void);
 
     FakeRadio() : RadioDriver(NULL),
                   scan_result(0), scan_count(0), callback_count(0),
                   start_receive_count(0), clear_irq_count(0),
+                  clear_callback_count(0), callback_attached(false),
+                  attached_during_scan(false),
+                  rssi_probe_count(0), get_rssi_count(0),
                   rssi(-91.5f), last_callback(NULL) {}
 
     void setPacketReceivedAction(void (*cb)(void)) override
     {
         last_callback = cb;
         callback_count++;
+        callback_attached = true;
+    }
+
+    void clearPacketReceivedAction() override
+    {
+        clear_callback_count++;
+        callback_attached = false;
+        /* Recorded at the moment the scan runs, which is what the ordering
+         * assertion below is actually about. */
     }
 
     int16_t startReceive() override
@@ -50,16 +67,52 @@ struct FakeRadio : public RadioDriver {
     int16_t scanChannel() override
     {
         scan_count++;
+        if (callback_attached)
+            attached_during_scan = true;
         return scan_result;
+    }
+
+    /*
+     * Scripted chip-level RxDone. Two knobs, because the window moved:
+     *
+     *   rx_done_after_checks  the chip reports a packet from the Nth query on
+     *   rx_done_on_standby    a packet completes DURING the quiesce -- the
+     *                         case that matters now, because the probe stops
+     *                         reception before it asks
+     */
+    int rx_done_queries = 0;
+    int rx_done_after_checks = -1;   /* -1 = never */
+    bool rx_done_on_standby = false;
+    bool rx_done_latched = false;
+
+    int standby_count = 0;
+    int16_t standby_result = 0;
+
+    int16_t standby() override
+    {
+        standby_count++;
+        if (rx_done_on_standby)
+            rx_done_latched = true;   /* the packet landed as we stopped RX */
+        return standby_result;
+    }
+
+    bool rxDonePending() override
+    {
+        const bool scripted = (rx_done_after_checks >= 0 &&
+                               rx_done_queries >= rx_done_after_checks);
+        rx_done_queries++;
+        return scripted || rx_done_latched;
     }
 
     float getRSSI() override
     {
+        get_rssi_count++;
         return rssi;
     }
 
     float rssiProbe() override
     {
+        rssi_probe_count++;
         return rssi;
     }
 
@@ -432,6 +485,275 @@ static void test_passive_probe_non_lora_unavailable(void)
     expect_int("passive fsk unavailable", result.status, RADIO_CAD_PROBE_UNAVAILABLE);
     expect_int("passive fsk no scan", fake(&ctrl)->scan_count, 0);
     expect_int("passive fsk no startReceive", fake(&ctrl)->start_receive_count, 0);
+
+    /* HW-3: not merely "no verdict" but no radio call AT ALL. The reading is
+     * the passive probe's entire output, so taking it and then discarding it
+     * would leave a value that describes the wrong modem one edit away from
+     * being used. */
+    expect_int("passive fsk makes zero radio probe calls",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count, 0);
+}
+
+/*
+ * HW-3, the second condition. The datasheet defines RSSI only while the
+ * receiver has been active for TS_RE + TS_RSSI, so a value read in standby is
+ * undefined. rx_rearm_pending is exactly that window, and it is a real state,
+ * not a hypothetical: the daemon retries a failed re-arm before escalating to
+ * FAILED, and config_status.cpp folds the flag into RXREADY, so READY with the
+ * receiver not armed is reachable. Without the guard an undefined reading
+ * becomes a FREE verdict -- and a false FREE is a transmission on top of
+ * whoever is already on the channel.
+ */
+static void test_passive_probe_during_rx_rearm_unavailable(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->rssi = -120.0f;   /* would read as a quiet channel */
+    ctrl.rx_rearm_pending.store(true);
+
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("passive probe during re-arm makes zero radio probe calls",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count, 0);
+
+    /* And the gate lifts again once the receiver is back. */
+    ctrl.rx_rearm_pending.store(false);
+    result = radio_cad_probe_passive(&ctrl);
+    expect_int("passive probe works again after the re-arm", result.status,
+               RADIO_CAD_PROBE_FREE);
+}
+
+/*
+ * The active probes keep their non-destructive RSSI snapshot -- GET CHANNEL
+ * reports it in every mode -- but must not run the CAD or the RX re-arm that
+ * follows it while the receiver is not armed.
+ */
+static void test_active_probe_during_rx_rearm_does_not_scan(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;   /* would be FREE if it ran */
+    ctrl.rx_rearm_pending.store(true);
+
+    result = radio_cad_probe(&ctrl);
+    expect_int("active probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("active probe during re-arm did not scan",
+               fake(&ctrl)->scan_count, 0);
+    expect_int("active probe during re-arm did not re-arm RX",
+               fake(&ctrl)->start_receive_count, 0);
+    expect_int("active probe during re-arm reports no scan",
+               result.scan_ran, 0);
+
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("try_probe during re-arm is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("try_probe during re-arm did not scan",
+               fake(&ctrl)->scan_count, 0);
+}
+
+/*
+ * The regression the live matrix caught, and the software suite did not.
+ *
+ * RadioLib's startChannelScan() remaps DIO0 from RxDone to CadDone. The
+ * daemon's packet-received alert sits on that same pin, so CAD completion fired
+ * the RX callback, `received` was set, and the main loop read a FIFO still
+ * holding the PREVIOUS packet -- delivering it to every client a second time.
+ *
+ * Measured between the two boxes: ten unique frames arrived as sixteen
+ * receptions, five exact duplicates with identical RSSI and SNR. The baseline
+ * daemon on the same board duplicated none, because its blocking scanChannel()
+ * spins on sched_yield() and never lets the alert thread run; polling the
+ * register with a real 1 ms sleep does, which turned a latent race into a
+ * reliable defect.
+ *
+ * So the probe must take the alert OFF DIO0 before the scan, exactly as the TX
+ * path has always done, and put it back after.
+ */
+static void test_probe_detaches_rx_callback_around_the_scan(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;
+
+    /* The daemon arms the callback at boot; model that starting state. */
+    ctrl.driver->setPacketReceivedAction(fake_rx_callback);
+    fake(&ctrl)->attached_during_scan = false;
+
+    (void)radio_cad_probe(&ctrl);
+
+    expect_int("the scan ran", fake(&ctrl)->scan_count, 1);
+    expect_int("the RX alert was taken off DIO0 before the scan",
+               fake(&ctrl)->attached_during_scan ? 1 : 0, 0);
+    expect_int("the alert was cleared exactly once",
+               fake(&ctrl)->clear_callback_count, 1);
+    expect_int("and reinstalled afterwards",
+               fake(&ctrl)->callback_attached ? 1 : 0, 1);
+
+    /* Same for the non-blocking entry point. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;
+    ctrl.driver->setPacketReceivedAction(fake_rx_callback);
+    fake(&ctrl)->attached_during_scan = false;
+
+    (void)radio_cad_try_probe(&ctrl);
+
+    expect_int("try_probe: the scan ran", fake(&ctrl)->scan_count, 1);
+    expect_int("try_probe: the RX alert was off DIO0 during the scan",
+               fake(&ctrl)->attached_during_scan ? 1 : 0, 0);
+    expect_int("try_probe: and reinstalled afterwards",
+               fake(&ctrl)->callback_attached ? 1 : 0, 1);
+}
+
+/*
+ * P1-A. The audit found my first HW-3 implementation was wrong in the active
+ * paths: it kept the RSSI snapshot ahead of the gate on the reasoning that a
+ * snapshot is a harmless register read. In FSK it is not.
+ * RadioDriver::getRSSI() delegates to RadioLib's ordinary getRSSI(), whose FSK
+ * branch calls startReceive() -- rewriting the DIO mapping and clearing ALL
+ * IRQ flags, which can discard a received packet -- then standby(). Only
+ * rssiProbe() (getRSSI(false, true)) skips the receive.
+ *
+ * GET CHANNEL runs through radio_cad_try_probe, so this was live.
+ */
+static void test_active_probe_in_fsk_uses_only_the_nondestructive_read(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult result;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->rssi = -84.5f;
+
+    result = radio_cad_try_probe(&ctrl);
+
+    expect_int("fsk active probe is unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("fsk active probe still reports an RSSI",
+               (int)(result.rssi_dbm * 100.0f), -8450);
+    expect_int("it used the skip-receive probe", fake(&ctrl)->rssi_probe_count, 1);
+    expect_int("and NEVER the ordinary getRSSI, which re-enters RX in FSK",
+               fake(&ctrl)->get_rssi_count, 0);
+    expect_int("no scan", fake(&ctrl)->scan_count, 0);
+    expect_int("no re-arm", fake(&ctrl)->start_receive_count, 0);
+
+    /* Same for the blocking entry point, which the MANAGED TX gate uses. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_FSK);
+    ctrl.cad_scan_available = true;
+    result = radio_cad_probe(&ctrl);
+    expect_int("blocking probe: skip-receive only",
+               fake(&ctrl)->rssi_probe_count, 1);
+    expect_int("blocking probe: no ordinary getRSSI",
+               fake(&ctrl)->get_rssi_count, 0);
+    expect_int("blocking probe: no re-arm",
+               fake(&ctrl)->start_receive_count, 0);
+}
+
+/* A pending re-arm must stop the active probe before ANY radio call, including
+ * the snapshot -- the reading is undefined while the receiver is not armed. */
+static void test_active_probe_during_rearm_makes_no_radio_call_at_all(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    ctrl.rx_rearm_pending.store(true);
+
+    RadioCadProbeResult result = radio_cad_try_probe(&ctrl);
+
+    expect_int("re-arm pending -> unavailable", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("and zero radio calls of any kind",
+               fake(&ctrl)->rssi_probe_count + fake(&ctrl)->get_rssi_count +
+                   fake(&ctrl)->scan_count + fake(&ctrl)->start_receive_count, 0);
+}
+
+/*
+ * P1-B, after the audit narrowed it further. Asking the chip for RxDone is only
+ * meaningful once the receiver can no longer produce a new one. The first
+ * version asked while RX was still running, which moved the window rather than
+ * closing it: the query could return false and a packet complete microseconds
+ * later, before the probe detached DIO0 and entered CAD.
+ *
+ * So the probe now calls standby() first and asks afterwards. This test models
+ * exactly the surviving case: nothing pending when the probe starts, and a
+ * packet completing DURING the quiesce.
+ */
+static void test_a_packet_completing_during_the_quiesce_is_preserved(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    ctrl.received.store(false);              /* nothing pending at entry */
+    fake(&ctrl)->rx_done_after_checks = -1;  /* and the chip says so too... */
+    fake(&ctrl)->rx_done_on_standby = true;  /* ...until the receiver stops */
+    fake(&ctrl)->scan_result = 0;
+
+    RadioCadProbeResult result = radio_cad_try_probe(&ctrl);
+
+    expect_int("the receiver was stopped before the decision",
+               fake(&ctrl)->standby_count >= 1, 1);
+    expect_int("a packet that landed during the quiesce is reported BUSY",
+               result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("the software flag is set so the main loop will drain it",
+               ctrl.received.load() ? 1 : 0, 1);
+    expect_int("no scan ran", fake(&ctrl)->scan_count, 0);
+    expect_int("the IRQ flags were not cleared",
+               fake(&ctrl)->clear_irq_count, 0);
+    expect_int("the RX callback was never detached",
+               fake(&ctrl)->clear_callback_count, 0);
+    expect_int("and the receiver was not re-armed over the packet",
+               fake(&ctrl)->start_receive_count, 0);
+
+    /* The blocking entry point, used by the MANAGED TX gate, must behave the
+     * same -- it shares the helper but has its own call site. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->rx_done_on_standby = true;
+    fake(&ctrl)->scan_result = 0;
+    result = radio_cad_probe(&ctrl);
+    expect_int("blocking probe: BUSY", result.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("blocking probe: no scan", fake(&ctrl)->scan_count, 0);
+    expect_int("blocking probe: no re-arm", fake(&ctrl)->start_receive_count, 0);
+    expect_int("blocking probe: no IRQ clear", fake(&ctrl)->clear_irq_count, 0);
+
+    /* Positive control: nothing arrives at any point -> the scan proceeds. */
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->scan_result = 0;
+    result = radio_cad_try_probe(&ctrl);
+    expect_int("with nothing pending the scan runs", fake(&ctrl)->scan_count, 1);
+    expect_int("and answers FREE", result.status, RADIO_CAD_PROBE_FREE);
+}
+
+/*
+ * Fail closed on a radio that will not stop: no scan on a chip whose state we
+ * could not establish, and no verdict invented for it.
+ */
+static void test_a_radio_that_will_not_quiesce_is_unavailable(void)
+{
+    RadioController ctrl;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.cad_scan_available = true;
+    fake(&ctrl)->standby_result = -1;
+
+    RadioCadProbeResult result = radio_cad_try_probe(&ctrl);
+
+    expect_int("a radio that will not stop is UNAVAILABLE", result.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("no scan on it", fake(&ctrl)->scan_count, 0);
+    expect_int("and nothing was re-armed", fake(&ctrl)->start_receive_count, 0);
 }
 
 static void test_restore_clears_received_and_irq(void)
@@ -569,6 +891,13 @@ int main(int argc, char **argv)
     test_passive_probe_is_non_destructive();
     test_passive_probe_uses_per_band_threshold();
     test_passive_probe_non_lora_unavailable();
+    test_passive_probe_during_rx_rearm_unavailable();
+    test_active_probe_during_rx_rearm_does_not_scan();
+    test_probe_detaches_rx_callback_around_the_scan();
+    test_active_probe_in_fsk_uses_only_the_nondestructive_read();
+    test_active_probe_during_rearm_makes_no_radio_call_at_all();
+    test_a_packet_completing_during_the_quiesce_is_preserved();
+    test_a_radio_that_will_not_quiesce_is_unavailable();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();
 

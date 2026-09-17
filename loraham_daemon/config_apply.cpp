@@ -1,5 +1,7 @@
 #include "config_apply.h"
 
+#include "radio_tx_limit.h"
+
 #include "daemon_band.h"
 
 #include <vector>
@@ -74,6 +76,7 @@ static ConfigApplyEffective *config_apply_effective(void)
  * Returns false (reject) when it exceeds CONFIG_POLICY_MAX_AIRTIME_MS. */
 static bool config_apply_airtime_ok(const ConfigCommand &parsed,
                                     RadioMode_t target_mode,
+                                    DaemonChipFamily family,
                                     const char *tag)
 {
     ConfigApplyEffective merged = *config_apply_effective();
@@ -100,21 +103,30 @@ static bool config_apply_airtime_ok(const ConfigCommand &parsed,
             config_value_parse_float_exact(val, &merged.fsk_br_kbps);
     }
 
+    /* Worst case means the largest packet the daemon can actually SEND in the
+     * prospective mode, not the largest the buffers could hold. The pure form
+     * of the rule is required here: `SET MODE=FSK ...` is validated while the
+     * controller still reports LoRa, so asking the controller would judge the
+     * command against the old 255-byte limit and let a configuration through
+     * on airtime the daemon will never produce. */
+    const size_t worst_case_len = radio_tx_payload_limit(family, target_mode);
+
     double airtime_ms = (target_mode == RADIO_MODE_LORA)
         ? config_policy_lora_airtime_ms(merged.sf, merged.bw_khz, merged.cr,
                                         merged.preamble,
-                                        RF_PACKET_MAX_PAYLOAD_LEN)
+                                        worst_case_len)
         : config_policy_fsk_airtime_ms(merged.fsk_br_kbps,
                                        merged.fsk_preamble_bits,
-                                       RF_PACKET_MAX_PAYLOAD_LEN);
+                                       worst_case_len);
 
     if (airtime_ms < 0.0 || airtime_ms > CONFIG_POLICY_MAX_AIRTIME_MS) {
         printf("[%s] CONFIG rejected: worst-case airtime %.0f ms > %.0f ms "
-               "(SF%d/BW%.1f/CR%d/PRE%d, 255 B)\n",
+               "(SF%d/BW%.1f/CR%d/PRE%d, %zu B)\n",
                tag, airtime_ms, CONFIG_POLICY_MAX_AIRTIME_MS,
                merged.sf, (double)merged.bw_khz, merged.cr,
                target_mode == RADIO_MODE_LORA ? merged.preamble
-                                              : merged.fsk_preamble_bits);
+                                              : merged.fsk_preamble_bits,
+               worst_case_len);
         fflush(stdout);
         return false;
     }
@@ -154,7 +166,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
     ConfigCommand parsed = config_parse_command(cmd);
 
     if(!parsed.is_set) {
-        printf("[%s] Unbekannter Befehl: %s\n", tag, parsed.text.c_str());
+        printf("[%s] unknown command: %s\n", tag, parsed.text.c_str());
         return CONFIG_APPLY_UNKNOWN;
     }
 
@@ -183,7 +195,8 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
 
     /* Airtime gate: merged current+command worst case, checked
      * BEFORE any hardware side effect. */
-    if (!config_apply_airtime_ok(parsed, validation.target_mode, tag))
+    if (!config_apply_airtime_ok(parsed, validation.target_mode,
+                                 radio.chipFamily(), tag))
         return CONFIG_APPLY_REJECTED_INVALID;
 
     bool printed = false;
@@ -216,7 +229,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+                printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
 
                 return CONFIG_APPLY_HW_ERROR;
             }
@@ -230,12 +243,12 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 config_apply_effective_load_defaults(&g_effective);
                 printf(" \033[92mOK\033[0m");
             } else {
-                printf(" \033[91;5mFEHLER:%d\033[0m ABORT\n", state);
+                printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
 
                 return CONFIG_APPLY_HW_ERROR;
             }
         } else {
-            printf(" MODE=\033[91;5m%s\033[0m (unbekannt, ignoriert)", mode_val.c_str());
+            printf(" MODE=\033[91;5m%s\033[0m (unknown, ignored)", mode_val.c_str());
         }
     }
 
@@ -262,11 +275,11 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
         if(mode_flag == RADIO_MODE_FSK) {
             // Ignore LoRa-only keys while in FSK mode.
             if(key=="SF" || key=="BW" || key=="CR" || key=="LDRO" || key=="CRC") {
-                printf(" \033[93m%s=IGNORIERT(LoRa-Key im FSK-Modus)\033[0m", key.c_str());
+                printf(" \033[93m%s=IGNORED(LoRa key in FSK mode)\033[0m", key.c_str());
             } else {
                 int16_t state = radio.applyFskParam(tag, key, val);
                 if (state != RADIOLIB_ERR_NONE) {
-                    printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                    printf(" \033[91;5mABORT after %s (error %d)\033[0m\n",
                            key.c_str(), (int)state);
                     return CONFIG_APPLY_HW_ERROR;
                 }
@@ -277,11 +290,11 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
             // Ignore FSK-only keys while in LoRa mode.
             if(key=="BR" || key=="FREQDEV" || key=="RXBW" || key=="OOK" ||
                 key=="SHAPING" || key=="ENCODING") {
-                printf(" \033[93m%s=IGNORIERT(FSK-Key im LoRa-Modus, SET MODE=FSK fehlt)\033[0m", key.c_str());
+                printf(" \033[93m%s=IGNORED(FSK key in LoRa mode, SET MODE=FSK missing)\033[0m", key.c_str());
                 } else {
                     int16_t state = radio.applyLoraParam(tag, key, val);
                     if (state != RADIOLIB_ERR_NONE) {
-                        printf(" \033[91;5mABORT nach %s (Fehler %d)\033[0m\n",
+                        printf(" \033[91;5mABORT after %s (error %d)\033[0m\n",
                                key.c_str(), (int)state);
                         return CONFIG_APPLY_HW_ERROR;
                     }

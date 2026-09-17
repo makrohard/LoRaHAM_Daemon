@@ -115,7 +115,7 @@ automatisch.
 
 | # | Test | Erwartung |
 |---|---|---|
-| 1 | Boot beider Bänder (Variante nach Wahl): `[GPIO] Pin-Sperren gehalten: ...` vor LED/Init | disjunkte Pin-Listen je Band, Init OK, RADIO=READY |
+| 1 | Boot of both bands (either variant): `[GPIO] pin locks held: ...` vor LED/Init | disjoint pin lists per band, init OK, RADIO=READY |
 | 2 | Zweiter Start desselben Bands | Exit 3 (Instanz); gehaltener fremder gpio-Lock → Exit 4, kein Restart-Spin unter systemd |
 | 3 | CONF-Replies via socat: gültiges `SET CADWAIT=1500` / ungültiges `SET CADWAIT=1` / `set txqueue=1` (klein) / `BOGUS` | genau eine Antwort je Zeile: `OK` / `ERR INVALID` / `OK` / `ERR UNKNOWN`; `GET STATUS` einzeilig ohne `OK`, mit `RXREADY=1` |
 | 4 | TXQUEUE-Drain: Queue mit Jobs füllen (framed TX Serie), sofort `SET TXQUEUE=0` | `ERR BUSY` solange Jobs laufen; nach Drain `OK`; direkter DATA-TX während Rest-Queue → BUSY |

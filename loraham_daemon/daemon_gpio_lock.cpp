@@ -37,7 +37,7 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
     size_t n = 0;
 
     if (g_gpio_lock_count > 0) {
-        fprintf(stderr, "[GPIO] Fehler: Pin-Sperren bereits gehalten\n");
+        fprintf(stderr, "[GPIO] error: pin locks already held\n");
         return false;
     }
 
@@ -45,7 +45,7 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
         if (!pins || pins[i] < 0)
             continue;
         if (n >= DAEMON_GPIO_LOCK_MAX) {
-            fprintf(stderr, "[GPIO] Fehler: zu viele Pin-Sperren\n");
+            fprintf(stderr, "[GPIO] error: too many pin locks\n");
             return false;
         }
         sorted[n++] = pins[i];
@@ -58,7 +58,7 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
     int dirfd = loraham_open_runtime_dir();
     if (dirfd < 0) {
         /* Fail closed: no trusted lock dir means no ownership guarantee. */
-        fprintf(stderr, "[GPIO] Fehler: Sperrverzeichnis nicht nutzbar\n");
+        fprintf(stderr, "[GPIO] error: lock directory unusable\n");
         return false;
     }
 
@@ -82,10 +82,10 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
         if (rc < 0) {
             if (errno == EWOULDBLOCK)
                 fprintf(stderr,
-                        "[GPIO] Fehler: GPIO %d bereits von einem anderen "
-                        "Prozess beansprucht\n", sorted[i]);
+                        "[GPIO] error: GPIO %d already claimed by another "
+                        "process\n", sorted[i]);
             else
-                fprintf(stderr, "[GPIO] Fehler: Sperre fuer GPIO %d: %s\n",
+                fprintf(stderr, "[GPIO] error: lock for GPIO %d: %s\n",
                         sorted[i], strerror(errno));
             close(fd);
             close(dirfd);
@@ -101,7 +101,7 @@ bool daemon_gpio_locks_acquire(const int *pins, size_t count)
     close(dirfd);
 
     if (g_gpio_lock_count > 0) {
-        fprintf(stderr, "[GPIO] Pin-Sperren gehalten:");
+        fprintf(stderr, "[GPIO] pin locks held:");
         for (size_t i = 0; i < g_gpio_lock_count; i++)
             fprintf(stderr, " %d", g_gpio_lock_pins[i]);
         fprintf(stderr, "\n");

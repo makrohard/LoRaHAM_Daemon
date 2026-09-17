@@ -52,18 +52,18 @@ static int instance_lock_claim(const char *band, int *out_fd)
         close(fd);
 
         if (err == EWOULDBLOCK) {
-            printf("[LOCK] Band %s wird bereits von einer anderen Instanz "
-                   "betrieben – beende.\n", band);
+            printf("[LOCK] band %s is already run by another instance "
+                   "- exiting.\n", band);
             return LORAHAM_EXIT_INSTANCE_BUSY;
         }
 
-        printf("[LOCK] Fehler: flock(instance-%s) fehlgeschlagen: %s\n",
+        printf("[LOCK] error: flock(instance-%s) failed: %s\n",
                band, strerror(err));
         return LORAHAM_EXIT_LOCK_ERROR;   /* fail closed */
     }
 
     *out_fd = fd;
-    daemon_log("Instanz-Sperre erworben: %s/instance-%s.lock",
+    daemon_log("instance lock acquired: %s/instance-%s.lock",
                loraham_runtime_dir(), band);
     return 0;
 }
