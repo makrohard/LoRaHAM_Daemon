@@ -84,6 +84,7 @@ The reference documentation is in [`docs/`](docs/):
 | [Limits and timing](docs/limits.md) | Sizes, timeouts, TX modes, CAD behaviour |
 | [Architecture](docs/architecture.md) | Module map and runtime design |
 | [Examples](docs/examples.md) | Short programs that talk to the daemon, in shell, Python and C |
+| [Soak test](docs/soak-test-2026-09-16.md) | Four hours, four instances, both bands: the sustained-load evidence behind the 1.0.0 pin |
 
 ### The archived daemons
 
