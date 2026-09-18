@@ -162,7 +162,8 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                                                  const char *tag,
                                                  const char *cmd,
                                                  RadioMode_t &mode_flag,
-                                                 std::atomic<bool> &getrssi_flag) {
+                                                 std::atomic<bool> &getrssi_flag,
+                                                 bool high_power) {
     ConfigCommand parsed = config_parse_command(cmd);
 
     if(!parsed.is_set) {
@@ -178,7 +179,8 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
     if(!config_validate_command(parsed, mode_flag, &validation,
                                 radio.chipFamily(),
                                 daemon_band()->freq_min_mhz,
-                                daemon_band()->freq_max_mhz)) {
+                                daemon_band()->freq_max_mhz,
+                                high_power)) {
         printf("[%s] CONFIG rejected: %s=%s (%s)\n",
                tag,
                validation.key.c_str(),

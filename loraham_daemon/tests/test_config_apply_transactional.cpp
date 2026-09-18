@@ -106,12 +106,23 @@ static void expect_int(const char *name, int actual, int expected)
     }
 }
 
+/* The ordinary process: no --high-power permission. */
 static void apply_cmd(FakeRadio &radio,
                       const char *cmd,
                       RadioMode_t &mode,
                       std::atomic<bool> &getrssi)
 {
-    parse_and_apply_config_generic(radio, "TEST", cmd, mode, getrssi);
+    parse_and_apply_config_generic(radio, "TEST", cmd, mode, getrssi, false);
+}
+
+static ConfigApplyStatus apply_cmd_hp(FakeRadio &radio,
+                                      const char *cmd,
+                                      RadioMode_t &mode,
+                                      std::atomic<bool> &getrssi,
+                                      bool high_power)
+{
+    return parse_and_apply_config_generic(radio, "TEST", cmd, mode, getrssi,
+                                          high_power);
 }
 
 /* --- Tests --------------------------------------------------------------- */
@@ -332,26 +343,26 @@ static void test_airtime_gate_merged_config(void)
     /* BW=7.8 with the inherited SF12 shadow: ~145 s — rejected, no apply. */
     ConfigApplyStatus st =
         parse_and_apply_config_generic(radio, "TEST", "SET BW=7.8",
-                                       mode, getrssi);
+                                       mode, getrssi, false);
     expect_int("airtime: BW7.8 at SF12 rejected", st == CONFIG_APPLY_REJECTED_INVALID, 1);
     expect_int("airtime: no hardware touched", radio.lora_apply_count, 0);
 
     /* Same BW with SF7 in the SAME command: ~8.8 s — accepted. */
     st = parse_and_apply_config_generic(radio, "TEST", "SET SF=7 BW=7.8",
-                                        mode, getrssi);
+                                        mode, getrssi, false);
     expect_int("airtime: SF7+BW7.8 accepted", st == CONFIG_APPLY_APPLIED, 1);
     expect_int("airtime: both keys applied", radio.lora_apply_count, 2);
 
     /* Shadow remembers BW7.8: raising SF back to 12 must now be rejected. */
     st = parse_and_apply_config_generic(radio, "TEST", "SET SF=12",
-                                        mode, getrssi);
+                                        mode, getrssi, false);
     expect_int("airtime: SF12 on BW7.8 shadow rejected",
                st == CONFIG_APPLY_REJECTED_INVALID, 1);
     expect_int("airtime: rejected key not applied", radio.lora_apply_count, 2);
 
     /* MODE resets the shadow to band defaults: SF12 is fine again. */
     st = parse_and_apply_config_generic(radio, "TEST", "SET MODE=LORA SF=12",
-                                        mode, getrssi);
+                                        mode, getrssi, false);
     expect_int("airtime: MODE reset re-admits SF12",
                st == CONFIG_APPLY_APPLIED, 1);
 
@@ -388,13 +399,115 @@ static void test_airtime_gate_uses_the_mode_payload_limit(void)
 
     ConfigApplyStatus st =
         parse_and_apply_config_generic(radio, "TEST", "SET SF=9 BW=10.4 CR=8",
-                                       mode, getrssi);
+                                       mode, getrssi, false);
     expect_int("airtime: LoRa is still judged on the full 255-byte payload",
                st == CONFIG_APPLY_REJECTED_INVALID, 1);
     expect_int("airtime: nothing applied for the rejected command",
                radio.lora_apply_count, 0);
 
     config_apply_effective_reset();
+}
+
+/* --- POWER=20: permission decides before anything touches the radio ------- */
+
+static void test_power_20_without_permission_touches_nothing(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    ConfigApplyStatus st = apply_cmd_hp(radio, "SET POWER=20", mode, getrssi, false);
+
+    expect_int("POWER=20 OFF: rejected as INVALID", st, CONFIG_APPLY_REJECTED_INVALID);
+    expect_int("POWER=20 OFF: no lora apply", radio.lora_apply_count, 0);
+    expect_int("POWER=20 OFF: no fsk apply", radio.fsk_apply_count, 0);
+    expect_int("POWER=20 OFF: no mode switch", radio.begin_count + radio.begin_fsk_count, 0);
+    expect_int("POWER=20 OFF: mode unchanged", mode, RADIO_MODE_LORA);
+}
+
+static void test_power_20_with_permission_applies(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    ConfigApplyStatus st = apply_cmd_hp(radio, "SET POWER=20", mode, getrssi, true);
+
+    expect_int("POWER=20 ON: APPLIED", st, CONFIG_APPLY_APPLIED);
+    expect_int("POWER=20 ON: one lora apply", radio.lora_apply_count, 1);
+}
+
+static void test_power_18_19_never_apply(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    expect_int("POWER=18 ON: rejected",
+               apply_cmd_hp(radio, "SET POWER=18", mode, getrssi, true),
+               CONFIG_APPLY_REJECTED_INVALID);
+    expect_int("POWER=19 ON: rejected",
+               apply_cmd_hp(radio, "SET POWER=19", mode, getrssi, true),
+               CONFIG_APPLY_REJECTED_INVALID);
+    expect_int("POWER=18/19 ON: nothing applied", radio.lora_apply_count, 0);
+}
+
+static void test_power_20_fsk_path_obeys_the_same_rule(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    ConfigApplyStatus st = apply_cmd_hp(radio, "SET MODE=FSK POWER=20", mode, getrssi, false);
+
+    expect_int("MODE=FSK POWER=20 OFF: rejected", st, CONFIG_APPLY_REJECTED_INVALID);
+    expect_int("MODE=FSK POWER=20 OFF: no beginFSK", radio.begin_fsk_count, 0);
+    expect_int("MODE=FSK POWER=20 OFF: no fsk apply", radio.fsk_apply_count, 0);
+    expect_int("MODE=FSK POWER=20 OFF: mode still LORA", mode, RADIO_MODE_LORA);
+
+    st = apply_cmd_hp(radio, "SET MODE=FSK POWER=20", mode, getrssi, true);
+
+    expect_int("MODE=FSK POWER=20 ON: APPLIED", st, CONFIG_APPLY_APPLIED);
+    expect_int("MODE=FSK POWER=20 ON: one beginFSK", radio.begin_fsk_count, 1);
+    expect_int("MODE=FSK POWER=20 ON: one fsk apply", radio.fsk_apply_count, 1);
+    expect_int("MODE=FSK POWER=20 ON: mode is FSK", mode, RADIO_MODE_FSK);
+}
+
+static void test_power_20_refused_takes_the_other_keys_with_it(void)
+{
+    FakeRadio radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    ConfigApplyStatus st = apply_cmd_hp(radio, "SET SF=7 BW=125 GETRSSI=1 POWER=20",
+                                        mode, getrssi, false);
+
+    expect_int("multi-key with refused 20: rejected", st, CONFIG_APPLY_REJECTED_INVALID);
+    expect_int("multi-key with refused 20: SF/BW not applied", radio.lora_apply_count, 0);
+    expect_int("multi-key with refused 20: GETRSSI not set", getrssi.load(), false);
+}
+
+static void test_power_permission_changes_nothing_on_sx1262(void)
+{
+    struct Sx1262Fake : FakeRadio {
+        DaemonChipFamily chipFamily() const override
+        {
+            return DAEMON_CHIP_FAMILY_SX1262;
+        }
+    } radio;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    std::atomic<bool> getrssi(false);
+
+    expect_int("sx1262 POWER=20 OFF: APPLIED",
+               apply_cmd_hp(radio, "SET POWER=20", mode, getrssi, false),
+               CONFIG_APPLY_APPLIED);
+    expect_int("sx1262 POWER=20 ON: APPLIED",
+               apply_cmd_hp(radio, "SET POWER=20", mode, getrssi, true),
+               CONFIG_APPLY_APPLIED);
+    expect_int("sx1262 POWER=0 OFF: APPLIED",
+               apply_cmd_hp(radio, "SET POWER=0", mode, getrssi, false),
+               CONFIG_APPLY_APPLIED);
+    expect_int("sx1262: three applies", radio.lora_apply_count, 3);
 }
 
 int main(int argc, char **argv)
@@ -432,6 +545,12 @@ int main(int argc, char **argv)
 
     test_airtime_gate_merged_config();
     test_airtime_gate_uses_the_mode_payload_limit();
+    test_power_20_without_permission_touches_nothing();
+    test_power_20_with_permission_applies();
+    test_power_18_19_never_apply();
+    test_power_20_fsk_path_obeys_the_same_rule();
+    test_power_20_refused_takes_the_other_keys_with_it();
+    test_power_permission_changes_nothing_on_sx1262();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

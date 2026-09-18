@@ -53,6 +53,7 @@ protocols stay in the clients.
 | Boot TX mode | `daemon_tx_mode_boot.cpp`, `daemon_tx_mode_boot.h` | The `--tx-mode` boot slot: parse, store, and resolve unset to `MANAGED` |
 | Boot CAD monitor | `daemon_cad_monitor_boot.cpp`, `daemon_cad_monitor_boot.h` | The `--cad-monitor` boot slot: parse, store, and resolve unset to off; runtime `SET CADMONITOR` still overrides |
 | Boot CAD RSSI | `daemon_cad_rssi_boot.cpp`, `daemon_cad_rssi_boot.h` | The `--cad-rssi` boot slot: parse a dBm threshold, store it, and leave the controller default in place when unset |
+| Boot high-power permission | `daemon_high_power_boot.cpp`, `daemon_high_power_boot.h` | The `--high-power` boot flag: a bare, immutable per-process permission for `POWER=20` on SX127x; supplied to the CONFIG prevalidation at the `daemon_config_runtime.cpp` boundary, to the SX127x driver at creation, and reported in `STATUS` |
 
 The main loop is a single thread. Each iteration waits for socket events, processes the ready
 sockets, then polls the radio (RX drain plus the CAD, RSSI and stats monitoring ticks), then

@@ -71,25 +71,40 @@ static bool config_validate_freq_value(const std::string &val,
 }
 
 static bool config_validate_power_value(const std::string &val,
-                                        DaemonChipFamily chip_family)
+                                        DaemonChipFamily chip_family,
+                                        bool high_power)
 {
     int p = 0;
 
     return config_value_parse_int_exact(val, &p) &&
-           config_policy_power_valid_family(p, chip_family);
+           config_policy_power_valid_family(p, chip_family, high_power);
+}
+
+/* The one POWER refusal that has a remedy: exactly 20 on an SX127x board
+ * without the boot permission. Named so the operator finds the switch
+ * instead of reading "invalid value" for a number the datasheet lists. */
+static bool config_validate_power_needs_permission(const std::string &val,
+                                                   DaemonChipFamily chip_family,
+                                                   bool high_power)
+{
+    int p = 0;
+
+    return chip_family == DAEMON_CHIP_FAMILY_SX127X && !high_power &&
+           config_value_parse_int_exact(val, &p) && p == 20;
 }
 
 static bool config_validate_lora_value(const std::string &key,
                                        const std::string &val,
                                        DaemonChipFamily chip_family,
                                        float freq_min_mhz,
-                                       float freq_max_mhz)
+                                       float freq_max_mhz,
+                                       bool high_power)
 {
     if (key == "FREQ")
         return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
-        return config_validate_power_value(val, chip_family);
+        return config_validate_power_value(val, chip_family, high_power);
 
     if (key == "SF") {
         int sf = 0;
@@ -157,13 +172,14 @@ static bool config_validate_fsk_value(const std::string &key,
                                       const std::string &val,
                                       DaemonChipFamily chip_family,
                                       float freq_min_mhz,
-                                      float freq_max_mhz)
+                                      float freq_max_mhz,
+                                      bool high_power)
 {
     if (key == "FREQ")
         return config_validate_freq_value(val, freq_min_mhz, freq_max_mhz);
 
     if (key == "POWER")
-        return config_validate_power_value(val, chip_family);
+        return config_validate_power_value(val, chip_family, high_power);
 
     if (key == "BR") {
         float br = 0.0f;
@@ -225,8 +241,14 @@ static const char *config_validate_reject_reason(const std::string &key,
                                                  const std::string &val,
                                                  const char *generic,
                                                  float freq_min_mhz,
-                                                 float freq_max_mhz)
+                                                 float freq_max_mhz,
+                                                 DaemonChipFamily chip_family,
+                                                 bool high_power)
 {
+    if (key == "POWER" &&
+        config_validate_power_needs_permission(val, chip_family, high_power))
+        return "high-power mode not enabled (start with --high-power)";
+
     if (key != "FREQ")
         return generic;
 
@@ -243,7 +265,8 @@ bool config_validate_command(const ConfigCommand &cmd,
                              ConfigValidationResult *result,
                              DaemonChipFamily chip_family,
                              float freq_min_mhz,
-                             float freq_max_mhz)
+                             float freq_max_mhz,
+                             bool high_power)
 {
     config_validation_result_init(result, current_mode);
 
@@ -316,11 +339,13 @@ bool config_validate_command(const ConfigCommand &cmd,
                 continue;
 
             if (!config_validate_fsk_value(key, val, chip_family,
-                                           freq_min_mhz, freq_max_mhz)) {
+                                           freq_min_mhz, freq_max_mhz,
+                                           high_power)) {
                 config_validation_reject(result, key, val,
                                          config_validate_reject_reason(
                                              key, val, "invalid FSK value",
-                                             freq_min_mhz, freq_max_mhz));
+                                             freq_min_mhz, freq_max_mhz,
+                                             chip_family, high_power));
                 return false;
             }
         } else {
@@ -328,11 +353,13 @@ bool config_validate_command(const ConfigCommand &cmd,
                 continue;
 
             if (!config_validate_lora_value(key, val, chip_family,
-                                            freq_min_mhz, freq_max_mhz)) {
+                                            freq_min_mhz, freq_max_mhz,
+                                            high_power)) {
                 config_validation_reject(result, key, val,
                                          config_validate_reject_reason(
                                              key, val, "invalid LoRa value",
-                                             freq_min_mhz, freq_max_mhz));
+                                             freq_min_mhz, freq_max_mhz,
+                                             chip_family, high_power));
                 return false;
             }
         }

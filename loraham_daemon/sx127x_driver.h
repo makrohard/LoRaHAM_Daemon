@@ -21,7 +21,11 @@
 
 class Sx127xDriver : public RadioDriver {
 public:
-    Sx127xDriver(Module *mod, bool is_hf);
+    /* high_power: the process's --high-power permission. Defence in depth only
+     * -- the whole-command prevalidation has already refused a POWER=20 the
+     * process may not apply -- so a driver built without it (the default,
+     * every test rig) simply keeps 2..17. */
+    Sx127xDriver(Module *mod, bool is_hf, bool high_power = false);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,
@@ -113,6 +117,7 @@ private:
     Module *mod_;
     std::unique_ptr<SX1278> radio_;
     bool is_hf_;
+    bool high_power_;   /* the process's --high-power permission (defence in depth) */
 
     /*
      * The CAD bound needs the SF/BW the chip is on NOW, not the boot defaults.
@@ -138,7 +143,7 @@ private:
 };
 
 /* Factory: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */
-RadioDriver *sx127x_driver_create(Module *mod, bool is_hf);
+RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power);
 
 /*
  * D8: exactly one profile-aware diagnostic line for a failed SX127x begin().

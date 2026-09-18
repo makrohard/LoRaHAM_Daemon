@@ -473,7 +473,11 @@ static void test_dispatch_ignores_not_ready_client(void)
 static void test_status_uses_cad_broadcast_latch(void)
 {
     RadioController ctrl;
-    char status[384];
+    /* The production dispatcher formats into 512 bytes (config_dispatch.cpp);
+     * with every counter at its widest the line is ~450 bytes, so a smaller
+     * buffer here would truncate silently and the newline assertion below
+     * would be the only thing to notice. */
+    char status[512];
 
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
@@ -487,6 +491,39 @@ static void test_status_uses_cad_broadcast_latch(void)
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status reports broadcast CAD", status, " CAD=1 ");
     expect_contains("status reports queue rejects", status, " TXQREJECT=0 ");
+}
+
+/* HIGHPOWER= and CHIPFAMILY= are additive fields at the END of the line, read
+ * off the controller's witnesses, never off anything a client can set. */
+static void test_status_reports_high_power_and_family(void)
+{
+    RadioController ctrl;
+    char status[512];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status default HIGHPOWER=0", status, " HIGHPOWER=0 ");
+    expect_contains("status default family sx127x, last field, newline",
+                    status, " CHIPFAMILY=SX127x\n");
+
+    ctrl.high_power_enabled = true;
+    ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status HIGHPOWER=1 is the raw flag", status, " HIGHPOWER=1 ");
+    expect_contains("status family sx1262", status, " CHIPFAMILY=SX1262\n");
+
+    /* Every counter at its widest must still end in the newline: a truncated
+     * STATUS is a silent protocol break. */
+    ctrl.cad_wait_timeout_ms.store(4294967295u);
+    ctrl.cad_idle_stable_ms.store(4294967295u);
+    ctrl.cad_poll_interval_ms.store(4294967295u);
+    ctrl.cad_rssi_threshold_dbm.store(-130.0f);
+    config_status_format(status, sizeof(status), &ctrl);
+    size_t n = strlen(status);
+    expect_int("status at wide counters still ends in newline",
+               n > 0 && status[n - 1] == '\n', 1);
+    expect_int("status at wide counters fits the production buffer", n < 512, 1);
 }
 
 static void test_dispatch_get_channel_restores_rx(void)
@@ -1939,6 +1976,7 @@ int main(int argc, char **argv)
     test_set_cadrssi_parser();
     test_dispatch_sets_cadmonitor_optin();
     test_status_uses_cad_broadcast_latch();
+    test_status_reports_high_power_and_family();
     test_dispatch_get_channel_restores_rx();
     test_dispatch_get_channel_during_tx_skips_scan();
     test_dispatch_set_txresult();

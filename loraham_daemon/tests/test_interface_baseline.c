@@ -133,6 +133,50 @@ static int test_cli_hw_loraham_accepted(void)
 }
 
 
+/* --high-power is a bare flag: accepted alone (help exits before hardware
+ * setup and lists it), refused with any value -- there is no `off` syntax,
+ * absence is off. */
+static int test_cli_high_power_bare_accepted(void)
+{
+    char out[4096];
+    int exit_code = 0;
+    int ret = run_cli_capture(g_bin, "--high-power", "--help",
+                              out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+    if (exit_code != 0)
+        return TEST_FAIL;
+    if (strstr(out, "--high-power") == NULL)
+        return TEST_FAIL;
+    return TEST_PASS;
+}
+
+static int test_cli_high_power_value_rejected(void)
+{
+    static const char *flags[] = {
+        "--high-power=off",
+        "--high-power=on",
+    };
+
+    for (int i = 0; i < ARRAY_LEN(flags); i++) {
+        char out[2048];
+        int exit_code = 0;
+        int ret = run_cli_capture(g_bin, "--radio=433", flags[i],
+                                  out, sizeof(out), &exit_code);
+
+        if (ret != TEST_PASS)
+            return ret;
+
+        if (exit_code == 0) {
+            fail_msg("high-power value accepted: %s", flags[i]);
+            return TEST_FAIL;
+        }
+    }
+
+    return TEST_PASS;
+}
+
 /* The removed band-suffixed overrides must fail closed as unknown options. */
 static int test_cli_banded_flag_rejected(void)
 {
@@ -799,6 +843,8 @@ int main(int argc, char **argv)
     run_test("CLI rejects banded flags", test_cli_banded_flag_rejected);
     run_test("CLI rejects unknown --hw preset", test_cli_hw_unknown_rejected);
     run_test("CLI accepts --hw loraham", test_cli_hw_loraham_accepted);
+    run_test("CLI accepts bare --high-power", test_cli_high_power_bare_accepted);
+    run_test("CLI rejects --high-power with a value", test_cli_high_power_value_rejected);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);

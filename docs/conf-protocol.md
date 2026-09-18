@@ -82,7 +82,7 @@ logged as ignored and the rest of the command still applies.
 |---|---|---|---|
 | `MODE` | global | `LORA` | exactly `LORA` or `FSK`; anything else is rejected as `unknown mode` |
 | `FREQ` | LORA/FSK | 433: `433.900`, 868: `869.525` | strict number in MHz inside the band policy — `430.0`–`440.0` in a 433 process, `863.0`–`870.0` in an 868 process; an off-band value is rejected with the reason `off-band frequency (band policy)` |
-| `POWER` | LORA/FSK | `10` | integer, per chip family: `2` to `17` dBm on SX127x, `0` to `20` dBm on SX126x (see `limits.md`) |
+| `POWER` | LORA/FSK | `10` | integer, per chip family: `2` to `17` dBm on SX127x — plus exactly `20` when the process was started with `--high-power` — and `0` to `20` dBm on SX126x (see `limits.md`) |
 | `GETRSSI` | global | `0` | exactly `0` or `1` |
 | `PREAMBLE` | LORA/FSK | 433: `8`, 868: `16` | LoRa: integer `6` to `512`; FSK: integer `0` to `2048`; the airtime gate applies on top |
 | `SYNC` | LORA/FSK | 433: `0x12`, 868: `0x2B` | LoRa: `0x00`–`0xFF` or decimal `0`–`255`; FSK: one or two bytes up to `0xFFFF`, no zero byte |
@@ -192,13 +192,13 @@ connected to.
 One runtime snapshot line, in this exact field order:
 
 ```text
-STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY=
+STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY=
 ```
 
 A default snapshot reads:
 
 ```text
-STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1
+STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x
 ```
 
 | Field | Meaning |
@@ -219,6 +219,8 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `CADWAIT`, `CADIDLE`, `CADPOLL`, `CADTXAFTERTIMEOUT`, `CADMONITOR` | The current CAD policy |
 | `CADRSSI` | The busy threshold, printed integer-rounded (`%.0f`), not as a float |
 | `RXREADY` | `0` while a failed RX re-arm is being retried. `RADIO=READY RXREADY=0` means the daemon is temporarily deaf; persistent re-arm failure escalates the radio to `RADIO=FAILED` |
+| `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (`POWER` is not echoed anywhere), and it is `1` on an SX1262 started with the flag even though the flag does nothing there — combine it with `CHIPFAMILY` |
+| `CHIPFAMILY` | The running process's resolved chip family, `SX127x` or `SX1262`. Added so a controller reads the family off the daemon instead of trusting a hardware setup that may have been saved after the process started. Both fields are additive at the end of the line; a reader that does not find them is talking to an older daemon and must treat them as unknown, not as `0` |
 
 ### `GET STATS`
 

@@ -1,4 +1,5 @@
 #include "config_status.h"
+#include "hardware_profile.h"
 
 /* Bodies moved verbatim from config_status.h. */
 
@@ -360,7 +361,7 @@ void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -390,7 +391,15 @@ void config_status_format(char *buf,
               * re-arm failure is latched (retry running) or radio not
               * READY. */
              (radio_controller_ready(ctrl) &&
-              !(ctrl && ctrl->rx_rearm_pending.load())) ? 1 : 0);
+              !(ctrl && ctrl->rx_rearm_pending.load())) ? 1 : 0,
+             /* HIGHPOWER / CHIPFAMILY (appended, additive): the raw boot
+              * permission and the running chip family. HIGHPOWER=1 on an
+              * SX1262 is truthful and means nothing -- the family field is
+              * what a reader combines it with. Neither reports the selected
+              * power; POWER is not echoed anywhere. */
+             (ctrl && ctrl->high_power_enabled) ? 1 : 0,
+             daemon_chip_family_name(ctrl ? ctrl->chip_family
+                                          : DAEMON_CHIP_FAMILY_SX127X));
 }
 
 const char *config_status_cad_state_name(RadioCadProbeStatus status)

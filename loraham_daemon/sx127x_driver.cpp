@@ -12,18 +12,19 @@
 
 /* --- Construction ---------------------------------------------------------- */
 
-Sx127xDriver::Sx127xDriver(Module *mod, bool is_hf)
+Sx127xDriver::Sx127xDriver(Module *mod, bool is_hf, bool high_power)
     : RadioDriver(nullptr),
       mod_(mod),
       radio_(is_hf ? new RFM95(mod) : new SX1278(mod)),
-      is_hf_(is_hf)
+      is_hf_(is_hf),
+      high_power_(high_power)
 {
     phy_ = radio_.get();
 }
 
-RadioDriver *sx127x_driver_create(Module *mod, bool is_hf)
+RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power)
 {
-    return new Sx127xDriver(mod, is_hf);
+    return new Sx127xDriver(mod, is_hf, high_power);
 }
 
 const char *Sx127xDriver::chipName() const
@@ -205,10 +206,28 @@ int16_t Sx127xDriver::applyAutoLdro()
  * needs more headroom, the number can rise -- with evidence behind it.
  *
  * setCurrentLimit accepts 45-240 mA; 100 mA is OcpTrim 11. The validator keeps
- * SX127x to 2..17 dBm, so PA_BOOST is the only path this configures and one
- * value covers the whole range.
+ * SX127x to 2..17 dBm -- plus exactly 20 under the --high-power permission --
+ * so PA_BOOST is the only path this configures, and one value covers the
+ * continuous range.
+ *
+ * +20 dBm is the exception, and the datasheet says so twice: "the Over
+ * Current Protection limit should be adapted to the actual power level"
+ * (5.4.3) and IDDT is 120 mA typical at +20 against 87 mA at +17 (2.5.1).
+ * Imax bounds the PA current only, so the typical total does not translate
+ * into an exact PA figure -- but 100 mA sits at or below the documented
+ * +20 dBm region and is likely to limit the amplifier there, and RadioLib's
+ * 60 mA certainly does. 140 mA (OcpTrim 17) is the value chosen for the mode:
+ * above the documented operating region with headroom, the same pairing the
+ * Arduino-LoRa library has shipped for years (140 above 17 dBm, 100 below).
+ * It is a project choice, not a Semtech-prescribed number, and it has not
+ * been current-measured on these boards (no meter, same as the 100). The
+ * pair is written in one place: setOutputPower() flips RegPaDac to the
+ * boosted byte (RadioLib does that for exactly 20 and un-boosts for anything
+ * lower), then the limit follows the level, so leaving 20 -- SET lower, a
+ * MODE switch that reloads the boot defaults, or a restart -- restores 100.
  */
 #define SX127X_OCP_PA_BOOST_MA 100
+#define SX127X_OCP_PA_BOOST_HP_MA 140
 
 int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
 {
@@ -220,7 +239,20 @@ int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
     /* Order matters: power first, then the limit that protects it. A failure
      * here is returned, not logged and swallowed -- a transmitter running on
      * RadioLib's 60 mA cap is not a working radio. */
-    return radio_->setCurrentLimit(SX127X_OCP_PA_BOOST_MA);
+    state = radio_->setCurrentLimit(power_dbm == 20 ? SX127X_OCP_PA_BOOST_HP_MA
+                                                    : SX127X_OCP_PA_BOOST_MA);
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
+
+    /* One concise line per successfully applied 20 -- both setters done, so a
+     * rejected value or an SPI failure never produces it. The full contract
+     * was printed once at startup (loraham_daemon.cpp). */
+    if (power_dbm == 20) {
+        printf("\n[sx127x] WARNING POWER=20 applied: +20 dBm, OCP %d mA; duty "
+               "cycle <= 1 %%, operator responsible", SX127X_OCP_PA_BOOST_HP_MA);
+    }
+
+    return RADIOLIB_ERR_NONE;
 }
 
 /* --- Pending-RX, asked of the chip ----------------------------------------- */
@@ -490,7 +522,8 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
     if (key == "POWER") {
         int p = 0;
         if (config_value_parse_int_exact(val, &p) &&
-            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X)) {
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X,
+                                             high_power_)) {
             /* OCP with it, always: RadioLib's 60 mA cap would otherwise
              * survive every runtime power change. */
             state = applyPowerAndOcp(p);
@@ -530,7 +563,8 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
     if (key == "POWER") {
         int p = 0;
         if (config_value_parse_int_exact(val, &p) &&
-            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X)) {
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX127X,
+                                             high_power_)) {
             /* OCP with it, always: RadioLib's 60 mA cap would otherwise
              * survive every runtime power change. */
             state = applyPowerAndOcp(p);
