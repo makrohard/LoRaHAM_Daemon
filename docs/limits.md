@@ -198,7 +198,7 @@ A `SET` outside these ranges is rejected before any hardware is touched.
 | `BW` | `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz |
 | `CR` | `5`–`8` |
 | `PREAMBLE` (LoRa) | `6`–`512` symbols |
-| `POWER` (SX127x board) | `2`–`17` dBm |
+| `POWER` (SX127x board) | `2`–`17` dBm, plus exactly `20` with `--high-power` |
 | `POWER` (SX126x board) | `0`–`20` dBm |
 | `BR` (FSK) | `0.5`–`300` kbps |
 | `FREQDEV` (FSK) | greater than `0` and at most `200` kHz; on an SX126x board additionally at least `0.6` kHz |
@@ -207,36 +207,67 @@ A frequency outside the band window is rejected with the distinct reason
 `off-band frequency (band policy)`.
 
 The `POWER` window is narrower than the hardware, and it is per chip family. The policy check runs
-before `setOutputPower()`.
+before `setOutputPower()`, inside the whole-command prevalidation, so a refused value has no
+hardware effect and takes the keys beside it down with it.
 
 On an **SX126x** board the chip covers -9 dBm to +22 dBm and the accepted range `0`–`20` dBm lies
-inside it.
+inside it. The `--high-power` flag is accepted on such a process and changes nothing.
 
-On an **SX127x** board the accepted range is `2`–`17` dBm, for two separate reasons:
+On an **SX127x** board the continuous range is `2`–`17` dBm, for two separate reasons:
 
 - Below `2` dBm RadioLib drives the **RFO** pin instead of PA_BOOST. That is a different output
   path, and it is not the one the antenna is connected to on these boards, so `POWER=0` would have
   meant "transmit into an unconnected pin" while reporting success.
-- `18` and `19` dBm are rejected by RadioLib itself (`checkOutputPower` accepts `2`–`17` on PA_BOOST
-  and special-cases exactly `20`), so they were never reachable; rejecting them here only makes the
-  error early and specific instead of a late driver code.
-- `20` dBm **was** reachable, through the PA_DAC-boosted path, and is dropped deliberately: the
-  datasheet restricts it to a duty cycle of at most 1 %, VSWR at most 3:1 and VDD 2.4–3.7 V, and the
-  daemon has no duty-cycle governor. This is an **intentionally unsupported** high-power mode, not
-  an oversight. If it is ever wanted it returns as a feature with that operating contract attached.
+- `18` and `19` dBm are rejected by the pinned RadioLib itself (`checkOutputPower` accepts `2`–`17`
+  on PA_BOOST and special-cases exactly `20`). That is an API boundary, not a silicon one — Semtech's
+  reference driver reaches them through the boosted PA — but this daemon does not go around the
+  library; rejecting them here only makes the error early and specific instead of a late driver code.
+  The `--high-power` permission does not admit them.
 
-Output power and the PA over-current limit (OCP) are applied together as one setting. RadioLib pins
-OCP to 60 mA inside both `begin()` and `beginFSK()`, below the datasheet typical draw of 87 mA at
-+17 dBm on PA_BOOST; the daemon sets it to **100 mA — the chip's own silicon default** — at boot, on
-every `SET POWER`, and after every LoRa/FSK switch, because `beginFSK()` re-pins it.
+### +20 dBm: the opt-in and its contract
 
-The defect being fixed is that RadioLib's 60 mA sits *below* the typical draw, so the protection
-can trip during ordinary transmission. Restoring the silicon default corrects that and asserts no
-figure of the project's own: it leaves the part exactly as protected as an unconfigured one. An
-earlier revision used 120 mA as a selected margin for temperature and VSWR, conditional on a bench
-measurement; no current meter was available, so rather than ship an unmeasured number the value is
-the documented default. With a meter showing that +17 dBm into a real mismatch needs more headroom,
-it can rise — with evidence behind it.
+Exactly `20` dBm is the datasheet's high-power mode (`RegPaDac` 0x87, SX1276/77/78/79 §5.4.3), and
+the datasheet restricts it: a transmit duty cycle of at most **1 %**, a VSWR of at most **3:1** at the
+antenna port, and VDD **2.4–3.7 V**, over −40…+85 °C. Nothing in this daemon measures or enforces
+any of that — there is **no duty-cycle governor**, by decision — so `20` is admitted only when the
+operator started the process with `--high-power` ([cli.md](cli.md)), the explicit acknowledgement of
+the contract. The permission is per process, immutable, and no `CONF` command can grant it; without
+it a `SET POWER=20` is refused with the logged reason `high-power mode not enabled (start with
+--high-power)`. The daemon prints the contract once at startup and one line per accepted `POWER=20`;
+the operator is responsible for it. A 1 % duty cycle is arithmetic on airtime: a frame of airtime
+*T* seconds repeated every *P* seconds needs *P* ≥ 100 *T*, and the airtime depends on payload,
+SF, BW, CR, preamble and header, not on SF/BW alone — the daemon does not compute a "safe
+interval" for you.
+
+**The board matters and the daemon does not model it.** `POWER` is the chip's drive. On a bare
+module (the Uputronics RFM95/98W) +20 dBm is the datasheet case. On the LoRaHAM board the 433 module
+is an amplified **RFM98PW** whose documentation does not specify this drive condition or the
+resulting module output; the permission is the same switch there, and that operation is
+**unvalidated** — see [hardware.md](hardware.md).
+
+Output power and the PA over-current limit (OCP) are applied together as one setting, and the limit
+follows the level. RadioLib pins OCP to 60 mA inside both `begin()` and `beginFSK()`, below the
+datasheet typical draw of 87 mA at +17 dBm on PA_BOOST; the daemon sets it to **100 mA — the chip's
+own silicon default** — for `2`–`17`, at boot, on every `SET POWER`, and after every LoRa/FSK switch,
+because `beginFSK()` re-pins it.
+
+At `20` the pair is **140 mA (OcpTrim 17)** with the boosted `RegPaDac`, written in the same apply.
+The datasheet says the limit "should be adapted to the actual power level" and gives 120 mA as the
+typical total draw at +20 dBm; `Imax` bounds the PA current only, so that typical does not translate
+into an exact PA figure, but 100 mA sits at or below the documented +20 dBm region and is likely to
+limit the amplifier there, and RadioLib's 60 mA certainly does. 140 mA is above that region with
+headroom and is the pairing the Arduino-LoRa library has shipped for years (140 above 17 dBm, 100
+below). It is a project choice, not a Semtech-prescribed number, and it has not been current-measured
+on these boards — the same evidence status as the 100. Leaving `20` — a lower `SET POWER`, a `MODE`
+switch (which reloads the band's boot defaults), a restart — restores 0x84 and 100 mA; the register
+sequence is pinned by `tests/test_sx127x_power_register.cpp` against the real pinned RadioLib.
+
+The defect the 100 mA fixes is that RadioLib's 60 mA sits *below* the typical draw at +17, so the
+protection can trip during ordinary transmission. Restoring the silicon default corrects that and
+asserts no figure of the project's own: it leaves the part exactly as protected as an unconfigured
+one. An earlier revision used 120 mA as a selected margin for temperature and VSWR, conditional on a
+bench measurement; no current meter was available, so rather than ship an unmeasured number the
+value is the documented default.
 
 ## Worst-case airtime ceiling
 

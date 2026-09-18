@@ -1,4 +1,5 @@
 #include "daemon_radio_runtime.h"
+#include "daemon_high_power_boot.h"
 
 #include <stdio.h>
 
@@ -34,6 +35,9 @@ void daemon_radio_controller_init(void)
 
     /* Hardware capability from the resolved profile. */
     radio_controller.cad_scan_available = daemon_hw_profile.cad_scan_available;
+    /* STATUS witnesses: the running family and the boot permission. */
+    radio_controller.chip_family = daemon_hw_profile.family;
+    radio_controller.high_power_enabled = daemon_high_power_enabled();
 }
 
 /* --- Radio controller shutdown ------------------------------------------ */

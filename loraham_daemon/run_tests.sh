@@ -51,6 +51,7 @@ test_binaries=(
   "$TEST_DIR/test_tx_mode_boot"
   "$TEST_DIR/test_cad_monitor_boot"
   "$TEST_DIR/test_cad_rssi_boot"
+  "$TEST_DIR/test_high_power_boot"
   "$TEST_DIR/test_rflog"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
@@ -63,6 +64,7 @@ test_binaries=(
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
   "$TEST_DIR/test_sx127x_cad_register"
+  "$TEST_DIR/test_sx127x_power_register"
   "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
@@ -145,6 +147,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_radio_selection.cpp"
   "$SCRIPT_DIR/daemon_band.cpp"
   "$SCRIPT_DIR/hardware_profile.cpp"
+  "$SCRIPT_DIR/daemon_high_power_boot.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_gpio_lock.cpp"
@@ -437,6 +440,7 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
@@ -937,6 +941,16 @@ build_one_cad_monitor_boot_test() {
     "$SCRIPT_DIR/daemon_cad_monitor_boot.cpp"
 }
 
+build_one_high_power_boot_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_high_power_boot.cpp"
+}
+
 build_one_cad_rssi_boot_test() {
   local src="$1"
   local out="$2"
@@ -1025,6 +1039,7 @@ build_one_config_dispatch_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
@@ -1064,6 +1079,7 @@ build_tests() {
   build_one_tx_mode_boot_test "$TEST_DIR/test_tx_mode_boot.cpp" "$TEST_DIR/test_tx_mode_boot"
   build_one_cad_monitor_boot_test "$TEST_DIR/test_cad_monitor_boot.cpp" "$TEST_DIR/test_cad_monitor_boot"
   build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"
+  build_one_high_power_boot_test "$TEST_DIR/test_high_power_boot.cpp" "$TEST_DIR/test_high_power_boot"
   build_one_cpp_sources "$TEST_DIR/test_rflog" "$TEST_DIR/test_rflog.cpp" "$SCRIPT_DIR/daemon_rflog.cpp"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"
@@ -1075,6 +1091,7 @@ build_tests() {
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
   build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_cad_register.cpp" "$TEST_DIR/test_sx127x_cad_register"
+  build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_power_register.cpp" "$TEST_DIR/test_sx127x_power_register"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"
   build_one_gpio_lock_test "$TEST_DIR/test_gpio_lock.cpp" "$TEST_DIR/test_gpio_lock"

@@ -41,6 +41,7 @@
 #include "daemon_cad_monitor_boot.h"
 #include "daemon_cad_rssi_boot.h"
 #include "daemon_rflog.h"
+#include "daemon_high_power_boot.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -275,6 +276,8 @@ static void daemon_print_usage(const char *argv0)
     printf("      --tx-mode MODE      TX mode: direct, managed (default: managed)\n");
     printf("      --cad-monitor VAL   CAD=0/1 monitor: on, off (default: off)\n");
     printf("      --cad-rssi DBM      CAD busy threshold, integer dBm -130..0 (default: -90)\n");
+    printf("      --high-power        permit POWER=20 on an SX127x board (+20 dBm; default: off)\n");
+    printf("                          datasheet: duty cycle <= 1 %%, VSWR <= 3:1; nothing enforces it\n");
     printf("  -h, --help       print this help and exit\n");
     printf("\n");
     printf("Sockets (only those of the selected band are created):\n");
@@ -314,6 +317,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"hw",          required_argument, 0, 1011},
         {"rflog",       required_argument, 0, 1012},
         {"rflog-path",  required_argument, 0, 1013},
+        {"high-power",  no_argument,       0, 1014},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -392,6 +396,10 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "option --rflog-path recognised: %s", optarg);
                 break;
+            case 1014:
+                daemon_set_high_power_boot_global();
+                daemon_debug_ctx("STARTUP", "option --high-power recognised");
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -442,6 +450,41 @@ static bool daemon_parse_args(int argc, char *argv[])
 
 
     return is_daemon;
+}
+
+/* --- Boot high-power notice ---------------------------------------------- */
+/*
+ * Printed exactly once per process, after stdout is final (background mode
+ * re-opens it) and before any client is served. Not in the driver: its boot
+ * path re-runs on every MODE switch and would repeat the block. The full
+ * contract is stated here because the log is where "the operator opted in"
+ * is witnessed later; each later accepted SET POWER=20 adds one concise line
+ * (sx127x_driver.cpp). On an SX1262 the flag changes nothing and says so.
+ */
+static void daemon_print_high_power_notice(void)
+{
+    if (!daemon_high_power_enabled())
+        return;
+
+    const char *tag = daemon_band()->tag;
+
+    if (daemon_hw_profile.family != DAEMON_CHIP_FAMILY_SX127X) {
+        printf("[%s] --high-power: not applicable on %s (0..20 dBm accepted "
+               "unchanged)\n", tag, daemon_chip_family_name(daemon_hw_profile.family));
+        return;
+    }
+
+    printf("[%s] WARNING SX127x +20 dBm permission enabled (--high-power); "
+           "this flag does not select power\n", tag);
+    printf("[%s] WARNING at +20 dBm: transmit duty cycle <= 1 %%, antenna "
+           "VSWR <= 3:1, chip VDD 2.4-3.7 V (SX1276/7/8 datasheet 5.4.3)\n", tag);
+    printf("[%s] WARNING provide proper cooling for the chip; cooling does not "
+           "relax these limits\n", tag);
+    printf("[%s] WARNING no duty-cycle measurement or enforcement exists; the "
+           "operator is responsible\n", tag);
+    printf("[%s] WARNING outside-spec operation can damage hardware; warranty "
+           "void if disregarded\n", tag);
+    fflush(stdout);
 }
 
 /* --- Boot TX mode application -------------------------------------------- */
@@ -509,6 +552,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
     daemon_stdout_stamp_install();
 
     daemon_print_startup_version();
+    daemon_print_high_power_notice();
 
     daemon_debug_ctx("STARTUP", "starting radio and socket init");
     daemon_io_init();

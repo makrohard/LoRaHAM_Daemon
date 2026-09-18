@@ -123,10 +123,12 @@ Lifecycle/helper behavior:
 - `test_hardware_profile` (`--hw` preset resolution: legacy per-band identity, Uputronics NC pins/capabilities/slot LEDs, Waveshare SX1262 pin set, unknown-preset rejection)
 - `test_tx_mode_boot` (`--tx-mode` parsing, default MANAGED, fail-closed on invalid values)
 - `test_cad_monitor_boot` (`--cad-monitor` parsing, default off, fail-closed on invalid values)
+- `test_high_power_boot` (`--high-power`: unset is OFF, the bare flag is ON, idempotent, reset)
 - `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
+- `test_sx127x_power_register` (real driver + pinned RadioLib on the register model: `POWER=20` writes `RegPaDac` 0x87 with OCP 140 mA in one apply, 17 / a `MODE` switch / a boot over a boosted chip restore 0x84 + 100 mA, no permission or 18/19 touch nothing, a rejected write is a returned error)
 - `test_radio_cad_probe` also pins the duplicate-RX regression the live matrix caught: the probe
   takes the packet-received alert OFF DIO0 before scanning and reinstalls it after, because
   `startChannelScan()` remaps that pin from RxDone to CadDone -- leaving it attached made CAD

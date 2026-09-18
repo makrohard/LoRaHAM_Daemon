@@ -9,6 +9,7 @@
 
 #include "daemon_band.h"
 #include "daemon_gpio_lock.h"
+#include "daemon_high_power_boot.h"
 #include "daemon_led.h"
 #include "daemon_log.h"
 #include "daemon_radio_runtime.h"
@@ -36,7 +37,7 @@ static RadioDriver *hw_driver_create(Module *mod, bool is_hf)
                                     daemon_hw_profile.tcxo_voltage,
                                     daemon_hw_profile.txen);
 
-    return sx127x_driver_create(mod, is_hf);
+    return sx127x_driver_create(mod, is_hf, daemon_high_power_enabled());
 }
 
 /* Family-aware diagnosis dispatch (one line per failed radio). */

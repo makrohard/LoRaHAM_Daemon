@@ -110,31 +110,55 @@ static void test_ldro_boundary(void)
 
 static void test_power_policy_per_family(void)
 {
+    /* Without the --high-power permission: 1.0.0 behaviour, unchanged. */
     expect_int("sx127x rejects 0 (RFO path, not the antenna)",
-               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX127X), 0);
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX127X, false), 0);
     expect_int("sx127x rejects 1 (RFO path, not the antenna)",
-               config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X), 0);
+               config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X, false), 0);
     expect_int("sx127x accepts 2 (lowest PA_BOOST step)",
-               config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X), 1);
+               config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X, false), 1);
     expect_int("sx127x accepts 17 (continuous-operation maximum)",
-               config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X), 1);
-    expect_int("sx127x rejects 18 (RadioLib rejects it too; early beats late)",
-               config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X), 0);
-    expect_int("sx127x rejects 19 (RadioLib rejects it too; early beats late)",
-               config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X), 0);
-    expect_int("sx127x rejects 20 (reachable, but no duty-cycle governor exists)",
-               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X), 0);
+               config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X, false), 1);
+    expect_int("sx127x rejects 18 (RadioLib API boundary; early beats late)",
+               config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X, false), 0);
+    expect_int("sx127x rejects 19 (RadioLib API boundary; early beats late)",
+               config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X, false), 0);
+    expect_int("sx127x rejects 20 without the boot permission",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X, false), 0);
     expect_int("sx127x rejects -1",
-               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX127X), 0);
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX127X, false), 0);
 
+    /* With the permission: exactly 20 joins the set, nothing else moves. */
+    expect_int("sx127x with permission accepts 20",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X, true), 1);
+    expect_int("sx127x with permission still accepts 17",
+               config_policy_power_valid_family(17, DAEMON_CHIP_FAMILY_SX127X, true), 1);
+    expect_int("sx127x with permission still accepts 2",
+               config_policy_power_valid_family(2, DAEMON_CHIP_FAMILY_SX127X, true), 1);
+    expect_int("sx127x with permission still rejects 18",
+               config_policy_power_valid_family(18, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+    expect_int("sx127x with permission still rejects 19",
+               config_policy_power_valid_family(19, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+    expect_int("sx127x with permission still rejects 21",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+    expect_int("sx127x with permission still rejects 0 (RFO path)",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+    expect_int("sx127x with permission still rejects 1 (RFO path)",
+               config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+
+    /* SX1262: the permission is irrelevant in both directions. */
     expect_int("sx1262 keeps 0",
-               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262), 1);
-    expect_int("sx1262 keeps 20",
-               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262), 1);
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("sx1262 keeps 20 without permission",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("sx1262 keeps 20 with permission",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262, true), 1);
     expect_int("sx1262 rejects 21",
-               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262), 0);
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("sx1262 rejects 21 with permission too",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, true), 0);
     expect_int("sx1262 rejects -1",
-               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262), 0);
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262, false), 0);
 }
 
 static void test_fsk_policy(void)

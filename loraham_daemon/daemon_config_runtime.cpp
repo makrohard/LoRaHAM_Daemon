@@ -3,10 +3,26 @@
 #include "client_slot.h"
 #include "config_apply.h"
 #include "daemon_band.h"
+#include "daemon_high_power_boot.h"
 #include "daemon_io_runtime.h"
 #include "daemon_log.h"
 #include "daemon_protocol.h"
 #include "daemon_radio_runtime.h"
+
+/* --- CONFIG apply, with the process permission ---------------------------- */
+
+/* The ConfigApplyFn the dispatcher calls. This is the one place the immutable
+ * boot permission enters the CONFIG path: no client can supply it, and the
+ * prevalidation refuses POWER=20 without it before anything touches the radio. */
+static ConfigApplyStatus config_apply_command(RadioDriver &radio,
+                                              const char *tag,
+                                              const char *cmd,
+                                              RadioMode_t &mode,
+                                              std::atomic<bool> &getrssi_active)
+{
+    return parse_and_apply_config_generic(radio, tag, cmd, mode, getrssi_active,
+                                          daemon_high_power_enabled());
+}
 
 /* --- CONFIG runtime context factory -------------------------------------- */
 

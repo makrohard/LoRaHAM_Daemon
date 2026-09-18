@@ -13,6 +13,7 @@
 #include "radio_driver.h"
 #include "daemon_stats.h"
 #include "radio_health.h"
+#include "hardware_profile.h"   /* DaemonChipFamily, for the STATUS witness */
 
 /* --- Radio hardware/runtime state --------------------------------------- */
 
@@ -104,6 +105,14 @@ struct RadioController {
      * RSSI probe. */
     bool cad_scan_available;
 
+    /* STATUS witnesses (set once at init, never by CONF): the resolved chip
+     * family of THIS process's radio, and whether it was started with
+     * --high-power. A controller reads them off the running daemon instead of
+     * trusting what it stored -- a hardware setup saved after the process
+     * started is not what is running. */
+    DaemonChipFamily chip_family;
+    bool high_power_enabled;
+
     DaemonRadioStats stats;
 
     void (*rx_callback)(void);
@@ -157,6 +166,8 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->cad_send_after_timeout.store(
         DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT ? true : false);
     ctrl->cad_scan_available = true;
+    ctrl->chip_family = DAEMON_CHIP_FAMILY_SX127X;
+    ctrl->high_power_enabled = false;
 
     daemon_radio_stats_init(&ctrl->stats);
 

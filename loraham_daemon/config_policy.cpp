@@ -74,25 +74,37 @@ bool config_policy_power_valid(int power)
  * quietly", it meant "transmit into an unconnected pin", and the caller was
  * told the setting succeeded.
  *
- * SX127x, high end: RadioLib's own checkOutputPower accepts 2..17 on PA_BOOST
- * and special-cases exactly 20; 18 and 19 are rejected by the library itself
- * with ERR_INVALID_OUTPUT_POWER and were never reachable. Rejecting them here
- * turns a late, opaque driver error into an early, specific one.
+ * SX127x, 18 and 19: refused with or without permission. The pinned RadioLib
+ * checkOutputPower accepts 2..17 on PA_BOOST and special-cases exactly 20, and
+ * rejects 18 and 19 with ERR_INVALID_OUTPUT_POWER. That is an API boundary,
+ * not a silicon one (Semtech's own reference driver reaches them through the
+ * boosted PA with OutputPower = power - 5); this daemon does not go around the
+ * library. Rejecting them here turns a late, opaque driver error into an
+ * early, specific one.
  *
- * 20 is the value that WAS reachable, through the PA_DAC-boosted path, and it
- * is dropped on purpose: the datasheet permits continuous operation to +17 dBm
- * but restricts +20 dBm to duty cycle <= 1 %, VSWR <= 3:1 and VDD 2.4-3.7 V.
- * This daemon has no duty-cycle governor -- not a weak one, none -- so offering
- * POWER=20 as an ordinary setting would advertise an operating mode whose
- * contract nothing enforces. If it is ever wanted it comes back as a feature
- * with that contract attached.
+ * SX127x, 20: the datasheet's +20 dBm mode (RegPaDac 0x87, section 5.4.3),
+ * restricted to a transmit duty cycle <= 1 %, VSWR <= 3:1 at the antenna port
+ * and VDD 2.4-3.7 V. Nothing in this daemon measures or enforces any of that
+ * -- there is no duty-cycle governor, by decision -- so 20 is admitted ONLY
+ * when the operator started the process with --high-power, the explicit
+ * acknowledgement of that contract. The permission is per process, immutable,
+ * and no CONF command can grant it. The driver pairs the setting with the
+ * over-current limit the mode needs (sx127x_driver.cpp). On the LoRaHAM board
+ * the 433 module is an amplified RFM98PW whose documentation does not specify
+ * this drive condition; the permission is the same switch there, and that
+ * case is documented as unvalidated (docs/hardware.md).
  *
- * SX1262 keeps 0..20: its PA has a single output path and no such restriction.
+ * SX1262 keeps 0..20: its PA has a single output path and no such restriction,
+ * so the permission changes nothing there.
  */
-bool config_policy_power_valid_family(int power, DaemonChipFamily family)
+bool config_policy_power_valid_family(int power, DaemonChipFamily family,
+                                      bool high_power)
 {
-    if (family == DAEMON_CHIP_FAMILY_SX127X)
-        return power >= 2 && power <= 17;
+    if (family == DAEMON_CHIP_FAMILY_SX127X) {
+        if (power >= 2 && power <= 17)
+            return true;
+        return high_power && power == 20;
+    }
 
     return config_policy_power_valid(power);
 }

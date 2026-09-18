@@ -91,6 +91,21 @@ known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx
 * An unknown preset is rejected once the band is frozen: the daemon prints the offending name and
   the known list, then the usage text, and exits with a usage error.
 
+### What `POWER=20` drives, per preset
+
+`POWER` is the chip's setting, not a measurement at the antenna connector, and the profile knows
+wiring and chip family, not the output stage. With `--high-power` ([cli.md](cli.md)) an SX127x
+process accepts exactly `POWER=20`; what that does depends on the board:
+
+| Preset | Output stage | `POWER=20` means |
+|---|---|---|
+| `uputronics-ce0` / `-ce1` | bare HopeRF RFM95/98W: the chip's PA_BOOST drives the antenna | the datasheet's own +20 dBm (100 mW) case, under its restrictions (duty ≤ 1 %, VSWR ≤ 3:1, VDD 2.4–3.7 V — [limits.md](limits.md)). The proof case for the feature; requested chip power, not a calibrated connector measurement |
+| `waveshare-sx1262` | SX1262, single PA path | nothing new: `0`–`20` was always accepted and the flag is inert |
+| `loraham`, 868 | described as a 100 mW module; exact module unconfirmed | as a bare module; do not read a confirmed BOM into it |
+| `loraham`, 433 | **HopeRF RFM98PW**: an enhanced-power module based on the RF98/RF96 device, nominally +30 dBm (1 W), 5–6 V supply, hundreds of mA in TX; its internal RF chain is not modelled by the daemon and the die is not independently established | the chip drives the module's RF chain 3 dB harder. **Unvalidated on the LoRaHAM 433 RFM98PW: the reviewed module documentation does not establish the permitted chip-drive setting or the resulting module output.** Compression, supply and matching can change the outcome; +3 dB of drive does not guarantee +3 dB of output or that the amplifier tolerates it. The permission is the same switch there by the maintainer's decision, and this note is the only guard |
+
+Chip OCP protects the chip's PA; it does not limit an external amplifier's supply current.
+
 ## Wiring and claimed pins
 
 Pin semantics are family-dependent, following the RadioLib `Module(hal, cs, irq, rst, gpio)`

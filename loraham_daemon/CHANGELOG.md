@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.2.0
+
+- `--high-power`: the explicit opt-in for `POWER=20` on an SX127x board. A bare, per-process boot
+  flag — present means on, absent means off — that is the only thing which lets the whole-command
+  prevalidation admit exactly `20`; no CONF command can grant it, so a client that pushes `POWER=20`
+  on connect is refused the same way it was in 1.0.0, now with the reason
+  `high-power mode not enabled (start with --high-power)` in the log. 18 and 19 stay refused with or
+  without it (the pinned RadioLib PA_BOOST API admits 2–17 and exactly 20). On an SX1262 the flag is
+  accepted and changes nothing.
+- The +20 dBm setting is paired with the over-current limit it needs: 140 mA (OcpTrim 17) is written
+  in the same apply as the boosted `RegPaDac` (0x87), and 100 mA comes back on every path that leaves
+  20 — a lower `SET POWER`, a `MODE` switch that reloads the boot defaults, and a boot over a chip a
+  previous process left boosted. 140 mA is a project choice above the datasheet's 120 mA typical
+  draw at +20, not a Semtech-prescribed figure, and it has not been current-measured on these boards.
+- What the flag does NOT do, on purpose: it selects no power, enforces no duty cycle and models no
+  board. The datasheet restricts +20 dBm to a transmit duty cycle ≤ 1 %, VSWR ≤ 3:1 and VDD 2.4–3.7 V
+  (SX1276/7/8 §5.4.3); the daemon prints that contract once at startup and one line per accepted
+  `POWER=20`, and the operator is responsible for it. On the LoRaHAM board the 433 module is an
+  amplified RFM98PW whose documentation does not specify this drive condition — unvalidated there.
+- `GET STATUS` gains two additive fields at the end of the line: `HIGHPOWER=0|1` (the raw boot flag)
+  and `CHIPFAMILY=SX127x|SX1262` (the running process's resolved family), so a controller can show
+  what the daemon *is* rather than what it stored — a hardware setup saved after the process started
+  is not what is running.
+
 ## 1.1.0
 
 - `GET CHANNEL NOSCAN`: the `CHANNEL` line without a channel-activity scan. `GET CHANNEL` runs a

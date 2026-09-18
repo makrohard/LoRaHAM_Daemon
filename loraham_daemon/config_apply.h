@@ -55,21 +55,16 @@ static inline void config_apply_print_prefix(const char *tag, bool *printed)
 /* Reset the effective-config shadow to lazy band defaults (tests / re-init). */
 void config_apply_effective_reset(void);
 
+/* high_power: the process's immutable --high-power permission, supplied by the
+ * caller at this boundary (daemon_config_runtime.cpp passes the boot flag) and
+ * handed to the whole-command prevalidation, so a POWER=20 without it is
+ * refused before MODE, GETRSSI or any RF setter runs. No default: every caller
+ * states the permission it holds. */
 ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                                                  const char *tag,
                                                  const char *cmd,
                                                  RadioMode_t &mode_flag,
-                                                 std::atomic<bool> &getrssi_flag);
-
-static inline ConfigApplyStatus config_apply_command(
-    RadioDriver &radio,
-    const char *tag,
-    const char *cmd,
-    RadioMode_t &mode,
-    std::atomic<bool> &getrssi_active)
-{
-    return parse_and_apply_config_generic(radio, tag, cmd, mode,
-                                          getrssi_active);
-}
+                                                 std::atomic<bool> &getrssi_flag,
+                                                 bool high_power);
 
 #endif
