@@ -69,9 +69,9 @@ These sources include `<RadioLib.h>` and `hal/RPi/PiHal.h` from a RadioLib check
 the compile lines below name the checkout's include paths and its `build/libRadioLib.a` directly.
 
 **Known-good revisions.** Both files were compile-checked with GCC 15.3.1 against
-`13b7c7cf84b191006da20f82bdb386f2efc96334` (`7.6.0-67-g13b7c7cf8`), which is the revision this
+`187ef24791c3d844939b2be13a68bd890bd04e4c` (`7.7.1-57-g187ef2479`), which is the revision this
 repository pins for the current daemon in [`../.github/ci/radiolib.lock`](../.github/ci/radiolib.lock),
-and against `187ef24791c3d844939b2be13a68bd890bd04e4c` (`7.7.1-57-g187ef2479`). Either works, so one
+and against `13b7c7cf84b191006da20f82bdb386f2efc96334` (`7.6.0-67-g13b7c7cf8`). Either works, so one
 checkout serves both trees. Other revisions may work; these two have been checked.
 
 ## Raspberry Pi hardware interface

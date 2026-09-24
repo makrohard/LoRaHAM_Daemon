@@ -35,7 +35,7 @@ Target platform: Raspberry Pi 3/4/5 running a Raspbian image.
     git clone https://github.com/makrohard/LoRaHAM_Daemon ~/LoRaHAM
 
     git clone https://github.com/jgromes/RadioLib ~/RadioLib
-    git -C ~/RadioLib checkout 13b7c7cf84b191006da20f82bdb386f2efc96334
+    git -C ~/RadioLib checkout 187ef24791c3d844939b2be13a68bd890bd04e4c
 
 RadioLib is used from its source checkout by the daemon build script — no `make install` required.
 The checkout above pins the exact RadioLib commit the test suite and CI run against, recorded in
