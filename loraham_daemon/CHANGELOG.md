@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- Chat waits for its transmission to finish before retuning to RX. With the shipped default of
+  different TX and RX frequencies (433.775 / 433.900) the old fixed 100 ms sleep retuned while a
+  queued frame was still waiting for a clear channel or in the air; the retune was lost and the
+  node stayed on the TX frequency, deaf to replies. It now waits for the daemon's count of
+  finished transmissions (TXOK+TXERR+TXBUSY) to move. No daemon behaviour changes; the daemon
+  reports the version that is tagged.
+
 ## 1.1.0
 
 - `GET CHANNEL NOSCAN`: the `CHANNEL` line without a channel-activity scan. `GET CHANNEL` runs a
