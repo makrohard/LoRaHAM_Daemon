@@ -60,6 +60,29 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
     return RADIOLIB_ERR_NONE;
 }
 
+/* --- PA over-current limit, applied after begin()/beginFSK() --------------- */
+/*
+ * RadioLib sets the OCP to 60 mA inside begin() and beginFSK() (SX126x.cpp, both
+ * paths) and setOutputPower() preserves whatever is there, so without this the
+ * chip ran every later SET POWER on 60 mA. 140 mA is the daemon's SX1262 default
+ * (maintainer decision) and the top of the range RadioLib accepts (0..140).
+ * Written after both init paths, which are the only places RadioLib resets it.
+ * The caller returns setCurrentLimit()'s result; with RadioLib 187ef247 that
+ * fails only on an out-of-range value (its writeRegister() does not report the
+ * chip's status).
+ */
+#define SX1262_OCP_MA 140
+
+static int16_t sx1262_apply_ocp(SX1262 *radio)
+{
+    int16_t state = radio->setCurrentLimit(SX1262_OCP_MA);
+    if (state != RADIOLIB_ERR_NONE) {
+        printf("[sx1262] boot setter OCP failed: %d\n", (int)state);
+        fflush(stdout);
+    }
+    return state;
+}
+
 /* --- Boot init with the RF defaults ---------------------------------------- */
 // begin() applies frequency, SF, BW, CR, sync word, power, preamble and the
 // TCXO voltage (DIO3) in one call; the RF switch, CRC and LDRO follow
@@ -83,6 +106,10 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
                                   tcxo_voltage_,
                                   false);
 
+    if (state != RADIOLIB_ERR_NONE)
+        return state;
+
+    state = sx1262_apply_ocp(radio_.get());
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
@@ -128,6 +155,8 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
          * frequency comes from the band. TCXO always applied. */
         state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
                                  tcxo_voltage_, false);
+        if (state == RADIOLIB_ERR_NONE)
+            state = sx1262_apply_ocp(radio_.get());
         if (state == RADIOLIB_ERR_NONE)
             state = sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
         return state;

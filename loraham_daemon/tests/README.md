@@ -154,6 +154,10 @@ Lifecycle/helper behavior:
   a transmission whose DIO0 never asserts returns `ERR_TX_TIMEOUT`, never `ERR_NONE` -- which is
   what makes the HAL's "answer LOW on a read error" safe, since the wait is bounded at 150 % of
   the computed time-on-air -- and the chip is still parked in standby afterwards)
+- `test_sx1262_ocp_register` (the real `Sx1262Driver` and the real pinned RadioLib on
+  `tests/fakes/sx126x_register_model.h`: RegOcp 0x08E7 is 140 mA after boot, after `SET POWER`, after
+  `MODE=FSK` and after the return to LoRa, where RadioLib alone leaves 60 mA; and the test fails on any
+  SPI opcode the minimal model has not been checked against)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:

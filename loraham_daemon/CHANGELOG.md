@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- SX1262: the PA over-current limit is 140 mA after boot and after every `MODE` switch. RadioLib sets
+  60 mA inside `begin()` and `beginFSK()` and every later `SET POWER` kept it, so the driver ran all
+  power levels on 60 mA. 140 mA is the daemon's SX1262 default and the top of RadioLib's range.
+
 ## 1.2.1
 
 - Kernel chip selects: when the kernel owns CE0/CE1 (`/dev/spidev0.1` exists), a radio on BCM 8 or 7 uses
