@@ -46,6 +46,7 @@
 #include "daemon_high_power_boot.h"
 #include "daemon_ocp_boot.h"
 #include "ch341_loader.h"
+#include "config_policy.h"
 
 /* build.sh passes the pine64 commit from .github/ci/libpinedio.lock; a build
  * without it refuses every Meshstick library (see ch341_loader.cpp). */
@@ -486,6 +487,11 @@ static bool daemon_parse_args(int argc, char *argv[])
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
+
+    /* A preset whose manufacturer specifies more than +20 dBm raises the
+     * SX1262 POWER ceiling for this process (config_policy.h). */
+    if (daemon_hw_profile.power_max_dbm > 0)
+        config_policy_set_sx1262_power_max(daemon_hw_profile.power_max_dbm);
 
     /* The Meshstick's library is loaded here, before anything is opened or
      * claimed, and only for its preset: every other preset never calls

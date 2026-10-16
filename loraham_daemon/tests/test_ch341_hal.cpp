@@ -7,7 +7,7 @@
  * CS D0, DIO1 D6, RESET D2, BUSY D4, RXEN D1.
  *
  * What it shows:
- *   - boot, SET POWER, FSK and back work over this HAL, RegOcp is 140 mA, the
+ *   - boot, SET POWER (22 dBm under the preset's ceiling), FSK and back work over this HAL, RegOcp is 140 mA, the
  *     RX interrupt lands on D6, RXEN (D1) is driven HIGH in RX and LOW in
  *     standby, and every SPI opcode sent is one the model has been checked
  *     against;
@@ -25,6 +25,7 @@
 #include "../ch341_hal.h"
 #include "../sx1262_driver.h"
 #include "fakes/ch341_fake_adapter.h"
+#include "../config_policy.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -117,6 +118,11 @@ static void test_radio_over_ch341(void)
         expect_int("SET POWER=14 accepted",
                    drv.applyLoraParam("t", "POWER", "14"), RADIOLIB_ERR_NONE);
         printf("\n");
+        config_policy_set_sx1262_power_max(22);   /* what meshstick-1262 sets at startup */
+        expect_int("SET POWER=22 accepted under the 22 dBm ceiling",
+                   drv.applyLoraParam("t", "POWER", "22"), RADIOLIB_ERR_NONE);
+        printf("\n");
+        config_policy_sx1262_power_max_reset();
         expect_int("MODE=FSK succeeds", drv.switchMode(RADIO_MODE_FSK, &def), RADIOLIB_ERR_NONE);
         expect_int("MODE=LORA succeeds", drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
         expect_hex("back to LoRa: OCP 140 mA", model.peek(REG_OCP), OCP_140MA);

@@ -170,6 +170,7 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->usb_ch341 = true;
         p->usb_vid = 0x1A86;
         p->usb_pid = 0x5512;
+        p->power_max_dbm = 22;          /* ELECROW: "+22 dBm@Max" */
         p->claimed_count = 0;           /* nothing on the Pi's GPIO */
         return true;
     }

@@ -161,6 +161,37 @@ static void test_power_policy_per_family(void)
                config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262, false), 0);
 }
 
+/* The SX1262 ceiling a preset may raise (meshstick-1262: 22). Without it
+ * 21 and 22 stay refused; with it they pass and 23 does not; SX127x and its
+ * permission are untouched by it. */
+static void test_sx1262_power_ceiling(void)
+{
+    config_policy_sx1262_power_max_reset();
+    expect_int("ceiling default is 20", config_policy_sx1262_power_max(), 20);
+    expect_int("default: sx1262 rejects 22",
+               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+
+    config_policy_set_sx1262_power_max(22);
+    expect_int("ceiling 22: sx1262 accepts 21",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("ceiling 22: sx1262 accepts 22",
+               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("ceiling 22: sx1262 rejects 23",
+               config_policy_power_valid_family(23, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx1262 still rejects -1",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx127x unchanged, 21 rejected with permission",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX127X, true), 0);
+    expect_int("ceiling 22: sx127x unchanged, 20 needs the permission",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX127X, false), 0);
+    expect_int("ceiling 22: the family-less check stays 0..20",
+               config_policy_power_valid(21), 0);
+
+    config_policy_sx1262_power_max_reset();
+    expect_int("reset: sx1262 rejects 21 again",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+}
+
 static void test_fsk_policy(void)
 {
     expect_int("fsk br rejects 0.49", config_policy_fsk_bitrate_valid(0.49f), 0);
@@ -315,6 +346,7 @@ int main(int argc, char **argv)
     test_lora_policy();
     test_ldro_boundary();
     test_power_policy_per_family();
+    test_sx1262_power_ceiling();
     test_fsk_policy();
 
     test_freq_band_policy();

@@ -83,6 +83,10 @@ typedef struct {
     int usb_vid;
     int usb_pid;
 
+    /* SX1262 POWER ceiling in dBm when the board's manufacturer specifies
+     * more than the daemon's 20; 0 = the default (config_policy.h). */
+    int power_max_dbm;
+
     /* All BCM lines this profile claims (LED + Module pins); for claim-failure
      * diagnostics and docs. */
     int claimed[DAEMON_HW_MAX_CLAIMED];

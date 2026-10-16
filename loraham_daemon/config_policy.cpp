@@ -95,8 +95,29 @@ bool config_policy_power_valid(int power)
  * case is documented as unvalidated (docs/hardware.md).
  *
  * SX1262 keeps 0..20: its PA has a single output path and no such restriction,
- * so the permission changes nothing there.
+ * so the permission changes nothing there. A preset may raise the ceiling to
+ * what its manufacturer specifies (the ELECROW Meshstick: +22 dBm, the
+ * SX1262's own maximum); only that preset sets it, at startup.
  */
+#define CONFIG_POLICY_SX1262_POWER_MAX_DEFAULT 20
+
+static int g_sx1262_power_max = CONFIG_POLICY_SX1262_POWER_MAX_DEFAULT;
+
+void config_policy_set_sx1262_power_max(int dbm)
+{
+    g_sx1262_power_max = dbm;
+}
+
+int config_policy_sx1262_power_max(void)
+{
+    return g_sx1262_power_max;
+}
+
+void config_policy_sx1262_power_max_reset(void)
+{
+    g_sx1262_power_max = CONFIG_POLICY_SX1262_POWER_MAX_DEFAULT;
+}
+
 bool config_policy_power_valid_family(int power, DaemonChipFamily family,
                                       bool high_power)
 {
@@ -106,7 +127,7 @@ bool config_policy_power_valid_family(int power, DaemonChipFamily family,
         return high_power && power == 20;
     }
 
-    return config_policy_power_valid(power);
+    return power >= 0 && power <= g_sx1262_power_max;
 }
 
 /* --- FSK CONFIG value policy -------------------------------------------- */

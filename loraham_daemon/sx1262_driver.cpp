@@ -62,6 +62,16 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
     return RADIOLIB_ERR_NONE;
 }
 
+/* --- Above +20 dBm ----------------------------------------------------------- */
+/* Only a preset that raised the ceiling (config_policy.h) gets here: one line
+ * per accepted apply, as SX127x prints for its +20 dBm mode. */
+static void sx1262_warn_above_20(int power_dbm, int state)
+{
+    if (power_dbm > 20 && state == RADIOLIB_ERR_NONE)
+        printf("\n[sx1262] WARNING POWER=%d above +20 dBm: regulatory limits "
+               "apply, operator responsible", power_dbm);
+}
+
 /* --- PA over-current limit, applied after begin()/beginFSK() --------------- */
 /*
  * RadioLib sets the OCP to 60 mA inside begin() and beginFSK() (SX126x.cpp, both
@@ -279,11 +289,14 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
-            /* Chip range -9..+22 dBm; the CONF policy (0..20) lies inside
-             * it, and RadioLib validates on top. */
+        if (config_value_parse_int_exact(val, &p) &&
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262, false)) {
+            /* Chip range -9..+22 dBm; the CONF policy (0..20, or the
+             * preset's ceiling) lies inside it, and RadioLib validates on
+             * top. */
             state = radio.setOutputPower((int8_t)p);
             driver_config_print_state_int("POWER", p, state);
+            sx1262_warn_above_20(p, state);
         } else {
             driver_config_print_rejected("POWER", val);
         }
@@ -318,9 +331,11 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
 
     if (key == "POWER") {
         int p = 0;
-        if (config_value_parse_int_exact(val, &p) && config_policy_power_valid(p)) {
+        if (config_value_parse_int_exact(val, &p) &&
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262, false)) {
             state = radio.setOutputPower((int8_t)p);
             driver_config_print_state_int("POWER", p, state);
+            sx1262_warn_above_20(p, state);
         } else {
             driver_config_print_rejected("POWER", val);
         }

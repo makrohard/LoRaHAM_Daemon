@@ -36,10 +36,18 @@ bool config_policy_power_valid(int power);
  * 18 and 19 are refused with or without permission: the pinned RadioLib
  * PA_BOOST API admits 2..17 and exactly 20 (an API boundary, not a silicon
  * one). 20 is the datasheet's restricted +20 dBm mode and needs the explicit
- * boot permission; see config_policy.cpp for the contract. SX1262: 0..20,
- * permission irrelevant. */
+ * boot permission; see config_policy.cpp for the contract. SX1262: 0 up to
+ * the process's SX1262 ceiling (20 unless the preset raises it), permission
+ * irrelevant. */
 bool config_policy_power_valid_family(int power, DaemonChipFamily family,
                                       bool high_power);
+
+/* The SX1262 POWER ceiling of this process: 20 dBm, or what the --hw preset
+ * allows (meshstick-1262: 22, the manufacturer's maximum). Set once at
+ * startup; the reset is for tests. */
+void config_policy_set_sx1262_power_max(int dbm);
+int config_policy_sx1262_power_max(void);
+void config_policy_sx1262_power_max_reset(void);
 
 bool config_policy_fsk_bitrate_valid(float br);
 bool config_policy_fsk_freqdev_valid(float freqdev);

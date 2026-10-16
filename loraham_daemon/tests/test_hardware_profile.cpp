@@ -159,6 +159,7 @@ static void test_meshstick(void)
     expect_int("ms tcxo 1.8 V", daemon_hw_profile.tcxo_voltage == 1.8f, 1);
     expect_int("ms led NC", daemon_hw_profile.led_pin < 0, 1);
     expect_int("ms claims no Pi line", daemon_hw_profile.claimed_count, 0);
+    expect_int("ms power ceiling 22 dBm", daemon_hw_profile.power_max_dbm, 22);
     expect_int("ms cad scan", daemon_hw_profile.cad_scan_available, 1);
 
     for (const char *name : pi_presets) {
@@ -168,6 +169,8 @@ static void test_meshstick(void)
             char label[96];
             snprintf(label, sizeof(label), "%s %d: not a USB profile", name, band);
             expect_int(label, daemon_hardware_profile_resolve(band) && !daemon_hw_profile.usb_ch341, 1);
+            snprintf(label, sizeof(label), "%s %d: default power ceiling", name, band);
+            expect_int(label, daemon_hw_profile.power_max_dbm, 0);
         }
     }
 }
