@@ -520,11 +520,14 @@ static bool daemon_parse_args(int argc, char *argv[])
                "(exit %d).\n", daemon_hw_profile.cs, LORAHAM_EXIT_LOCK_ERROR);
         exit(LORAHAM_EXIT_LOCK_ERROR);
     }
-    if (daemon_hw_profile.kernel_cs)
-        printf("[SPI] chip select: kernel CE%d (/dev/spidev0.%d)\n",
-               daemon_hw_profile.spi_channel, daemon_hw_profile.spi_channel);
-    else
-        printf("[SPI] chip select: GPIO %d (/dev/spidev0.0)\n", daemon_hw_profile.cs);
+    /* The Pi's SPI chip select; a USB radio has none (its CS is a CH341 line). */
+    if (!daemon_hw_profile.usb_ch341) {
+        if (daemon_hw_profile.kernel_cs)
+            printf("[SPI] chip select: kernel CE%d (/dev/spidev0.%d)\n",
+                   daemon_hw_profile.spi_channel, daemon_hw_profile.spi_channel);
+        else
+            printf("[SPI] chip select: GPIO %d (/dev/spidev0.0)\n", daemon_hw_profile.cs);
+    }
 
 
     return is_daemon;

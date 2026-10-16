@@ -10,8 +10,13 @@
  * meshstick-1262 without any library is refused with exit 4 and the reason.
  *
  * The starts run without radio hardware, so the existing presets end at their
- * usual startup failure; what is checked is only that the library was never
- * opened on the way.
+ * usual startup failure; what is checked is that the library was never opened
+ * on the way, and that each Pi preset still reports its SPI chip select.
+ *
+ * A third run gives meshstick-1262 a fake library the loader accepts (every
+ * symbol, the lock's commit; its open finds no stick): the Pi's "[SPI] chip
+ * select" line must not appear for a USB radio. (Where the start ends after
+ * that depends on the lane's lock and socket directories, so it is not checked.)
  */
 
 #include <cstdio>
@@ -126,6 +131,8 @@ int main(int argc, char *argv[])
                             ": the Meshstick library is never opened (exit " +
                             std::to_string(rc) + ")";
             expect(t.c_str(), !exists(marker));
+            t = std::string(preset) + " --radio " + band + ": reports its SPI chip select";
+            expect(t.c_str(), sh("grep -q '\\[SPI\\] chip select' '" + log + "'") == 0);
         }
     }
 
@@ -148,6 +155,48 @@ int main(int argc, char *argv[])
         expect("no library: exit 4", rc == 4);
         expect("no library: reason names the missing library",
                sh("grep -q 'CH341\\] refused: Meshstick library not found' '" + log + "'") == 0);
+        sh("cat '" + log + "'");
+    }
+
+    /* Control 3: an acceptable library (the lock's commit, every symbol; open
+     * finds no stick). The USB radio prints no Pi chip-select line. */
+    {
+        std::string exe_dir(daemon);
+        exe_dir = exe_dir.substr(0, exe_dir.rfind('/'));
+        std::string lockf = exe_dir + "/../.github/ci/libpinedio.lock";
+        std::string pin_file = tmp + "/pin.txt";
+        sh("sed -n 's/^PINEDIO_COMMIT=//p' '" + lockf + "' > '" + pin_file + "'");
+        char pin[64] = {0};
+        FILE *pf = fopen(pin_file.c_str(), "r");
+        if (pf) {
+            if (!fgets(pin, sizeof(pin), pf))
+                pin[0] = '\0';
+            fclose(pf);
+        }
+        pin[strcspn(pin, "\n")] = '\0';
+        expect("control 3: the lock's commit read", strlen(pin) == 40);
+
+        FILE *f = fopen((tmp + "/good.c").c_str(), "w");
+        fprintf(f, "#include <stdint.h>\ntypedef struct loraham_ch341 loraham_ch341;\n"
+                   "const char *loraham_ch341_pin(void) { return \"%s\"; }\n"
+                   "loraham_ch341 *loraham_ch341_open(uint16_t v, uint16_t p, const char *s) { (void)v; (void)p; (void)s; return 0; }\n"
+                   "void loraham_ch341_close(loraham_ch341 *d) { (void)d; }\n"
+                   "int loraham_ch341_transceive(loraham_ch341 *d, const uint8_t *o, uint8_t *i, uint32_t n) { (void)d; (void)o; (void)i; (void)n; return -1; }\n"
+                   "int loraham_ch341_pin_mode(loraham_ch341 *d, uint32_t p, int o) { (void)d; (void)p; (void)o; return -1; }\n"
+                   "int loraham_ch341_digital_write(loraham_ch341 *d, uint32_t p, int l) { (void)d; (void)p; (void)l; return -1; }\n"
+                   "int loraham_ch341_digital_read(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
+                   "int loraham_ch341_attach_interrupt(loraham_ch341 *d, uint32_t p, uint32_t m, void (*c)(void)) { (void)d; (void)p; (void)m; (void)c; return -1; }\n"
+                   "int loraham_ch341_detach_interrupt(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
+                   "int loraham_ch341_in_error(loraham_ch341 *d) { (void)d; return 1; }\n", pin);
+        fclose(f);
+        expect("control 3: acceptable fake library built",
+               sh("cc -shared -fPIC -o '" + so + "' '" + tmp + "/good.c'") == 0);
+        std::string log = tmp + "/log-meshstick-good.txt";
+        run_daemon(bin, "868", "meshstick-1262", log, marker);
+        expect("control 3: the library is accepted",
+               sh("grep -q 'CH341\\] Meshstick library loaded' '" + log + "'") == 0);
+        expect("control 3: no Pi \"[SPI] chip select\" line for the USB radio",
+               sh("grep -q '\\[SPI\\] chip select' '" + log + "'") != 0);
         sh("cat '" + log + "'");
     }
 

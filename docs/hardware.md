@@ -38,7 +38,14 @@ Target platform: Raspberry Pi 3/4/5 running a Raspbian image.
     git clone https://github.com/jgromes/RadioLib ~/RadioLib
     git -C ~/RadioLib checkout 187ef24791c3d844939b2be13a68bd890bd04e4c
 
+    cmake -S ~/RadioLib -B ~/RadioLib/build -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+    cmake --build ~/RadioLib/build
+
 RadioLib is used from its source checkout by the daemon build script — no `make install` required.
+The position-independent build matters where the compiler does not produce it by default: on Fedora 43
+a RadioLib built without the flag cannot be linked into the hardened (PIE) daemon ("relocation
+R_X86_64_32 … recompile with -fPIE"). The invocation above was measured on Fedora 43 and Ubuntu 24.04;
+Raspberry Pi OS (Pi 5) and Ubuntu 24.04 also build the daemon without the flag.
 The checkout above pins the exact RadioLib commit the test suite and CI run against, recorded in
 [`../.github/ci/radiolib.lock`](../.github/ci/radiolib.lock). Building against an arbitrary newer
 RadioLib may compile but is untested.
