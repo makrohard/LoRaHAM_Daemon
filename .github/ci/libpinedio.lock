@@ -1,0 +1,4 @@
+# pine64 libch341-spi-userspace (libpinedio-usb) for the ELECROW Meshstick (--hw meshstick-1262).
+# build.sh builds lib/libloraham-ch341.so only from a checkout of exactly this commit, unmodified.
+PINEDIO_URL=https://github.com/pine64/libch341-spi-userspace.git
+PINEDIO_COMMIT=b0694ec84091b293cb1e97e00a821ff88353274f

@@ -18,6 +18,13 @@ radiolib_cflags=()
 radiolib_libs=()
 hardening_ldflags=()
 
+# The Meshstick library (lib/libloraham-ch341.so): optional, built only from a
+# pine64 checkout at exactly the locked commit. PINEDIO_LOCK_FILE exists for
+# the build test; it defaults to the repository's lock.
+PINEDIO_LOCK="${PINEDIO_LOCK_FILE:-$REPO_ROOT/.github/ci/libpinedio.lock}"
+pinedio_expected=""
+pinedio_dir=""
+
 event_loop_sources=(
   "$SCRIPT_DIR/event_loop.cpp"
   "$SCRIPT_DIR/event_loop_epoll.cpp"
@@ -92,6 +99,8 @@ Build the production daemon binary only.
 Options:
   --output PATH        Output binary path, default: ./loraham_daemon next to build.sh
   --radiolib-dir DIR   RadioLib source tree with src/ and build/libRadioLib.a
+  --pinedio-dir DIR    pine64 libch341-spi-userspace checkout for the Meshstick
+                       library (optional; must be the commit in libpinedio.lock)
   --debug             Build with -O0 -g instead of release defaults
   --strict            Build with -Werror
   --clean             Remove the daemon binary and exit
@@ -103,6 +112,8 @@ Environment:
   EXTRA_CXXFLAGS      Additional compiler flags
   LDFLAGS             Additional linker flags
   RADIOLIB_DIR        Same as --radiolib-dir
+  PINEDIO_DIR         Same as --pinedio-dir
+  CC                  C compiler for the Meshstick library, default: cc
 
 Tests:
   Use ./run_tests.sh from this directory to build and run tests.
@@ -119,6 +130,11 @@ while [[ $# -gt 0 ]]; do
     --radiolib-dir)
       [[ $# -ge 2 ]] || { echo "ERROR: --radiolib-dir needs a directory." >&2; exit 2; }
       RADIOLIB_DIR="$2"
+      shift 2
+      ;;
+    --pinedio-dir)
+      [[ $# -ge 2 ]] || { echo "ERROR: --pinedio-dir needs a directory." >&2; exit 2; }
+      PINEDIO_DIR="$2"
       shift 2
       ;;
     --debug)
@@ -245,6 +261,105 @@ find_radiolib() {
   return 1
 }
 
+# --- Meshstick library (pine64 libch341-spi-userspace + ch341_adapter.c) ---
+
+read_pinedio_lock() {
+  if [[ ! -f "$PINEDIO_LOCK" ]]; then
+    echo "ERROR: lock file not found: $PINEDIO_LOCK" >&2
+    exit 1
+  fi
+  pinedio_expected="$(sed -n 's/^PINEDIO_COMMIT=\([0-9a-f]\{40\}\)$/\1/p' "$PINEDIO_LOCK")"
+  if [[ -z "$pinedio_expected" ]]; then
+    echo "ERROR: no PINEDIO_COMMIT (40 hex) in $PINEDIO_LOCK" >&2
+    exit 1
+  fi
+}
+
+is_pinedio_tree() {
+  [[ -n "$1" && -f "$1/libpinedio-usb.c" && -f "$1/libpinedio-usb.h" ]]
+}
+
+# Sets pinedio_dir. A set PINEDIO_DIR must be usable; without it the usual
+# places are tried, and finding none is not an error (no Meshstick library).
+find_pinedio() {
+  if [[ -n "${PINEDIO_DIR:-}" ]]; then
+    if ! is_pinedio_tree "$PINEDIO_DIR"; then
+      echo "ERROR: PINEDIO_DIR is set but not usable: $PINEDIO_DIR" >&2
+      echo "Expected: libpinedio-usb.c and libpinedio-usb.h" >&2
+      exit 1
+    fi
+    pinedio_dir="$PINEDIO_DIR"
+    return 0
+  fi
+
+  local dir
+  for dir in "$HOME/libch341-spi-userspace" \
+             "$HOME/src/libch341-spi-userspace" \
+             "$REPO_ROOT/../libch341-spi-userspace"; do
+    if is_pinedio_tree "$dir"; then
+      pinedio_dir="$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# The tree must BE the locked commit: its own git checkout (not a directory
+# inside some other repository), HEAD equal to the lock, nothing modified or
+# added. Prints the measured commit; refuses the build otherwise.
+attest_pinedio() {
+  local dir="$1" top head dirty
+
+  require_command git
+  if ! top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)"; then
+    echo "ERROR: pine64 source is not a git checkout: $dir" >&2
+    exit 1
+  fi
+  if [[ "$(cd -- "$top" && pwd -P)" != "$(cd -- "$dir" && pwd -P)" ]]; then
+    echo "ERROR: pine64 source is not the top of its own checkout: $dir (top: $top)" >&2
+    exit 1
+  fi
+  head="$(git -C "$dir" rev-parse HEAD)"
+  if [[ "$head" != "$pinedio_expected" ]]; then
+    echo "ERROR: pine64 source is at $head, the lock requires $pinedio_expected: $dir" >&2
+    exit 1
+  fi
+  dirty="$(git -C "$dir" status --porcelain)"
+  if [[ -n "$dirty" ]]; then
+    echo "ERROR: pine64 source has local changes or extra files: $dir" >&2
+    printf '%s\n' "$dirty" >&2
+    exit 1
+  fi
+  printf '%s\n' "$head"
+}
+
+build_ch341_lib() {
+  local measured="$1"
+  local cc="${CC:-cc}"
+  local lib_dir tmp_lib
+
+  require_command "$cc"
+  lib_dir="$(dirname -- "$DAEMON_OUT")/lib"
+  mkdir -p -- "$lib_dir"
+  tmp_lib="$(mktemp -- "$lib_dir/.libloraham-ch341.tmp.XXXXXX")"
+
+  if ! "$cc" -std=gnu11 -O2 -g -fPIC -shared \
+      -D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+      -Wl,-z,relro,-z,now,-z,noexecstack \
+      "-DLORAHAM_CH341_PIN=\"$measured\"" \
+      -I"$pinedio_dir" -I"$SCRIPT_DIR" \
+      -o "$tmp_lib" \
+      "$pinedio_dir/libpinedio-usb.c" "$SCRIPT_DIR/ch341_adapter.c" \
+      "${extra_ldflags[@]}" -lusb-1.0 -pthread; then
+    rm -f -- "$tmp_lib"
+    echo "ERROR: Meshstick library build failed (needs the libusb-1.0 development headers)." >&2
+    exit 1
+  fi
+  chmod 644 "$tmp_lib"
+  mv -f -- "$tmp_lib" "$lib_dir/libloraham-ch341.so"
+  echo "Built Meshstick library: $lib_dir/libloraham-ch341.so (pine64 $measured)"
+}
+
 compiler_flags() {
   local warning_flags=(
     -Wall
@@ -359,7 +474,10 @@ verify_daemon_hardening() {
 }
 
 clean_daemon() {
-  rm -f -- "$DAEMON_OUT"
+  local lib
+
+  lib="$(dirname -- "$DAEMON_OUT")/lib/libloraham-ch341.so"
+  rm -f -- "$DAEMON_OUT" "$lib"
   echo "Removed: $DAEMON_OUT"
 }
 
@@ -395,6 +513,25 @@ build_daemon() {
   compiler_flags
   print_build_config
 
+  # Before the daemon: a refused pine64 tree stops the build early.
+  read_pinedio_lock
+  if find_pinedio; then
+    local measured
+    measured="$(attest_pinedio "$pinedio_dir")"
+    build_ch341_lib "$measured"
+  else
+    # A library left in the output directory by an earlier build would no
+    # longer belong to this binary: remove it, so the bundle says what this
+    # build made.
+    local stale_lib
+    stale_lib="$(dirname -- "$DAEMON_OUT")/lib/libloraham-ch341.so"
+    if [[ -e "$stale_lib" ]]; then
+      rm -f -- "$stale_lib"
+      echo "Removed the earlier Meshstick library: $stale_lib"
+    fi
+    echo "Meshstick library not built (no pine64 source)"
+  fi
+
   out_dir="$(dirname -- "$DAEMON_OUT")"
   mkdir -p -- "$out_dir"
   tmp_out="$(mktemp -- "$out_dir/.loraham_daemon.tmp.XXXXXX")"
@@ -409,11 +546,13 @@ build_daemon() {
     "$DAEMON_SRC" \
     "${daemon_support_sources[@]}" \
     "${event_loop_sources[@]}" \
+    "-DLORAHAM_CH341_PIN_EXPECTED=\"$pinedio_expected\"" \
     "${radiolib_cflags[@]}" \
     "${radiolib_libs[@]}" \
     "${hardening_ldflags[@]}" \
     "${extra_ldflags[@]}" \
-    -llgpio
+    -llgpio \
+    -ldl
 
   verify_daemon_hardening "$tmp_out"
   chmod 755 "$tmp_out"

@@ -48,7 +48,8 @@ jobs:
             build-essential \
             cmake \
             git \
-            liblgpio-dev
+            liblgpio-dev \
+            libusb-1.0-0-dev
 
       - name: Build pinned RadioLib
         shell: bash
@@ -62,9 +63,35 @@ jobs:
           cmake --build "$RUNNER_TEMP/RadioLib/build" --parallel 2
           test -f "$RUNNER_TEMP/RadioLib/build/libRadioLib.a"
 
+      # The Meshstick library from the real pinned pine64 source, once: the
+      # normal lane builds the daemon with PINEDIO_DIR set, so build.sh attests
+      # the checkout and compiles lib/libloraham-ch341.so; the other lanes
+      # build without it, as a source build without the library does.
+      - name: Check out pinned pine64 libch341-spi-userspace (normal lane)
+        if: matrix.name == 'normal'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/ci/libpinedio.lock"
+          git clone --filter=blob:none "$PINEDIO_URL" "$RUNNER_TEMP/libch341-spi-userspace"
+          git -C "$RUNNER_TEMP/libch341-spi-userspace" checkout --detach "$PINEDIO_COMMIT"
+          echo "PINEDIO_DIR=$RUNNER_TEMP/libch341-spi-userspace" >> "$GITHUB_ENV"
+
       - name: Run tests
         working-directory: loraham_daemon
         run: |
           RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" \
           TEST_TIMEOUT_SECONDS=90 \
           ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
+
+      - name: Meshstick library built from the pinned source (normal lane)
+        if: matrix.name == 'normal'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/ci/libpinedio.lock"
+          so=loraham_daemon/lib/libloraham-ch341.so
+          test -f "$so"
+          nm -D --defined-only "$so" | grep -qw loraham_ch341_pin
+          grep -qaF "$PINEDIO_COMMIT" "$so"
+          echo "OK: $so carries pine64 $PINEDIO_COMMIT"

@@ -32,3 +32,6 @@ core.*
 
 # Old local/generated interface test binary
 /test_loradaemon_interface
+
+# The Meshstick library build.sh writes beside the daemon binary
+/lib/
