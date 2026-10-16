@@ -37,6 +37,7 @@ Supported radio boards, selected with `--hw`:
 | `loraham` | **[LoRaHAM_Pi HAT / LoRaHAM Cartridge](https://www.loraham.de/produkt/loraham-pi/)** — the [LoRaHAM project's](https://loraham.de) own dual-module board, SX1278 for 433 MHz + RFM95 for 868 MHz |
 | `uputronics-ce0`, `uputronics-ce1` | [Uputronics Raspberry Pi Zero LoRa Expansion Board](https://store.uputronics.com) — RFM95/RFM98; one board for a single band, or two stacked for dual-band. The preset picks the chip select and pins, not the band: `--radio` decides that, so either board can serve either band |
 | `waveshare-sx1262` | [Waveshare SX1262 LoRaWAN/GNSS HAT](https://www.waveshare.com/wiki/SX1262_XXXM_LoRaWAN/GNSS_HAT) — 433M and 868M variants. **SPI only**: the daemon drives the SX1262 chip directly, so the HAT's GNSS receiver is unused and this is not a LoRaWAN gateway or concentrator setup. No FSK streaming and no board LED on this board, and it cannot be combined with an Uputronics board — the pins collide |
+| `meshstick-1262` | [ELECROW Meshstick](https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html) — SX1262 on USB (CH341 USB-to-SPI bridge), 868 only. Needs the optional Meshstick library built with the daemon (pine64 libch341-spi-userspace); uses no Pi GPIO. See [Hardware](docs/hardware.md#elecrow-meshstick-usb) |
 
 Any HAT whose radio is an **SX1276**, **SX1278** or **SX1262** wired directly to the Pi's SPI bus
 should work — pick the preset whose wiring matches. Wiring, capability flags, the combination

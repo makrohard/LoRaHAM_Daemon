@@ -12,6 +12,7 @@ RadioLib, SPI). Building and running the daemon is in
 * [RadioLib](#radiolib)
 * [Raspberry Pi SPI interface](#raspberry-pi-spi-interface)
 * [Board presets](#board-presets)
+* [ELECROW Meshstick (USB)](#elecrow-meshstick-usb)
 * [Wiring and claimed pins](#wiring-and-claimed-pins)
 * [Capability flags](#capability-flags)
 * [Chip-family differences](#chip-family-differences)
@@ -76,7 +77,7 @@ With packages, RadioLib and SPI in place, build and run the daemon as described 
 ## Board presets
 
 `--hw PRESET` selects the hardware profile for this process's radio. The default is `loraham`. The
-known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262`.
+known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262`.
 
 | Preset | Chip family | Board | Band |
 |---|---|---|---|
@@ -84,6 +85,7 @@ known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx
 | `uputronics-ce0` | SX127x | Uputronics Pi Zero LoRa expansion board (HopeRF RFM95/98W), CE switch on CE0 | either band |
 | `uputronics-ce1` | SX127x | same board, CE switch on CE1 | either band |
 | `waveshare-sx1262` | SX1262 | Waveshare SX1262 LoRaWAN Node HAT | either band; LF and HF variants are pin-identical |
+| `meshstick-1262` | SX1262 | ELECROW Meshstick, USB (CH341 USB-to-SPI bridge) — [own section](#elecrow-meshstick-usb) | `868` only; `--radio 433` is refused like an unknown preset |
 
 * The band stays the identity key. `--radio` is resolved first and the profile is then resolved for
   that band, so a band-independent preset takes its frequency band from `--radio`, not from the
@@ -110,10 +112,120 @@ process accepts exactly `POWER=20`; what that does depends on the board:
 |---|---|---|
 | `uputronics-ce0` / `-ce1` | bare HopeRF RFM95/98W: the chip's PA_BOOST drives the antenna | the datasheet's own +20 dBm (100 mW) case, under its restrictions (duty ≤ 1 %, VSWR ≤ 3:1, VDD 2.4–3.7 V — [limits.md](limits.md)). The proof case for the feature; requested chip power, not a calibrated connector measurement |
 | `waveshare-sx1262` | SX1262, single PA path | nothing new: `0`–`20` was always accepted and the flag is inert |
+| `meshstick-1262` | SX1262, single PA path | the flag is inert; this preset accepts `0`–`22` (the manufacturer's maximum) and prints a warning for `21` and `22` — [limits.md](limits.md) |
 | `loraham`, 868 | described as a 100 mW module; exact module unconfirmed | as a bare module; do not read a confirmed BOM into it |
 | `loraham`, 433 | **HopeRF RFM98PW**: an enhanced-power module based on the RF98/RF96 device, nominally +30 dBm (1 W), 5–6 V supply, hundreds of mA in TX; its internal RF chain is not modelled by the daemon and the die is not independently established | the chip drives the module's RF chain 3 dB harder. **Unvalidated on the LoRaHAM 433 RFM98PW: the reviewed module documentation does not establish the permitted chip-drive setting or the resulting module output.** Compression, supply and matching can change the outcome; +3 dB of drive does not guarantee +3 dB of output or that the amplifier tolerates it. The permission is the same switch there by the maintainer's decision, and this note is the only guard |
 
 Chip OCP protects the chip's PA; it does not limit an external amplifier's supply current.
+
+## ELECROW Meshstick (USB)
+
+The ELECROW Meshstick is an SX1262 with TCXO behind a CH341 USB-to-SPI bridge (USB `1A86:5512`), EU868
+hardware. `--hw meshstick-1262 --radio 868` drives it with the same SX1262 driver, sockets, commands
+and `GET STATUS` as every other board. Wiring and settings come from meshtasticd's
+`bin/config.d/lora-usb-meshstick-1262.yaml`: CS D0, DIO1 D6, RESET D2, BUSY D4, RXEN D1 (CH341
+D-lines, not BCM), DIO2 as RF switch, TCXO from DIO3 at 1.8 V.
+
+What differs from a Pi board, and why:
+
+* **No Pi GPIO, LED or `spi0.lock`.** The stick is its own USB bus. It claims no Pi line, so it
+  takes no pin locks and has no status LED. The kernel's chip-select check is skipped. A second
+  process cannot open the same stick: the library claims USB interface 0.
+* **The RX interrupt is polled.** The library reads the CH341's input pins on its own thread about
+  30 times a second (`platform_sleep(1000 / 30)` in libpinedio-usb.c), so an RX or TX-done event
+  arrives up to about 33 ms later than on a GPIO edge.
+* **A lost stick exits 5.** The main loop checks the library's error flag each pass. Once the
+  radio is up, a lost device or a failed USB transfer exits `5`, the restartable runtime fatal
+  ([Deployment](deployment.md#exit-codes-and-restart-behaviour)).
+
+### The Meshstick library (optional)
+
+The daemon drives the stick through pine64's
+[libch341-spi-userspace](https://github.com/pine64/libch341-spi-userspace) (libpinedio-usb), unchanged,
+at the commit pinned in [`../.github/ci/libpinedio.lock`](../.github/ci/libpinedio.lock). The daemon
+binary links neither that library nor libusb. Only this preset needs it, and every other preset
+builds and runs exactly as without it.
+
+    sudo apt install libusb-1.0-0-dev -y
+    git clone https://github.com/pine64/libch341-spi-userspace ~/libch341-spi-userspace
+    git -C ~/libch341-spi-userspace checkout b0694ec84091b293cb1e97e00a821ff88353274f
+
+`build.sh` finds that checkout like RadioLib: `PINEDIO_DIR`, `--pinedio-dir`,
+`~/libch341-spi-userspace`, `~/src/libch341-spi-userspace` or `../libch341-spi-userspace`. It builds
+the library only from a tree that is its own git checkout, exactly at the locked commit and
+unmodified; otherwise it refuses the build with the reason. With no checkout it builds the daemon
+alone, says `Meshstick library not built (no pine64 source)`, and removes a `lib/libloraham-ch341.so` an
+earlier build left in the same output directory. The result is
+`lib/libloraham-ch341.so` next to the binary: the library plus a small adapter
+(`ch341_adapter.c`), with the measured commit embedded.
+
+**The bundle is the binary plus its `lib/` directory.** Copy them together. At startup,
+`meshstick-1262` loads `lib/libloraham-ch341.so` from the binary's own directory, never from the
+library search path, before anything is opened or claimed. It refuses to start with exit `4` (not
+restarted) and one line naming the reason when:
+
+* the file is missing,
+* it cannot be loaded (for example, the host has no `libusb-1.0-0`),
+* a symbol is missing, or
+* it was built from another commit than the one this daemon was built against.
+
+```
+[CH341] refused: Meshstick library not found: /opt/loraham/lib/libloraham-ch341.so (build the daemon with the pine64 source, see docs/hardware.md) (exit 4).
+```
+
+Running it needs only the libusb runtime (`libusb-1.0-0`), which is not the development package.
+The daemon binary links lgpio for every preset, so a PC running the Meshstick also needs the lgpio
+runtime (`liblgpio1` on Debian and Ubuntu). Where the distribution has no package, build lgpio from
+source. Its instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
+tmpfiles fragment).
+The startup log names the loaded commit: `[CH341] Meshstick library loaded (pine64 <commit>)`.
+
+### USB access (udev)
+
+Without a rule only root, or the logged-in desktop user, may open the stick. For a daemon running
+as its own user, a rule gives the device to a group:
+
+    sudo tee /etc/udev/rules.d/90-loraham-meshstick.rules >/dev/null <<'EOF2'
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="5512", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+    EOF2
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=1a86
+
+The daemon's user must be in that group. The daemon never installs the rule.
+
+### The kernel's spi-ch341 driver
+
+Linux binds its own `spi-ch341` driver to the stick. That driver offers no usable SPI device and no
+GPIO for the radio's control lines, so the library detaches it when it opens the stick and
+re-attaches it when it closes. The daemon closes the stick on every exit it controls: a clean stop,
+a startup failure, and the exit `5` fatal. After the process is killed outright (`SIGKILL`), the
+driver may stay detached. The daemon does not need it: the next start opens the stick as usual (the
+library's detach then has nothing to do). Only to give the stick back to the kernel driver — which on
+a Meshstick you do not want, see below — unplug and replug it, or as root:
+
+    echo <port>:1.0 > /sys/bus/usb/drivers/spi-ch341/bind
+
+`<port>` is the stick's USB path, for example `1-2`. The driver's directory lists only bound interfaces, so find a
+detached stick by its product ID: `grep -l 5512 /sys/bus/usb/devices/*/idProduct` names `/sys/bus/usb/devices/<port>/idProduct`.
+
+**Keep spi-ch341 off the stick.** While `spi-ch341` holds the stick, its probe sets the CH341's pin
+directions to `0x3f` (`ch341_enable_pins()` in `drivers/spi/spi-ch341.c`). That makes D4 an output, and on the
+Meshstick D4 is the SX1262's BUSY output, so the kernel drives against the chip's own pin for as long as the
+driver is bound: from plug-in until the daemon opens the stick, and again after it closes it. meshtasticd users
+have the same situation. Where only the Meshstick uses a CH341 in this mode, stop the kernel from binding it:
+
+    echo 'blacklist spi_ch341' | sudo tee /etc/modprobe.d/loraham-meshstick.conf
+    sudo modprobe -r spi_ch341
+
+This blacklists the driver for every CH341 SPI device on that host. The daemon's own detach and re-attach then
+have nothing to do: the library ignores "no driver bound" on open and the result of the re-attach on close.
+Removing the file and replugging restores the kernel driver.
+
+### Licence
+
+The library is GPL-2.0-or-later; it and the adapter are built into `lib/libloraham-ch341.so`. The
+daemon is GPL-3.0-or-later. `Ch341Hal` (`ch341_hal.h`) is modelled on meshtasticd's `USBHal.h`
+(GPL-3.0, meshtastic/firmware), which drives the same stick with the same library.
 
 ## Wiring and claimed pins
 

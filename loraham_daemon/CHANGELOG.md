@@ -11,6 +11,13 @@
   `GET STATUS` ends with `OCP=<mA>`.
 - **Behaviour change:** `POWER=20` on SX127x no longer raises the limit to 140 mA; without `--ocp`
   it runs on 100 mA, and the startup notice says so when `--high-power` is given without `--ocp`.
+- `--hw meshstick-1262`: the ELECROW Meshstick (SX1262 behind a CH341 USB-to-SPI bridge), 868 only,
+  through pine64's libch341-spi-userspace (pinned, unchanged). The library is optional: `build.sh`
+  builds `lib/libloraham-ch341.so` beside the binary only from a checkout at the locked commit; only
+  this preset loads it, and without it the preset exits 4 with the reason. Every other preset builds
+  and runs as before. See docs/hardware.md.
+- `meshstick-1262` accepts `POWER` up to 22 dBm (the manufacturer's maximum) and warns for 21 and 22;
+  every other SX1262 preset keeps 0–20.
 
 ## 1.2.1
 

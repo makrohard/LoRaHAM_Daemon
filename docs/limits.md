@@ -199,7 +199,7 @@ A `SET` outside these ranges is rejected before any hardware is touched.
 | `CR` | `5`–`8` |
 | `PREAMBLE` (LoRa) | `6`–`512` symbols |
 | `POWER` (SX127x board) | `2`–`17` dBm, plus exactly `20` with `--high-power` |
-| `POWER` (SX126x board) | `0`–`20` dBm |
+| `POWER` (SX126x board) | `0`–`20` dBm; `0`–`22` dBm on `meshstick-1262` |
 | `BR` (FSK) | `0.5`–`300` kbps |
 | `FREQDEV` (FSK) | greater than `0` and at most `200` kHz; on an SX126x board additionally at least `0.6` kHz |
 
@@ -211,7 +211,11 @@ before `setOutputPower()`, inside the whole-command prevalidation, so a refused 
 hardware effect and takes the keys beside it down with it.
 
 On an **SX126x** board the chip covers -9 dBm to +22 dBm and the accepted range `0`–`20` dBm lies
-inside it. The `--high-power` flag is accepted on such a process and changes nothing.
+inside it. The `--high-power` flag is accepted on such a process and changes nothing. A preset
+whose manufacturer specifies more may raise the ceiling for its process. `meshstick-1262` accepts
+`0`–`22`, ELECROW's "+22 dBm@Max" and the SX1262's own maximum. An accepted `21` or `22` prints one
+line per apply, `WARNING POWER=<n> above +20 dBm: regulatory limits apply, operator responsible`.
+The band's regulatory limit is the operator's responsibility.
 
 On an **SX127x** board the continuous range is `2`–`17` dBm, for two separate reasons:
 

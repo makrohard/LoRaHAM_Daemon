@@ -120,7 +120,12 @@ Client/socket/runtime:
 Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection`
-- `test_hardware_profile` (`--hw` preset resolution: legacy per-band identity, Uputronics NC pins/capabilities/slot LEDs, Waveshare SX1262 pin set, unknown-preset rejection)
+- `test_hardware_profile` (`--hw` preset resolution: legacy per-band identity, Uputronics NC pins/capabilities/slot LEDs, Waveshare SX1262 pin set, the Meshstick's CH341 pin set / 868-only / no Pi claims / 22 dBm ceiling while every Pi preset stays non-USB, unknown-preset rejection)
+- `test_ch341_hal` (the real `Ch341Hal`, `Sx1262Driver` and pinned RadioLib on `tests/fakes/ch341_fake_adapter.h` backed by the SX126x register model: boot, RX interrupt on D6, RXEN on D1 in RX/standby, SET POWER up to 22 under the preset ceiling, FSK and back, closed opcode list; startup USB failures latch without exiting; the device closes exactly once on a clean stop, a `begin()` failure after open and, in a forked child, the exit 5 after a failed transfer or a lost device)
+- `test_ch341_loader` (fake adapter libraries built at run time: missing file, not a shared object, missing dependency, missing symbol, wrong commit and no expected commit are each refused with the reason, leave the table untouched and leave no refused library loaded; the right commit loads every entry; the bundle path is `<exe dir>/lib/`)
+- `test_ch341_adapter` (the real `ch341_adapter.c`, compiled at run time against a stub pine64 library: open marks D3/D5 as outputs and close deinitialises once; a failing D3 or D5 pin-mode call makes open return NULL after deinitialising; a failing init returns NULL with nothing to deinitialise)
+- `test_ch341_no_dlopen` (a copy of the real daemon with a marker library in `lib/`: every existing preset on both bands never opens it; `meshstick-1262` does, and without any library exits 4 naming the missing file)
+- `test_build_ch341` (`build.sh` over a stub pine64 tree with its own lock: wrong commit, local edit, extra file, plain directory, a directory inside another repository and an unusable `PINEDIO_DIR` are refused before any compile; the clean tree builds `lib/libloraham-ch341.so` with the measured commit and hands the daemon the lock's commit and `-ldl`; no tree builds the daemon alone; a rebuild of the same output directory without a tree removes the earlier library)
 - `test_tx_mode_boot` (`--tx-mode` parsing, default MANAGED, fail-closed on invalid values)
 - `test_cad_monitor_boot` (`--cad-monitor` parsing, default off, fail-closed on invalid values)
 - `test_high_power_boot` (`--high-power`: unset is OFF, the bare flag is ON, idempotent, reset)

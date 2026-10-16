@@ -41,7 +41,7 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `-v`, `--version` | none | — | — |
 | `--debug` | none | — | off |
 | `--radio MODE` | required | `433`, `868` | none — must be given |
-| `--hw PRESET` | required | `loraham`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262` | `loraham` |
+| `--hw PRESET` | required | `loraham`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262`, `meshstick-1262` | `loraham` |
 | `--tx-mode MODE` | required | `direct`, `managed` | `managed` |
 | `--cad-monitor VAL` | required | `on`, `off` | `off` |
 | `--cad-rssi DBM` | required | integer dBm, `-130`..`0` | `-90` |
@@ -185,13 +185,17 @@ the chip decides. The parameter names and their runtime ranges are in
 
 Every rejected option prints a reason, then the usage text, then exits non-zero.
 
+`--hw meshstick-1262` refuses to start without its library. It prints
+`[CH341] refused: <reason> (exit 4).` without the usage text, and exits `4`. The reasons and the
+library are described in [hardware.md](hardware.md#the-meshstick-library-optional).
+
 | Cause | Message |
 | --- | --- |
 | Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868` |
 | Bad `--tx-mode` value | `invalid TX mode: <value>` + `allowed: direct, managed` |
 | Bad `--cad-monitor` value | `invalid CAD monitor value: <value>` + `allowed: on, off` |
 | Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
-| Bad `--hw` value | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262` |
+| Bad `--hw` value (or `meshstick-1262` with `--radio 433`) | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262` |
 | `--high-power` with a value | getopt's `option '--high-power' doesn't allow an argument`, then the usage text |
 | `--ocp` not a number | `invalid --ocp (an integer in mA): <value>` |
 | `--ocp` the chip cannot represent | `invalid --ocp for <family>: <n> mA (valid: <set>)` |
