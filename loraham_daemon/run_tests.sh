@@ -52,6 +52,7 @@ test_binaries=(
   "$TEST_DIR/test_cad_monitor_boot"
   "$TEST_DIR/test_cad_rssi_boot"
   "$TEST_DIR/test_high_power_boot"
+  "$TEST_DIR/test_ocp_boot"
   "$TEST_DIR/test_rflog"
   "$TEST_DIR/test_daemon_led"
   "$TEST_DIR/test_locking_pihal"
@@ -150,6 +151,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_band.cpp"
   "$SCRIPT_DIR/hardware_profile.cpp"
   "$SCRIPT_DIR/daemon_high_power_boot.cpp"
+  "$SCRIPT_DIR/daemon_ocp_boot.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_gpio_lock.cpp"
@@ -978,6 +980,16 @@ build_one_high_power_boot_test() {
     "$SCRIPT_DIR/daemon_high_power_boot.cpp"
 }
 
+build_one_ocp_boot_test() {
+  local src="$1"
+  local out="$2"
+
+  build_one_cpp_sources \
+    "$out" \
+    "$src" \
+    "$SCRIPT_DIR/daemon_ocp_boot.cpp"
+}
+
 build_one_cad_rssi_boot_test() {
   local src="$1"
   local out="$2"
@@ -1107,6 +1119,7 @@ build_tests() {
   build_one_cad_monitor_boot_test "$TEST_DIR/test_cad_monitor_boot.cpp" "$TEST_DIR/test_cad_monitor_boot"
   build_one_cad_rssi_boot_test "$TEST_DIR/test_cad_rssi_boot.cpp" "$TEST_DIR/test_cad_rssi_boot"
   build_one_high_power_boot_test "$TEST_DIR/test_high_power_boot.cpp" "$TEST_DIR/test_high_power_boot"
+  build_one_ocp_boot_test "$TEST_DIR/test_ocp_boot.cpp" "$TEST_DIR/test_ocp_boot"
   build_one_cpp_sources "$TEST_DIR/test_rflog" "$TEST_DIR/test_rflog.cpp" "$SCRIPT_DIR/daemon_rflog.cpp"
   build_one_daemon_led_test "$TEST_DIR/test_daemon_led.cpp" "$TEST_DIR/test_daemon_led"
   build_one_locking_pihal_test "$TEST_DIR/test_locking_pihal.cpp" "$TEST_DIR/test_locking_pihal"

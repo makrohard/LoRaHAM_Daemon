@@ -124,11 +124,13 @@ Lifecycle/helper behavior:
 - `test_tx_mode_boot` (`--tx-mode` parsing, default MANAGED, fail-closed on invalid values)
 - `test_cad_monitor_boot` (`--cad-monitor` parsing, default off, fail-closed on invalid values)
 - `test_high_power_boot` (`--high-power`: unset is OFF, the bare flag is ON, idempotent, reset)
+- `test_ocp_boot` (`--ocp`: digits-only parsing, the exact representable set per chip family, the
+  family default when absent, and the one startup notice line per case)
 - `test_event_loop` (persistent reconciliation, mask changes, stale removal, and fd reuse)
 - `test_daemon_timing`
 - `test_daemon_lifecycle`
 - `test_radio_health`
-- `test_sx127x_power_register` (real driver + pinned RadioLib on the register model: `POWER=20` writes `RegPaDac` 0x87 with OCP 140 mA in one apply, 17 / a `MODE` switch / a boot over a boosted chip restore 0x84 + 100 mA, no permission or 18/19 touch nothing, a rejected write is a returned error)
+- `test_sx127x_power_register` (real driver + pinned RadioLib on the register model: `POWER=20` writes `RegPaDac` 0x87 with the same OCP as every level (100 mA, or `--ocp`: 150 mA on every path, 0 = OcpOn cleared), 17 / a `MODE` switch / a boot over a boosted chip restore 0x84, no permission or 18/19 touch nothing, a rejected write is a returned error)
 - `test_radio_cad_probe` also pins the duplicate-RX regression the live matrix caught: the probe
   takes the packet-received alert OFF DIO0 before scanning and reinstalls it after, because
   `startChannelScan()` remaps that pin from RxDone to CadDone -- leaving it attached made CAD
@@ -155,9 +157,10 @@ Lifecycle/helper behavior:
   what makes the HAL's "answer LOW on a read error" safe, since the wait is bounded at 150 % of
   the computed time-on-air -- and the chip is still parked in standby afterwards)
 - `test_sx1262_ocp_register` (the real `Sx1262Driver` and the real pinned RadioLib on
-  `tests/fakes/sx126x_register_model.h`: RegOcp 0x08E7 is 140 mA after boot, after `SET POWER`, after
-  `MODE=FSK` and after the return to LoRa, where RadioLib alone leaves 60 mA; and the test fails on any
-  SPI opcode the minimal model has not been checked against)
+  `tests/fakes/sx126x_register_model.h`: RegOcp 0x08E7 is 140 mA (or `--ocp 100`: 100 mA) after boot, after `SET POWER`, after
+  `MODE=FSK` and after the return to LoRa, where RadioLib alone leaves 60 mA; a value RadioLib refuses (145 mA, past
+  `--ocp`'s validation) fails `begin()` with RadioLib's error; and the test fails on any SPI opcode the minimal model has
+  not been checked against)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:

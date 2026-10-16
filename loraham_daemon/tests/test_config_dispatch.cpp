@@ -493,8 +493,8 @@ static void test_status_uses_cad_broadcast_latch(void)
     expect_contains("status reports queue rejects", status, " TXQREJECT=0 ");
 }
 
-/* HIGHPOWER= and CHIPFAMILY= are additive fields at the END of the line, read
- * off the controller's witnesses, never off anything a client can set. */
+/* HIGHPOWER=, CHIPFAMILY= and OCP= are additive fields at the END of the line,
+ * read off the controller's witnesses, never off anything a client can set. */
 static void test_status_reports_high_power_and_family(void)
 {
     RadioController ctrl;
@@ -504,14 +504,19 @@ static void test_status_reports_high_power_and_family(void)
 
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status default HIGHPOWER=0", status, " HIGHPOWER=0 ");
-    expect_contains("status default family sx127x, last field, newline",
-                    status, " CHIPFAMILY=SX127x\n");
+    expect_contains("status default family sx127x", status, " CHIPFAMILY=SX127x ");
+    expect_contains("status default OCP=100, last field, newline",
+                    status, " OCP=100\n");
 
     ctrl.high_power_enabled = true;
     ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status HIGHPOWER=1 is the raw flag", status, " HIGHPOWER=1 ");
-    expect_contains("status family sx1262", status, " CHIPFAMILY=SX1262\n");
+    expect_contains("status family sx1262", status, " CHIPFAMILY=SX1262 ");
+
+    ctrl.ocp_ma = 0;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status OCP=0 (protection off)", status, " OCP=0\n");
 
     /* Every counter at its widest must still end in the newline: a truncated
      * STATUS is a silent protocol break. */
@@ -519,6 +524,7 @@ static void test_status_reports_high_power_and_family(void)
     ctrl.cad_idle_stable_ms.store(4294967295u);
     ctrl.cad_poll_interval_ms.store(4294967295u);
     ctrl.cad_rssi_threshold_dbm.store(-130.0f);
+    ctrl.ocp_ma = 240;
     config_status_format(status, sizeof(status), &ctrl);
     size_t n = strlen(status);
     expect_int("status at wide counters still ends in newline",
@@ -1776,6 +1782,20 @@ static void test_stable_conf_replies(void)
                strncmp(out, "STATUS ", 7) == 0, 1);
     expect_int("reply: GET STATUS no trailing OK",
                strstr(out, "OK\n") == NULL, 1);
+
+    /* The whole line over the socket ends with the appended OCP= field. */
+    {
+        char line[600];
+        size_t n;
+
+        ctrl.ocp_ma = 150;
+        dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                       "GET STATUS\n", line, sizeof(line));
+        n = strlen(line);
+        expect_int("reply: GET STATUS ends with OCP=150 and newline",
+                   n > 9 && strcmp(line + n - 9, " OCP=150\n") == 0, 1);
+        ctrl.ocp_ma = 100;
+    }
 
     event_loop_close(&set);
     close(sv[0]);

@@ -192,13 +192,13 @@ connected to.
 One runtime snapshot line, in this exact field order:
 
 ```text
-STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY=
+STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP=
 ```
 
 A default snapshot reads:
 
 ```text
-STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x
+STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100
 ```
 
 | Field | Meaning |
@@ -221,6 +221,7 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `RXREADY` | `0` while a failed RX re-arm is being retried. `RADIO=READY RXREADY=0` means the daemon is temporarily deaf; persistent re-arm failure escalates the radio to `RADIO=FAILED` |
 | `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (`POWER` is not echoed anywhere), and it is `1` on an SX1262 started with the flag even though the flag does nothing there — combine it with `CHIPFAMILY` |
 | `CHIPFAMILY` | The running process's resolved chip family, `SX127x` or `SX1262`. Added so a controller reads the family off the daemon instead of trusting a hardware setup that may have been saved after the process started. Both fields are additive at the end of the line; a reader that does not find them is talking to an older daemon and must treat them as unknown, not as `0` |
+| `OCP` | The PA over-current limit in mA the driver writes at every power level: `--ocp`, or the family default (SX127x `100`, SX1262 `140`); `0` = protection off (SX127x only). Added in 1.3.0 at the end of the line; a reader that does not find it is talking to an older daemon and must treat it as unknown |
 
 ### `GET STATS`
 

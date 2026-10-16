@@ -24,8 +24,11 @@ public:
     /* high_power: the process's --high-power permission. Defence in depth only
      * -- the whole-command prevalidation has already refused a POWER=20 the
      * process may not apply -- so a driver built without it (the default,
-     * every test rig) simply keeps 2..17. */
-    Sx127xDriver(Module *mod, bool is_hf, bool high_power = false);
+     * every test rig) simply keeps 2..17.
+     * ocp_ma: the PA over-current limit for every power level, from --ocp or
+     * the 100 mA default (daemon_ocp_boot.h); 0 turns the protection off. */
+    Sx127xDriver(Module *mod, bool is_hf, bool high_power = false,
+                 int ocp_ma = 100);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,
@@ -80,11 +83,8 @@ private:
      * alone would reintroduce the fault on every LoRa/FSK switch; this helper
      * is therefore called from begin(), from switchMode(), and from SET POWER.
      *
-     * The value is 100 mA, the chip's own silicon default. An earlier revision
-     * used 120 mA as a project-selected margin for temperature and VSWR,
-     * conditional on a bench measurement; no current meter was available, so
-     * the default is used rather than an unmeasured number of our own. See
-     * SX127X_OCP_PA_BOOST_MA in the .cpp for the full provenance.
+     * The value is the process's --ocp, or 100 mA, the chip's own silicon
+     * default, at every power level. See the .cpp for the provenance.
      */
     int16_t applyPowerAndOcp(int power_dbm);
 
@@ -118,6 +118,7 @@ private:
     std::unique_ptr<SX1278> radio_;
     bool is_hf_;
     bool high_power_;   /* the process's --high-power permission (defence in depth) */
+    int ocp_ma_;        /* the PA over-current limit, every power level */
 
     /*
      * The CAD bound needs the SF/BW the chip is on NOW, not the boot defaults.
@@ -143,7 +144,8 @@ private:
 };
 
 /* Factory: is_hf=false -> SX1278 ("SX1278"), is_hf=true -> RFM95 ("RFM95"). */
-RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power);
+RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power,
+                                  int ocp_ma);
 
 /*
  * D8: exactly one profile-aware diagnostic line for a failed SX127x begin().

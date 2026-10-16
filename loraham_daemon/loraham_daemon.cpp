@@ -44,6 +44,7 @@
 #include "daemon_cad_rssi_boot.h"
 #include "daemon_rflog.h"
 #include "daemon_high_power_boot.h"
+#include "daemon_ocp_boot.h"
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -280,6 +281,11 @@ static void daemon_print_usage(const char *argv0)
     printf("      --cad-rssi DBM      CAD busy threshold, integer dBm -130..0 (default: -90)\n");
     printf("      --high-power        permit POWER=20 on an SX127x board (+20 dBm; default: off)\n");
     printf("                          datasheet: duty cycle <= 1 %%, VSWR <= 3:1; nothing enforces it\n");
+    printf("      --ocp MA            PA over-current limit in mA, every power level\n");
+    printf("                          SX127x: %s (default: 100)\n",
+           daemon_ocp_valid_text(DAEMON_CHIP_FAMILY_SX127X));
+    printf("                          SX1262: %s (default: 140)\n",
+           daemon_ocp_valid_text(DAEMON_CHIP_FAMILY_SX1262));
     printf("  -h, --help       print this help and exit\n");
     printf("\n");
     printf("Sockets (only those of the selected band are created):\n");
@@ -320,6 +326,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"rflog",       required_argument, 0, 1012},
         {"rflog-path",  required_argument, 0, 1013},
         {"high-power",  no_argument,       0, 1014},
+        {"ocp",         required_argument, 0, 1015},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -402,6 +409,14 @@ static bool daemon_parse_args(int argc, char *argv[])
                 daemon_set_high_power_boot_global();
                 daemon_debug_ctx("STARTUP", "option --high-power recognised");
                 break;
+            case 1015:
+                if (!daemon_set_ocp_boot_global(optarg)) {
+                    fprintf(stderr, "invalid --ocp (an integer in mA): %s\n", optarg ? optarg : "");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "option --ocp recognised: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -449,6 +464,19 @@ static bool daemon_parse_args(int argc, char *argv[])
     daemon_debug_ctx("STARTUP", "hardware profile: %s (%s)",
                      daemon_hw_profile.name,
                      daemon_chip_family_name(daemon_hw_profile.family));
+
+    /* --ocp against the chip the preset resolved to: a value the chip cannot
+     * represent is refused, never rounded. */
+    if (daemon_ocp_boot_given() &&
+        !daemon_ocp_valid_ma(daemon_hw_profile.family,
+                             daemon_ocp_boot_requested_ma())) {
+        fprintf(stderr, "invalid --ocp for %s: %d mA (valid: %s)\n",
+                daemon_chip_family_name(daemon_hw_profile.family),
+                daemon_ocp_boot_requested_ma(),
+                daemon_ocp_valid_text(daemon_hw_profile.family));
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
 
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1
      * (no dtoverlay=spi0-0cs). Same answer after every restart, so a refusal
@@ -503,6 +531,21 @@ static void daemon_print_high_power_notice(void)
            "operator is responsible\n", tag);
     printf("[%s] WARNING outside-spec operation can damage hardware; warranty "
            "void if disregarded\n", tag);
+    fflush(stdout);
+}
+
+/* --- Boot OCP notice ------------------------------------------------------ */
+/* Printed once per process, next to the high-power notice and for the same
+ * reason: the driver's init path re-runs on every MODE switch. */
+static void daemon_print_ocp_notice(void)
+{
+    char line[160];
+
+    if (!daemon_ocp_notice(daemon_hw_profile.family, daemon_high_power_enabled(),
+                           line, sizeof(line)))
+        return;
+
+    printf("[%s] %s\n", daemon_band()->tag, line);
     fflush(stdout);
 }
 
@@ -572,6 +615,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
 
     daemon_print_startup_version();
     daemon_print_high_power_notice();
+    daemon_print_ocp_notice();
 
     daemon_debug_ctx("STARTUP", "starting radio and socket init");
     daemon_io_init();

@@ -5,6 +5,12 @@
 - SX1262: the PA over-current limit is 140 mA after boot and after every `MODE` switch. RadioLib sets
   60 mA inside `begin()` and `beginFSK()` and every later `SET POWER` kept it, so the driver ran all
   power levels on 60 mA. 140 mA is the daemon's SX1262 default and the top of RadioLib's range.
+- `--ocp <mA>`: the PA over-current limit for the process, at every power level. Default SX127x
+  100 mA, SX1262 140 mA; only values the chip can represent are accepted, anything else exits 1
+  with the valid set. `0` (SX127x only) or a value above the default prints a startup warning.
+  `GET STATUS` ends with `OCP=<mA>`.
+- **Behaviour change:** `POWER=20` on SX127x no longer raises the limit to 140 mA; without `--ocp`
+  it runs on 100 mA, and the startup notice says so when `--high-power` is given without `--ocp`.
 
 ## 1.2.1
 

@@ -32,7 +32,10 @@
 
 class Sx1262Driver : public RadioDriver {
 public:
-    Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin);
+    /* ocp_ma: the PA over-current limit, from --ocp or the 140 mA default
+     * (daemon_ocp_boot.h), written after every RadioLib init. */
+    Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin,
+                 int ocp_ma = 140);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,
@@ -58,10 +61,11 @@ private:
     std::unique_ptr<SX1262> radio_;
     float tcxo_voltage_;
     int txen_pin_;
+    int ocp_ma_;
 };
 
 RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,
-                                  int txen_pin);
+                                  int txen_pin, int ocp_ma);
 
 /*
  * D8 (SX126x): exactly one profile-aware diagnostic line for a failed

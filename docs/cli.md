@@ -46,6 +46,7 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `--cad-monitor VAL` | required | `on`, `off` | `off` |
 | `--cad-rssi DBM` | required | integer dBm, `-130`..`0` | `-90` |
 | `--high-power` | none | — | off |
+| `--ocp MA` | required | integer mA the chip can represent (see below) | SX127x `100`, SX1262 `140` |
 | `-h`, `--help` | none | — | — |
 
 `-v` / `--version` prints the version and exits with success. `-h` / `--help` prints the usage
@@ -112,6 +113,7 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--cad-monitor VAL` | the boot `CAD=0/1` monitoring opt-in | off when absent |
 | `--cad-rssi DBM` | the CAD busy RSSI threshold | keeps the built-in `-90` dBm when absent |
 | `--high-power` | permission for `POWER=20` on an SX127x board | off when absent; accepted and inert on an SX1262 |
+| `--ocp MA` | the PA over-current limit, at every power level | SX127x 100 mA, SX1262 140 mA when absent |
 
 `--cad-monitor` exists so that a `CONF` client which cannot send `SET CADMONITOR=1` still gets the
 `CAD=0`/`CAD=1` stream. It takes a required argument: a bare `--cad-monitor` with no value is a
@@ -141,7 +143,21 @@ Without the flag a `SET POWER=20` is refused before any hardware effect, with
 `high-power mode not enabled (start with --high-power)` as the logged reason (the wire reply is the
 ordinary `ERR INVALID`). The permission and the running chip family are reported in `GET STATUS`
 as `HIGHPOWER=` and `CHIPFAMILY=` ([conf-protocol.md](conf-protocol.md)). The contract, the
-over-current pairing and the board caveat are in [limits.md](limits.md) and [hardware.md](hardware.md).
+over-current limit and the board caveat are in [limits.md](limits.md) and [hardware.md](hardware.md).
+
+`--ocp MA` sets the PA over-current limit for the life of the process, at every power level,
+`POWER=20` included. Only values the chip of the `--hw` preset can represent are accepted, nothing
+is rounded: SX127x `0` (protection off), 45–120 in steps of 5, 130–240 in steps of 10; SX1262 5–140
+in steps of 5 (the SX1262 has no "off"). It is reported in `GET STATUS` as `OCP=`. One line is
+printed at startup when the value is not the default, or when `--high-power` is given on an SX127x
+without it:
+
+```
+[433] WARNING OCP disabled (--ocp 0): warranty void, hardware may be in danger
+[433] WARNING OCP 150 mA above the default 100 mA: warranty void, hardware may be in danger
+[868] NOTE OCP 100 mA below the default 140 mA: may limit output power
+[433] WARNING OCP not specified under --high-power: the 100 mA default may limit +20 dBm
+```
 
 ## Startup RF defaults
 
@@ -177,6 +193,8 @@ Every rejected option prints a reason, then the usage text, then exits non-zero.
 | Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
 | Bad `--hw` value | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262` |
 | `--high-power` with a value | getopt's `option '--high-power' doesn't allow an argument`, then the usage text |
+| `--ocp` not a number | `invalid --ocp (an integer in mA): <value>` |
+| `--ocp` the chip cannot represent | `invalid --ocp for <family>: <n> mA (valid: <set>)` |
 | Any non-option argument | `Unbekanntes Argument: <arg>` |
 | `--radio` missing | `missing option: --radio (433 or 868)` |
 

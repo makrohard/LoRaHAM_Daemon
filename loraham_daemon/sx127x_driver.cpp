@@ -12,19 +12,22 @@
 
 /* --- Construction ---------------------------------------------------------- */
 
-Sx127xDriver::Sx127xDriver(Module *mod, bool is_hf, bool high_power)
+Sx127xDriver::Sx127xDriver(Module *mod, bool is_hf, bool high_power,
+                           int ocp_ma)
     : RadioDriver(nullptr),
       mod_(mod),
       radio_(is_hf ? new RFM95(mod) : new SX1278(mod)),
       is_hf_(is_hf),
-      high_power_(high_power)
+      high_power_(high_power),
+      ocp_ma_(ocp_ma)
 {
     phy_ = radio_.get();
 }
 
-RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power)
+RadioDriver *sx127x_driver_create(Module *mod, bool is_hf, bool high_power,
+                                  int ocp_ma)
 {
-    return new Sx127xDriver(mod, is_hf, high_power);
+    return new Sx127xDriver(mod, is_hf, high_power, ocp_ma);
 }
 
 const char *Sx127xDriver::chipName() const
@@ -205,29 +208,17 @@ int16_t Sx127xDriver::applyAutoLdro()
  * unconfigured one. If a meter ever shows that +17 dBm into a real mismatch
  * needs more headroom, the number can rise -- with evidence behind it.
  *
- * setCurrentLimit accepts 45-240 mA; 100 mA is OcpTrim 11. The validator keeps
- * SX127x to 2..17 dBm -- plus exactly 20 under the --high-power permission --
- * so PA_BOOST is the only path this configures, and one value covers the
- * continuous range.
+ * setCurrentLimit accepts 45-240 mA, or 0 for "off"; 100 mA is OcpTrim 11.
+ * The validator keeps SX127x to 2..17 dBm -- plus exactly 20 under the
+ * --high-power permission -- so PA_BOOST is the only path this configures.
  *
- * +20 dBm is the exception, and the datasheet says so twice: "the Over
- * Current Protection limit should be adapted to the actual power level"
- * (5.4.3) and IDDT is 120 mA typical at +20 against 87 mA at +17 (2.5.1).
- * Imax bounds the PA current only, so the typical total does not translate
- * into an exact PA figure -- but 100 mA sits at or below the documented
- * +20 dBm region and is likely to limit the amplifier there, and RadioLib's
- * 60 mA certainly does. 140 mA (OcpTrim 17) is the value chosen for the mode:
- * above the documented operating region with headroom, the same pairing the
- * Arduino-LoRa library has shipped for years (140 above 17 dBm, 100 below).
- * It is a project choice, not a Semtech-prescribed number, and it has not
- * been current-measured on these boards (no meter, same as the 100). The
- * pair is written in one place: setOutputPower() flips RegPaDac to the
- * boosted byte (RadioLib does that for exactly 20 and un-boosts for anything
- * lower), then the limit follows the level, so leaving 20 -- SET lower, a
- * MODE switch that reloads the boot defaults, or a restart -- restores 100.
+ * One value at every power level, +20 dBm included: the process's --ocp, or
+ * 100 mA without it. 1.2.0 raised the limit to 140 mA at exactly +20; that
+ * pairing is gone by the maintainer's decision, so +20 without --ocp runs on
+ * 100 mA, which the datasheet's 120 mA typical draw at +20 (2.5.1) suggests
+ * will limit the amplifier. The startup notice says so (daemon_ocp_boot.cpp),
+ * and an operator who wants +20 at full drive gives --ocp.
  */
-#define SX127X_OCP_PA_BOOST_MA 100
-#define SX127X_OCP_PA_BOOST_HP_MA 140
 
 int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
 {
@@ -239,8 +230,7 @@ int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
     /* Order matters: power first, then the limit that protects it. A failure
      * here is returned, not logged and swallowed -- a transmitter running on
      * RadioLib's 60 mA cap is not a working radio. */
-    state = radio_->setCurrentLimit(power_dbm == 20 ? SX127X_OCP_PA_BOOST_HP_MA
-                                                    : SX127X_OCP_PA_BOOST_MA);
+    state = radio_->setCurrentLimit((uint8_t)ocp_ma_);
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
@@ -249,7 +239,7 @@ int16_t Sx127xDriver::applyPowerAndOcp(int power_dbm)
      * was printed once at startup (loraham_daemon.cpp). */
     if (power_dbm == 20) {
         printf("\n[sx127x] WARNING POWER=20 applied: +20 dBm, OCP %d mA; duty "
-               "cycle <= 1 %%, operator responsible", SX127X_OCP_PA_BOOST_HP_MA);
+               "cycle <= 1 %%, operator responsible", ocp_ma_);
     }
 
     return RADIOLIB_ERR_NONE;

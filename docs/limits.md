@@ -245,22 +245,27 @@ is an amplified **RFM98PW** whose documentation does not specify this drive cond
 resulting module output; the permission is the same switch there, and that operation is
 **unvalidated** — see [hardware.md](hardware.md).
 
-Output power and the PA over-current limit (OCP) are applied together as one setting, and the limit
-follows the level. RadioLib pins OCP to 60 mA inside both `begin()` and `beginFSK()`, below the
-datasheet typical draw of 87 mA at +17 dBm on PA_BOOST; the daemon sets it to **100 mA — the chip's
-own silicon default** — for `2`–`17`, at boot, on every `SET POWER`, and after every LoRa/FSK switch,
-because `beginFSK()` re-pins it.
+Output power and the PA over-current limit (OCP) are applied together: the limit is written after
+every power write. RadioLib pins OCP to 60 mA inside both `begin()` and `beginFSK()`, below the
+datasheet typical draw of 87 mA at +17 dBm on PA_BOOST; the daemon writes its own value at boot, on
+every `SET POWER`, and after every LoRa/FSK switch, because `beginFSK()` re-pins it.
 
-At `20` the pair is **140 mA (OcpTrim 17)** with the boosted `RegPaDac`, written in the same apply.
-The datasheet says the limit "should be adapted to the actual power level" and gives 120 mA as the
-typical total draw at +20 dBm; `Imax` bounds the PA current only, so that typical does not translate
-into an exact PA figure, but 100 mA sits at or below the documented +20 dBm region and is likely to
-limit the amplifier there, and RadioLib's 60 mA certainly does. 140 mA is above that region with
-headroom and is the pairing the Arduino-LoRa library has shipped for years (140 above 17 dBm, 100
-below). It is a project choice, not a Semtech-prescribed number, and it has not been current-measured
-on these boards — the same evidence status as the 100. Leaving `20` — a lower `SET POWER`, a `MODE`
-switch (which reloads the band's boot defaults), a restart — restores 0x84 and 100 mA; the register
-sequence is pinned by `tests/test_sx127x_power_register.cpp` against the real pinned RadioLib.
+The value is one per process, at every power level: `--ocp <mA>` ([cli.md](cli.md)), or without it
+**100 mA — the chip's own silicon default** on SX127x and **140 mA — the daemon's default** on
+SX1262. Only values the chip can represent are accepted (SX127x `0` = protection off, 45–120 in
+steps of 5, 130–240 in steps of 10; SX1262 5–140 in steps of 5); anything else is refused at
+startup. `GET STATUS` reports the value as `OCP=` ([conf-protocol.md](conf-protocol.md)). The
+register sequence is pinned by `tests/test_sx127x_power_register.cpp` and
+`tests/test_sx1262_ocp_register.cpp` against the real pinned RadioLib.
+
+`20` on SX127x runs on the same value. 1.2.0 raised the limit to 140 mA at exactly `20`; since 1.3.0
+that pairing is gone, so `20` without `--ocp` runs on 100 mA. The datasheet says the limit "should be
+adapted to the actual power level" and gives 120 mA as the typical total draw at +20 dBm; `Imax`
+bounds the PA current only, so that typical does not translate into an exact PA figure, but 100 mA
+is likely to limit the amplifier there. The daemon says so at startup when `--high-power` is given
+without `--ocp`; an operator who wants +20 dBm at full drive gives `--ocp`. A value of `0` or above
+the default prints a warning at startup ("warranty void, hardware may be in danger"); no value has
+been current-measured on these boards.
 
 The defect the 100 mA fixes is that RadioLib's 60 mA sits *below* the typical draw at +17, so the
 protection can trip during ordinary transmission. Restoring the silicon default corrects that and

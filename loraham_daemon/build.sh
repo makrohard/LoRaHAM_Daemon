@@ -33,6 +33,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_cad_monitor_boot.cpp"
   "$SCRIPT_DIR/daemon_cad_rssi_boot.cpp"
   "$SCRIPT_DIR/daemon_high_power_boot.cpp"
+  "$SCRIPT_DIR/daemon_ocp_boot.cpp"
   "$SCRIPT_DIR/daemon_rflog.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"

@@ -1,5 +1,6 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_high_power_boot.h"
+#include "daemon_ocp_boot.h"
 
 #include <stdio.h>
 
@@ -38,6 +39,7 @@ void daemon_radio_controller_init(void)
     /* STATUS witnesses: the running family and the boot permission. */
     radio_controller.chip_family = daemon_hw_profile.family;
     radio_controller.high_power_enabled = daemon_high_power_enabled();
+    radio_controller.ocp_ma = daemon_ocp_effective_ma(daemon_hw_profile.family);
 }
 
 /* --- Radio controller shutdown ------------------------------------------ */

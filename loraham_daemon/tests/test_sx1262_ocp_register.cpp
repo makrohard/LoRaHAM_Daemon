@@ -3,8 +3,8 @@
  *
  * RadioLib sets RegOcp (0x08E7) to 60 mA inside begin() and beginFSK(), and
  * setOutputPower() reads it and writes the same value back, so a driver that
- * never sets it runs every power level on 60 mA. The daemon writes 140 mA
- * after both init paths. These tests run the REAL Sx1262Driver against the
+ * never sets it runs every power level on 60 mA. The daemon writes --ocp, or
+ * 140 mA without it, after both init paths. These tests run the REAL Sx1262Driver against the
  * REAL pinned RadioLib, with tests/fakes/sx126x_register_model.h where the
  * chip would be, and read the register back after boot, after a SET POWER,
  * after MODE=FSK and after the return to LoRa.
@@ -50,6 +50,7 @@ static void expect_int(const char *name, long got, long want)
 
 static const uint16_t REG_OCP = 0x08E7;
 static const uint8_t OCP_60MA  = 60 / 2.5;    /* 0x18, what RadioLib leaves */
+static const uint8_t OCP_100MA = 100 / 2.5;   /* 0x28 */
 static const uint8_t OCP_140MA = 140 / 2.5;   /* 0x38 */
 
 /* ---- rig ----------------------------------------------------------------- */
@@ -61,7 +62,8 @@ struct Rig {
 
     /* waveshare-sx1262 pins and TCXO; no TXEN line, so RX/TX switching is
      * DIO2 only and no GPIO is involved. */
-    Rig() : mod(&model, 21, 16, 18, 20), drv(&mod, 1.8f, -1) { model.reset(); }
+    explicit Rig(int ocp_ma = 140)
+      : mod(&model, 21, 16, 18, 20), drv(&mod, 1.8f, -1, ocp_ma) { model.reset(); }
 };
 
 static RadioRfDefaults lora_defaults(void)
@@ -103,6 +105,46 @@ static void test_boot_and_mode_switch_leave_140(void)
     expect_int("MODE=LORA succeeds",
                rig.drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
     expect_hex("back to LoRa: OCP 140 mA", rig.model.peek(REG_OCP), OCP_140MA);
+}
+
+/* --ocp 100: the given value on the same paths: boot, SET POWER, FSK, back. */
+static void test_ocp_100_on_every_path(void)
+{
+    Rig rig(100);
+    RadioRfDefaults def = lora_defaults();
+
+    expect_int("--ocp 100: boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 100: boot", rig.model.peek(REG_OCP), OCP_100MA);
+
+    expect_int("--ocp 100: SET POWER=14 accepted",
+               rig.drv.applyLoraParam("t", "POWER", "14"), RADIOLIB_ERR_NONE);
+    printf("\n");
+    expect_hex("--ocp 100: SET POWER", rig.model.peek(REG_OCP), OCP_100MA);
+
+    expect_int("--ocp 100: MODE=FSK succeeds",
+               rig.drv.switchMode(RADIO_MODE_FSK, &def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 100: FSK", rig.model.peek(REG_OCP), OCP_100MA);
+
+    expect_int("--ocp 100: MODE=LORA succeeds",
+               rig.drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 100: back to LoRa", rig.model.peek(REG_OCP), OCP_100MA);
+}
+
+/* The driver returns setCurrentLimit()'s result. With RadioLib 187ef247 that
+ * fails only on an out-of-range value: its writeRegister() returns ERR_NONE
+ * whatever the chip answers, so no SPI-level fault can make the write fail.
+ * 145 mA is outside RadioLib's 0..140 and is refused by --ocp's validation;
+ * the driver is constructed with it directly, past that validation, and
+ * begin() must return RadioLib's error instead of carrying on. The FSK path
+ * calls the same sx1262_apply_ocp() after beginFSK() and cannot fail on its
+ * own: a value that fails there has already failed begin(). */
+static void test_out_of_range_ocp_fails_begin(void)
+{
+    Rig rig(145);
+    RadioRfDefaults def = lora_defaults();
+
+    expect_int("OCP 145 mA (past validation): begin() returns RadioLib's error",
+               rig.drv.begin(&def), RADIOLIB_ERR_INVALID_CURRENT_LIMIT);
 }
 
 /* Negative control: the model itself reproduces what RadioLib does on its own,
@@ -179,6 +221,8 @@ static void test_only_checked_opcodes_are_sent(void)
 int main(void)
 {
     test_boot_and_mode_switch_leave_140();
+    test_ocp_100_on_every_path();
+    test_out_of_range_ocp_fails_begin();
     test_radiolib_alone_leaves_60();
     test_only_checked_opcodes_are_sent();
 

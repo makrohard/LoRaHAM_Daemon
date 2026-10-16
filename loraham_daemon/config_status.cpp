@@ -361,7 +361,7 @@ void config_status_format(char *buf,
 {
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -399,7 +399,10 @@ void config_status_format(char *buf,
               * power; POWER is not echoed anywhere. */
              (ctrl && ctrl->high_power_enabled) ? 1 : 0,
              daemon_chip_family_name(ctrl ? ctrl->chip_family
-                                          : DAEMON_CHIP_FAMILY_SX127X));
+                                          : DAEMON_CHIP_FAMILY_SX127X),
+             /* OCP (appended, additive): the PA over-current limit in mA the
+              * driver writes at every power level; 0 = protection off. */
+             ctrl ? ctrl->ocp_ma : 100);
 }
 
 const char *config_status_cad_state_name(RadioCadProbeStatus status)

@@ -112,6 +112,9 @@ struct RadioController {
      * started is not what is running. */
     DaemonChipFamily chip_family;
     bool high_power_enabled;
+    /* The PA over-current limit the driver writes, in mA (--ocp or the family
+     * default; 0 = protection off). */
+    int ocp_ma;
 
     DaemonRadioStats stats;
 
@@ -168,6 +171,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->cad_scan_available = true;
     ctrl->chip_family = DAEMON_CHIP_FAMILY_SX127X;
     ctrl->high_power_enabled = false;
+    ctrl->ocp_ma = 100;
 
     daemon_radio_stats_init(&ctrl->stats);
 

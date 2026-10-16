@@ -177,6 +177,65 @@ static int test_cli_high_power_value_rejected(void)
     return TEST_PASS;
 }
 
+/* --ocp: a valid value passes parsing (help exits before hardware setup and
+ * lists the option); a non-number, or a value the preset's chip cannot
+ * represent, exits 1 with the reason followed by the usage text. */
+static int test_cli_ocp_value_accepted(void)
+{
+    char out[4096];
+    int exit_code = 0;
+    int ret = run_cli_capture(g_bin, "--ocp=150", "--help",
+                              out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+    if (exit_code != 0)
+        return TEST_FAIL;
+    if (strstr(out, "--ocp MA") == NULL)
+        return TEST_FAIL;
+    return TEST_PASS;
+}
+
+static int test_cli_ocp_refused(void)
+{
+    /* run_cli_capture takes two arguments, so the preset is the default
+     * (loraham, SX127x); the SX1262 set is the same check on the other
+     * family and is covered in test_ocp_boot. */
+    static const struct {
+        const char *ocp;
+        const char *reason;
+    } cases[] = {
+        { "--ocp=abc", "invalid --ocp (an integer in mA): abc" },
+        { "--ocp=125",
+          "invalid --ocp for SX127x: 125 mA (valid: 0 (off), 45..120 in steps of 5, 130..240 in steps of 10)" },
+    };
+
+    for (int i = 0; i < ARRAY_LEN(cases); i++) {
+        char out[4096];
+        int exit_code = 0;
+        int ret = run_cli_capture(g_bin, "--radio=433", cases[i].ocp,
+                                  out, sizeof(out), &exit_code);
+
+        if (ret != TEST_PASS)
+            return ret;
+        if (exit_code != 1) {
+            fail_msg("%s: exit %d, expected 1", cases[i].ocp, exit_code);
+            return TEST_FAIL;
+        }
+        if (strstr(out, cases[i].reason) == NULL) {
+            fail_msg("%s: reason missing, got: %s", cases[i].ocp, out);
+            return TEST_FAIL;
+        }
+        /* V4: the reason, THEN the usage text (its --ocp line marks it). */
+        const char *usage = strstr(out, "--ocp MA");
+        if (usage == NULL || usage < strstr(out, cases[i].reason)) {
+            fail_msg("%s: usage text missing or before the reason", cases[i].ocp);
+            return TEST_FAIL;
+        }
+    }
+    return TEST_PASS;
+}
+
 /* The removed band-suffixed overrides must fail closed as unknown options. */
 static int test_cli_banded_flag_rejected(void)
 {
@@ -845,6 +904,8 @@ int main(int argc, char **argv)
     run_test("CLI accepts --hw loraham", test_cli_hw_loraham_accepted);
     run_test("CLI accepts bare --high-power", test_cli_high_power_bare_accepted);
     run_test("CLI rejects --high-power with a value", test_cli_high_power_value_rejected);
+    run_test("CLI accepts a valid --ocp", test_cli_ocp_value_accepted);
+    run_test("CLI refuses an invalid --ocp with the reason", test_cli_ocp_refused);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);

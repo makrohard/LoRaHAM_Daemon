@@ -4,10 +4,11 @@
  * +20 dBm on PA_BOOST is RegPaDac 0x87 (datasheet 5.4.3), and the datasheet
  * says in the same section that the over-current limit "should be adapted to
  * the actual power level". RadioLib's setOutputPower(20) flips PA_DAC and
- * leaves OCP alone; the daemon's applyPowerAndOcp() pairs the two -- 140 mA
- * (OcpTrim 17) at exactly 20, 100 mA (OcpTrim 11) below it -- and the pair
- * has to come back on every path that leaves 20: a lower SET, a MODE switch
- * that reloads the boot defaults, and a boot over a previously boosted chip.
+ * leaves OCP alone; the daemon's applyPowerAndOcp() writes the process's one
+ * limit after every power write -- --ocp, or 100 mA (OcpTrim 11) without it,
+ * at 20 too (1.3.0 dropped the 140 mA pairing at 20) -- and the ordinary
+ * PA_DAC has to come back on every path that leaves 20: a lower SET, a MODE
+ * switch that reloads the boot defaults, and a boot over a boosted chip.
  *
  * These tests run the REAL Sx127xDriver against the REAL pinned RadioLib with
  * tests/fakes/sx127x_register_model.h where the chip would be, exactly like
@@ -62,6 +63,8 @@ static const uint8_t PA_DAC_ORDINARY = 0x84;   /* datasheet default byte */
 static const uint8_t PA_DAC_BOOST    = 0x87;   /* +20 dBm on PA_BOOST */
 static const uint8_t OCP_100MA       = 0x20 | 11;   /* OcpOn | trim 11 = 100 mA */
 static const uint8_t OCP_140MA       = 0x20 | 17;   /* OcpOn | trim 17 = 140 mA */
+static const uint8_t OCP_150MA       = 0x20 | 18;   /* OcpOn | trim 18 = 150 mA */
+static const uint8_t OCP_ON_BIT      = 0x20;
 
 /* ---- rig ----------------------------------------------------------------- */
 
@@ -70,7 +73,8 @@ struct Rig {
     Module mod;
     Sx127xDriver drv;
 
-    explicit Rig(bool high_power) : mod(&model, 8, 25, 5, 24), drv(&mod, false, high_power)
+    explicit Rig(bool high_power, int ocp_ma = 100)
+      : mod(&model, 8, 25, 5, 24), drv(&mod, false, high_power, ocp_ma)
     {
         model.reset();
         /* The documented ordinary byte, so whole-byte comparisons below also
@@ -117,7 +121,8 @@ static void test_boot_restores_the_ordinary_pair(void)
                rig.model.peek(REG_PA_CONFIG) & 0x80u, 0x80u);
 }
 
-/* Permission ON: 20 writes the pair; 17 afterwards restores both. */
+/* Permission ON: 20 writes the boosted PA_DAC with the same 100 mA limit;
+ * 17 afterwards restores the ordinary PA_DAC. */
 static void test_set_20_then_17_in_lora(void)
 {
     Rig rig(true);
@@ -128,7 +133,7 @@ static void test_set_20_then_17_in_lora(void)
                rig.drv.applyLoraParam("t", "POWER", "20"), RADIOLIB_ERR_NONE);
     nl();
     expect_hex("20: PA_DAC is the boosted byte 0x87", rig.model.peek(REG_PA_DAC), PA_DAC_BOOST);
-    expect_hex("20: OCP is 140 mA in the same apply", rig.model.peek(REG_OCP), OCP_140MA);
+    expect_hex("20: OCP stays 100 mA (no 140 mA pairing)", rig.model.peek(REG_OCP), OCP_100MA);
     expect_hex("20: PA_BOOST still selected",
                rig.model.peek(REG_PA_CONFIG) & 0x80u, 0x80u);
 
@@ -136,7 +141,7 @@ static void test_set_20_then_17_in_lora(void)
                rig.drv.applyLoraParam("t", "POWER", "17"), RADIOLIB_ERR_NONE);
     nl();
     expect_hex("17 after 20: PA_DAC back to 0x84", rig.model.peek(REG_PA_DAC), PA_DAC_ORDINARY);
-    expect_hex("17 after 20: OCP back to 100 mA", rig.model.peek(REG_OCP), OCP_100MA);
+    expect_hex("17 after 20: OCP 100 mA", rig.model.peek(REG_OCP), OCP_100MA);
 }
 
 /* The same pair through the FSK setter, and a MODE switch back to LoRa
@@ -156,12 +161,12 @@ static void test_set_20_in_fsk_and_mode_switch_restores(void)
                rig.drv.applyFskParam("t", "POWER", "20"), RADIOLIB_ERR_NONE);
     nl();
     expect_hex("FSK 20: PA_DAC 0x87", rig.model.peek(REG_PA_DAC), PA_DAC_BOOST);
-    expect_hex("FSK 20: OCP 140 mA", rig.model.peek(REG_OCP), OCP_140MA);
+    expect_hex("FSK 20: OCP stays 100 mA", rig.model.peek(REG_OCP), OCP_100MA);
 
     expect_int("switch back to LoRa succeeds",
                rig.drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
     expect_hex("MODE switch: PA_DAC back to 0x84", rig.model.peek(REG_PA_DAC), PA_DAC_ORDINARY);
-    expect_hex("MODE switch: OCP back to 100 mA", rig.model.peek(REG_OCP), OCP_100MA);
+    expect_hex("MODE switch: OCP 100 mA", rig.model.peek(REG_OCP), OCP_100MA);
 }
 
 /* Permission OFF: the driver's own gate (defence in depth behind the
@@ -213,18 +218,66 @@ static void test_setter_failure_is_reported(void)
         int16_t st = rig.drv.applyLoraParam("t", "POWER", "20");
         nl();
         expect_int("PA_DAC write rejected -> error returned", st != RADIOLIB_ERR_NONE, 1);
-        expect_hex("PA_DAC write rejected -> OCP never raised", rig.model.peek(REG_OCP), OCP_100MA);
+        expect_hex("PA_DAC write rejected -> OCP unchanged", rig.model.peek(REG_OCP), OCP_100MA);
     }
     {
         Rig rig(true);
         RadioRfDefaults def = lora_defaults();
         expect_int("boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
 
+        /* The limit no longer changes at 20, so a stale value is seeded:
+         * the 100 mA write then has to change the register, and RadioLib's
+         * read-back verification sees the rejection. */
+        rig.model.poke(REG_OCP, OCP_140MA);
         rig.model.reject_writes_to = REG_OCP;
         int16_t st = rig.drv.applyLoraParam("t", "POWER", "20");
         nl();
         expect_int("OCP write rejected -> error returned", st != RADIOLIB_ERR_NONE, 1);
     }
+}
+
+/* --ocp 150: the one value at boot, at 17, at 20, in FSK and after the
+ * switch back -- every path that writes the limit writes this one. */
+static void test_ocp_150_on_every_path(void)
+{
+    Rig rig(true, 150);
+    RadioRfDefaults def = lora_defaults();
+
+    expect_int("--ocp 150: boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 150: boot", rig.model.peek(REG_OCP), OCP_150MA);
+
+    expect_int("--ocp 150: SET POWER=20 accepted",
+               rig.drv.applyLoraParam("t", "POWER", "20"), RADIOLIB_ERR_NONE);
+    nl();
+    expect_hex("--ocp 150: 20", rig.model.peek(REG_OCP), OCP_150MA);
+
+    expect_int("--ocp 150: switch to FSK succeeds",
+               rig.drv.switchMode(RADIO_MODE_FSK, &def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 150: FSK entry (beginFSK set 60)", rig.model.peek(REG_OCP), OCP_150MA);
+
+    expect_int("--ocp 150: switch back to LoRa succeeds",
+               rig.drv.switchMode(RADIO_MODE_LORA, &def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 150: back in LoRa", rig.model.peek(REG_OCP), OCP_150MA);
+}
+
+/* --ocp 0: RadioLib clears OcpOn (bit 5) and leaves the trim bits; the
+ * protection is off on every path, 20 included. */
+static void test_ocp_0_turns_protection_off(void)
+{
+    Rig rig(true, 0);
+    RadioRfDefaults def = lora_defaults();
+
+    expect_int("--ocp 0: boot succeeds", rig.drv.begin(&def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 0: boot, OcpOn clear", rig.model.peek(REG_OCP) & OCP_ON_BIT, 0);
+
+    expect_int("--ocp 0: SET POWER=20 accepted",
+               rig.drv.applyLoraParam("t", "POWER", "20"), RADIOLIB_ERR_NONE);
+    nl();
+    expect_hex("--ocp 0: 20, OcpOn clear", rig.model.peek(REG_OCP) & OCP_ON_BIT, 0);
+
+    expect_int("--ocp 0: switch to FSK succeeds",
+               rig.drv.switchMode(RADIO_MODE_FSK, &def), RADIOLIB_ERR_NONE);
+    expect_hex("--ocp 0: FSK entry, OcpOn clear", rig.model.peek(REG_OCP) & OCP_ON_BIT, 0);
 }
 
 int main(void)
@@ -235,6 +288,8 @@ int main(void)
     test_without_permission_20_touches_no_register();
     test_18_and_19_never_reach_the_chip();
     test_setter_failure_is_reported();
+    test_ocp_150_on_every_path();
+    test_ocp_0_turns_protection_off();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

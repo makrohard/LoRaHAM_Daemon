@@ -9,20 +9,22 @@
 
 /* --- Construction ---------------------------------------------------------- */
 
-Sx1262Driver::Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin)
+Sx1262Driver::Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin,
+                           int ocp_ma)
     : RadioDriver(nullptr),
       mod_(mod),
       radio_(new SX1262(mod)),
       tcxo_voltage_(tcxo_voltage),
-      txen_pin_(txen_pin)
+      txen_pin_(txen_pin),
+      ocp_ma_(ocp_ma)
 {
     phy_ = radio_.get();
 }
 
 RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,
-                                  int txen_pin)
+                                  int txen_pin, int ocp_ma)
 {
-    return new Sx1262Driver(mod, tcxo_voltage, txen_pin);
+    return new Sx1262Driver(mod, tcxo_voltage, txen_pin, ocp_ma);
 }
 
 const char *Sx1262Driver::chipName() const
@@ -64,18 +66,16 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 /*
  * RadioLib sets the OCP to 60 mA inside begin() and beginFSK() (SX126x.cpp, both
  * paths) and setOutputPower() preserves whatever is there, so without this the
- * chip ran every later SET POWER on 60 mA. 140 mA is the daemon's SX1262 default
- * (maintainer decision) and the top of the range RadioLib accepts (0..140).
- * Written after both init paths, which are the only places RadioLib resets it.
- * The caller returns setCurrentLimit()'s result; with RadioLib 187ef247 that
- * fails only on an out-of-range value (its writeRegister() does not report the
- * chip's status).
+ * chip ran every later SET POWER on 60 mA. The value is the process's --ocp or
+ * the daemon's 140 mA SX1262 default (daemon_ocp_boot.h), the top of the range
+ * RadioLib accepts (0..140). Written after both init paths, which are the only
+ * places RadioLib resets it. The caller returns setCurrentLimit()'s result; with
+ * RadioLib 187ef247 that fails only on an out-of-range value (its
+ * writeRegister() does not report the chip's status).
  */
-#define SX1262_OCP_MA 140
-
-static int16_t sx1262_apply_ocp(SX1262 *radio)
+static int16_t sx1262_apply_ocp(SX1262 *radio, int ocp_ma)
 {
-    int16_t state = radio->setCurrentLimit(SX1262_OCP_MA);
+    int16_t state = radio->setCurrentLimit((float)ocp_ma);
     if (state != RADIOLIB_ERR_NONE) {
         printf("[sx1262] boot setter OCP failed: %d\n", (int)state);
         fflush(stdout);
@@ -109,7 +109,7 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
-    state = sx1262_apply_ocp(radio_.get());
+    state = sx1262_apply_ocp(radio_.get(), ocp_ma_);
     if (state != RADIOLIB_ERR_NONE)
         return state;
 
@@ -156,7 +156,7 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
         state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
                                  tcxo_voltage_, false);
         if (state == RADIOLIB_ERR_NONE)
-            state = sx1262_apply_ocp(radio_.get());
+            state = sx1262_apply_ocp(radio_.get(), ocp_ma_);
         if (state == RADIOLIB_ERR_NONE)
             state = sx1262_apply_rf_switch(radio_.get(), mod_, txen_pin_);
         return state;
