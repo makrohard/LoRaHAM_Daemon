@@ -13,6 +13,9 @@ extern RadioController radio_controller;
 void daemon_radio_controller_init(void);
 void daemon_radio_shutdown_cleanup(void);
 bool daemon_selected_radio_ready(void);
+/* Once per main-loop pass: lets a HAL that can lose its radio between calls
+ * (the USB Meshstick) exit 5 (see daemon_hal_control.h). */
+void daemon_radio_check_runtime(void);
 void daemon_log_active_radios(void);
 
 /* RX-complete ISR callback targeting the single controller. */

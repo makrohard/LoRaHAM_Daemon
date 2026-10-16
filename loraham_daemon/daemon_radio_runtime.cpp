@@ -75,6 +75,7 @@ static void radio_controller_shutdown(RadioController *ctrl)
     daemon_debug_band(tag, "releasing module");
     ctrl->mod.reset();
     daemon_debug_band(tag, "releasing HAL");
+    ctrl->hal_ctl = nullptr;
     ctrl->hal.reset();
 
     ctrl->health = RADIO_HEALTH_UNINITIALIZED;
@@ -103,6 +104,14 @@ void daemon_radio_shutdown_cleanup(void)
 void setFlag(void)
 {
     radio_controller.received.store(true);
+}
+
+/* --- Runtime HAL check ---------------------------------------------------- */
+
+void daemon_radio_check_runtime(void)
+{
+    if (radio_controller.hal_ctl)
+        radio_controller.hal_ctl->check_runtime();
 }
 
 /* --- Active radio state -------------------------------------------------- */

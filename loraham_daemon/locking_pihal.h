@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "hal/RPi/PiHal.h"
+#include "daemon_hal_control.h"
 #include "loraham_runtime.h"
 
 /*
@@ -49,7 +50,7 @@
  * only mean a wedged peer process. */
 #define LORAHAM_SPI_LOCK_TIMEOUT_MS 2000L
 
-class LockingPiHal : public PiHal {
+class LockingPiHal : public PiHal, public DaemonHalControl {
   public:
     /* flock_fn is injectable for tests; production uses the real flock(). */
     LockingPiHal(uint8_t spiChannel, uint32_t spiSpeed = 2000000,
@@ -75,7 +76,7 @@ class LockingPiHal : public PiHal {
 
     /* True only if the process-shared SPI lock file was established. The daemon
      * must refuse to start a radio whose HAL is not lock-ready (fail closed). */
-    bool spi_lock_ready() const { return _lockFd >= 0; }
+    bool spi_lock_ready() const override { return _lockFd >= 0; }
 
     void spiBeginTransaction() override {
         /* Recursion guard: RadioLib does not nest transactions, but a depth
@@ -347,12 +348,12 @@ class LockingPiHal : public PiHal {
 
     /* True until a GPIO operation failed during startup. The daemon checks
      * this after begin(), after installing the RX alert and before READY. */
-    bool gpio_startup_ok() const { return !_gpioStartupFailed; }
+    bool gpio_startup_ok() const override { return !_gpioStartupFailed; }
 
     /* Called once the radio is fully up (begin + IRQ installed + RX armed).
      * From here a GPIO failure is loss of radio I/O integrity, not a
      * configuration problem, and is fatal the restartable way. */
-    void gpio_mark_operational() { _gpioOperational = true; }
+    void gpio_mark_operational() override { _gpioOperational = true; }
 
   private:
     bool gpio_ready(const char *what) {

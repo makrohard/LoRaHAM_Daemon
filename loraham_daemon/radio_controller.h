@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "hal/RPi/PiHal.h"
+#include "daemon_hal_control.h"
 #include <RadioLib.h>
 
 #include "daemon_tx_policy.h"
@@ -47,7 +48,10 @@ struct RadioController {
     const char *tag;
     bool is_hf;
 
-    std::unique_ptr<PiHal> hal;
+    /* The HAL RadioLib uses (LockingPiHal or Ch341Hal) and, pointing at the
+     * same object, what lora_init() asks of it beyond RadioLib. */
+    std::unique_ptr<RadioLibHal> hal;
+    DaemonHalControl *hal_ctl = nullptr;
     std::unique_ptr<Module> mod;
     std::unique_ptr<RadioDriver> driver;
     /*
@@ -139,6 +143,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->tag = tag;
     ctrl->is_hf = is_hf;
 
+    ctrl->hal_ctl = nullptr;
     ctrl->hal.reset();
     ctrl->mod.reset();
     ctrl->driver.reset();

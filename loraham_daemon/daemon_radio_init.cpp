@@ -63,6 +63,17 @@ static void hw_log_reset_note(const char *band)
            band, daemon_hw_profile.name);
 }
 
+/* The radio's HAL for this profile, and its daemon-side control (the same
+ * object). */
+static RadioLibHal *daemon_radio_hal_for_profile(const DaemonHardwareProfile &p,
+                                                 DaemonHalControl **ctl)
+{
+    LockingPiHal *hal = daemon_radio_hal(p);
+
+    *ctl = hal;
+    return hal;
+}
+
 /* Boot RF defaults live in the band descriptor (daemon_band.cpp). */
 
 static bool g_boot_lock_failed = false;
@@ -107,7 +118,8 @@ void lora_init(void) {
 
     daemon_debug_band(tag, "creating objects");
     hw_log_reset_note(tag);
-    radio_controller.hal.reset(daemon_radio_hal(daemon_hw_profile));
+    radio_controller.hal.reset(daemon_radio_hal_for_profile(daemon_hw_profile,
+                                                            &radio_controller.hal_ctl));
     radio_controller.mod.reset(daemon_radio_module(radio_controller.hal.get(),
                                                    daemon_hw_profile));
     radio_controller.driver.reset(
@@ -117,8 +129,7 @@ void lora_init(void) {
     /* Fail closed: never call begin() (which drives SPI) unless the
      * process-shared SPI lock was established. */
     int state;
-    if (static_cast<LockingPiHal *>(radio_controller.hal.get())
-            ->spi_lock_ready()) {
+    if (radio_controller.hal_ctl->spi_lock_ready()) {
         state = radio_controller.driver->begin(band->rf_defaults);
     } else {
         state = RADIOLIB_ERR_SPI_CMD_FAILED;
@@ -142,7 +153,7 @@ void lora_init(void) {
      * exits the restartable way, so publishing READY first would leave a window
      * in which a live, advertised radio still carried startup semantics.
      */
-    LockingPiHal *hal = static_cast<LockingPiHal *>(radio_controller.hal.get());
+    DaemonHalControl *hal = radio_controller.hal_ctl;
     bool startup_ok = false;
 
     if (state != RADIOLIB_ERR_NONE) {

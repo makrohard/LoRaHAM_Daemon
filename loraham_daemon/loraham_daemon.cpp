@@ -214,6 +214,8 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
         return;
     }
 
+    daemon_radio_check_runtime();
+
     // Process ready socket clients.
     daemon_process_ready_sockets(&loop_ctx->config_ctx,
                                  &loop_ctx->data_tx_ctx,
