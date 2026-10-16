@@ -74,6 +74,15 @@ typedef struct {
     int spi_channel;
     bool kernel_cs;
 
+    /* USB radio (the ELECROW Meshstick): the radio sits behind a CH341
+     * USB-SPI bridge instead of the Pi's SPI bus and GPIO. Pins above are
+     * then the CH341's D0..D7, nothing is claimed on the Pi (no GPIO locks,
+     * no LED, no spi0.lock), and the Meshstick library is loaded at startup
+     * (ch341_loader.h). The device is found by USB vendor/product ID. */
+    bool usb_ch341;
+    int usb_vid;
+    int usb_pid;
+
     /* All BCM lines this profile claims (LED + Module pins); for claim-failure
      * diagnostics and docs. */
     int claimed[DAEMON_HW_MAX_CLAIMED];

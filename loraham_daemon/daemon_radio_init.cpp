@@ -7,6 +7,8 @@
 
 #include "locking_pihal.h"
 #include "radio_wiring.h"
+#include "ch341_hal.h"
+#include "ch341_loader.h"
 
 #include "daemon_band.h"
 #include "daemon_gpio_lock.h"
@@ -30,9 +32,13 @@
 static RadioDriver *hw_driver_create(Module *mod, bool is_hf)
 {
     if (daemon_hw_profile.family == DAEMON_CHIP_FAMILY_SX1262)
+        /* The driver registers this line as RadioLib's rxEn (HIGH in RX):
+         * the Waveshare HAT's TXEN line works that way round, the Meshstick's
+         * RXEN line is named for it. A profile has one or the other. */
         return sx1262_driver_create(mod,
                                     daemon_hw_profile.tcxo_voltage,
-                                    daemon_hw_profile.txen,
+                                    daemon_hw_profile.txen >= 0 ? daemon_hw_profile.txen
+                                                                : daemon_hw_profile.rxen,
                                     daemon_ocp_effective_ma(DAEMON_CHIP_FAMILY_SX1262));
 
     return sx127x_driver_create(mod, is_hf, daemon_high_power_enabled(),
@@ -68,6 +74,13 @@ static void hw_log_reset_note(const char *band)
 static RadioLibHal *daemon_radio_hal_for_profile(const DaemonHardwareProfile &p,
                                                  DaemonHalControl **ctl)
 {
+    if (p.usb_ch341) {
+        Ch341Hal *hal = new Ch341Hal(daemon_ch341_api(), (uint16_t)p.usb_vid,
+                                     (uint16_t)p.usb_pid);
+        *ctl = hal;
+        return hal;
+    }
+
     LockingPiHal *hal = daemon_radio_hal(p);
 
     *ctl = hal;
@@ -99,7 +112,7 @@ void lora_init(void) {
     /* GPIO ownership is acquired in daemon_io_init() BEFORE the LED claim;
      * this is only the invariant check — a radio boot
      * without held pin locks would bypass the conflict gate. */
-    if (daemon_gpio_locks_held() == 0) {
+    if (!daemon_hw_profile.usb_ch341 && daemon_gpio_locks_held() == 0) {
         printf("[GPIO] error: no pin locks held - radio init aborted "
                "(fail-closed)\n");
         g_boot_lock_failed = true;
@@ -107,7 +120,7 @@ void lora_init(void) {
         return;
     }
 
-    if (!daemon_led_ready()) {
+    if (!daemon_hw_profile.usb_ch341 && !daemon_led_ready()) {
         printf("[GPIO] error: LED/GPIO not ready!\n");
         daemon_debug_ctx("GPIO", "not ready");
         radio_controller.health = RADIO_HEALTH_FAILED;
@@ -134,8 +147,12 @@ void lora_init(void) {
     } else {
         state = RADIOLIB_ERR_SPI_CMD_FAILED;
         g_boot_lock_failed = true;
-        printf("[SPI] error: SPI lock for %s unavailable - "
-               "begin() skipped\n", tag);
+        if (daemon_hw_profile.usb_ch341)
+            printf("[CH341] error: Meshstick for %s not open - "
+                   "begin() skipped\n", tag);
+        else
+            printf("[SPI] error: SPI lock for %s unavailable - "
+                   "begin() skipped\n", tag);
     }
     /*
      * READY = configured radio + usable IRQ path + armed RX.

@@ -136,6 +136,42 @@ static void test_waveshare(void)
     expect_int("ws 433 cs unchanged", daemon_hw_profile.cs, 21);
 }
 
+/* The ELECROW Meshstick: CH341 D-lines, not BCM; nothing claimed on the Pi;
+ * 868 only. Every Pi preset stays a non-USB profile. */
+static void test_meshstick(void)
+{
+    static const char *pi_presets[] = { "loraham", "uputronics-ce0", "uputronics-ce1",
+                                        "waveshare-sx1262" };
+
+    expect_int("set meshstick", daemon_set_hardware_preset("meshstick-1262"), 1);
+    expect_int("meshstick 433 refused (868 hardware)", daemon_hardware_profile_resolve(433), 0);
+    expect_int("resolve meshstick 868", daemon_hardware_profile_resolve(868), 1);
+    expect_int("ms family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
+    expect_int("ms usb", daemon_hw_profile.usb_ch341, 1);
+    expect_int("ms vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);
+    expect_int("ms pid 5512", daemon_hw_profile.usb_pid, 0x5512);
+    expect_int("ms cs D0", daemon_hw_profile.cs, 0);
+    expect_int("ms irq/dio1 D6", daemon_hw_profile.irq, 6);
+    expect_int("ms rst D2", daemon_hw_profile.rst, 2);
+    expect_int("ms gpio/busy D4", daemon_hw_profile.gpio, 4);
+    expect_int("ms rxen D1", daemon_hw_profile.rxen, 1);
+    expect_int("ms txen NC", daemon_hw_profile.txen < 0, 1);
+    expect_int("ms tcxo 1.8 V", daemon_hw_profile.tcxo_voltage == 1.8f, 1);
+    expect_int("ms led NC", daemon_hw_profile.led_pin < 0, 1);
+    expect_int("ms claims no Pi line", daemon_hw_profile.claimed_count, 0);
+    expect_int("ms cad scan", daemon_hw_profile.cad_scan_available, 1);
+
+    for (const char *name : pi_presets) {
+        daemon_set_hardware_preset(name);
+        static const int bands[] = { 433, 868 };
+        for (int band : bands) {
+            char label[96];
+            snprintf(label, sizeof(label), "%s %d: not a USB profile", name, band);
+            expect_int(label, daemon_hardware_profile_resolve(band) && !daemon_hw_profile.usb_ch341, 1);
+        }
+    }
+}
+
 static void test_unknown_preset(void)
 {
     expect_int("set unknown records name",
@@ -203,6 +239,7 @@ int main(void)
     test_uputronics_ce0();
     test_uputronics_ce1();
     test_waveshare();
+    test_meshstick();
     test_unknown_preset();
     test_family_names();
     test_spi_soft_cs_keeps_the_profile();

@@ -124,7 +124,9 @@ void daemon_io_init(void)
      * lgpio and before any SPI/Module/RadioLib access in lora_init(). */
     daemon_debug_ctx("GPIO", "acquiring pin locks");
     daemon_led_configure(daemon_hw_profile.led_pin);
-    {
+    /* A USB radio uses no line on the Pi: no pin locks, no LED, no gpiochip
+     * (a PC has none). Ownership of the stick is the library's USB claim. */
+    if (!daemon_hw_profile.usb_ch341) {
         int pins[DAEMON_HW_MAX_CLAIMED + 1];
         size_t n = 0;
 

@@ -37,7 +37,7 @@ const char *daemon_chip_family_name(DaemonChipFamily family)
 
 const char *daemon_hardware_profile_known(void)
 {
-    return "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262";
+    return "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262";
 }
 
 static void profile_claimed_finish(DaemonHardwareProfile *p)
@@ -142,6 +142,35 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->reset_wired = true;
         profile_claimed_finish(p);
         (void)band;
+        return true;
+    }
+
+    if (strcmp(preset, "meshstick-1262") == 0) {
+        /* ELECROW Meshstick: SX1262 + TCXO behind a CH341 USB-to-SPI bridge,
+         * EU868 hardware. Wiring and settings from meshtasticd's
+         * bin/config.d/lora-usb-meshstick-1262.yaml (CS 0, IRQ 6, Reset 2,
+         * Busy 4, RXen 1, DIO2_AS_RF_SWITCH, DIO3_TCXO_VOLTAGE true = 1.8 V,
+         * USB 1A86:5512). The pins are CH341 D-lines, not BCM. */
+        if (band != 868)
+            return false;
+        p->name = "meshstick-1262";
+        p->family = DAEMON_CHIP_FAMILY_SX1262;
+        p->cs = 0;                      /* D0 */
+        p->irq = 6;                     /* D6 = DIO1 */
+        p->rst = 2;                     /* D2 */
+        p->gpio = 4;                    /* D4 = BUSY */
+        p->aux = DAEMON_HW_PIN_NC;
+        p->txen = DAEMON_HW_PIN_NC;
+        p->rxen = 1;                    /* D1, besides the DIO2 RF switch */
+        p->tcxo_voltage = 1.8f;         /* TCXO fed from DIO3 */
+        p->led_pin = DAEMON_HW_PIN_NC;  /* no Pi line, no LED */
+        p->cad_scan_available = true;   /* SX126x hardware CAD */
+        p->fsk_stream_available = false;
+        p->reset_wired = true;
+        p->usb_ch341 = true;
+        p->usb_vid = 0x1A86;
+        p->usb_pid = 0x5512;
+        p->claimed_count = 0;           /* nothing on the Pi's GPIO */
         return true;
     }
 

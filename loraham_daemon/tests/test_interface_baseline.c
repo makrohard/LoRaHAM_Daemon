@@ -133,6 +133,26 @@ static int test_cli_hw_loraham_accepted(void)
 }
 
 
+/* meshstick-1262 is 868 hardware: --radio=433 is refused like an unknown
+ * preset, before any library is loaded. */
+static int test_cli_meshstick_433_rejected(void)
+{
+    char out[4096];
+    int exit_code = 0;
+    int ret = run_cli_capture(g_bin, "--radio=433", "--hw=meshstick-1262",
+                              out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+    if (exit_code == 0)
+        return TEST_FAIL;
+    if (strstr(out, "invalid hardware profile: meshstick-1262") == NULL)
+        return TEST_FAIL;
+    if (strstr(out, "[CH341]") != NULL)
+        return TEST_FAIL;
+    return TEST_PASS;
+}
+
 /* --high-power is a bare flag: accepted alone (help exits before hardware
  * setup and lists it), refused with any value -- there is no `off` syntax,
  * absence is off. */
@@ -902,6 +922,7 @@ int main(int argc, char **argv)
     run_test("CLI rejects banded flags", test_cli_banded_flag_rejected);
     run_test("CLI rejects unknown --hw preset", test_cli_hw_unknown_rejected);
     run_test("CLI accepts --hw loraham", test_cli_hw_loraham_accepted);
+    run_test("CLI refuses meshstick-1262 on 433", test_cli_meshstick_433_rejected);
     run_test("CLI accepts bare --high-power", test_cli_high_power_bare_accepted);
     run_test("CLI rejects --high-power with a value", test_cli_high_power_value_rejected);
     run_test("CLI accepts a valid --ocp", test_cli_ocp_value_accepted);

@@ -46,6 +46,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_gpio_lock.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
+  "$SCRIPT_DIR/ch341_loader.cpp"
   "$SCRIPT_DIR/daemon_instance_lock.cpp"
   "$SCRIPT_DIR/unix_socket.cpp"
   "$SCRIPT_DIR/client_output_queue.cpp"

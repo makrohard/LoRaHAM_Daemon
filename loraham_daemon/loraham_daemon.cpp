@@ -45,6 +45,13 @@
 #include "daemon_rflog.h"
 #include "daemon_high_power_boot.h"
 #include "daemon_ocp_boot.h"
+#include "ch341_loader.h"
+
+/* build.sh passes the pine64 commit from .github/ci/libpinedio.lock; a build
+ * without it refuses every Meshstick library (see ch341_loader.cpp). */
+#ifndef LORAHAM_CH341_PIN_EXPECTED
+#define LORAHAM_CH341_PIN_EXPECTED ""
+#endif
 #include "daemon_radio_runtime.h"
 #include "daemon_data_tx_runtime.h"
 #include "daemon_log.h"
@@ -480,10 +487,26 @@ static bool daemon_parse_args(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    /* The Meshstick's library is loaded here, before anything is opened or
+     * claimed, and only for its preset: every other preset never calls
+     * dlopen(). A missing or mismatching library is the same answer after
+     * every restart, so the refusal is the non-restartable startup failure. */
+    if (daemon_hw_profile.usb_ch341) {
+        char why[512];
+
+        if (!daemon_ch341_load(LORAHAM_CH341_PIN_EXPECTED, why, sizeof(why))) {
+            printf("[CH341] refused: %s (exit %d).\n", why, LORAHAM_EXIT_LOCK_ERROR);
+            exit(LORAHAM_EXIT_LOCK_ERROR);
+        }
+        printf("[CH341] Meshstick library loaded (pine64 %s)\n",
+               daemon_ch341_api()->pin());
+    }
+
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1
      * (no dtoverlay=spi0-0cs). Same answer after every restart, so a refusal
      * is the non-restartable startup failure. */
-    if (!daemon_hardware_profile_apply_spi(&daemon_hw_profile,
+    if (!daemon_hw_profile.usb_ch341 &&
+        !daemon_hardware_profile_apply_spi(&daemon_hw_profile,
                                            access("/dev/spidev0.1", F_OK) == 0)) {
         printf("[SPI] refused: the kernel owns the chip selects (GPIO 8 and 7, "
                "/dev/spidev0.1 exists) and this board's CS is GPIO %d. Use soft "
