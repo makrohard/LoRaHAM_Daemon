@@ -199,14 +199,15 @@ restarted) and one line naming the reason when:
 
 Running it needs only the libusb runtime (`libusb-1.0-0`), which is not the development package.
 The daemon binary links lgpio for every preset, so a PC running the Meshstick also needs the lgpio
-runtime (`liblgpio1` on Debian and Ubuntu). Where the distribution has no package, build lgpio from
-source. Its instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
+runtime: `liblgpio1` on Raspberry Pi OS and Ubuntu 24.04. Debian 13 has no package; build lgpio from
+source there. Its instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
 tmpfiles fragment).
 The startup log names the loaded commit: `[CH341] Meshstick library loaded (pine64 <commit>)`.
 
 ### USB access (udev)
 
-Without a rule only root, or the logged-in desktop user, may open the stick. For a daemon running
+Without a rule the device node is `0664 root:root`, so only root may open the stick, unless another
+package's rule grants the desktop user access (on Fedora 43, flashrom's does). For a daemon running
 as its own user, a rule gives the device to a group:
 
     sudo tee /etc/udev/rules.d/90-loraham-meshstick.rules >/dev/null <<'EOF2'
@@ -235,8 +236,8 @@ detached stick by its product ID: `grep -l 5512 /sys/bus/usb/devices/*/idProduct
 **Keep spi-ch341 off the stick.** While `spi-ch341` holds the stick, its probe sets the CH341's pin
 directions to `0x3f` (`ch341_enable_pins()` in `drivers/spi/spi-ch341.c`). That makes D4 an output, and on the
 Meshstick D4 is the SX1262's BUSY output, so the kernel drives against the chip's own pin for as long as the
-driver is bound: from plug-in until the daemon opens the stick, and again after it closes it. meshtasticd users
-have the same situation. Where only the Meshstick uses a CH341 in this mode, stop the kernel from binding it:
+driver is bound: from plug-in until the daemon opens the stick, and again after it closes it. Where only the
+Meshstick uses a CH341 in this mode, stop the kernel from binding it:
 
     echo 'blacklist spi_ch341' | sudo tee /etc/modprobe.d/loraham-meshstick.conf
     sudo modprobe -r spi_ch341

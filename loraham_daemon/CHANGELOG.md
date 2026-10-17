@@ -1,27 +1,19 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
+- SX1262: the PA over-current limit is 140 mA at every power level; RadioLib had left 60 mA.
+- `--ocp <mA>`: the PA over-current limit for the process (SX127x default 100, SX1262 140).
+  `GET STATUS` reports `OCP=`.
+- **Behaviour change:** `POWER=20` on SX127x no longer raises the limit to 140 mA; use `--ocp` for that.
+- `--hw meshstick-1262`: the ELECROW Meshstick (SX1262 on USB, 868) through an optional library that
+  `build.sh` puts in `lib/`; without it only this preset refuses (exit 4). See docs/hardware.md.
+- `meshstick-1262` accepts `POWER` up to 22 dBm and warns at 21 and 22.
 - Meshstick: an unplugged stick is waited for (`RADIO=UNPLUGGED`, sockets stay); on return it is set up
-  again and the applied settings are replayed. An I/O error with the stick present still exits 5.
-- `--id ID`: per-instance socket, lock and log names (`lora-ID.sock`, …); `GET STATUS` ends `USBWAIT= ID=`.
+  again and the applied RF configuration is replayed. An I/O error with the stick present still exits 5.
+- `--id ID`: per-instance socket, lock and log names (`lora-ID.sock`, …); `GET STATUS` gains `USBWAIT= BOUND= ID=`.
+- `GET STATUS` ends with the applied `FREQ= SF= POWER=` (`-` until set since boot or the last `MODE`).
 - `--usb-serial S` selects one of several Meshsticks; at most one stick without a serial is supported.
-- SX1262: the PA over-current limit is 140 mA after boot and after every `MODE` switch. RadioLib sets
-  60 mA inside `begin()` and `beginFSK()` and every later `SET POWER` kept it, so the driver ran all
-  power levels on 60 mA. 140 mA is the daemon's SX1262 default and the top of RadioLib's range.
-- `--ocp <mA>`: the PA over-current limit for the process, at every power level. Default SX127x
-  100 mA, SX1262 140 mA; only values the chip can represent are accepted, anything else exits 1
-  with the valid set. `0` (SX127x only) or a value above the default prints a startup warning.
-  `GET STATUS` ends with `OCP=<mA>`.
-- **Behaviour change:** `POWER=20` on SX127x no longer raises the limit to 140 mA; without `--ocp`
-  it runs on 100 mA, and the startup notice says so when `--high-power` is given without `--ocp`.
-- `--hw meshstick-1262`: the ELECROW Meshstick (SX1262 behind a CH341 USB-to-SPI bridge), 868 only,
-  through pine64's libch341-spi-userspace (pinned, unchanged). The library is optional: `build.sh`
-  builds `lib/libloraham-ch341.so` beside the binary only from a checkout at the locked commit; only
-  this preset loads it, and without it the preset exits 4 with the reason. Every other preset builds
-  and runs as before. See docs/hardware.md.
-- `meshstick-1262` accepts `POWER` up to 22 dBm (the manufacturer's maximum) and warns for 21 and 22;
-  every other SX1262 preset keeps 0–20.
 
 ## 1.2.1
 
