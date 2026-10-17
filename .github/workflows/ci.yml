@@ -95,3 +95,9 @@ jobs:
           nm -D --defined-only "$so" | grep -qw loraham_ch341_pin
           grep -qaF "$PINEDIO_COMMIT" "$so"
           echo "OK: $so carries pine64 $PINEDIO_COMMIT"
+
+      - name: Chat client tests (normal lane)
+        if: matrix.name == 'normal'
+        run: |
+          sudo apt-get install --yes --no-install-recommends libncurses-dev
+          clients/chat/run_tests.sh

@@ -23,6 +23,7 @@
 
  */
 
+#include <errno.h>
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,78 @@ static const char *loraham_sockpath(const char *runp, const char *tmpp)
 
 #define SOCKET_PATH loraham_sockpath("/run/loraham/lora433.sock", "/tmp/lora433.sock")
 #define CONFIG_SOCKET_PATH loraham_sockpath("/run/loraham/loraconf433.sock", "/tmp/loraconf433.sock")
+
+/* --data-socket / --conf-socket: a path given on the command line is used as
+ * is for every open of that socket; without it each open evaluates the macro
+ * above, exactly as before (so a daemon started later is still found). */
+static const char *g_data_socket_opt = NULL;
+static const char *g_conf_socket_opt = NULL;
+
+static const char *data_path(void) { return g_data_socket_opt ? g_data_socket_opt : SOCKET_PATH; }
+static const char *conf_path(void) { return g_conf_socket_opt ? g_conf_socket_opt : CONFIG_SOCKET_PATH; }
+
+static void lorachat_usage(FILE *f)
+{
+    fprintf(f, "usage: loraham_chat [--data-socket PATH] [--conf-socket PATH]\n"
+               "  --data-socket PATH  the daemon's raw data socket"
+               " (default /run/loraham/lora433.sock, else /tmp/lora433.sock)\n"
+               "  --conf-socket PATH  its CONF socket"
+               " (default /run/loraham/loraconf433.sock, else /tmp/loraconf433.sock)\n"
+               "  -h, --help          this help\n");
+}
+
+/* 0 = go on, 1 = refused (reason + usage on stderr: exit 1), 2 = help shown (exit 0). */
+int lorachat_parse_args(int argc, char **argv)
+{
+    for (int i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        const char **target = NULL;
+        if (strcmp(a, "-h") == 0 || strcmp(a, "--help") == 0) {
+            lorachat_usage(stdout);
+            return 2;
+        }
+        if (strcmp(a, "--data-socket") == 0)
+            target = &g_data_socket_opt;
+        else if (strcmp(a, "--conf-socket") == 0)
+            target = &g_conf_socket_opt;
+        if (!target) {
+            fprintf(stderr, "unknown argument: %s\n", a);
+            lorachat_usage(stderr);
+            return 1;
+        }
+        if (i + 1 >= argc || argv[i + 1][0] == '\0') {
+            fprintf(stderr, "%s needs a path\n", a);
+            lorachat_usage(stderr);
+            return 1;
+        }
+        if (strlen(argv[i + 1]) >= sizeof(((struct sockaddr_un *)0)->sun_path)) {
+            fprintf(stderr, "%s: path longer than 107 bytes: %s\n", a, argv[i + 1]);
+            lorachat_usage(stderr);
+            return 1;
+        }
+        *target = argv[++i];
+    }
+    return 0;
+}
+
+/* Open one UNIX socket; -1 with errno on failure. */
+static int lorachat_connect_path(const char *path)
+{
+    struct sockaddr_un addr;
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return -1;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        int e = errno;
+        close(fd);
+        errno = e;
+        return -1;
+    }
+    return fd;
+}
 
 /* How long to wait for a transmission to complete (see wait_for_tx_complete). */
 #define TX_WAIT_POLL_US      100000   /* 100 ms between counter reads          */
@@ -195,7 +268,7 @@ void send_lora_config(const char* freq) {
     if (cfg_fd < 0) return;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONFIG_SOCKET_PATH, sizeof(addr.sun_path)-1);
+    strncpy(addr.sun_path, conf_path(), sizeof(addr.sun_path)-1);
     if (connect(cfg_fd, (struct sockaddr*)&addr, sizeof(addr)) != -1) {
         snprintf(config_cmd, sizeof(config_cmd),
                  "SET FREQ=%s SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=AUTO POWER=17",
@@ -219,7 +292,7 @@ static int config_query(const char *cmd, char *out, size_t out_len) {
     if (fd < 0) return -1;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, CONFIG_SOCKET_PATH, sizeof(addr.sun_path)-1);
+    strncpy(addr.sun_path, conf_path(), sizeof(addr.sun_path)-1);
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) { close(fd); return -1; }
     if (send(fd, cmd, strlen(cmd), 0) < 0) { close(fd); return -1; }
     n = recv(fd, out, out_len - 1, 0);
@@ -519,18 +592,44 @@ void *receive_thread(void *arg) {
     return NULL;
 }
 
-int main() {
+/* The data socket: 0, or 1 after printing why (before ncurses starts). */
+int lorachat_connect_data(void)
+{
+    sock_fd = lorachat_connect_path(data_path());
+    if (sock_fd >= 0)
+        return 0;
+    if (g_data_socket_opt)
+        fprintf(stderr, "cannot connect to %s: %s\n", g_data_socket_opt, strerror(errno));
+    else
+        printf("Socket Fehler!\n");
+    return 1;
+}
+
+/* A --conf-socket path is checked once at start (the default is not: CONF
+ * opens stay per command, as before). */
+int lorachat_check_conf(void)
+{
+    if (!g_conf_socket_opt)
+        return 0;
+    int fd = lorachat_connect_path(g_conf_socket_opt);
+    if (fd < 0) {
+        fprintf(stderr, "cannot connect to %s: %s\n", g_conf_socket_opt, strerror(errno));
+        return 1;
+    }
+    close(fd);
+    return 0;
+}
+
+#ifndef LORACHAT_NO_MAIN
+int main(int argc, char **argv) {
+    int pa = lorachat_parse_args(argc, argv);
+    if (pa == 2) return 0;
+    if (pa == 1) return 1;
     load_config();
     load_chat_history();
 
-    struct sockaddr_un addr;
-    sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path)-1);
-    if (connect(sock_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-        printf("Socket Fehler!\n"); return 1;
-    }
+    if (lorachat_connect_data() != 0) return 1;
+    if (lorachat_check_conf() != 0) return 1;
     initscr(); start_color(); cbreak(); noecho(); curs_set(0);
     init_pair(1, COLOR_WHITE,  COLOR_BLUE);
     init_pair(2, COLOR_CYAN,   COLOR_BLACK);
@@ -564,3 +663,4 @@ int main() {
     }
     endwin(); return 0;
 }
+#endif /* LORACHAT_NO_MAIN */
