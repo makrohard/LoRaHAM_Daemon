@@ -240,6 +240,13 @@ static bool wait_log(const std::string &log, const std::string &part, int ms)
     return false;
 }
 
+/* Releases a step the fake holds (scandelay, opendelay, binddelay): the
+ * fake waits from its marker until this removal, so the bus change made
+ * before it always lands inside the step. */
+static void release(const char *ctl) { unlink((g_fake + "/" + ctl).c_str()); }
+
+static bool held_until_released(void) { return !log_has(g_fake + "/log", " holdtimeout "); }
+
 /* Framed TX: one TX_PACKET; TX_RESULT frames counted. */
 static void framed_tx(int fd, const char *payload)
 {
@@ -498,6 +505,7 @@ static void scenario_io_fault(void)
     pid = start(mesh({}), log);
     expect("r19 seam: the bind is paused (marker)", wait_log(g_fake + "/log", " bindwait", 5000));
     write_text(g_fake + "/overflow", "1\n");        /* events lost during the bind */
+    release("binddelay");
     expect("r19 seam: then READY", wait_status("loraconf868.sock", "RADIO=READY", 8000));
     int opens = 0;
     for (const Ev &e : events_of(pid))
@@ -505,6 +513,7 @@ static void scenario_io_fault(void)
             opens++;
     expect("r19 seam: lost events during the bind: not committed (closed, opened again)", opens >= 2 &&
            has_event(pid, "close") && has_event(pid, "overflow"));
+    expect("r19 seam: the bind held until released (no watchdog)", held_until_released());
     term(pid);
 }
 
@@ -712,9 +721,11 @@ static void scenario_start_arrival(void)
     pid_t pid = start(mesh({ "--usb-serial", "SERIAL01" }), log);
     expect("B1 start: the first scan step is paused (marker)", wait_log(g_fake + "/log", " scanwait", 5000));
     bus("1-2 SERIAL01 1\n1-3 SERIAL01 1\n");        /* a duplicate arrives during the start selection */
+    release("scandelay");
     int rc = wait_exit(pid, 8000);
     expect("B1 start: a duplicate serial arriving during the start selection: exit 4", rc == 4);
     expect("B1 start: ... refused not unique", log_has(log, "[CH341] refused: serial SERIAL01 is not unique"));
+    expect("B1 start: the scan step held until released (no watchdog)", held_until_released());
     if (rc == -2)
         stop(pid);
 
@@ -727,10 +738,12 @@ static void scenario_start_arrival(void)
     pid = start(mesh({ "--usb-serial", "SERIAL01" }), log);
     expect("r10 start: the pine64 open is paused after its claim (marker)", wait_log(g_fake + "/log", " openwait", 5000));
     bus("1-2 SERIAL01 1\n1-3 SERIAL01 1\n");        /* a duplicate arrives during pinedio_init */
+    release("opendelay");
     rc = wait_exit(pid, 8000);
     expect("r10 start: a duplicate serial arriving during the open: exit 4 (a start refusal: never READY)", rc == 4);
     expect("r10 start: ... refused not unique", log_has(log, "[CH341] refused: serial SERIAL01 is not unique"));
     expect("r10 start: ... the stick opened during the window closed again", has_event(pid, "close"));
+    expect("r10 start: the open held until released (no watchdog)", held_until_released());
     if (rc == -2)
         stop(pid);
 
@@ -744,10 +757,12 @@ static void scenario_start_arrival(void)
     pid = start(mesh({ "--usb-serial", "SERIAL01" }), log);
     expect("r12 start: the first scan step is paused (marker)", wait_log(g_fake + "/log", " scanwait", 5000));
     bus("1-2 SERIAL01 1\n");                        /* the duplicate on 1-3 is unplugged */
+    release("scandelay");
     expect("r12 start: a duplicate leaving during the start selection: READY on the remaining stick",
            wait_status("loraconf868.sock", "RADIO=READY", 8000) &&
            status("loraconf868.sock").find("BOUND=serial:SERIAL01") != std::string::npos);
     expect("r12 start: ... no refusal", !log_has(log, "refused"));
+    expect("r12 start: the scan step held until released (no watchdog)", held_until_released());
     term(pid);
 
     /* r13 (core r9 B1): a duplicate arriving during the bind's own device-list
@@ -759,9 +774,11 @@ static void scenario_start_arrival(void)
     pid = start(mesh({ "--usb-serial", "SERIAL01" }), log);
     expect("r13 start: the bind is paused (marker)", wait_log(g_fake + "/log", " bindwait", 5000));
     bus("1-2 SERIAL01 1\n1-3 SERIAL01 1\n");        /* a duplicate arrives during the bind */
+    release("binddelay");
     rc = wait_exit(pid, 8000);
     expect("r13 start: a duplicate arriving during the bind: exit 4 not unique (never READY)", rc == 4 &&
            log_has(log, "[CH341] refused: serial SERIAL01 is not unique"));
+    expect("r13 start: the bind held until released (no watchdog)", held_until_released());
     if (rc == -2)
         stop(pid);
 }

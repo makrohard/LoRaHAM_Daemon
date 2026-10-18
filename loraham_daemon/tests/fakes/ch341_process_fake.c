@@ -17,11 +17,14 @@
  * the pid. $DIR/nohotplug makes mon_open fail. $DIR/fdmode: "pipe" = one
  * readable pipe fd for the main loop (drained by dispatch); "fail" = the pipe
  * replaced by a new readable one at the same fd number and mon_fds() -1.
- * $DIR/scandelay: the next scan step logs "scanwait" and pauses 1.5 s (once).
+ * $DIR/scandelay: the next scan step logs "scanwait" and is held there.
  * $DIR/opendelay: the next pine64 open, after its claim, logs "openwait" and
- * pauses 1.5 s (once): a blocking pinedio_init.
- * $DIR/binddelay: the next bind logs "bindwait" and pauses 1.5 s (once): the
- * bind's own device-list read.
+ * is held there: a blocking pinedio_init.
+ * $DIR/binddelay: the next bind logs "bindwait" and is held there: the bind's
+ * own device-list read.
+ * Held = entered/release: the step logs its marker, then waits until the test
+ * removes the control file (the release); the test changes the bus before it
+ * releases. 20 s is only a watchdog: then "holdtimeout <file>" is logged.
  * $DIR/overflow: the next dispatch reports lost events (once), as the real
  * monitor does on a queue overflow: one arrival, and "uncertain" (2) for the
  * bound stick.
@@ -176,6 +179,21 @@ static int claim(const char *port)
 static int file_exists(const char *name);
 static void unlink_ctl(const char *name);
 
+/* The entered/release handshake: the marker says the step is entered; the
+ * step stays until the test removes ctl. No timing window decides a result. */
+static void hold(const char *ctl, const char *marker, const char *arg)
+{
+    logline(marker, arg);
+    for (int i = 0; i < 2000 && file_exists(ctl); i++) {
+        struct timespec ts = { 0, 10000000L };
+        nanosleep(&ts, NULL);
+    }
+    if (file_exists(ctl)) {
+        logline("holdtimeout %s", ctl);
+        unlink_ctl(ctl);
+    }
+}
+
 loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial)
 {
     stick bus[MAXS];
@@ -196,12 +214,8 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
         d->regs = calloc(1, 0x10000);
         memcpy(&d->regs[0x0320], bus[i].badchip ? "XX0000 V0D 0D00" : "SX1261 V2D 2D02", 16);
         logline("open %s", bus[i].port);
-        if (file_exists("opendelay")) {             /* the test changes the bus during this open */
-            logline("openwait %s", bus[i].port);
-            struct timespec ts = { 1, 500000000L };
-            nanosleep(&ts, NULL);
-            unlink_ctl("opendelay");
-        }
+        if (file_exists("opendelay"))               /* the test changes the bus during this open */
+            hold("opendelay", "openwait %s", bus[i].port);
         return d;
     }
     logline("open-none %s", serial ? serial : "-");
@@ -430,12 +444,8 @@ int loraham_ch341_mon_take_left(loraham_ch341_mon *m)
 
 int loraham_ch341_mon_bind(loraham_ch341_mon *m, loraham_ch341 *d)
 {
-    if (file_exists("binddelay")) {                 /* the test changes the bus during the bind's list read */
-        logline("bindwait %s", d->s.port);
-        struct timespec ts = { 1, 500000000L };
-        nanosleep(&ts, NULL);
-        unlink_ctl("binddelay");
-    }
+    if (file_exists("binddelay"))                   /* the test changes the bus during the bind's list read */
+        hold("binddelay", "bindwait %s", d->s.port);
     m->bound = 1;
     snprintf(m->bound_port, sizeof(m->bound_port), "%s", d->s.port);
     m->bound_gen = d->s.gen;
@@ -463,12 +473,8 @@ int loraham_ch341_mon_scan_begin(loraham_ch341_mon *m)
 
 void loraham_ch341_mon_scan_step(loraham_ch341_mon *m, int i, loraham_ch341_scan_item *o)
 {
-    if (file_exists("scandelay")) {                 /* the test changes the bus during this step */
-        logline("scanwait %s", "-");
-        struct timespec ts = { 1, 500000000L };
-        nanosleep(&ts, NULL);
-        unlink_ctl("scandelay");
-    }
+    if (file_exists("scandelay"))                   /* the test changes the bus during this step */
+        hold("scandelay", "scanwait %s", "-");
     /* libusb_open + libusb_close on the monitor context: two pollfd
      * notifications, its fds otherwise unchanged. */
     if (!m->failed_mode)
