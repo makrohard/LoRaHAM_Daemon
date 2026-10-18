@@ -81,12 +81,12 @@ static const char *STUB_H =
 
 /* The stub: STUB_INIT_FAIL makes init fail, STUB_FAIL_PIN=<n> makes the
  * pin-mode call for pin n fail. It records every pin mode, counts deinit, and
- * counts every pinedio_digital_write() call with its pin and level: the one
- * init makes itself and any the adapter makes. */
+ * counts every pinedio_digital_write() call with its pin and level (the one
+ * init makes itself and any the adapter makes) and every pin-mode call. */
 static const char *STUB_C =
     "#include \"libpinedio-usb.h\"\n#include <stdlib.h>\n"
     "int g_inits, g_deinits, g_mode[8] = {-1,-1,-1,-1,-1,-1,-1,-1};\n"
-    "int g_pin_writes, g_spi, g_last_mode = -1, g_last_state = -1, g_write_pin = -1, g_write_level = -1;\n"
+    "int g_pin_writes, g_spi, g_last_mode = -1, g_last_state = -1, g_write_pin = -1, g_write_level = -1, g_pin_modes;\n"
     "uint16_t pinedio_d_mode, pinedio_d_state;\n"
     "static libusb_device_handle *g_h = (libusb_device_handle *)&g_inits;\n"
     "int32_t pinedio_digital_write(struct pinedio_inst *i, uint32_t p, bool a) { (void)i; g_pin_writes++;"
@@ -106,7 +106,7 @@ static const char *STUB_C =
     " g_last_mode = pinedio_d_mode; g_last_state = pinedio_d_state; return 0; }\n"
     "int32_t pinedio_set_option(struct pinedio_inst *i, enum pinedio_option o, uint32_t v)"
     " { i->options[o] = v; return 0; }\n"
-    "int32_t pinedio_set_pin_mode(struct pinedio_inst *i, uint32_t p, uint32_t m) { (void)i;"
+    "int32_t pinedio_set_pin_mode(struct pinedio_inst *i, uint32_t p, uint32_t m) { (void)i; g_pin_modes++;"
     " const char *f = getenv(\"STUB_FAIL_PIN\"); if (f && (uint32_t)atoi(f) == p) return -1;"
     " if (p < 8) g_mode[p] = (int)m;"
     " if (m == 1) pinedio_d_mode |= (uint16_t)(1u << p); else pinedio_d_mode &= (uint16_t)~(1u << p);"  /* :331-335 */
@@ -125,7 +125,8 @@ static const char *STUB_C =
 static const char *DRIVER_C =
     "#include <stdio.h>\n#include <stdlib.h>\n#include \"ch341_adapter.h\"\n"
     "extern int g_inits, g_deinits, g_mode[8], stub_default_refs;\n"
-    "extern int g_pin_writes, g_spi, g_last_mode, g_last_state, g_write_pin, g_write_level;\n"
+    "extern int g_pin_writes, g_spi, g_last_mode, g_last_state, g_write_pin, g_write_level, g_pin_modes;\n"
+    "#include <stdint.h>\nextern uint16_t pinedio_d_mode, pinedio_d_state;\n"
     "struct pinedio_inst;\n"
     "int main(void) {\n"
     "  if (getenv(\"DRIVER_WALK\")) {\n"
@@ -134,10 +135,12 @@ static const char *DRIVER_C =
     "      for (int k = 0; k < 3; k++) { loraham_ch341_seed_idle(); h[k] = loraham_ch341_open(0x1A86, 0x5512, NULL); }\n"
     "      printf(\"cycle=%d held=%d writes=%d mode=%d state=%d spi=%d refs-held=%d\\n\", c,"
     " (h[0] && h[1] && h[2]) ? 3 : 0, g_pin_writes - w0, g_last_mode, g_last_state, g_spi, stub_default_refs);\n"
-    "      int w1 = g_pin_writes;\n"
+    "      int w1 = g_pin_writes, pm1 = g_pin_modes; uint16_t dm1 = pinedio_d_mode, ds1 = pinedio_d_state;\n"
     "      for (int k = 0; k < 3; k++) loraham_ch341_close(h[k]);\n"
     "      printf(\"cycle=%d released writes-on-release=%d refs=%d\\n\", c, g_pin_writes - w1, stub_default_refs);\n"
     "      if (g_pin_writes != w1) printf(\"cycle=%d release wrote pin %d level %d\\n\", c, g_write_pin, g_write_level);\n"
+    "      printf(\"cycle=%d release pins mode-same=%d state-same=%d pinmodes-on-release=%d\\n\", c,"
+    " pinedio_d_mode == dm1, pinedio_d_state == ds1, g_pin_modes - pm1);\n"
     "    }\n"
     "    return 0;\n"
     "  }\n"
@@ -242,25 +245,41 @@ int main(void)
            fw.find("cycle=0 released writes-on-release=0 refs=0") != std::string::npos &&
            fw.find("cycle=1 released writes-on-release=0 refs=0") != std::string::npos &&
            fw.find("cycle=2 released writes-on-release=0 refs=0") != std::string::npos);
+    expect("walk: release leaves the pin modes, the pin state and the pin-mode calls as they were",
+           fw.find("cycle=0 release pins mode-same=1 state-same=1 pinmodes-on-release=0") != std::string::npos &&
+           fw.find("cycle=1 release pins mode-same=1 state-same=1 pinmodes-on-release=0") != std::string::npos &&
+           fw.find("cycle=2 release pins mode-same=1 state-same=1 pinmodes-on-release=0") != std::string::npos);
 
-    /* The instrument sees a write on release: the same walk against a copy
-     * of the adapter whose close writes one pin before deinit must report it. */
+    /* The instrument sees every way a release could touch the pins: the same
+     * walk against copies of the adapter whose close, before deinit, writes
+     * one pin, sets one pin mode, or sets a pin state bit directly. */
     std::string src = read_file(src_dir + "/ch341_adapter.c");
     const std::string at = "    pinedio_deinit(&dev->inst);\n    libusb_exit(NULL);\n    free(dev);\n";
-    size_t pos = src.find(at);
-    expect("mutation: the adapter's close found", pos != std::string::npos);
-    if (pos != std::string::npos) {
-        src.insert(pos, "    pinedio_digital_write(&dev->inst, 0, true);\n");
-        write_file(g_tmp + "/adapter_mut.c", src.c_str());
+    expect("mutation: the adapter's close found", src.find(at) != std::string::npos);
+    struct Mut { const char *name, *line, *seen1, *seen2; };
+    const Mut muts[] = {
+        { "a pin write on close", "    pinedio_digital_write(&dev->inst, 0, true);\n",
+          "cycle=0 released writes-on-release=3 ", "cycle=0 release wrote pin 0 level 1" },
+        { "a pin mode on close", "    pinedio_set_pin_mode(&dev->inst, 3, 0);\n",
+          "cycle=0 release pins mode-same=0 state-same=1 pinmodes-on-release=3", "" },
+        { "a direct pin state write on close", "    { extern uint16_t pinedio_d_state; pinedio_d_state |= 1u; }\n",
+          "cycle=0 release pins mode-same=1 state-same=0 pinmodes-on-release=0", "" },
+    };
+    for (const Mut &m : muts) {
+        std::string ms = src;
+        size_t pos = ms.find(at);
+        if (pos == std::string::npos)
+            break;
+        ms.insert(pos, m.line);
+        write_file(g_tmp + "/adapter_mut.c", ms.c_str());
         std::string ccm = "cc -std=gnu11 -Wall -Wextra -I'" + g_tmp + "' -I'" + stub_dir + "' -I'" + src_dir +
                           "' -DLORAHAM_CH341_PIN='\"stub\"' -o '" + g_tmp + "/driver_mut' '" + g_tmp +
                           "/driver.c' '" + g_tmp + "/stub.c' '" + stub_dir + "/libusb_stub.c' '" + g_tmp +
                           "/adapter_mut.c'";
-        expect("mutation: the one-write-on-close adapter builds", system(ccm.c_str()) == 0);
+        expect((std::string("mutation builds: ") + m.name).c_str(), system(ccm.c_str()) == 0);
         std::string fm = run_driver("DRIVER_WALK=1", "driver_mut");
-        expect("mutation: a pin write on close is seen (writes-on-release=3, pin 0 level 1)",
-               fm.find("cycle=0 released writes-on-release=3 ") != std::string::npos &&
-               fm.find("cycle=0 release wrote pin 0 level 1") != std::string::npos);
+        expect((std::string("mutation seen: ") + m.name).c_str(),
+               fm.find(m.seen1) != std::string::npos && fm.find(m.seen2) != std::string::npos);
     }
 
     std::string fp = run_driver("STUB_FAIL_PIN=3");
