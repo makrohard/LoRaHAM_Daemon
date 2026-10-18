@@ -52,8 +52,12 @@ static int instance_lock_claim(const char *band, int *out_fd)
         close(fd);
 
         if (err == EWOULDBLOCK) {
-            printf("[LOCK] band %s is already run by another instance "
-                   "- exiting.\n", band);
+            if (daemon_instance_id())
+                printf("[LOCK] instance %s is already run by another process "
+                       "- exiting.\n", band);
+            else
+                printf("[LOCK] band %s is already run by another instance "
+                       "- exiting.\n", band);
             return LORAHAM_EXIT_INSTANCE_BUSY;
         }
 
@@ -70,8 +74,10 @@ static int instance_lock_claim(const char *band, int *out_fd)
 
 int daemon_instance_lock_acquire(void)
 {
-    /* Exactly one band per process; claim only its lock. */
-    return instance_lock_claim(daemon_band()->tag, &g_lock_fd);
+    /* Exactly one band per process; claim only its lock, keyed by --id when
+     * given (instance-<id>.lock), else by the band as before. */
+    const char *id = daemon_instance_id();
+    return instance_lock_claim(id ? id : daemon_band()->tag, &g_lock_fd);
 }
 
 void daemon_instance_lock_release(void)

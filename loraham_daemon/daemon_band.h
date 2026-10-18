@@ -49,4 +49,34 @@ void daemon_band_resolve(RadioBand_t band);
  * fails closed (abort) when read before resolution. */
 const DaemonBandDescriptor *daemon_band(void);
 
+/* --- Instance id (--id) ----------------------------------------------------- */
+/*
+ * Optional, one per process: 1-16 characters of a-z 0-9 -, the first a
+ * letter. It changes NAMES only: the three sockets become lora-<id>.sock,
+ * loraf-<id>.sock and loraconf-<id>.sock, the instance lock
+ * instance-<id>.lock and the -d log /tmp/lora_daemon-<id>.log. Without it
+ * every name is exactly the band's. Set before daemon_band_resolve().
+ */
+bool daemon_instance_id_valid(const char *id);
+bool daemon_set_instance_id(const char *id);
+/* The id, or NULL without --id. */
+const char *daemon_instance_id(void);
+/* Tests only. */
+void daemon_instance_id_reset(void);
+
+/* The -d log path of this process. */
+const char *daemon_band_daemon_log_path(void);
+
+/* A socket path must fit sun_path (108 bytes with the NUL). */
+#define DAEMON_SOCKET_PATH_MAX 107
+
+/* The refusal text for an over-long socket path: the whole path, up to
+ * PATH_MAX, plus the reason (one size for the holder and every caller). */
+#define DAEMON_SOCKET_PATH_ERROR_MAX 4200
+
+/* False when a socket path daemon_band_resolve() was asked to build is longer
+ * than DAEMON_SOCKET_PATH_MAX bytes; `why` then names it. Checked as a whole,
+ * before any copy, so nothing is ever truncated. */
+bool daemon_band_socket_paths_ok(char *why, size_t why_size);
+
 #endif

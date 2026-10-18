@@ -354,6 +354,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
      * From here a GPIO failure is loss of radio I/O integrity, not a
      * configuration problem, and is fatal the restartable way. */
     void gpio_mark_operational() override { _gpioOperational = true; }
+    [[noreturn]] void runtime_fatal(const char *why) override { fatal(why); }
 
   private:
     bool gpio_ready(const char *what) {

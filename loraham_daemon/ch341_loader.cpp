@@ -59,7 +59,23 @@ bool daemon_ch341_load_from(const char *path, const char *expected_pin,
         !resolve(handle, "loraham_ch341_digital_read", &tmp.digital_read, path, why, why_size) ||
         !resolve(handle, "loraham_ch341_attach_interrupt", &tmp.attach_interrupt, path, why, why_size) ||
         !resolve(handle, "loraham_ch341_detach_interrupt", &tmp.detach_interrupt, path, why, why_size) ||
-        !resolve(handle, "loraham_ch341_in_error", &tmp.in_error, path, why, why_size)) {
+        !resolve(handle, "loraham_ch341_in_error", &tmp.in_error, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_open", &tmp.mon_open, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_close", &tmp.mon_close, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_fds", &tmp.mon_fds, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_fd_generation", &tmp.mon_fd_generation, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_dispatch", &tmp.mon_dispatch, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_left_bound", &tmp.mon_left_bound, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_take_arrival", &tmp.mon_take_arrival, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_take_left", &tmp.mon_take_left, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_bind", &tmp.mon_bind, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_unbind", &tmp.mon_unbind, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_present_bound", &tmp.mon_present_bound, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_scan_begin", &tmp.mon_scan_begin, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_scan_step", &tmp.mon_scan_step, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_mon_scan_end", &tmp.mon_scan_end, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_identity", &tmp.identity, path, why, why_size) ||
+        !resolve(handle, "loraham_ch341_seed_idle", &tmp.seed_idle, path, why, why_size)) {
         dlclose(handle);
         return false;
     }

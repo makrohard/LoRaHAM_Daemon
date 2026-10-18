@@ -77,7 +77,7 @@ void config_dispatch_apply_line(const char *line, void *user)
     }
 
     if(config_status_is_get_status(upper_line)) {
-        char status[512];
+        char status[CONFIG_STATUS_LINE_MAX];
 
         config_status_format(status, sizeof(status), ctx->ctrl);
         if(!client_output_queue_append(&ctx->slot->output,

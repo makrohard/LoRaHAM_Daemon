@@ -43,6 +43,9 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_ocp_boot.cpp"
   "$SCRIPT_DIR/daemon_rflog.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
+  "$SCRIPT_DIR/daemon_usb_wait.cpp"
+  "$SCRIPT_DIR/daemon_ch341_runtime.cpp"
+  "$SCRIPT_DIR/daemon_ch341_select.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_gpio_lock.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
@@ -61,6 +64,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_socket_dispatch.cpp"
   "$SCRIPT_DIR/daemon_io_runtime.cpp"
   "$SCRIPT_DIR/config_apply.cpp"
+  "$SCRIPT_DIR/config_replay.cpp"
   "$SCRIPT_DIR/sx127x_driver.cpp"
   "$SCRIPT_DIR/sx1262_driver.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
@@ -350,7 +354,7 @@ build_ch341_lib() {
       "-DLORAHAM_CH341_PIN=\"$measured\"" \
       -I"$pinedio_dir" -I"$SCRIPT_DIR" \
       -o "$tmp_lib" \
-      "$pinedio_dir/libpinedio-usb.c" "$SCRIPT_DIR/ch341_adapter.c" \
+      "$pinedio_dir/libpinedio-usb.c" "$SCRIPT_DIR/ch341_adapter.c" "$SCRIPT_DIR/ch341_monitor.c" \
       "${extra_ldflags[@]}" -lusb-1.0 -pthread; then
     rm -f -- "$tmp_lib"
     echo "ERROR: Meshstick library build failed (needs the libusb-1.0 development headers)." >&2

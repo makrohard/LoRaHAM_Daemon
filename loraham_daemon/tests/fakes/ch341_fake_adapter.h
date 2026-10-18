@@ -28,6 +28,7 @@ struct FakeCh341 {
     int opens = 0;
     int closes = 0;
     bool fail_transceive = false;
+    int transceives = 0;                                   /* calls that reached the device */
     bool in_error = false;
 
     int level[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };   /* last write, -1 = never */
@@ -35,6 +36,7 @@ struct FakeCh341 {
     int writes_low[8] = { 0 };
     int mode[8] = { -1, -1, -1, -1, -1, -1, -1, -1 };
     int read_raw[8] = { 0 };                               /* what digital_read() sees */
+    int spi_at_reset_done = -1;    /* transfers before RESET (D2) first went LOW then HIGH */
 
     uint32_t irq_pin = UINT32_MAX;
     void (*irq_cb)(void) = nullptr;
@@ -73,6 +75,7 @@ static void fake_ch341_close(loraham_ch341 *)
 
 static int fake_ch341_transceive(loraham_ch341 *, const uint8_t *out, uint8_t *in, uint32_t len)
 {
+    g_fake_ch341.transceives++;
     if (g_fake_ch341.fail_transceive)
         return -1;
     g_fake_ch341.model->spiTransfer(const_cast<uint8_t *>(out), len, in);
@@ -90,6 +93,8 @@ static int fake_ch341_digital_write(loraham_ch341 *, uint32_t pin, int level)
 {
     if (pin < 8) {
         g_fake_ch341.level[pin] = level ? 1 : 0;
+        if (pin == 2 && level && g_fake_ch341.writes_low[2] > 0 && g_fake_ch341.spi_at_reset_done < 0)
+            g_fake_ch341.spi_at_reset_done = g_fake_ch341.transceives;
         if (level)
             g_fake_ch341.writes_high[pin]++;
         else
@@ -118,6 +123,19 @@ static int fake_ch341_detach_interrupt(loraham_ch341 *, uint32_t)
 
 static int fake_ch341_in_error(loraham_ch341 *) { return g_fake_ch341.in_error ? 1 : 0; }
 
+/* No monitor in the HAL-level fake: mon_open answers NULL (old behaviour). */
+static loraham_ch341_mon *fake_mon_open(uint16_t, uint16_t) { return nullptr; }
+static void fake_mon_close(loraham_ch341_mon *) { }
+static int fake_mon_fds(loraham_ch341_mon *, loraham_ch341_pollfd *, int) { return 0; }
+static unsigned fake_mon_gen(loraham_ch341_mon *) { return 0; }
+static void fake_mon_dispatch(loraham_ch341_mon *) { }
+static int fake_mon_zero(loraham_ch341_mon *) { return 0; }
+static int fake_mon_bind(loraham_ch341_mon *, loraham_ch341 *) { return -1; }
+static void fake_mon_unbind(loraham_ch341_mon *) { }
+static void fake_mon_step(loraham_ch341_mon *, int, loraham_ch341_scan_item *) { }
+static int fake_identity(loraham_ch341 *, loraham_ch341_scan_item *) { return -1; }
+static void fake_seed_idle(void) { }
+
 static const LorahamCh341Api g_fake_ch341_api = {
     fake_ch341_pin,
     fake_ch341_open,
@@ -129,6 +147,22 @@ static const LorahamCh341Api g_fake_ch341_api = {
     fake_ch341_attach_interrupt,
     fake_ch341_detach_interrupt,
     fake_ch341_in_error,
+    fake_mon_open,
+    fake_mon_close,
+    fake_mon_fds,
+    fake_mon_gen,
+    fake_mon_dispatch,
+    fake_mon_zero,
+    fake_mon_zero,
+    fake_mon_zero,
+    fake_mon_bind,
+    fake_mon_unbind,
+    fake_mon_zero,
+    fake_mon_zero,
+    fake_mon_step,
+    fake_mon_unbind,
+    fake_identity,
+    fake_seed_idle,
 };
 
 #endif

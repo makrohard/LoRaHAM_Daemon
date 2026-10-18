@@ -96,6 +96,12 @@ collision at a socket pathname.
 | `CONF433_SOCKET` | `/run/loraham/loraconf433.sock` | CONF commands |
 | `CONF868_SOCKET` | `/run/loraham/loraconf868.sock` | CONF commands |
 
+With `--id ID` the three sockets are `lora-ID.sock` (raw DATA), `loraf-ID.sock` (framed DATA) and
+`loraconf-ID.sock` (CONF) in the same directory, and the instance lock is `instance-ID.lock`, so two
+daemons may serve the same band (for example a Pi board and a Meshstick, both 868). Every socket path
+must fit 107 bytes. Example unit line: `ExecStart=/opt/loraham/loraham_daemon --radio 868 --hw
+meshstick-1262 --id ms1 --usb-serial TESTSN01`.
+
 The wire formats are documented in [DATA protocol](data-protocol.md) and
 [CONF protocol](conf-protocol.md).
 
@@ -193,8 +199,8 @@ The unit sets `Restart=on-failure`, `RestartSec=2` and `RestartPreventExitStatus
 |---:|---|---|---|
 | `1` | — | genuine radio hardware failure (chip not found, transient init error) | yes |
 | `3` | `LORAHAM_EXIT_INSTANCE_BUSY` | same-band instance already running | no |
-| `4` | `LORAHAM_EXIT_LOCK_ERROR` | startup prerequisite unavailable — lock infrastructure **or** GPIO — fail closed | no |
-| `5` | `LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR` | runtime radio-I/O fatal after operation began: SPI, the bus lock, or a GPIO call once the radio was live | yes |
+| `4` | `LORAHAM_EXIT_LOCK_ERROR` | startup prerequisite unavailable — fail closed: lock infrastructure, GPIO, the Meshstick (absent, BUSY, no permission, not unique, no library) or a socket path over 107 bytes | no |
+| `5` | `LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR` | runtime radio-I/O fatal after operation began: SPI, the bus lock, or a GPIO call once the radio was live; on the Meshstick an I/O error with the stick still present, or a failed set-up after a replug (an unplugged stick is waited for, not an exit) | yes |
 
 Code `4` covers both startup prerequisites, because neither is fixed by trying again: an unusable
 lock directory or lock file, and a GPIO open or claim that fails during startup — `gpiochip0` that

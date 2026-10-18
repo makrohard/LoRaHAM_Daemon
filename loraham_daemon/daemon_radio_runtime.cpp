@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "daemon_band.h"
+#include "daemon_ch341_runtime.h"
 #include "daemon_gpio_lock.h"
 #include "daemon_log.h"
 #include "hardware_profile.h"
@@ -40,6 +41,7 @@ void daemon_radio_controller_init(void)
     radio_controller.chip_family = daemon_hw_profile.family;
     radio_controller.high_power_enabled = daemon_high_power_enabled();
     radio_controller.ocp_ma = daemon_ocp_effective_ma(daemon_hw_profile.family);
+    radio_controller.instance_id = daemon_instance_id();
 }
 
 /* --- Radio controller shutdown ------------------------------------------ */
@@ -94,6 +96,7 @@ void daemon_radio_shutdown_cleanup(void)
 
     daemon_debug_ctx("RADIO", "shutdown %s", daemon_band()->tag);
     radio_controller_shutdown(&radio_controller);
+    daemon_ch341_shutdown();
 
     daemon_led_shutdown();
     daemon_gpio_locks_release();

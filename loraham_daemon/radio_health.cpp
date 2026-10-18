@@ -11,6 +11,8 @@ const char *radio_health_name(RadioHealth health)
             return "READY";
         case RADIO_HEALTH_FAILED:
             return "FAILED";
+        case RADIO_HEALTH_UNPLUGGED:
+            return "UNPLUGGED";
     }
 
     return "UNKNOWN";

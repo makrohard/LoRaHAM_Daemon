@@ -31,6 +31,13 @@
 #define CONF868_SOCKET_NAME "loraconf868.sock"
 #define CONF433_SOCKET_NAME "loraconf433.sock"
 
+/* With --id <id> (daemon_band.h) the names are keyed by the id instead of the
+ * band. The prefixes lora-, loraf-, loraconf- differ at character 5 and a band
+ * name has no hyphen, so no two names of different kinds or ids are equal. */
+#define DATA_ID_SOCKET_FMT        "lora-%s.sock"
+#define DATA_ID_FRAMED_SOCKET_FMT "loraf-%s.sock"
+#define CONF_ID_SOCKET_FMT        "loraconf-%s.sock"
+
 #define DATA868_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA868_SOCKET_NAME
 #define DATA433_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA433_SOCKET_NAME
 #define DATA868_FRAMED_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA868_FRAMED_SOCKET_NAME

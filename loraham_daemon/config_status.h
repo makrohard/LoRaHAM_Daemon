@@ -106,6 +106,10 @@ const char *config_status_txq_last_name(const RadioController *ctrl);
 
 unsigned config_status_txq_last_seq(const RadioController *ctrl);
 
+/* The GET STATUS line, newline included, always fits this many bytes (with
+ * its NUL); LHPC reads at most 1024 bytes of a status line. */
+#define CONFIG_STATUS_LINE_MAX 1024
+
 void config_status_format(char *buf,
                                         size_t buf_size,
                                         const RadioController *ctrl);

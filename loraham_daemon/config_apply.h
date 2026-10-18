@@ -6,6 +6,7 @@
 #include <atomic>
 #include <stdio.h>
 #include "radio_driver.h"
+#include "config_replay.h"
 
 /* --- CONFIG apply result ------------------------------------ */
 /*
@@ -54,6 +55,8 @@ static inline void config_apply_print_prefix(const char *tag, bool *printed)
 
 /* Reset the effective-config shadow to lazy band defaults (tests / re-init). */
 void config_apply_effective_reset(void);
+
+/* The replay record: config_replay.h. */
 
 /* high_power: the process's immutable --high-power permission, supplied by the
  * caller at this boundary (daemon_config_runtime.cpp passes the boot flag) and

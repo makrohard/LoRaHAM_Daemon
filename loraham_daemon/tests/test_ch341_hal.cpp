@@ -30,7 +30,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 /* ---- assert helpers ------------------------------------------------------ */
 
@@ -105,6 +107,11 @@ static void test_radio_over_ch341(void)
         expect_int("CS (D0) driven, ends HIGH", g_fake_ch341.level[PIN_CS], 1);
         expect_int("RESET (D2) pulsed LOW then HIGH",
                    g_fake_ch341.writes_low[PIN_RST] > 0 && g_fake_ch341.level[PIN_RST] == 1, 1);
+        /* T15b handoff: whatever a Rule B walk left on the pins (RESET high,
+         * the D0 state bit low, no command), the owner's open + begin()
+         * resets the chip before its first SPI command. */
+        expect_int("handoff: the owner's begin() resets the chip before any SPI transfer",
+                   g_fake_ch341.spi_at_reset_done, 0);
 
         drv.setPacketReceivedAction(rx_cb);
         expect_int("RX interrupt on D6", (long)g_fake_ch341.irq_pin, (long)PIN_DIO1);
@@ -284,12 +291,95 @@ static void inject_lost_device(Ch341Hal *hal)
     hal->check_runtime();
 }
 
+/* ---- Unplug-wait: a loss latches instead of exiting --------------------- */
+
+static void setFlagStub(void) { }
+
+static int g_loss_calls = 0;
+static int g_stderr_pipe = -1;          /* read end; -1 = not watching */
+static int g_logged_before_loss = -1;   /* bytes already written to stderr when on_loss ran */
+static void on_loss_cb(void)
+{
+    g_loss_calls++;
+    if (g_stderr_pipe >= 0) {
+        int n = 0;
+        ioctl(g_stderr_pipe, FIONREAD, &n);
+        g_logged_before_loss = n;
+    }
+}
+
+static void test_loss_wait(const char *label, bool by_transfer)
+{
+    Sx126xRegisterModel model;
+    fake_ch341_reset(&model);
+    g_loss_calls = 0;
+    Ch341Hal hal(&g_fake_ch341_api, 0x1A86, 0x5512);
+    hal.set_loss_wait(on_loss_cb);
+    hal.attachInterrupt(6, setFlagStub, 1);   /* DIO1, as RadioLib attaches it */
+    hal.gpio_mark_operational();
+
+    uint8_t out[3] = { 0xC0, 0, 0 }, in[3] = { 1, 1, 1 };
+    /* W12 B2: stderr goes to a pipe; on_loss must run before anything is
+     * written to it (admission before the log). */
+    int pfd[2];
+    int saved = dup(2);
+    if (pipe(pfd) == 0) {
+        fflush(stderr);
+        dup2(pfd[1], 2);
+        g_stderr_pipe = pfd[0];
+    }
+    if (by_transfer) {
+        g_fake_ch341.fail_transceive = true;
+        hal.spiTransfer(out, sizeof(out), in);
+    } else {
+        g_fake_ch341.in_error = true;
+        hal.check_runtime();
+    }
+    fflush(stderr);
+    dup2(saved, 2);
+    close(saved);
+    if (g_stderr_pipe >= 0) {
+        int n = 0;
+        ioctl(g_stderr_pipe, FIONREAD, &n);
+        std::string t2 = std::string(label) + ": on_loss ran before the log line was written";
+        expect_int(t2.c_str(), g_logged_before_loss == 0 && n > 0, 1);
+        close(pfd[0]);
+        close(pfd[1]);
+        g_stderr_pipe = -1;
+    }
+    std::string t = std::string(label) + ": the loss is latched, no exit";
+    expect_int(t.c_str(), hal.loss_latched() ? 1 : 0, 1);
+    t = std::string(label) + ": on_loss ran once";
+    expect_int(t.c_str(), g_loss_calls, 1);
+
+    int transceives = g_fake_ch341.transceives;
+    int writes = g_fake_ch341.writes_high[0] + g_fake_ch341.writes_low[0];
+    hal.spiTransfer(out, sizeof(out), in);
+    hal.digitalWrite(PIN_CS, 1);
+    hal.check_runtime();
+    t = std::string(label) + ": later calls never reach the device";
+    expect_int(t.c_str(), g_fake_ch341.transceives == transceives &&
+                          g_fake_ch341.writes_high[0] + g_fake_ch341.writes_low[0] == writes, 1);
+    t = std::string(label) + ": a refused transfer reads zeros";
+    expect_int(t.c_str(), in[0] == 0 && in[1] == 0 && in[2] == 0, 1);
+    t = std::string(label) + ": on_loss still once";
+    expect_int(t.c_str(), g_loss_calls, 1);
+    /* RadioLib's CAD wait on DIO1 has no timeout: after the loss the
+     * attached line reads HIGH so it ends; any other pin (BUSY) LOW. */
+    t = std::string(label) + ": after the loss the IRQ line reads HIGH, BUSY LOW, no device access";
+    int reads = g_fake_ch341.transceives;
+    expect_int(t.c_str(), hal.digitalRead(6) == 1 && hal.digitalRead(4) == 0 &&
+                          g_fake_ch341.transceives == reads, 1);
+}
+
 int main(void)
 {
     test_radio_over_ch341();
     test_startup_failures_latch();
     run_operational_child("operational, SPI transfer fails", inject_failed_transfer);
     run_operational_child("operational, device lost (poll thread)", inject_lost_device);
+    test_loss_wait("unplug-wait, SPI transfer fails", true);
+    test_loss_wait("unplug-wait, device lost (poll thread)", false);
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

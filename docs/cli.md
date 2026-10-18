@@ -47,6 +47,8 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `--cad-rssi DBM` | required | integer dBm, `-130`..`0` | `-90` |
 | `--high-power` | none | — | off |
 | `--ocp MA` | required | integer mA the chip can represent (see below) | SX127x `100`, SX1262 `140` |
+| `--id ID` | required | 1–16 of `a-z 0-9 -`, first a letter | none (band names) |
+| `--usb-serial S` | required | 1–8 printable characters, no space; `meshstick-1262` only | none (the only stick, or the one stick without a serial) |
 | `-h`, `--help` | none | — | — |
 
 `-v` / `--version` prints the version and exits with success. `-h` / `--help` prints the usage
@@ -114,6 +116,8 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--cad-rssi DBM` | the CAD busy RSSI threshold | keeps the built-in `-90` dBm when absent |
 | `--high-power` | permission for `POWER=20` on an SX127x board | off when absent; accepted and inert on an SX1262 |
 | `--ocp MA` | the PA over-current limit, at every power level | SX127x 100 mA, SX1262 140 mA when absent |
+| `--id ID` | the names of this process's sockets, lock and `-d` log: `lora-ID.sock`, `loraf-ID.sock`, `loraconf-ID.sock`, `instance-ID.lock`, `/tmp/lora_daemon-ID.log`; `ID=` in `GET STATUS` | the band's names when absent |
+| `--usb-serial S` | which Meshstick to open when two or more are plugged in (pine64 compares the first 8 characters); `BOUND=` in `GET STATUS` names the stick opened | the only stick, or the one stick without a serial |
 
 `--cad-monitor` exists so that a `CONF` client which cannot send `SET CADMONITOR=1` still gets the
 `CAD=0`/`CAD=1` stream. It takes a required argument: a bare `--cad-monitor` with no value is a
@@ -185,9 +189,21 @@ the chip decides. The parameter names and their runtime ranges are in
 
 Every rejected option prints a reason, then the usage text, then exits non-zero.
 
-`--hw meshstick-1262` refuses to start without its library. It prints
-`[CH341] refused: <reason> (exit 4).` without the usage text, and exits `4`. The reasons and the
-library are described in [hardware.md](hardware.md#the-meshstick-library-optional).
+`--hw meshstick-1262` refuses to start without its library, or when it cannot open the stick it
+should (no stick, a serial not attached or not unique, two sticks without a serial, no permission,
+sticks still arriving 2 s into the selection).
+It prints `[CH341] refused: <reason> (exit 4).` without the usage text, and exits `4`. The reasons
+are described in [hardware.md](hardware.md#elecrow-meshstick-usb).
+
+**Contract:** when the stick is plugged in but pine64 could not take it (another program holds it, a
+kernel driver could not be detached, or its serial could not be read), the reason starts with
+`BUSY:` — `[CH341] refused: BUSY: stick <serial or port> present but pine64 could not select or open
+it (…) (exit 4).` (after the daemon's time stamp when its output is stamped). No other reason
+starts with `BUSY:`; a controller may retry exactly this case by matching `[CH341] refused: BUSY:`
+within the line.
+
+A socket path longer than 107 bytes (the directory plus `loraconf-<id>.sock`) is refused before
+anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 107): <path> (exit 4).`
 
 | Cause | Message |
 | --- | --- |
@@ -199,6 +215,8 @@ library are described in [hardware.md](hardware.md#the-meshstick-library-optiona
 | `--high-power` with a value | getopt's `option '--high-power' doesn't allow an argument`, then the usage text |
 | `--ocp` not a number | `invalid --ocp (an integer in mA): <value>` |
 | `--ocp` the chip cannot represent | `invalid --ocp for <family>: <n> mA (valid: <set>)` |
+| Bad `--id` | `invalid --id (1-16 of a-z 0-9 -, starting with a letter): <value>` |
+| Bad `--usb-serial`, or `--usb-serial` without `meshstick-1262` | `invalid --usb-serial (1-8 printable characters, no space; pine64 compares the first 8): <value>` / `--usb-serial is only for --hw meshstick-1262` |
 | Any non-option argument | `Unbekanntes Argument: <arg>` |
 | `--radio` missing | `missing option: --radio (433 or 868)` |
 

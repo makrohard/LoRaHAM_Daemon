@@ -6,7 +6,10 @@
 typedef enum {
     RADIO_HEALTH_UNINITIALIZED = 0,
     RADIO_HEALTH_READY,
-    RADIO_HEALTH_FAILED
+    RADIO_HEALTH_FAILED,
+    /* Meshstick only: the USB device was lost after READY (being classified,
+     * or waiting for the stick to return). Not ready. */
+    RADIO_HEALTH_UNPLUGGED
 } RadioHealth;
 
 const char *radio_health_name(RadioHealth health);

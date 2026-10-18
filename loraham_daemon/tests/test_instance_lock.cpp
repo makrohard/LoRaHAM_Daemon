@@ -203,6 +203,42 @@ static void test_inode_stability(void)
         close(keep_old);
 }
 
+/* --id: the lock is instance-<id>.lock, so an id process on 868 runs beside a
+ * band process on 868; the same id twice is refused like a duplicate band. */
+static void test_id_lock_beside_band_lock(void)
+{
+    int peer = hold_band("868");                       /* the band process */
+    expect_int("peer holds 868", peer >= 0 ? 1 : 0, 1);
+
+    expect_int("set id r3", daemon_set_instance_id("r3") ? 1 : 0, 1);
+    daemon_band_resolve(RADIO_BAND_868);
+    expect_int("id r3 on 868 acquires beside the band lock",
+               daemon_instance_lock_acquire(), 0);
+    expect_int("instance-r3 held", probe_free("r3"), 0);
+    expect_int("868 still the peer's", probe_free("868"), 0);
+
+    daemon_instance_lock_release();
+    expect_int("instance-r3 free after release", probe_free("r3"), 1);
+    unhold(peer);
+    daemon_instance_id_reset();
+}
+
+static void test_duplicate_id_rejected(void)
+{
+    int peer = hold_band("r3");                        /* a running r3 */
+    expect_int("peer holds r3", peer >= 0 ? 1 : 0, 1);
+
+    expect_int("set id r3", daemon_set_instance_id("r3") ? 1 : 0, 1);
+    daemon_band_resolve(RADIO_BAND_868);
+    expect_int("duplicate id rejected (BUSY)",
+               daemon_instance_lock_acquire(), LORAHAM_EXIT_INSTANCE_BUSY);
+    expect_int("a different id on the same band is free", probe_free("r3f"), 1);
+
+    daemon_instance_lock_release();
+    unhold(peer);
+    daemon_instance_id_reset();
+}
+
 int main(void)
 {
     char dir[256];
@@ -218,6 +254,8 @@ int main(void)
     test_release_unblocks_restart();
     test_release_idempotent();
     test_inode_stability();
+    test_id_lock_beside_band_lock();
+    test_duplicate_id_rejected();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

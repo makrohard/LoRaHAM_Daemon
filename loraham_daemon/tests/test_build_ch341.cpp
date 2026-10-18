@@ -70,18 +70,22 @@ static bool log_contains(const std::string &log, const char *needle)
 }
 
 /* A stub of the library: the two file names build.sh looks for and the API
- * subset ch341_adapter.c calls, without libusb. */
+ * subset ch341_adapter.c calls, plus a copy of tests/fakes/stub_libusb's
+ * libusb header (the lanes have no libusb; build.sh puts the tree on the
+ * include path, so the adapter and the monitor compile against it). */
 static void write_stub_tree(const std::string &dir)
 {
-    sh("mkdir -p '" + dir + "'");
+    sh("mkdir -p '" + dir + "/libusb-1.0'");
+    std::string fakes = g_build_sh.substr(0, g_build_sh.rfind('/')) + "/tests/fakes/stub_libusb";
+    sh("cp '" + fakes + "/libusb-1.0/libusb.h' '" + dir + "/libusb-1.0/libusb.h'");
     FILE *h = fopen((dir + "/libpinedio-usb.h").c_str(), "w");
-    fputs("#include <stdint.h>\n#include <stdbool.h>\n"
+    fputs("#include <stdint.h>\n#include <stdbool.h>\n#include <libusb-1.0/libusb.h>\n"
           "enum pinedio_int_pin { PINEDIO_PIN_D0, PINEDIO_INT_PIN_MAX = 11 };\n"
           "enum pinedio_int_mode { PINEDIO_INT_MODE_RISING = 1, PINEDIO_INT_MODE_FALLING = 2 };\n"
           "enum pinedio_option { PINEDIO_OPTION_AUTO_CS, PINEDIO_OPTION_SEARCH_SERIAL,"
           " PINEDIO_OPTION_VID, PINEDIO_OPTION_PID, PINEDIO_OPTION_MAX };\n"
-          "struct pinedio_inst { bool in_error; uint32_t options[PINEDIO_OPTION_MAX];"
-          " char serial_number[9]; };\n"
+          "struct pinedio_inst { libusb_device_handle *handle; void *transfer_out; bool in_error;"
+          " uint32_t options[PINEDIO_OPTION_MAX]; char serial_number[9]; };\n"
           "int32_t pinedio_init(struct pinedio_inst *i, void *d);\n"
           "int32_t pinedio_set_option(struct pinedio_inst *i, enum pinedio_option o, uint32_t v);\n"
           "int32_t pinedio_set_pin_mode(struct pinedio_inst *i, uint32_t p, uint32_t m);\n"
@@ -95,6 +99,7 @@ static void write_stub_tree(const std::string &dir)
     fclose(h);
     FILE *c = fopen((dir + "/libpinedio-usb.c").c_str(), "w");
     fputs("#include \"libpinedio-usb.h\"\n"
+          "uint16_t pinedio_d_mode, pinedio_d_state;\n"
           "int32_t pinedio_init(struct pinedio_inst *i, void *d) { (void)i; (void)d; return -2; }\n"
           "int32_t pinedio_set_option(struct pinedio_inst *i, enum pinedio_option o, uint32_t v)"
           " { i->options[o] = v; return 0; }\n"

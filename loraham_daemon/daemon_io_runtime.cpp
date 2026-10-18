@@ -1,3 +1,4 @@
+#include "daemon_ch341_runtime.h"
 #include "daemon_io_runtime.h"
 
 #include "daemon_gpio_lock.h"
@@ -167,6 +168,18 @@ void daemon_io_init(void)
 
     daemon_radio_controller_init();
 
+    if (daemon_hw_profile.usb_ch341) {
+        char why[240];
+        if (!daemon_ch341_start(why, sizeof(why))) {
+            /* The refusal line first (LHPC reads the BUSY: prefix), flushed;
+             * then the startup cleanup (sockets, the monitor, the locks). */
+            printf("[CH341] refused: %s (exit %d).\n", why, LORAHAM_EXIT_LOCK_ERROR);
+            fflush(stdout);
+            daemon_io_startup_cleanup();
+            exit(LORAHAM_EXIT_LOCK_ERROR);
+        }
+    }
+
     daemon_debug_ctx("RADIO", "initialising RadioLib");
     lora_init();
 
@@ -198,6 +211,7 @@ void daemon_io_sync_event_fds(EventLoopSet *event_set)
     event_loop_reconcile_begin(event_set);
 
     radio_channel_reconcile_fds(&channel, event_set);
+    daemon_ch341_reconcile_fds(event_set);
 
     event_loop_reconcile_end(event_set);
 }

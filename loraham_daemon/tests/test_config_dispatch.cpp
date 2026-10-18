@@ -1,3 +1,5 @@
+#include <chrono>
+#include <thread>
 #include "../config_dispatch.h"
 
 #include <stdio.h>
@@ -493,20 +495,25 @@ static void test_status_uses_cad_broadcast_latch(void)
     expect_contains("status reports queue rejects", status, " TXQREJECT=0 ");
 }
 
-/* HIGHPOWER=, CHIPFAMILY= and OCP= are additive fields at the END of the line,
+/* HIGHPOWER=, CHIPFAMILY=, OCP=, USBWAIT= and ID= are additive fields at the END of the line,
  * read off the controller's witnesses, never off anything a client can set. */
 static void test_status_reports_high_power_and_family(void)
 {
     RadioController ctrl;
-    char status[512];
+    char status[CONFIG_STATUS_LINE_MAX];
+
+    config_apply_replay_reset();
 
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
 
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status default HIGHPOWER=0", status, " HIGHPOWER=0 ");
     expect_contains("status default family sx127x", status, " CHIPFAMILY=SX127x ");
-    expect_contains("status default OCP=100, last field, newline",
-                    status, " OCP=100\n");
+    /* Changed guard (1.3.0): OCP= is no longer the last field; USBWAIT=,
+     * BOUND=, ID= and the applied FREQ=, SF=, POWER= follow it, "-" without
+     * a waiting port, an open Meshstick, --id and an applied value. */
+    expect_contains("status default OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-, last fields, newline",
+                    status, " OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-\n");
 
     ctrl.high_power_enabled = true;
     ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
@@ -516,7 +523,25 @@ static void test_status_reports_high_power_and_family(void)
 
     ctrl.ocp_ma = 0;
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status OCP=0 (protection off)", status, " OCP=0\n");
+    expect_contains("status OCP=0 (protection off)", status, " OCP=0 ");
+
+    ctrl.instance_id = "r3";
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status ID=r3 last", status, " USBWAIT=- BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "1-2");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "-");
+    /* BOUND= (1.3.0): the open stick's identity, reported only while READY. */
+    snprintf(ctrl.bound, sizeof(ctrl.bound), "serial:TESTSN01");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status BOUND=serial:... while READY", status, " USBWAIT=- BOUND=serial:TESTSN01 ID=r3 FREQ=- SF=- POWER=-\n");
+    ctrl.health = RADIO_HEALTH_UNPLUGGED;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    ctrl.health = RADIO_HEALTH_READY;
+    snprintf(ctrl.bound, sizeof(ctrl.bound), "-");
+    ctrl.instance_id = NULL;
 
     /* Every counter at its widest must still end in the newline: a truncated
      * STATUS is a silent protocol break. */
@@ -525,11 +550,111 @@ static void test_status_reports_high_power_and_family(void)
     ctrl.cad_poll_interval_ms.store(4294967295u);
     ctrl.cad_rssi_threshold_dbm.store(-130.0f);
     ctrl.ocp_ma = 240;
+    ctrl.instance_id = "abcdefghijklmnop";                 /* the longest id */
+    snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "255-7.7.7.7.7.7.7"); /* the longest port path */
+    snprintf(ctrl.bound, sizeof(ctrl.bound), "port:255-7.7.7.7.7.7.7");
+    /* The applied values at their widest normalized form. */
+    config_apply_replay_note("FREQ", "869.524999");
+    config_apply_replay_note("SF", "12");
+    config_apply_replay_note("POWER", "-9");
     config_status_format(status, sizeof(status), &ctrl);
     size_t n = strlen(status);
     expect_int("status at wide counters still ends in newline",
                n > 0 && status[n - 1] == '\n', 1);
-    expect_int("status at wide counters fits the production buffer", n < 512, 1);
+    expect_int("status at wide counters fits the production buffer",
+               n < CONFIG_STATUS_LINE_MAX, 1);
+    /* LHPC's status reader: at most 64 KEY=VALUE tokens of at most 128 bytes
+     * (lhpc/core/daemon_control.py _MAX_TOKENS, _MAX_TOKEN_LEN). */
+    {
+        size_t tokens = 0, pairs = 0, longest = 0, len = 0;
+        bool eq = false;
+
+        for (size_t i = 0; i < n; i++) {
+            if (status[i] == ' ' || status[i] == '\n') {
+                if (len > 0)
+                    tokens++;
+                if (eq)
+                    pairs++;
+                longest = len > longest ? len : longest;
+                len = 0;
+                eq = false;
+            } else {
+                len++;
+                eq = eq || status[i] == '=';
+            }
+        }
+        expect_int("status at wide counters: at most 64 tokens", tokens <= 64, 1);
+        expect_int("status: 31 KEY=VALUE pairs (28 + FREQ, SF, POWER)", (long)pairs, 31);
+        expect_int("status at wide counters: no token over 128 bytes", longest <= 128, 1);
+    }
+    config_apply_replay_reset();
+    ctrl.instance_id = NULL;
+}
+
+/* FREQ=, SF=, POWER= (1.3.0): what the CONF apply path last applied, read off
+ * the replay record, never off the chip; "-" for a key not set since boot or
+ * the last MODE switch. */
+static void test_status_reports_applied_rf(void)
+{
+    RadioController ctrl;
+    char status[CONFIG_STATUS_LINE_MAX];
+
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    config_apply_replay_reset();
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: nothing set reads -", status, " ID=- FREQ=- SF=- POWER=-\n");
+
+    config_apply_replay_note("FREQ", "869.4");
+    config_apply_replay_note("SF", "9");
+    config_apply_replay_note("POWER", "5");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: the values as applied", status, " ID=- FREQ=869.4 SF=9 POWER=5\n");
+
+    config_apply_replay_note("BW", "125");                  /* other keys are not echoed */
+    config_apply_replay_note("SF", "11");                   /* the last value wins */
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: the last value, other keys not echoed", status,
+                    " ID=- FREQ=869.4 SF=11 POWER=5\n");
+
+    /* Unplugged: the record is kept for the replay, so STATUS keeps it. */
+    ctrl.health = RADIO_HEALTH_UNPLUGGED;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: kept while UNPLUGGED", status, " FREQ=869.4 SF=11 POWER=5\n");
+    ctrl.health = RADIO_HEALTH_READY;
+
+    config_apply_replay_start_mode("FSK");                  /* band defaults again */
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: a MODE switch starts over", status, " FREQ=- SF=- POWER=-\n");
+    config_apply_replay_note("FREQ", "869.525");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: one key after the switch", status, " FREQ=869.525 SF=- POWER=-\n");
+
+    /* Normalized to LHPC's SET grammar, whatever spelling the strict parser
+     * let through: MHz decimal with at least one place, integers. */
+    config_apply_replay_note("FREQ", "8.69525e2");
+    config_apply_replay_note("SF", "09");
+    config_apply_replay_note("POWER", "+5");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: normalized spellings", status, " FREQ=869.525 SF=9 POWER=5\n");
+    config_apply_replay_note("FREQ", "868");
+    config_apply_replay_note("SF", "9\r");                  /* a CR the parser trimmed past */
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: one decimal kept, trailing whitespace dropped", status,
+                    " FREQ=868.0 SF=9 POWER=5\n");
+    config_apply_replay_note("SF", "x");                     /* cannot come from the parser */
+    config_apply_replay_note("POWER", "");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("applied RF: unparseable reads ?, empty reads -", status,
+                    " FREQ=868.0 SF=? POWER=-\n");
+    /* LHPC's parse_conf_reply: every value non-empty, every key once. */
+    config_apply_replay_note("SF", "11");
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_int("applied RF: no empty value on the line", strstr(status, "= ") == NULL &&
+               strstr(status, "=\n") == NULL, 1);
+    expect_int("applied RF: FREQ= once", strstr(strstr(status, " FREQ=") + 1, " FREQ=") == NULL, 1);
+    expect_int("applied RF: SF= once", strstr(strstr(status, " SF=") + 1, " SF=") == NULL, 1);
+    expect_int("applied RF: POWER= once", strstr(strstr(status, " POWER=") + 1, " POWER=") == NULL, 1);
+    config_apply_replay_reset();
 }
 
 static void test_dispatch_get_channel_restores_rx(void)
@@ -1775,6 +1900,35 @@ static void test_stable_conf_replies(void)
     expect_str("reply: not ready", out, "ERR RADIO_NOT_READY\n");
     ctrl.health = RADIO_HEALTH_READY;
 
+    /* T3/T11 unplug-wait: UNPLUGGED refuses SET before radio_mutex, so a TX
+     * worker holding the mutex cannot block the main loop; STATUS says it. */
+    {
+        std::atomic<bool> held{false}, release{false};
+        std::thread worker([&] {
+            std::lock_guard<std::recursive_mutex> lk(ctrl.radio_mutex);
+            held.store(true);
+            while (!release.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        });
+        while (!held.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ctrl.health = RADIO_HEALTH_UNPLUGGED;
+        auto t0 = std::chrono::steady_clock::now();
+        dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                       "SET SF=7\n", out, sizeof(out));
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::steady_clock::now() - t0).count();
+        expect_str("reply: UNPLUGGED -> not ready", out, "ERR RADIO_NOT_READY\n");
+        expect_int("UNPLUGGED SET does not wait for radio_mutex", ms < 500, 1);
+        dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                       "GET STATUS\n", out, sizeof(out));
+        expect_int("STATUS says RADIO=UNPLUGGED",
+                   strncmp(out, "STATUS RADIO=UNPLUGGED ", 23) == 0, 1);
+        release.store(true);
+        worker.join();
+        ctrl.health = RADIO_HEALTH_READY;
+    }
+
     /* GET STATUS: one data line, NO trailing OK. */
     dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                    "GET STATUS\n", out, sizeof(out));
@@ -1783,17 +1937,18 @@ static void test_stable_conf_replies(void)
     expect_int("reply: GET STATUS no trailing OK",
                strstr(out, "OK\n") == NULL, 1);
 
-    /* The whole line over the socket ends with the appended OCP= field. */
+    /* The whole line over the socket ends with OCP= USBWAIT= BOUND= ID= and
+     * the applied FREQ= SF= POWER= (changed guard, 1.3.0). */
     {
-        char line[600];
+        char line[CONFIG_STATUS_LINE_MAX];
         size_t n;
 
         ctrl.ocp_ma = 150;
         dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                        "GET STATUS\n", line, sizeof(line));
         n = strlen(line);
-        expect_int("reply: GET STATUS ends with OCP=150 and newline",
-                   n > 9 && strcmp(line + n - 9, " OCP=150\n") == 0, 1);
+        expect_int("reply: GET STATUS ends with OCP=150 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=- and newline",
+                   n > 52 && strcmp(line + n - 52, " OCP=150 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-\n") == 0, 1);
         ctrl.ocp_ma = 100;
     }
 
@@ -1997,6 +2152,7 @@ int main(int argc, char **argv)
     test_dispatch_sets_cadmonitor_optin();
     test_status_uses_cad_broadcast_latch();
     test_status_reports_high_power_and_family();
+    test_status_reports_applied_rf();
     test_dispatch_get_channel_restores_rx();
     test_dispatch_get_channel_during_tx_skips_scan();
     test_dispatch_set_txresult();

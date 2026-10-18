@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Meshstick: an unplugged stick is waited for (`RADIO=UNPLUGGED`, sockets stay); on return it is set up
+  again and the applied settings are replayed. An I/O error with the stick present still exits 5.
+- `--id ID`: per-instance socket, lock and log names (`lora-ID.sock`, …); `GET STATUS` ends `USBWAIT= ID=`.
+- `--usb-serial S` selects one of several Meshsticks; at most one stick without a serial is supported.
 - SX1262: the PA over-current limit is 140 mA after boot and after every `MODE` switch. RadioLib sets
   60 mA inside `begin()` and `beginFSK()` and every later `SET POWER` kept it, so the driver ran all
   power levels on 60 mA. 140 mA is the daemon's SX1262 default and the top of RadioLib's range.

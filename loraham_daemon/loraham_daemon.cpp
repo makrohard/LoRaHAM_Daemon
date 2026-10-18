@@ -29,6 +29,7 @@
 
 #include <RadioLib.h>
 
+#include "daemon_ch341_runtime.h"
 #include "daemon_protocol.h"
 #include "daemon_version.h"
 #include "daemon_timing.h"
@@ -36,6 +37,7 @@
 #include "daemon_lifecycle.h"
 #include "daemon_stdout_stamp.h"
 #include "daemon_band.h"
+#include "daemon_usb_wait.h"
 #include "daemon_radio_selection.h"
 #include "hardware_profile.h"
 #include "loraham_runtime.h"
@@ -223,6 +225,7 @@ static void daemon_process_loop_iteration(EventLoopSet *event_set,
     }
 
     daemon_radio_check_runtime();
+    daemon_usb_wait_tick();
 
     // Process ready socket clients.
     daemon_process_ready_sockets(&loop_ctx->config_ctx,
@@ -280,9 +283,16 @@ static void daemon_print_usage(const char *argv0)
     printf("\n");
     printf("Options:\n");
     printf("  -d, --daemon     run in the background, log: /tmp/lora_daemon.log\n");
+    printf("                   (/tmp/lora_daemon-<id>.log with --id)\n");
     printf("  -v, --version    print the version and exit\n");
     printf("      --debug      enable the debug log\n");
     printf("      --radio MODE select the radio: 433, 868 (required)\n");
+    printf("      --id ID      instance id: 1-16 of a-z 0-9 -, first a letter; names the\n");
+    printf("                   sockets lora-ID.sock, loraf-ID.sock, loraconf-ID.sock and the\n");
+    printf("                   lock instance-ID.lock instead of the band (default: none)\n");
+    printf("      --usb-serial S  meshstick-1262 only: open the stick with this serial\n");
+    printf("                   (1-8 characters; for two or more sticks;\n");
+    printf("                   default: the only stick, or the one stick without a serial)\n");
     printf("      --hw PRESET  hardware profile: %s\n",
            daemon_hardware_profile_known());
     printf("                   (default: loraham)\n");
@@ -320,6 +330,24 @@ static void daemon_print_startup_version(void)
     printf("[Daemon] %s\n", LORAHAM_DAEMON_VERSION_TEXT);
 }
 
+/* --usb-serial: 1-8 printable characters without a space (pine64 compares 8). */
+static const char *g_usb_serial = NULL;
+
+static bool daemon_usb_serial_valid(const char *s)
+{
+    size_t n;
+
+    if (!s)
+        return false;
+    n = strlen(s);
+    if (n < 1 || n > 8)
+        return false;
+    for (size_t i = 0; i < n; i++)
+        if (s[i] <= 0x20 || s[i] >= 0x7f)
+            return false;
+    return true;
+}
+
 static bool daemon_parse_args(int argc, char *argv[])
 {
     int opt;
@@ -337,6 +365,8 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"rflog-path",  required_argument, 0, 1013},
         {"high-power",  no_argument,       0, 1014},
         {"ocp",         required_argument, 0, 1015},
+        {"id",          required_argument, 0, 1016},
+        {"usb-serial",  required_argument, 0, 1017},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -427,6 +457,25 @@ static bool daemon_parse_args(int argc, char *argv[])
                 }
                 daemon_debug_ctx("STARTUP", "option --ocp recognised: %s", optarg);
                 break;
+            case 1016:
+                if (!daemon_set_instance_id(optarg)) {
+                    fprintf(stderr, "invalid --id (1-16 of a-z 0-9 -, starting with a letter): %s\n",
+                            optarg ? optarg : "");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "option --id recognised: %s", optarg);
+                break;
+            case 1017:
+                if (!daemon_usb_serial_valid(optarg)) {
+                    fprintf(stderr, "invalid --usb-serial (1-8 printable characters, no space; "
+                                    "pine64 compares the first 8): %s\n", optarg ? optarg : "");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                g_usb_serial = optarg;
+                daemon_debug_ctx("STARTUP", "option --usb-serial recognised: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -464,10 +513,26 @@ static bool daemon_parse_args(int argc, char *argv[])
      * standard usage-error path. */
     daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
                                                    : RADIO_BAND_868);
+    /* Every socket path must fit sun_path; measured whole, before any copy.
+     * The same answer after every restart: the non-restartable exit. */
+    {
+        char why[DAEMON_SOCKET_PATH_ERROR_MAX];
+
+        if (!daemon_band_socket_paths_ok(why, sizeof(why))) {
+            printf("[SOCKET] refused: %s (exit %d).\n", why, LORAHAM_EXIT_LOCK_ERROR);
+            fflush(stdout);
+            exit(LORAHAM_EXIT_LOCK_ERROR);
+        }
+    }
     if (!daemon_hardware_profile_resolve(daemon_band()->band_number)) {
         fprintf(stderr, "invalid hardware profile: %s\n",
                 daemon_hardware_preset_name());
         fprintf(stderr, "known: %s\n", daemon_hardware_profile_known());
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    if (g_usb_serial && !daemon_hw_profile.usb_ch341) {
+        fprintf(stderr, "--usb-serial is only for --hw meshstick-1262\n");
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -506,6 +571,10 @@ static bool daemon_parse_args(int argc, char *argv[])
         }
         printf("[CH341] Meshstick library loaded (pine64 %s)\n",
                daemon_ch341_api()->pin());
+        /* The monitor and the stick are opened after the background fork and
+         * the instance lock (daemon_io_init), never here: libusb's threads do not
+         * survive fork(), and a duplicate --id must stop at its lock first. */
+        daemon_ch341_set_usb_serial(g_usb_serial);
     }
 
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1
@@ -638,7 +707,7 @@ static void daemon_startup_sequence(int argc, char *argv[])
 
     // Enter background mode when requested.
     if (is_daemon) {
-        daemon_lifecycle_enter_background();
+        daemon_lifecycle_enter_background(daemon_band_daemon_log_path());
         daemon_debug_ctx("STARTUP", "daemon mode active");
     }
 

@@ -177,7 +177,7 @@ int main(int argc, char *argv[])
         expect("control 3: the lock's commit read", strlen(pin) == 40);
 
         FILE *f = fopen((tmp + "/good.c").c_str(), "w");
-        fprintf(f, "#include <stdint.h>\ntypedef struct loraham_ch341 loraham_ch341;\n"
+        fprintf(f, "#include <stdint.h>\ntypedef struct loraham_ch341 loraham_ch341;\ntypedef struct loraham_ch341_mon loraham_ch341_mon;\n"
                    "const char *loraham_ch341_pin(void) { return \"%s\"; }\n"
                    "loraham_ch341 *loraham_ch341_open(uint16_t v, uint16_t p, const char *s) { (void)v; (void)p; (void)s; return 0; }\n"
                    "void loraham_ch341_close(loraham_ch341 *d) { (void)d; }\n"
@@ -187,7 +187,24 @@ int main(int argc, char *argv[])
                    "int loraham_ch341_digital_read(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
                    "int loraham_ch341_attach_interrupt(loraham_ch341 *d, uint32_t p, uint32_t m, void (*c)(void)) { (void)d; (void)p; (void)m; (void)c; return -1; }\n"
                    "int loraham_ch341_detach_interrupt(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
-                   "int loraham_ch341_in_error(loraham_ch341 *d) { (void)d; return 1; }\n", pin);
+                   "int loraham_ch341_in_error(loraham_ch341 *d) { (void)d; return 1; }\n"
+                   "loraham_ch341_mon *loraham_ch341_mon_open(uint16_t v, uint16_t p) { (void)v; (void)p; return 0; }\n"
+                   "void loraham_ch341_mon_close(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_fds(loraham_ch341_mon *m, void *o, int x) { (void)m; (void)o; (void)x; return 0; }\n"
+                   "unsigned loraham_ch341_mon_fd_generation(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "void loraham_ch341_mon_dispatch(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_left_bound(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_take_arrival(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_take_left(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_bind(loraham_ch341_mon *m, loraham_ch341 *d) { (void)m; (void)d; return -1; }\n"
+                   "void loraham_ch341_mon_unbind(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_present_bound(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_scan_begin(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "void loraham_ch341_mon_scan_step(loraham_ch341_mon *m, int i, void *o) { (void)m; (void)i; (void)o; }\n"
+                   "void loraham_ch341_mon_scan_end(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_identity(loraham_ch341 *d, void *o) { (void)d; (void)o; return -1; }\n"
+                   "void loraham_ch341_seed_idle(void) { }\n"
+                   , pin);
         fclose(f);
         expect("control 3: acceptable fake library built",
                sh("cc -shared -fPIC -o '" + so + "' '" + tmp + "/good.c'") == 0);
@@ -198,6 +215,56 @@ int main(int argc, char *argv[])
         expect("control 3: no Pi \"[SPI] chip select\" line for the USB radio",
                sh("grep -q '\\[SPI\\] chip select' '" + log + "'") != 0);
         sh("cat '" + log + "'");
+
+        /* B4 / v9 DELTA-3: a stick that is present and openable but that
+         * pine64 cannot take refuses the start with the exact BUSY: line,
+         * flushed before exit(4), read here through a PIPE. */
+        FILE *b = fopen((tmp + "/busy.c").c_str(), "w");
+        fprintf(b, "#include <stdint.h>\n#include <string.h>\n"
+                   "typedef struct loraham_ch341 loraham_ch341;\ntypedef struct loraham_ch341_mon loraham_ch341_mon;\n"
+                   "typedef struct { int openable; int serial_state; char serial[9]; char port[32]; } item;\n"
+                   "const char *loraham_ch341_pin(void) { return \"%s\"; }\n"
+                   "loraham_ch341 *loraham_ch341_open(uint16_t v, uint16_t p, const char *s) { (void)v; (void)p; (void)s; return 0; }\n"
+                   "void loraham_ch341_close(loraham_ch341 *d) { (void)d; }\n"
+                   "int loraham_ch341_transceive(loraham_ch341 *d, const uint8_t *o, uint8_t *i, uint32_t n) { (void)d; (void)o; (void)i; (void)n; return -1; }\n"
+                   "int loraham_ch341_pin_mode(loraham_ch341 *d, uint32_t p, int o) { (void)d; (void)p; (void)o; return -1; }\n"
+                   "int loraham_ch341_digital_write(loraham_ch341 *d, uint32_t p, int l) { (void)d; (void)p; (void)l; return -1; }\n"
+                   "int loraham_ch341_digital_read(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
+                   "int loraham_ch341_attach_interrupt(loraham_ch341 *d, uint32_t p, uint32_t m, void (*c)(void)) { (void)d; (void)p; (void)m; (void)c; return -1; }\n"
+                   "int loraham_ch341_detach_interrupt(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return -1; }\n"
+                   "int loraham_ch341_in_error(loraham_ch341 *d) { (void)d; return 0; }\n"
+                   "static int mon;\n"
+                   "loraham_ch341_mon *loraham_ch341_mon_open(uint16_t v, uint16_t p) { (void)v; (void)p; return (loraham_ch341_mon *)&mon; }\n"
+                   "void loraham_ch341_mon_close(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_fds(loraham_ch341_mon *m, void *o, int x) { (void)m; (void)o; (void)x; return 0; }\n"
+                   "unsigned loraham_ch341_mon_fd_generation(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "void loraham_ch341_mon_dispatch(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_left_bound(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_take_arrival(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_take_left(loraham_ch341_mon *m) { (void)m; return 0; }\n"
+                   "int loraham_ch341_mon_bind(loraham_ch341_mon *m, loraham_ch341 *d) { (void)m; (void)d; return -1; }\n"
+                   "void loraham_ch341_mon_unbind(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_mon_present_bound(loraham_ch341_mon *m) { (void)m; return 1; }\n"
+                   "int loraham_ch341_mon_scan_begin(loraham_ch341_mon *m) { (void)m; return 1; }\n"
+                   "void loraham_ch341_mon_scan_step(loraham_ch341_mon *m, int i, item *o) { (void)m; (void)i;"
+                   " memset(o, 0, sizeof(*o)); o->openable = 1; o->serial_state = 0; strcpy(o->port, \"1-2\"); }\n"
+                   "void loraham_ch341_mon_scan_end(loraham_ch341_mon *m) { (void)m; }\n"
+                   "int loraham_ch341_identity(loraham_ch341 *d, item *o) { (void)d; (void)o; return -1; }\n"
+                   "void loraham_ch341_seed_idle(void) { }\n", pin);
+        fclose(b);
+        expect("B4: a busy-stick fake library built",
+               sh("cc -shared -fPIC -o '" + so + "' '" + tmp + "/busy.c'") == 0);
+        std::string blog = tmp + "/log-busy.txt";
+        std::string rcf = tmp + "/busy-rc.txt";
+        sh("mkdir -p '" + tmp + "/lock' '" + tmp + "/sock' && chmod 700 '" + tmp + "/lock' '" + tmp + "/sock'");
+        sh("bash -c \"LORAHAM_RUNTIME_DIR='" + tmp + "/lock' LORAHAM_SOCKET_DIR='" + tmp + "/sock' timeout 20 '" +
+           bin + "' --radio 868 --hw meshstick-1262 2>&1 | cat > '" + blog + "'; echo \\${PIPESTATUS[0]} > '" +
+           rcf + "'\"");
+        expect("B4: a busy stick at start exits 4", sh("grep -qx 4 '" + rcf + "'") == 0);
+        expect("B4: the exact BUSY: line arrives through the pipe",
+               sh("grep -qF '[CH341] refused: BUSY: stick 1-2 present but pine64 could not select or open it "
+                  "(another process, a bound kernel driver, or an unreadable serial) (exit 4).' '" + blog + "'") == 0);
+        sh("cat '" + blog + "'");
     }
 
     sh("rm -rf '" + tmp + "'");

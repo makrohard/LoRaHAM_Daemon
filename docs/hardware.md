@@ -137,13 +137,30 @@ What differs from a Pi board, and why:
 
 * **No Pi GPIO, LED or `spi0.lock`.** The stick is its own USB bus. It claims no Pi line, so it
   takes no pin locks and has no status LED. The kernel's chip-select check is skipped. A second
-  process cannot open the same stick: the library claims USB interface 0.
+  process cannot take the same stick: the library claims USB interface 0, and a second daemon
+  refuses with the `BUSY:` line ([cli.md](cli.md)).
 * **The RX interrupt is polled.** The library reads the CH341's input pins on its own thread about
   30 times a second (`platform_sleep(1000 / 30)` in libpinedio-usb.c), so an RX or TX-done event
   arrives up to about 33 ms later than on a GPIO edge.
-* **A lost stick exits 5.** The main loop checks the library's error flag each pass. Once the
-  radio is up, a lost device or a failed USB transfer exits `5`, the restartable runtime fatal
-  ([Deployment](deployment.md#exit-codes-and-restart-behaviour)).
+* **A lost stick is waited for.** Once the radio is up, a failed USB call sets `RADIO=UNPLUGGED` at
+  once (TX and `SET` are refused). After a 500 ms grace, on the next main-loop pass, the daemon decides: unplugged (a hotplug LEFT, or the
+  device is gone from the bus) → the radio is released, every socket and client stays, and the
+  daemon waits; an I/O error with the stick still present → exit `5`
+  ([Deployment](deployment.md#exit-codes-and-restart-behaviour)). When the same stick returns it is
+  set up as at start, the applied RF configuration is replayed, and `RADIO=READY`; if that
+  fails, `RADIO=FAILED` and exit `5`. Another stick is ignored with a log line. Where libusb has no
+  hotplug support the daemon says so at start and a lost stick exits `5` as before.
+* **Two or more sticks.** Each daemon opens the stick with its serial, `--usb-serial` (any port; the
+  serials must differ in their first 8 characters). At most one stick without a serial is supported:
+  its daemon runs without `--usb-serial`, opens free sticks one after another, holds those that
+  have a serial until it reaches its own, and then releases them. On a held stick it writes one
+  pin command that keeps RESET high, sends no SPI clock or command, and writes nothing on
+  release; the stick's own daemon resets the chip when it opens it. That daemon remembers the port its stick was first
+  opened on: replugged into another port, it is ignored ("replug into the same port, or restart")
+  and `USBWAIT=<port>` in `GET STATUS` says where it waits. If several daemons reopen at the same
+  moment, one can be delayed while another holds its stick; both log the not-claimable line.
+* **On a Raspberry Pi Zero** use a powered USB hub: its OTG port browned out with the stick plugged
+  in directly.
 
 ### The Meshstick library (optional)
 

@@ -36,7 +36,7 @@ printf 'Hello LoRaHAM\n' | socat - UNIX-CONNECT:/run/loraham/lora433.sock
 ```bash
 echo "FFFFFFFF67452301FFBFC1E80700000028505C33DC22F5051C" \
   | perl -pe 's/([0-9A-Fa-f]{2})/chr(hex($1))/ge' \
-  | socat - UNIX-CONNECT:/run/loraham/lora868.sock
+  | socat - UNIX-CONNECT:/run/loraham/lora868.sock     # with --id ms1: lora-ms1.sock / loraf-ms1.sock
 ```
 
 ## Framed DATA sockets

@@ -1,6 +1,7 @@
 #ifndef LORAHAM_CH341_HAL_H
 #define LORAHAM_CH341_HAL_H
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -30,7 +31,11 @@
  *     USB interface 0: a second process cannot open the same stick.
  *   - A failed USB call before the radio is operational latches a startup
  *     failure (lora_init() refuses READY and the daemon exits 4); after it,
- *     it is fatal and exits 5, as a failed Pi SPI transfer does.
+ *     it is fatal and exits 5, as a failed Pi SPI transfer does -- unless the
+ *     daemon armed unplug-wait (set_loss_wait): then the first failure after
+ *     READY latches a loss, calls on_loss once, and every later call is
+ *     refused without touching the device; the main loop decides between
+ *     "unplugged" and an I/O fault (daemon_usb_wait.h).
  *   - Every exit the daemon controls closes the device, which re-attaches
  *     the kernel's spi-ch341 driver: the destructor on a clean stop or a
  *     startup failure, fatal() before _exit(5).
@@ -55,6 +60,16 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
                             "process\n", vid, pid);
     }
 
+    /* A stick the daemon's selection already opened and checked
+     * (daemon_ch341_select.h); the HAL owns it from here. */
+    Ch341Hal(const LorahamCh341Api *api, loraham_ch341 *dev)
+      : RadioLibHal(MODE_INPUT, MODE_OUTPUT, 0, 1, INT_RISING, INT_FALLING),
+        _api(api), _dev(dev)
+    {
+        if (!_dev)
+            fprintf(stderr, "[CH341] no Meshstick selected\n");
+    }
+
     ~Ch341Hal() override { close_device(); }
 
     Ch341Hal(const Ch341Hal &) = delete;
@@ -67,9 +82,17 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     void check_runtime() override
     {
-        if (_dev && _operational && _api->in_error(_dev))
+        if (_dev && _operational && !_lost && _api->in_error(_dev))
             failure("Meshstick USB device lost");
     }
+
+    void set_loss_wait(void (*on_loss)(void)) override { _on_loss = on_loss; }
+    void set_before_exit(void (*before_exit)(void)) override { _before_exit = before_exit; }
+    bool loss_latched() const override { return _lost.load(); }
+    [[noreturn]] void runtime_fatal(const char *why) override { fatal(why); }
+
+    /* The open stick, for the monitor's bind (NULL when not open). */
+    loraham_ch341 *device() const { return _dev; }
 
     /* ---- RadioLibHal ----------------------------------------------------- */
     void init() override { }
@@ -93,6 +116,12 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     uint32_t digitalRead(uint32_t pin) override
     {
+        /* After a latched loss the interrupt line reads HIGH: RadioLib's
+         * unbounded waits on it (SX126x::scanChannel() at the pinned commit,
+         * SX126x.cpp:434-436, has no timeout) end at once, the next SPI call
+         * fails, and the TX worker lets go of radio_mutex for the teardown. */
+        if (_lost && pin != RADIOLIB_NC)
+            return pin == _irq_pin.load() ? 1 : 0;
         if (pin == RADIOLIB_NC || !ready("digitalRead"))
             return 0;
         int level = _api->digital_read(_dev, pin);
@@ -110,6 +139,7 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     {
         if (interruptNum == RADIOLIB_NC || !ready("attachInterrupt"))
             return;
+        _irq_pin.store(interruptNum);
         if (_api->attach_interrupt(_dev, interruptNum, mode, interruptCb) < 0)
             failure("CH341 interrupt attach failed");
     }
@@ -173,6 +203,8 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
   private:
     bool ready(const char *what)
     {
+        if (_lost)
+            return false;   /* a latched loss: refuse silently */
         if (_dev)
             return true;
         char why[96];
@@ -183,6 +215,18 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     void failure(const char *why)
     {
+        if (_operational && _on_loss) {
+            bool expected = false;
+            if (_lost.compare_exchange_strong(expected, true)) {
+                /* Admission first: health and the loss flag are published
+                 * before anything that could block (the log stream). */
+                _on_loss();
+                fprintf(stderr, "[CH341] USB failure after READY: %s - loss detected, "
+                                "classifying\n", why);
+                fflush(stderr);
+            }
+            return;
+        }
         if (_operational)
             fatal(why);
         fprintf(stderr, "[CH341] startup error: %s\n", why);
@@ -198,6 +242,8 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
                         "radio I/O\n", why);
         fflush(stderr);
         close_device();
+        if (_before_exit)
+            _before_exit();                 /* the monitor, after the device */
         _exit(LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR);
     }
 
@@ -213,6 +259,12 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     loraham_ch341 *_dev = nullptr;
     bool _startupFailed = false;
     bool _operational = false;
+    /* Unplug-wait: set from the main loop before READY; _lost may be set by
+     * the TX worker (a failed transfer) or the main loop (check_runtime). */
+    void (*_on_loss)(void) = nullptr;
+    void (*_before_exit)(void) = nullptr;
+    std::atomic<bool> _lost{false};
+    std::atomic<uint32_t> _irq_pin{RADIOLIB_NC};   /* the line RadioLib attached */
 };
 
 #endif

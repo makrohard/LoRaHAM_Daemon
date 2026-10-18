@@ -55,6 +55,17 @@ struct Pending {
 };
 thread_local Pending *tl_buffers = NULL;
 
+/* Frees a thread's buffers when the thread ends (a joined TX worker that wrote
+ * a line kept them otherwise). Touched only when the buffers are created. */
+struct PendingOwner {
+    ~PendingOwner()
+    {
+        delete tl_buffers;
+        tl_buffers = NULL;
+    }
+};
+thread_local PendingOwner tl_owner;
+
 ssize_t stamp_write_to(FILE *sink, std::string &pending,
                        const char *buf, size_t size)
 {
@@ -89,8 +100,10 @@ ssize_t stamp_write_to(FILE *sink, std::string &pending,
 
 Pending *buffers()
 {
-    if (!tl_buffers)
+    if (!tl_buffers) {
+        (void)&tl_owner;
         tl_buffers = new Pending();
+    }
     return tl_buffers;
 }
 

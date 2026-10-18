@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "daemon_led.h"
 #include "daemon_protocol.h"
@@ -105,35 +106,130 @@ static const DaemonBandDescriptor band_868 = {
 
 static const DaemonBandDescriptor *g_band = NULL;
 
-/* LORAHAM_SOCKET_DIR override (dev/test only; audit item 3): resolved once,
- * here, into static buffers — every consumer keeps reading the immutable
- * descriptor. Empty/unset env means the production /run/loraham defaults. */
+/* LORAHAM_SOCKET_DIR override (dev/test only; audit item 3) and the --id
+ * names: resolved once, here, into static buffers -- every consumer keeps
+ * reading the immutable descriptor. Empty/unset env and no --id means the
+ * production /run/loraham band defaults, byte for byte. */
 static DaemonBandDescriptor g_band_override;
-static char g_sock_data[192];
-static char g_sock_framed[192];
-static char g_sock_conf[192];
+static char g_sock_data[DAEMON_SOCKET_PATH_MAX + 1];
+static char g_sock_framed[DAEMON_SOCKET_PATH_MAX + 1];
+static char g_sock_conf[DAEMON_SOCKET_PATH_MAX + 1];
+static char g_path_error[DAEMON_SOCKET_PATH_ERROR_MAX];   /* the whole path, up to PATH_MAX */
+
+static char g_instance_id[17];
+static bool g_instance_id_set = false;
+static char g_daemon_log_path[64];
+
+bool daemon_instance_id_valid(const char *id)
+{
+    size_t n;
+
+    if (!id || id[0] < 'a' || id[0] > 'z')
+        return false;
+    n = strlen(id);
+    if (n > 16)
+        return false;
+    for (size_t i = 1; i < n; ++i) {
+        char c = id[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-'))
+            return false;
+    }
+    return true;
+}
+
+bool daemon_set_instance_id(const char *id)
+{
+    if (!daemon_instance_id_valid(id))
+        return false;
+    snprintf(g_instance_id, sizeof(g_instance_id), "%s", id);
+    g_instance_id_set = true;
+    return true;
+}
+
+const char *daemon_instance_id(void)
+{
+    return g_instance_id_set ? g_instance_id : NULL;
+}
+
+void daemon_instance_id_reset(void)
+{
+    g_instance_id[0] = '\0';
+    g_instance_id_set = false;
+}
+
+const char *daemon_band_daemon_log_path(void)
+{
+    if (!g_instance_id_set)
+        return "/tmp/lora_daemon.log";
+    snprintf(g_daemon_log_path, sizeof(g_daemon_log_path),
+             "/tmp/lora_daemon-%s.log", g_instance_id);
+    return g_daemon_log_path;
+}
+
+bool daemon_band_socket_paths_ok(char *why, size_t why_size)
+{
+    if (g_path_error[0] == '\0')
+        return true;
+    if (why && why_size > 0)
+        snprintf(why, why_size, "%s", g_path_error);
+    return false;
+}
+
+/* <dir>/<name> into `out`, or the reason into g_path_error. The length is
+ * measured on the whole path before anything is copied. */
+static void band_socket_path(char *out, const char *dir, const char *name)
+{
+    size_t need = strlen(dir) + 1 + strlen(name);
+
+    if (need > DAEMON_SOCKET_PATH_MAX) {
+        out[0] = '\0';
+        if (g_path_error[0] == '\0')
+            snprintf(g_path_error, sizeof(g_path_error),
+                     "socket path too long (%zu bytes, at most %d): %s/%s",
+                     need, DAEMON_SOCKET_PATH_MAX, dir, name);
+        return;
+    }
+    memcpy(out, dir, strlen(dir));
+    out[strlen(dir)] = '/';
+    memcpy(out + strlen(dir) + 1, name, strlen(name) + 1);
+}
 
 void daemon_band_resolve(RadioBand_t band)
 {
     const DaemonBandDescriptor *table =
         (band == RADIO_BAND_868) ? &band_868 : &band_433;
     const char *dir = getenv("LORAHAM_SOCKET_DIR");
+    char name_data[48];
+    char name_framed[48];
+    char name_conf[48];
 
-    if (!dir || dir[0] == '\0') {
+    g_path_error[0] = '\0';
+
+    if ((!dir || dir[0] == '\0') && !g_instance_id_set) {
         g_band = table;
         return;
     }
+    if (!dir || dir[0] == '\0')
+        dir = LORAHAM_SOCKET_DIR_DEFAULT;
+
+    if (g_instance_id_set) {
+        snprintf(name_data, sizeof(name_data), DATA_ID_SOCKET_FMT, g_instance_id);
+        snprintf(name_framed, sizeof(name_framed), DATA_ID_FRAMED_SOCKET_FMT, g_instance_id);
+        snprintf(name_conf, sizeof(name_conf), CONF_ID_SOCKET_FMT, g_instance_id);
+    } else {
+        snprintf(name_data, sizeof(name_data), "%s",
+                 band == RADIO_BAND_868 ? DATA868_SOCKET_NAME : DATA433_SOCKET_NAME);
+        snprintf(name_framed, sizeof(name_framed), "%s",
+                 band == RADIO_BAND_868 ? DATA868_FRAMED_SOCKET_NAME
+                                        : DATA433_FRAMED_SOCKET_NAME);
+        snprintf(name_conf, sizeof(name_conf), "%s",
+                 band == RADIO_BAND_868 ? CONF868_SOCKET_NAME : CONF433_SOCKET_NAME);
+    }
 
     g_band_override = *table;
-    snprintf(g_sock_data, sizeof(g_sock_data), "%s/%s", dir,
-             band == RADIO_BAND_868 ? DATA868_SOCKET_NAME
-                                    : DATA433_SOCKET_NAME);
-    snprintf(g_sock_framed, sizeof(g_sock_framed), "%s/%s", dir,
-             band == RADIO_BAND_868 ? DATA868_FRAMED_SOCKET_NAME
-                                    : DATA433_FRAMED_SOCKET_NAME);
-    snprintf(g_sock_conf, sizeof(g_sock_conf), "%s/%s", dir,
-             band == RADIO_BAND_868 ? CONF868_SOCKET_NAME
-                                    : CONF433_SOCKET_NAME);
+    band_socket_path(g_sock_data, dir, name_data);
+    band_socket_path(g_sock_framed, dir, name_framed);
+    band_socket_path(g_sock_conf, dir, name_conf);
     g_band_override.data_socket = g_sock_data;
     g_band_override.framed_socket = g_sock_framed;
     g_band_override.conf_socket = g_sock_conf;

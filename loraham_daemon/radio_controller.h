@@ -1,6 +1,7 @@
 #ifndef LORAHAM_RADIO_CONTROLLER_H
 #define LORAHAM_RADIO_CONTROLLER_H
 
+#include <cstdio>
 #include <memory>
 #include <atomic>
 #include <mutex>
@@ -119,6 +120,14 @@ struct RadioController {
     /* The PA over-current limit the driver writes, in mA (--ocp or the family
      * default; 0 = protection off). */
     int ocp_ma;
+    /* STATUS ID= (--id, NULL = "-"), USBWAIT= (the port the daemon of a
+     * Meshstick without a serial waits on while UNPLUGGED, "-" otherwise) and
+     * BOUND= (the open Meshstick's identity, serial:<8> / port:<bus-port>,
+     * set after the post-open checks, "-" after a teardown; reported only
+     * while READY). Written and read on the main loop only. */
+    const char *instance_id;
+    char usb_wait_port[32];
+    char bound[48];
 
     DaemonRadioStats stats;
 
@@ -177,6 +186,9 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->chip_family = DAEMON_CHIP_FAMILY_SX127X;
     ctrl->high_power_enabled = false;
     ctrl->ocp_ma = 100;
+    ctrl->instance_id = NULL;
+    snprintf(ctrl->usb_wait_port, sizeof(ctrl->usb_wait_port), "-");
+    snprintf(ctrl->bound, sizeof(ctrl->bound), "-");
 
     daemon_radio_stats_init(&ctrl->stats);
 

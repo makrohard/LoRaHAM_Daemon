@@ -192,18 +192,18 @@ connected to.
 One runtime snapshot line, in this exact field order:
 
 ```text
-STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP=
+STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP= USBWAIT= BOUND= ID= FREQ= SF= POWER=
 ```
 
 A default snapshot reads:
 
 ```text
-STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100
+STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-
 ```
 
 | Field | Meaning |
 |---|---|
-| `RADIO` | `READY`, `FAILED` or `UNINITIALIZED` |
+| `RADIO` | `READY`, `FAILED`, `UNINITIALIZED` or (Meshstick only, 1.3.0) `UNPLUGGED`: the USB stick was lost after READY. Until a 500 ms grace has passed (it decides on the next main-loop pass after it) the daemon is still deciding whether it was unplugged (it then waits for it, every socket stays) or an I/O fault with the stick present (it then exits `5`); the log names which. Treat any value other than `READY` as not ready |
 | `TX` | `1` while a local transmit is in flight |
 | `CAD` | The published CAD broadcast latch. It reflects monitoring activity only — a transient TX or an on-demand CAD probe does not change it |
 | `GETRSSI` | Live-RSSI stream active |
@@ -219,9 +219,13 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `CADWAIT`, `CADIDLE`, `CADPOLL`, `CADTXAFTERTIMEOUT`, `CADMONITOR` | The current CAD policy |
 | `CADRSSI` | The busy threshold, printed integer-rounded (`%.0f`), not as a float |
 | `RXREADY` | `0` while a failed RX re-arm is being retried. `RADIO=READY RXREADY=0` means the daemon is temporarily deaf; persistent re-arm failure escalates the radio to `RADIO=FAILED` |
-| `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (`POWER` is not echoed anywhere), and it is `1` on an SX1262 started with the flag even though the flag does nothing there — combine it with `CHIPFAMILY` |
+| `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (that is `POWER`, below), and it is `1` on an SX1262 started with the flag even though the flag does nothing there — combine it with `CHIPFAMILY` |
 | `CHIPFAMILY` | The running process's resolved chip family, `SX127x` or `SX1262`. Added so a controller reads the family off the daemon instead of trusting a hardware setup that may have been saved after the process started. Both fields are additive at the end of the line; a reader that does not find them is talking to an older daemon and must treat them as unknown, not as `0` |
 | `OCP` | The PA over-current limit in mA the driver writes at every power level: `--ocp`, or the family default (SX127x `100`, SX1262 `140`); `0` = protection off (SX127x only). Added in 1.3.0 at the end of the line; a reader that does not find it is talking to an older daemon and must treat it as unknown |
+| `USBWAIT` | Meshstick only: the USB port (`<bus>-<port>[.<port>…]`) the daemon of the one stick without a serial waits on while `RADIO=UNPLUGGED` — whether the stick is gone or plugged in but held by another program; `-` otherwise. Added in 1.3.0 |
+| `BOUND` | Meshstick only: how the open stick was identified, `serial:<first 8 characters of its serial>` or, for the stick without a serial, `port:<bus>-<port>[.<port>…]`; `-` unless `RADIO=READY` (and on every other preset). Bytes outside `!`..`~` and `%` itself are written as `%XX`. A controller compares it with the stick it expects. Added in 1.3.0 |
+| `ID` | The `--id` of this process, `-` without one. Added in 1.3.0 |
+| `FREQ`, `SF`, `POWER` | The values the CONF apply path last applied (`SET`), as numbers in the `SET` grammar: `FREQ` in MHz with one to six decimals (`869.525`, `868.0`), `SF` and `POWER` (dBm) as integers. `-` when the key has not been set since boot or the last `MODE` switch: the band default is in effect (see the key table above). What the daemon applied, not a read-back from the chip. Kept while `RADIO=UNPLUGGED` and replayed on the stick's return. Added in 1.3.0; the last three fields |
 
 ### `GET STATS`
 

@@ -1,5 +1,8 @@
 #include "config_status.h"
 #include "hardware_profile.h"
+#include "config_replay.h"
+#include <errno.h>
+#include <math.h>
 
 /* Bodies moved verbatim from config_status.h. */
 
@@ -355,13 +358,61 @@ unsigned config_status_txq_last_seq(const RadioController *ctrl)
     return result.seq;
 }
 
+/* One applied RF value for STATUS, normalized to LHPC's SET grammar: the
+ * record keeps the value as the client wrote it (it passed the strict
+ * parser, which allows "09", "+5", "8.69525e2" and trailing whitespace such
+ * as a CR); STATUS prints it parsed again: a decimal in MHz with at most six
+ * places and at least one ("869.525", "868.0"), or a plain integer. "-" when
+ * the key is not set since boot or the last MODE switch; "?" if the recorded
+ * text does not parse. Never empty, never a control character (LHPC discards
+ * a whole STATUS line with either). */
+static void config_status_applied(const char *key, bool decimal, char *out, size_t out_size)
+{
+    const char *v = config_apply_replay_value(key);
+    char *end = NULL;
+
+    snprintf(out, out_size, "-");
+    if (!v || !v[0])
+        return;
+    errno = 0;
+    if (decimal) {
+        double d = strtod(v, &end);
+
+        if (end == v || errno != 0 || !isfinite(d)) {
+            snprintf(out, out_size, "?");
+            return;
+        }
+        snprintf(out, out_size, "%.6f", d);
+        size_t n = strlen(out);
+        while (n > 2 && out[n - 1] == '0' && out[n - 2] != '.')
+            out[--n] = '\0';
+    } else {
+        long l = strtol(v, &end, 10);
+
+        if (end == v || errno != 0) {
+            snprintf(out, out_size, "?");
+            return;
+        }
+        snprintf(out, out_size, "%ld", l);
+    }
+    while (*end && isspace((unsigned char)*end))
+        end++;
+    if (*end)
+        snprintf(out, out_size, "?");
+}
+
 void config_status_format(char *buf,
                                         size_t buf_size,
                                         const RadioController *ctrl)
 {
+    char freq[32], sf[24], power[24];
+
+    config_status_applied("FREQ", true, freq, sizeof(freq));
+    config_status_applied("SF", false, sf, sizeof(sf));
+    config_status_applied("POWER", false, power, sizeof(power));
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d USBWAIT=%s BOUND=%s ID=%s FREQ=%s SF=%s POWER=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -396,13 +447,25 @@ void config_status_format(char *buf,
               * permission and the running chip family. HIGHPOWER=1 on an
               * SX1262 is truthful and means nothing -- the family field is
               * what a reader combines it with. Neither reports the selected
-              * power; POWER is not echoed anywhere. */
+              * power; that is POWER= at the end of the line. */
              (ctrl && ctrl->high_power_enabled) ? 1 : 0,
              daemon_chip_family_name(ctrl ? ctrl->chip_family
                                           : DAEMON_CHIP_FAMILY_SX127X),
              /* OCP (appended, additive): the PA over-current limit in mA the
               * driver writes at every power level; 0 = protection off. */
-             ctrl ? ctrl->ocp_ma : 100);
+             ctrl ? ctrl->ocp_ma : 100,
+             /* USBWAIT / ID (appended 1.3.0): the port a Meshstick daemon
+              * without a serial waits on, and the --id; "-" when none. */
+             (ctrl && ctrl->usb_wait_port[0]) ? ctrl->usb_wait_port : "-",
+             /* BOUND (appended 1.3.0): how the open Meshstick was identified,
+              * serial:<8 chars> or port:<bus-port>; "-" unless READY. */
+             (ctrl && radio_controller_ready(ctrl) && ctrl->bound[0]) ? ctrl->bound : "-",
+             (ctrl && ctrl->instance_id) ? ctrl->instance_id : "-",
+             /* FREQ / SF / POWER (appended 1.3.0): the values the CONF apply
+              * path last applied, from the replay record, normalized
+              * (config_status_applied); "-" for a key not set since boot or
+              * the last MODE switch (the band default is in effect). */
+             freq, sf, power);
 }
 
 const char *config_status_cad_state_name(RadioCadProbeStatus status)

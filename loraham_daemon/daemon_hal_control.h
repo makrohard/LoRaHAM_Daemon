@@ -29,6 +29,22 @@ class DaemonHalControl {
      * (the USB stick) exits 5 here once that happened; the Pi HAL learns of
      * failures in its calls and has nothing to poll. */
     virtual void check_runtime() { }
+
+    /* Unplug-wait (the USB stick, daemon_usb_wait.h). After set_loss_wait(),
+     * a failed call once the radio is operational latches a loss instead of
+     * exiting 5: on_loss runs once (from whichever thread failed), every later
+     * call is refused without touching the device, and the main loop decides
+     * between "unplugged" and an I/O fault. Without it, nothing changes. */
+    virtual void set_loss_wait(void (*on_loss)(void)) { (void)on_loss; }
+
+    /* Called by the HAL's exit 5 after it closed the device and before
+     * _exit(): the USB stick's monitor is closed there (device first). */
+    virtual void set_before_exit(void (*before_exit)(void)) { (void)before_exit; }
+    virtual bool loss_latched() const { return false; }
+
+    /* The restartable runtime fatal (exit 5), closing the device first. Only
+     * reached through a latched loss, which only the USB HAL produces. */
+    [[noreturn]] virtual void runtime_fatal(const char *why) = 0;
 };
 
 #endif

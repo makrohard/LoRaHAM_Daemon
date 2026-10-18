@@ -59,6 +59,12 @@ test_binaries=(
   "$TEST_DIR/test_hal_gpio_failclosed"
   "$TEST_DIR/test_spi_kernel_cs"
   "$TEST_DIR/test_instance_lock"
+  "$TEST_DIR/test_instance_id"
+  "$TEST_DIR/test_usb_wait"
+  "$TEST_DIR/test_ch341_monitor"
+  "$TEST_DIR/test_ch341_select"
+  "$TEST_DIR/test_config_replay"
+  "$TEST_DIR/test_config_replay_sx1262"
   "$TEST_DIR/test_gpio_lock"
   "$TEST_DIR/test_runtime_lockdir"
   "$TEST_DIR/test_packaging"
@@ -67,6 +73,7 @@ test_binaries=(
   "$TEST_DIR/test_ch341_loader"
   "$TEST_DIR/test_ch341_hal"
   "$TEST_DIR/test_ch341_no_dlopen"
+  "$TEST_DIR/test_ch341_process"
   "$TEST_DIR/test_stdout_stamp"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
@@ -158,6 +165,9 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_high_power_boot.cpp"
   "$SCRIPT_DIR/daemon_ocp_boot.cpp"
   "$SCRIPT_DIR/daemon_radio_runtime.cpp"
+  "$SCRIPT_DIR/daemon_usb_wait.cpp"
+  "$SCRIPT_DIR/daemon_ch341_runtime.cpp"
+  "$SCRIPT_DIR/daemon_ch341_select.cpp"
   "$SCRIPT_DIR/daemon_rx_rearm.cpp"
   "$SCRIPT_DIR/daemon_gpio_lock.cpp"
   "$SCRIPT_DIR/daemon_radio_init.cpp"
@@ -174,6 +184,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_socket_dispatch.cpp"
   "$SCRIPT_DIR/daemon_io_runtime.cpp"
   "$SCRIPT_DIR/config_apply.cpp"
+  "$SCRIPT_DIR/config_replay.cpp"
   "$SCRIPT_DIR/sx127x_driver.cpp"
   "$SCRIPT_DIR/sx1262_driver.cpp"
   "$SCRIPT_DIR/radio_channel.cpp"
@@ -450,6 +461,7 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
@@ -1008,6 +1020,37 @@ build_one_cad_rssi_boot_test() {
 
 
 
+build_one_config_replay_sx1262_test() {
+  local src="$1"
+  local out="$2"
+
+  # The replay record applied through the real apply path to the real
+  # Sx1262Driver over tests/fakes/sx126x_register_model.h (T4).
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for config replay SX1262 test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/sx1262_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_apply.cpp" \
+    "$SCRIPT_DIR/config_replay.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
+    "$SCRIPT_DIR/config_parser.cpp" \
+    "$SCRIPT_DIR/config_validate.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
+}
+
 build_one_config_apply_transactional_test() {
   local src="$1"
   local out="$2"
@@ -1024,6 +1067,7 @@ build_one_config_apply_transactional_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_apply.cpp" \
+    "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
@@ -1084,6 +1128,7 @@ build_one_config_dispatch_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
@@ -1132,12 +1177,19 @@ build_tests() {
   build_one_hal_gpio_failclosed_test "$TEST_DIR/test_hal_gpio_failclosed.cpp" "$TEST_DIR/test_hal_gpio_failclosed"
   build_one_hal_gpio_failclosed_test "$TEST_DIR/test_spi_kernel_cs.cpp" "$TEST_DIR/test_spi_kernel_cs"
   build_one_instance_lock_test "$TEST_DIR/test_instance_lock.cpp" "$TEST_DIR/test_instance_lock"
+  build_one_cpp_sources "$TEST_DIR/test_instance_id" "$TEST_DIR/test_instance_id.cpp" "$SCRIPT_DIR/daemon_band.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_usb_wait" "$TEST_DIR/test_usb_wait.cpp" "$SCRIPT_DIR/daemon_usb_wait.cpp" "$SCRIPT_DIR/radio_health.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_ch341_monitor" "$TEST_DIR/test_ch341_monitor.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_ch341_select" "$TEST_DIR/test_ch341_select.cpp" "$SCRIPT_DIR/daemon_ch341_select.cpp"
+  build_one_config_apply_transactional_test "$TEST_DIR/test_config_replay.cpp" "$TEST_DIR/test_config_replay"
+  build_one_config_replay_sx1262_test "$TEST_DIR/test_config_replay_sx1262.cpp" "$TEST_DIR/test_config_replay_sx1262"
   build_one_cpp_sources "$TEST_DIR/test_runtime_lockdir" "$TEST_DIR/test_runtime_lockdir.cpp"
   build_one_cpp_sources "$TEST_DIR/test_packaging" "$TEST_DIR/test_packaging.cpp"
   build_one_cpp_sources "$TEST_DIR/test_ch341_adapter" "$TEST_DIR/test_ch341_adapter.cpp"
   build_one_cpp_sources "$TEST_DIR/test_build_ch341" "$TEST_DIR/test_build_ch341.cpp"
   build_one_cpp_sources "$TEST_DIR/test_ch341_loader" "$TEST_DIR/test_ch341_loader.cpp" "$SCRIPT_DIR/ch341_loader.cpp"
   build_one_cpp_sources "$TEST_DIR/test_ch341_no_dlopen" "$TEST_DIR/test_ch341_no_dlopen.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_ch341_process" "$TEST_DIR/test_ch341_process.cpp"
   build_one_cpp_sources "$TEST_DIR/test_stdout_stamp" "$TEST_DIR/test_stdout_stamp.cpp" "$SCRIPT_DIR/daemon_stdout_stamp.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"

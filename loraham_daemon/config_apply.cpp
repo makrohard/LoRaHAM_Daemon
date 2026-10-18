@@ -45,6 +45,8 @@ typedef struct {
 
 static ConfigApplyEffective g_effective;
 
+/* The replay record lives in config_replay.cpp; this pipeline is its writer. */
+
 static void config_apply_effective_load_defaults(ConfigApplyEffective *e)
 {
     const RadioRfDefaults *d = daemon_band()->rf_defaults;
@@ -229,6 +231,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 mode_flag = RADIO_MODE_FSK;
                 hardware_touched = true;
                 config_apply_effective_load_defaults(&g_effective);
+                config_apply_replay_start_mode("FSK");
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
@@ -243,6 +246,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 mode_flag = RADIO_MODE_LORA;
                 hardware_touched = true;
                 config_apply_effective_load_defaults(&g_effective);
+                config_apply_replay_start_mode("LORA");
                 printf(" \033[92mOK\033[0m");
             } else {
                 printf(" \033[91;5mERROR:%d\033[0m ABORT\n", state);
@@ -287,6 +291,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                 }
                 hardware_touched = true;
                 config_apply_effective_note_key(RADIO_MODE_FSK, key, val);
+                config_apply_replay_note(key, val);
             }
         } else {
             // Ignore FSK-only keys while in LoRa mode.
@@ -302,6 +307,7 @@ ConfigApplyStatus parse_and_apply_config_generic(RadioDriver &radio,
                     }
                     hardware_touched = true;
                     config_apply_effective_note_key(RADIO_MODE_LORA, key, val);
+                    config_apply_replay_note(key, val);
                 }
         }
     }

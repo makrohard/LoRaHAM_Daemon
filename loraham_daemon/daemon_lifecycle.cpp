@@ -107,7 +107,7 @@ int daemon_lifecycle_redirect_stdio(const char *log_path)
     return 0;
 }
 
-void daemon_lifecycle_enter_background(void)
+void daemon_lifecycle_enter_background(const char *log_path)
 {
     pid_t pid = fork();
     if (pid < 0) exit(EXIT_FAILURE);
@@ -127,7 +127,7 @@ void daemon_lifecycle_enter_background(void)
     if (!freopen("/dev/null", "r", stdin))
         exit(EXIT_FAILURE);
 
-    if (daemon_lifecycle_redirect_stdio("/tmp/lora_daemon.log") != 0)
+    if (daemon_lifecycle_redirect_stdio(log_path) != 0)
         exit(EXIT_FAILURE);
 
     daemon_lifecycle_close_inherited_fds();

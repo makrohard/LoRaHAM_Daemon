@@ -40,7 +40,7 @@ static std::string g_tmp;
 static const char *PIN_GOOD = "b0694ec84091b293cb1e97e00a821ff88353274f";
 static const char *PIN_OTHER = "0000000000000000000000000000000000000000";
 
-/* The adapter's ten functions; `omit` leaves one out, `pin` is what it reports. */
+/* The adapter's functions (incl. the monitor); `omit` leaves one out, `pin` is what it reports. */
 static void write_fake_source(const std::string &path, const char *pin, const char *omit)
 {
     static const char *funcs[] = {
@@ -56,9 +56,25 @@ static void write_fake_source(const std::string &path, const char *pin, const ch
         " { (void)d; (void)p; (void)m; (void)c; return 0; }",
         "int loraham_ch341_detach_interrupt(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return 0; }",
         "int loraham_ch341_in_error(loraham_ch341 *d) { (void)d; return 0; }",
+        "loraham_ch341_mon *loraham_ch341_mon_open(uint16_t v, uint16_t p) { (void)v; (void)p; return 0; }",
+        "void loraham_ch341_mon_close(loraham_ch341_mon *m) { (void)m; }",
+        "int loraham_ch341_mon_fds(loraham_ch341_mon *m, void *o, int x) { (void)m; (void)o; (void)x; return 0; }",
+        "unsigned loraham_ch341_mon_fd_generation(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "void loraham_ch341_mon_dispatch(loraham_ch341_mon *m) { (void)m; }",
+        "int loraham_ch341_mon_left_bound(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "int loraham_ch341_mon_take_arrival(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "int loraham_ch341_mon_take_left(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "int loraham_ch341_mon_bind(loraham_ch341_mon *m, loraham_ch341 *d) { (void)m; (void)d; return -1; }",
+        "void loraham_ch341_mon_unbind(loraham_ch341_mon *m) { (void)m; }",
+        "int loraham_ch341_mon_present_bound(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "int loraham_ch341_mon_scan_begin(loraham_ch341_mon *m) { (void)m; return 0; }",
+        "void loraham_ch341_mon_scan_step(loraham_ch341_mon *m, int i, void *o) { (void)m; (void)i; (void)o; }",
+        "void loraham_ch341_mon_scan_end(loraham_ch341_mon *m) { (void)m; }",
+        "int loraham_ch341_identity(loraham_ch341 *d, void *o) { (void)d; (void)o; return -1; }",
+        "void loraham_ch341_seed_idle(void) { }",
     };
     FILE *f = fopen(path.c_str(), "w");
-    fprintf(f, "#include <stdint.h>\ntypedef struct loraham_ch341 loraham_ch341;\n");
+    fprintf(f, "#include <stdint.h>\ntypedef struct loraham_ch341 loraham_ch341;\ntypedef struct loraham_ch341_mon loraham_ch341_mon;\n");
     fprintf(f, "const char *loraham_ch341_pin(void) { return \"%s\"; }\n", pin);
     for (const char *fn : funcs)
         if (!omit || !strstr(fn, omit))
@@ -126,6 +142,7 @@ int main(void)
     expect("fake: good", build_so("good", PIN_GOOD, nullptr));
     expect("fake: wrong commit", build_so("wrongpin", PIN_OTHER, nullptr));
     expect("fake: missing in_error", build_so("nosym", PIN_GOOD, "loraham_ch341_in_error"));
+    expect("fake: missing a monitor function", build_so("nomon", PIN_GOOD, "loraham_ch341_mon_present_bound"));
 
     /* A library that needs another shared object which is then gone: what a
      * host without libusb-1.0 does to the real one. */
@@ -152,6 +169,8 @@ int main(void)
     refused("not ELF", "notelf", PIN_GOOD, "cannot load");
     refused("dependency missing", "needsdep", PIN_GOOD, "libloraham-test-dep.so");
     refused("missing symbol", "nosym", PIN_GOOD, "missing symbol loraham_ch341_in_error");
+    refused("missing monitor symbol (T10: the larger table, all or nothing)", "nomon", PIN_GOOD,
+            "missing symbol loraham_ch341_mon_present_bound");
     refused("wrong commit", "wrongpin", PIN_GOOD, "this daemon expects b0694ec8");
     refused("no expected commit", "good", "", "no lock at build time");
 

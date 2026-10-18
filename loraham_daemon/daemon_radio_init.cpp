@@ -1,3 +1,4 @@
+#include "daemon_ch341_runtime.h"
 #include "daemon_radio_init.h"
 
 #include <stdio.h>
@@ -75,8 +76,8 @@ static RadioLibHal *daemon_radio_hal_for_profile(const DaemonHardwareProfile &p,
                                                  DaemonHalControl **ctl)
 {
     if (p.usb_ch341) {
-        Ch341Hal *hal = new Ch341Hal(daemon_ch341_api(), (uint16_t)p.usb_vid,
-                                     (uint16_t)p.usb_pid);
+        Ch341Hal *hal = new Ch341Hal(daemon_ch341_api(), daemon_ch341_take_selected());
+        daemon_ch341_arm_hal(hal);
         *ctl = hal;
         return hal;
     }

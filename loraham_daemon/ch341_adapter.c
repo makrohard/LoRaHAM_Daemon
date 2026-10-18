@@ -14,15 +14,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "libpinedio-usb.h"
+#include "ch341_adapter_priv.h"
 
 #ifndef LORAHAM_CH341_PIN
 #error "build.sh defines LORAHAM_CH341_PIN as the measured library commit"
 #endif
-
-struct loraham_ch341 {
-    struct pinedio_inst inst;
-};
 
 const char *loraham_ch341_pin(void)
 {
@@ -43,7 +39,16 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
     pinedio_set_option(&dev->inst, PINEDIO_OPTION_VID, vid);
     pinedio_set_option(&dev->inst, PINEDIO_OPTION_PID, pid);
 
-    if (pinedio_init(&dev->inst, NULL) != 0) {
+    /* pinedio_init() calls libusb_init(NULL) and never libusb_exit(): -1 means
+     * that reference was not taken (its mutex or libusb_init failed), 0 and -2
+     * mean it was. Its allocation-failure path deinits and still returns 0,
+     * leaving the handle NULL; a 0 without the OUT transfer is failed too.
+     * Every reference taken is released here or in close, so replugs do not
+     * accumulate them. */
+    int ret = pinedio_init(&dev->inst, NULL);
+    if (ret != 0 || !dev->inst.handle || !dev->inst.transfer_out) {
+        if (ret != -1)
+            libusb_exit(NULL);
         free(dev);
         return NULL;
     }
@@ -56,6 +61,7 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
     if (pinedio_set_pin_mode(&dev->inst, 3, 1) < 0 ||
         pinedio_set_pin_mode(&dev->inst, 5, 1) < 0) {
         pinedio_deinit(&dev->inst);
+        libusb_exit(NULL);
         free(dev);
         return NULL;
     }
@@ -67,6 +73,7 @@ void loraham_ch341_close(loraham_ch341 *dev)
     if (!dev)
         return;
     pinedio_deinit(&dev->inst);
+    libusb_exit(NULL);
     free(dev);
 }
 
@@ -125,4 +132,15 @@ int loraham_ch341_detach_interrupt(loraham_ch341 *dev, uint32_t pin)
 int loraham_ch341_in_error(loraham_ch341 *dev)
 {
     return dev->inst.in_error ? 1 : 0;
+}
+
+/* pine64's pin state: process-wide, defined in libpinedio-usb.c:41-42 (not in
+ * its header). Every open writes it to the stick it opens. */
+extern uint16_t pinedio_d_mode;
+extern uint16_t pinedio_d_state;
+
+void loraham_ch341_seed_idle(void)
+{
+    pinedio_d_mode |= (uint16_t)(1u << 2);    /* RESET an output ... */
+    pinedio_d_state |= (uint16_t)(1u << 2);   /* ... and high */
 }
