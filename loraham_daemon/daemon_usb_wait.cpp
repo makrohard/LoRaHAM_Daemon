@@ -105,6 +105,11 @@ void daemon_usb_wait_tick(void)
     case USB_WAIT_TEARDOWN:
         if (!g_ops.teardown_try())
             return;   /* radio_mutex held by the TX worker: next pass */
+        /* The old HAL is gone: its loss is retired here, so a loss reported
+         * from now on (the next HAL, armed inside the re-init) is a new one
+         * with its own grace. */
+        g_loss_flag.store(false);
+        g_loss_ms.store(0);
         g_state = USB_WAIT_UNPLUGGED;
         /* One selection right away: the stick may already be back (its
          * ARRIVED may have come before the loss was noticed). */
@@ -147,8 +152,15 @@ void daemon_usb_wait_tick(void)
         if (ri < 0)
             return;                 /* radio_mutex busy: the stick stays open, next pass */
         g_reinit_pending = false;
-        g_loss_flag.store(false);
-        g_loss_ms.store(0);
+        if (ri == 1 && g_loss_flag.load()) {
+            /* The new HAL latched a loss during the re-init's replay or RX
+             * re-arm (on_loss: UNPLUGGED, the flag, a new stamp). It never
+             * reports again, so it is classified like any loss, never READY. */
+            printf("[CH341] Meshstick lost again during the re-init: classifying\n");
+            fflush(stdout);
+            g_state = USB_WAIT_READY;
+            return;
+        }
         if (ri == 1) {
             printf("[CH341] Meshstick back: RADIO=READY\n");
             fflush(stdout);

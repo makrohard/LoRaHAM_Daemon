@@ -52,6 +52,8 @@ static struct {
     bool reinit_ok;
     int reinit_busy;        /* this many re-inits answer busy first */
     int reinits;
+    bool loss_in_reinit;    /* the new HAL reports a loss inside the re-init (its replay / RX re-arm) */
+    uint64_t loss_in_reinit_at;
     RadioHealth health;
     int fatals;
     char fatal_why[160];
@@ -92,6 +94,13 @@ static int f_reinit(void)
     }
     if (F.reinit_ok)
         F.health = RADIO_HEALTH_READY;
+    if (F.loss_in_reinit) {
+        /* As the real re-init: lora_init() armed the new HAL and set READY;
+         * the stick goes during the replay's RX re-arm, the HAL latches and
+         * calls on_loss from inside reinit(), which still returns 1. */
+        F.now = F.loss_in_reinit_at;
+        daemon_usb_wait_on_loss();
+    }
     return F.reinit_ok ? 1 : 0;
 }
 static void f_set_health(RadioHealth h) { F.health = h; }
@@ -391,6 +400,39 @@ static void test_r4_arrivals_during_selection(void)
            F.arrivals_fed == 3 && F.reopen_begins == 1 && F.arrivals == 0);
 }
 
+/* r23 (gate-2 r1 F1): a loss latched by the NEW HAL inside the re-init is
+ * classified like any loss, with its own grace, never erased into READY (the
+ * latched HAL never reports again, so READY would wait for nothing). */
+static void test_r23_loss_during_reinit(void)
+{
+    setup();
+    F.now = 1000;
+    daemon_usb_wait_on_loss();                  /* the first loss, stamped 1000 */
+    F.left = true;
+    daemon_usb_wait_tick();
+    daemon_usb_wait_tick();
+    expect("r23: gone and torn down", daemon_usb_wait_state() == USB_WAIT_UNPLUGGED);
+    F.left = false;
+    F.reopen_results[0] = 1;                    /* the stick is back, selected */
+    F.reopen_n = 1;
+    F.loss_in_reinit = true;
+    F.loss_in_reinit_at = 60000;                /* lost again during its re-init */
+    daemon_usb_wait_tick();
+    expect("r23: the re-init ran once", F.reinits == 1);
+    expect("r23: health UNPLUGGED, not READY (the new loss)", F.health == RADIO_HEALTH_UNPLUGGED);
+    F.now = 60000 + DAEMON_USB_WAIT_GRACE_MS - 1;
+    daemon_usb_wait_tick();
+    expect("r23: the new loss is being classified (PENDING), not READY",
+           daemon_usb_wait_state() == USB_WAIT_PENDING);
+    expect("r23: its grace counts from the new loss, not the first (no presence check yet)",
+           F.present_calls == 0 && F.fatals == 0);
+    F.left = true;                              /* its LEFT */
+    daemon_usb_wait_tick();
+    expect("r23: the LEFT decides gone -> TEARDOWN", daemon_usb_wait_state() == USB_WAIT_TEARDOWN);
+    daemon_usb_wait_tick();
+    expect("r23: torn down again, waiting", daemon_usb_wait_state() == USB_WAIT_UNPLUGGED && F.fatals == 0);
+}
+
 static void test_r12_left(void)
 {
     /* Core r8 B2: a LEFT of another stick while waiting (a duplicate gone, the
@@ -429,6 +471,7 @@ int main(void)
     test_r2_cases();
     test_r4_arrivals_during_selection();
     test_r12_left();
+    test_r23_loss_during_reinit();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;
