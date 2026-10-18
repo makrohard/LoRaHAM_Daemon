@@ -274,7 +274,7 @@ int main(void)
     int ir = loraham_ch341_identity(&dbg, &it);
     CHECK("serial_budget_first_request_gets_200", stub_ntimeouts >= 1 && stub_timeouts[0] == 200);
     CHECK("serial_budget_second_request_gets_the_rest",
-          ir == 0 && it.serial_state == 1 && stub_ntimeouts == 2 && stub_timeouts[1] <= 80);
+          ir == 0 && it.serial_state == 1 && stub_ntimeouts == 2 && stub_timeouts[1] == 80);
     CHECK("serial_number_field_ignored", strcmp(it.serial, "BUDGET01") == 0);
     stub_set_delay(bd, 250);
     stub_ntimeouts = 0;
@@ -373,7 +373,7 @@ int main(void)
     write_file(tmp + "/libpinedio-usb.h", PINEDIO_STUB_H);
     write_file(tmp + "/driver.c", DRIVER_C);
 
-    std::string cc = "cc -std=gnu11 -Wall -Wextra -Werror -I'" + tmp + "' -I'" + stub_dir +
+    std::string cc = "cc -std=gnu11 -Wall -Wextra -Werror -DCH341_MONITOR_TEST_CLOCK -I'" + tmp + "' -I'" + stub_dir +
                      "' -I'" + src_dir + "' -o '" + tmp + "/driver' '" + tmp + "/driver.c' '" +
                      stub_dir + "/libusb_stub.c' '" + src_dir + "/ch341_monitor.c'";
     expect("the real ch341_monitor.c builds against the stub libusb", system(cc.c_str()) == 0);

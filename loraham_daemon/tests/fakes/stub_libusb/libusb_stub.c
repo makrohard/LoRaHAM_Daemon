@@ -101,6 +101,10 @@ void stub_set_access(libusb_device *d, int denied) { d->access_denied = denied; 
 void stub_set_stall(libusb_device *d, int stall) { d->stall = stall; }
 void stub_set_malformed(libusb_device *d, int m) { d->malformed = m; }
 void stub_set_delay(libusb_device *d, int ms) { d->delay_ms = ms; }
+/* The controlled monotonic clock: ch341_monitor.c reads it when built with
+ * -DCH341_MONITOR_TEST_CLOCK; a delayed request advances it, nothing sleeps. */
+static uint64_t stub_clock_ms = 1000;
+uint64_t stub_mono_ms(void) { return stub_clock_ms; }
 int stub_refs(libusb_device *d) { return d->refs; }
 
 /* ---- the API ------------------------------------------------------------------ */
@@ -275,10 +279,8 @@ int libusb_control_transfer(libusb_device_handle *h, uint8_t type, uint8_t req, 
     if (h->dev->stall)
         return LIBUSB_ERROR_TIMEOUT;
     if ((value & 0xff) == 0) {           /* language table: en-US */
-        if (h->dev->delay_ms) {
-            struct timespec ts = { h->dev->delay_ms / 1000, (long)(h->dev->delay_ms % 1000) * 1000000L };
-            nanosleep(&ts, NULL);
-        }
+        if (h->dev->delay_ms)
+            stub_clock_ms += (uint64_t)h->dev->delay_ms;   /* the request "takes" this long */
         unsigned char t[4] = { 4, LIBUSB_DT_STRING, 0x09, 0x04 };
         if (h->dev->malformed == 2)
             t[0] = 2;                    /* advertises no language id */

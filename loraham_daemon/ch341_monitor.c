@@ -54,12 +54,19 @@ struct loraham_ch341_mon {
 
 /* ---- time ------------------------------------------------------------------ */
 
+#ifdef CH341_MONITOR_TEST_CLOCK
+/* Tests only (test_ch341_monitor): the stub libusb's controlled clock, so the
+ * serial budget is measured on time the test sets, not on scheduling. */
+uint64_t stub_mono_ms(void);
+static uint64_t mono_ms(void) { return stub_mono_ms(); }
+#else
 static uint64_t mono_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
 }
+#endif
 
 /* ---- hotplug: the callback only records ----------------------------------- */
 
