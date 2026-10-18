@@ -25,6 +25,10 @@
  * Held = entered/release: the step logs its marker, then waits until the test
  * removes the control file (the release); the test changes the bus before it
  * releases. 20 s is only a watchdog: then "holdtimeout <file>" is logged.
+ * $DIR/txdelay: the next SetCad/SetTx logs "txpath" and is held there; after
+ * the release the request sees the bus as it is then (a fresh read) and logs
+ * "txrelease <port> gone|present", so an unplug made while it was held fails
+ * that very request.
  * $DIR/overflow: the next dispatch reports lost events (once), as the real
  * monitor does on a queue overflow: one arrival, and "uncertain" (2) for the
  * bound stick.
@@ -267,7 +271,19 @@ int loraham_ch341_transceive(loraham_ch341 *d, const uint8_t *out, uint8_t *in, 
     } else if (op == 0x82) {                      /* SetRx */
         d->rx_seen = 1;
     } else if (op == 0xC5 || op == 0x83) {        /* SetCad / SetTx: a TX is in flight */
-        logline("txpath %s", d->s.port);
+        if (!file_exists("txdelay")) {
+            logline("txpath %s", d->s.port);
+        } else {
+            hold("txdelay", "txpath %s", d->s.port);
+            stick now[MAXS];
+            int n = read_bus(now), there = 0;
+            for (int i = 0; i < n; i++)
+                if (strcmp(now[i].port, d->s.port) == 0 && now[i].gen == d->s.gen)
+                    there = 1;
+            logline(there ? "txrelease %s present" : "txrelease %s gone", d->s.port);
+            if (!there)
+                return -1;                        /* unplugged while held: this request meets the loss */
+        }
     }
     return 0;
 }

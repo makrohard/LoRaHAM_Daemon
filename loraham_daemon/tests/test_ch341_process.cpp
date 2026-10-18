@@ -400,16 +400,23 @@ static void scenario_unplug_and_return(void)
         ok = read_line(keep_conf, 1000);
     expect("S1 TXRESULT=1 on the CONF client", ok == "OK");
 
-    /* T12: a TX in flight when the stick goes. */
+    /* T12: a TX in flight when the stick goes. The fake holds the request at
+     * its TX-path entry (SetCad/SetTx) until the test releases it after the
+     * unplug, so the request can only complete after the loss. */
+    write_text(g_fake + "/txdelay", "1\n");
     framed_tx(fr, "inflight");
-    expect("T12 the TX reached the chip (marker, not a sleep)", wait_log(g_fake + "/log", " txpath 1-2", 5000));
+    expect("T12 the TX reached the chip and is held there (marker)", wait_log(g_fake + "/log", " txpath 1-2", 5000));
+    expect("T12 no TX_RESULT while the request is held", framed_results(fr, 300).empty());
     bus("");                                          /* unplug */
+    release("txdelay");
     expect("T11 RADIO=UNPLUGGED", wait_status(C, "RADIO=UNPLUGGED", 3000));
     expect("T1 the loss is classified gone (log names the signal)",
            wait_log(log, "[CH341] Meshstick gone (", 3000));
     expect("T21 waiting: USBWAIT=1-2 BOUND=-", wait_status(C, " USBWAIT=1-2 BOUND=- ID=ms1", 3000));
     std::vector<int> r1 = framed_results(fr, 3000);
-    expect("T12 the in-flight TX: exactly one TX_RESULT", r1.size() == 1);
+    expect("T12 the in-flight TX: exactly one TX_RESULT, after the loss", r1.size() == 1);
+    expect("T12 the request was held until released (no watchdog)", held_until_released());
+    expect("T12 the held request saw the loss on its release", log_has(g_fake + "/log", " txrelease 1-2 gone"));
     framed_tx(fr, "while-unplugged");
     std::vector<int> r2 = framed_results(fr, 2000);
     expect("T3 framed TX while UNPLUGGED: one TX_RESULT RADIO_NOT_READY (3)", r2.size() == 1 && r2[0] == 3);
