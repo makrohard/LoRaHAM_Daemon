@@ -44,6 +44,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../framed_data.h"
+
 static int g_ok = 0;
 static int g_fail = 0;
 
@@ -414,7 +416,13 @@ static void scenario_unplug_and_return(void)
            wait_log(log, "[CH341] Meshstick gone (", 3000));
     expect("T21 waiting: USBWAIT=1-2 BOUND=-", wait_status(C, " USBWAIT=1-2 BOUND=- ID=ms1", 3000));
     std::vector<int> r1 = framed_results(fr, 3000);
-    expect("T12 the in-flight TX: exactly one TX_RESULT, after the loss", r1.size() == 1);
+    if (r1.size() == 1)
+        printf("       T12 the in-flight TX's status: %d\n", r1[0]);
+    /* A failed TX (plan §3.4: "exactly one failed-TX result"): RADIO_ERROR or
+     * RADIO_NOT_READY, never OK for the request that met the loss. */
+    expect("T12 the in-flight TX: exactly one TX_RESULT, after the loss, a failure (RADIO_ERROR or RADIO_NOT_READY)",
+           r1.size() == 1 && (r1[0] == FRAMED_DATA_TX_STATUS_RADIO_ERROR ||
+                              r1[0] == FRAMED_DATA_TX_STATUS_RADIO_NOT_READY));
     expect("T12 the request was held until released (no watchdog)", held_until_released());
     expect("T12 the held request saw the loss on its release", log_has(g_fake + "/log", " txrelease 1-2 gone"));
     framed_tx(fr, "while-unplugged");
