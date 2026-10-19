@@ -159,8 +159,7 @@ What differs from a Pi board, and why:
   opened on: replugged into another port, it is ignored ("replug into the same port, or restart")
   and `USBWAIT=<port>` in `GET STATUS` says where it waits. If several daemons reopen at the same
   moment, one can be delayed while another holds its stick; both log the not-claimable line.
-* **On a Raspberry Pi Zero** use a powered USB hub: its OTG port browned out with the stick plugged
-  in directly.
+* **On a Raspberry Pi Zero** consider a powered USB hub between the board and the stick.
 
 ### The Meshstick library (optional)
 
@@ -199,15 +198,15 @@ restarted) and one line naming the reason when:
 
 Running it needs only the libusb runtime (`libusb-1.0-0`), which is not the development package.
 The daemon binary links lgpio for every preset, so a PC running the Meshstick also needs the lgpio
-runtime: `liblgpio1` on Raspberry Pi OS and Ubuntu 24.04. Debian 13 has no package; build lgpio from
-source there. Its instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
+runtime (`liblgpio1` where the distribution packages it; otherwise build lgpio from source). Its
+instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
 tmpfiles fragment).
 The startup log names the loaded commit: `[CH341] Meshstick library loaded (pine64 <commit>)`.
 
 ### USB access (udev)
 
-Without a rule the device node is `0664 root:root`, so only root may open the stick, unless another
-package's rule grants the desktop user access (on Fedora 43, flashrom's does). For a daemon running
+Without a rule only root may open the stick, unless a rule from another installed package grants
+access. For a daemon running
 as its own user, a rule gives the device to a group:
 
     sudo tee /etc/udev/rules.d/90-loraham-meshstick.rules >/dev/null <<'EOF2'
