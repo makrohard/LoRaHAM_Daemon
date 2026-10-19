@@ -42,10 +42,9 @@ Target platform: Raspberry Pi 3/4/5 running a Raspbian image.
     cmake --build ~/RadioLib/build
 
 RadioLib is used from its source checkout by the daemon build script — no `make install` required.
-The position-independent build matters where the compiler does not produce it by default: on Fedora 43
-a RadioLib built without the flag cannot be linked into the hardened (PIE) daemon ("relocation
-R_X86_64_32 … recompile with -fPIE"). The invocation above was measured on Fedora 43 and Ubuntu 24.04;
-Raspberry Pi OS (Pi 5) and Ubuntu 24.04 also build the daemon without the flag.
+Build RadioLib position-independent (the flag above): a compiler that does not produce
+position-independent code by default leaves a RadioLib that cannot be linked into the hardened (PIE)
+daemon ("relocation R_X86_64_32 … recompile with -fPIE").
 The checkout above pins the exact RadioLib commit the test suite and CI run against, recorded in
 [`../.github/ci/radiolib.lock`](../.github/ci/radiolib.lock). Building against an arbitrary newer
 RadioLib may compile but is untested.
@@ -206,8 +205,7 @@ The startup log names the loaded commit: `[CH341] Meshstick library loaded (pine
 ### USB access (udev)
 
 Without a rule only root may open the stick, unless a rule from another installed package grants
-access. For a daemon running
-as its own user, a rule gives the device to a group:
+access. For a daemon running as its own user, a rule gives the device to a group:
 
     sudo tee /etc/udev/rules.d/90-loraham-meshstick.rules >/dev/null <<'EOF2'
     SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="5512", MODE="0660", GROUP="plugdev", TAG+="uaccess"
@@ -219,13 +217,13 @@ The daemon's user must be in that group. The daemon never installs the rule.
 
 ### The kernel's spi-ch341 driver
 
-Linux binds its own `spi-ch341` driver to the stick. That driver offers no usable SPI device and no
-GPIO for the radio's control lines, so the library detaches it when it opens the stick and
-re-attaches it when it closes. The daemon closes the stick on every exit it controls: a clean stop,
-a startup failure, and the exit `5` fatal. After the process is killed outright (`SIGKILL`), the
-driver may stay detached. The daemon does not need it: the next start opens the stick as usual (the
-library's detach then has nothing to do). Only to give the stick back to the kernel driver — which on
-a Meshstick you do not want, see below — unplug and replug it, or as root:
+Linux has its own `spi-ch341` driver for this USB ID (`drivers/spi/spi-ch341.c`). The daemon does not
+use it: the library detaches it when it opens the stick and re-attaches it when it closes. The daemon
+closes the stick on every exit it controls: a clean stop, a startup failure, and the exit `5` fatal.
+After the process is killed outright (`SIGKILL`), the driver may stay detached. The daemon does not
+need it: the next start opens the stick as usual (the library's detach then has nothing to do). Only to
+give the stick back to the kernel driver — which on a Meshstick you do not want, see below — unplug and
+replug it, or as root:
 
     echo <port>:1.0 > /sys/bus/usb/drivers/spi-ch341/bind
 
