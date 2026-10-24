@@ -501,7 +501,7 @@ static int test_gpio_lock_held_exits_lock_error(void)
     int rc;
 
     ensure_test_runtime_dir();
-    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-gpio-%d", (int)getpid());
+    test_tmp_dir(dir, sizeof(dir), "loraham-exit4-gpio");
     mkdir(dir, 0700);
 
     /* Peer holds a legacy-433 profile pin lock (BCM 5 = RST). */
@@ -532,7 +532,7 @@ static int test_spi_lock_unusable_exits_lock_error(void)
         return TEST_SKIP;
 
     ensure_test_runtime_dir();
-    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-spi-%d", (int)getpid());
+    test_tmp_dir(dir, sizeof(dir), "loraham-exit4-spi");
     mkdir(dir, 0700);
 
     /* spi0.lock as a DIRECTORY: openat(O_CREAT) fails, lock unusable. */
@@ -563,7 +563,7 @@ static int test_gpio_unavailable_exits_lock_error(void)
         return TEST_SKIP;
 
     ensure_test_runtime_dir();
-    snprintf(dir, sizeof(dir), "/tmp/loraham-exit4-gpio-%d", (int)getpid());
+    test_tmp_dir(dir, sizeof(dir), "loraham-exit4-gpio");
     mkdir(dir, 0700);
 
     return run_daemon_in_runtime_dir_expect(dir, LORAHAM_EXIT_LOCK_ERROR,

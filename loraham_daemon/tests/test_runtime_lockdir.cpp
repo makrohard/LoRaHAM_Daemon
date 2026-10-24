@@ -16,6 +16,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "test_tmpdir.h"
+
 static int g_ok = 0;
 static int g_fail = 0;
 
@@ -249,7 +251,7 @@ int main(void)
         return 0;
     }
 
-    snprintf(g_base, sizeof(g_base), "/tmp/loraham-lockdir-%d", (int)getpid());
+    test_tmp_dir(g_base, sizeof(g_base), "loraham-lockdir");
     mkdir(g_base, 0700);
 
     test_missing_dir();

@@ -30,6 +30,7 @@
 #include <unistd.h>
 
 #include "../daemon_protocol.h"
+#include "test_tmpdir.h"
 
 /* Test-side socket paths: the harness runs the daemon with
  * LORAHAM_SOCKET_DIR=/tmp (see ensure_test_runtime_dir), so clients connect
@@ -431,7 +432,7 @@ static TEST_UNUSED void ensure_test_runtime_dir(void)
         return;
 
     if (!getenv("LORAHAM_RUNTIME_DIR")) {
-        snprintf(dir, sizeof(dir), "/tmp/loraham-test-%d", (int)getpid());
+        test_tmp_dir(dir, sizeof(dir), "loraham-test");
         mkdir(dir, 0700);
         setenv("LORAHAM_RUNTIME_DIR", dir, 1);
     }
