@@ -4,7 +4,7 @@
  * RadioLib sets RegOcp (0x08E7) to 60 mA inside begin() and beginFSK(), and
  * setOutputPower() reads it and writes the same value back, so a driver that
  * never sets it runs every power level on 60 mA. The daemon writes --ocp, or
- * 140 mA without it, after both init paths. These tests run the REAL Sx1262Driver against the
+ * 100 mA without it, after both init paths; the rig writes 140 (the top of the range). These tests run the REAL Sx1262Driver against the
  * REAL pinned RadioLib, with tests/fakes/sx126x_register_model.h where the
  * chip would be, and read the register back after boot, after a SET POWER,
  * after MODE=FSK and after the return to LoRa.

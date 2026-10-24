@@ -77,8 +77,8 @@ static void sx1262_warn_above_20(int power_dbm, int state)
  * RadioLib sets the OCP to 60 mA inside begin() and beginFSK() (SX126x.cpp, both
  * paths) and setOutputPower() preserves whatever is there, so without this the
  * chip ran every later SET POWER on 60 mA. The value is the process's --ocp or
- * the daemon's 140 mA SX1262 default (daemon_ocp_boot.h), the top of the range
- * RadioLib accepts (0..140). Written after both init paths, which are the only
+ * the daemon's 100 mA default (daemon_ocp_boot.h); RadioLib accepts 0..140.
+ * Written after both init paths, which are the only
  * places RadioLib resets it. The caller returns setCurrentLimit()'s result; with
  * RadioLib 187ef247 that fails only on an out-of-range value (its
  * writeRegister() does not report the chip's status).

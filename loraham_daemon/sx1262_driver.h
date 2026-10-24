@@ -32,10 +32,10 @@
 
 class Sx1262Driver : public RadioDriver {
 public:
-    /* ocp_ma: the PA over-current limit, from --ocp or the 140 mA default
+    /* ocp_ma: the PA over-current limit, from --ocp or the 100 mA default
      * (daemon_ocp_boot.h), written after every RadioLib init. */
     Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin,
-                 int ocp_ma = 140);
+                 int ocp_ma = 100);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,

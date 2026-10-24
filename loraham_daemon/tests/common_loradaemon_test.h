@@ -613,12 +613,13 @@ static TEST_UNUSED int wait_client_closed_after_shutdown(int fd, int timeout_ms)
 
 /* --- CLI smoke helper --- */
 
-static TEST_UNUSED int run_cli_capture(const char *bin,
-                                       const char *arg1,
-                                       const char *arg2,
-                                       char *out,
-                                       size_t out_size,
-                                       int *exit_code)
+static TEST_UNUSED int run_cli_capture3(const char *bin,
+                                        const char *arg1,
+                                        const char *arg2,
+                                        const char *arg3,
+                                        char *out,
+                                        size_t out_size,
+                                        int *exit_code)
 {
     pid_t pid;
     int pipefd[2];
@@ -644,7 +645,9 @@ static TEST_UNUSED int run_cli_capture(const char *bin,
         dup2(pipefd[1], STDERR_FILENO);
         close(pipefd[1]);
 
-        if (arg2)
+        if (arg3)
+            execl(bin, bin, arg1, arg2, arg3, (char *)NULL);
+        else if (arg2)
             execl(bin, bin, arg1, arg2, (char *)NULL);
         else if (arg1)
             execl(bin, bin, arg1, (char *)NULL);
@@ -687,6 +690,16 @@ static TEST_UNUSED int run_cli_capture(const char *bin,
 
     *exit_code = WEXITSTATUS(status);
     return TEST_PASS;
+}
+
+static TEST_UNUSED int run_cli_capture(const char *bin,
+                                       const char *arg1,
+                                       const char *arg2,
+                                       char *out,
+                                       size_t out_size,
+                                       int *exit_code)
+{
+    return run_cli_capture3(bin, arg1, arg2, NULL, out, out_size, exit_code);
 }
 
 static TEST_UNUSED int test_cli_invalid_option(const char *bin)

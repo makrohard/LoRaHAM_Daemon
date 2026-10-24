@@ -4,9 +4,9 @@
 /* --- Boot-time PA over-current limit (--ocp) ------------------------------ */
 /*
  * `--ocp <mA>` sets the PA over-current limit for the whole process. Without
- * it the per-family default applies: 100 mA on SX127x (the silicon default)
- * and 140 mA on SX1262 (the daemon's default). One value at every power level,
- * POWER=20 included.
+ * it the default is 100 mA on every chip. One value at every power level,
+ * POWER=20 included. With --high-power on SX127x, a value at or below 100 mA
+ * (or none) gets a startup warning; --ocp 0 (SX127x protection off) always does.
  *
  * Only values the chip can represent are accepted -- nothing is rounded:
  *   SX127x  0 (protection off), 45..120 in 5 mA steps, 130..240 in 10 mA steps
@@ -41,7 +41,7 @@ bool daemon_ocp_valid_ma(DaemonChipFamily family, int ma);
 /* The accepted set, for the refusal message. */
 const char *daemon_ocp_valid_text(DaemonChipFamily family);
 
-/* --ocp if given, else the family default. */
+/* --ocp if given, else the 100 mA default. */
 int daemon_ocp_effective_ma(DaemonChipFamily family);
 
 /* The one startup notice line for this configuration, without the band tag.

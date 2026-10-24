@@ -7,8 +7,7 @@
 
 /* --- Boot-time PA over-current limit (--ocp) ------------------------------ */
 
-#define OCP_DEFAULT_SX127X_MA 100
-#define OCP_DEFAULT_SX1262_MA 140
+#define OCP_DEFAULT_MA 100
 
 static bool g_ocp_given = false;
 static int g_ocp_ma = 0;
@@ -44,8 +43,8 @@ int daemon_ocp_boot_requested_ma(void)
 
 int daemon_ocp_default_ma(DaemonChipFamily family)
 {
-    return family == DAEMON_CHIP_FAMILY_SX1262 ? OCP_DEFAULT_SX1262_MA
-                                               : OCP_DEFAULT_SX127X_MA;
+    (void)family;                 /* one default on every chip */
+    return OCP_DEFAULT_MA;
 }
 
 /*
@@ -83,36 +82,28 @@ int daemon_ocp_effective_ma(DaemonChipFamily family)
 bool daemon_ocp_notice(DaemonChipFamily family, bool high_power,
                        char *buf, size_t buf_size)
 {
-    const int def = daemon_ocp_default_ma(family);
+    const int ma = daemon_ocp_effective_ma(family);
 
     if (!buf || buf_size == 0)
         return false;
 
-    if (!g_ocp_given) {
-        if (family != DAEMON_CHIP_FAMILY_SX127X || !high_power)
-            return false;
-        snprintf(buf, buf_size,
-                 "WARNING OCP not specified under --high-power: the %d mA "
-                 "default may limit +20 dBm", def);
-        return true;
-    }
-
-    if (g_ocp_ma == 0) {
+    /* --ocp 0 switches the protection off; only SX127x can (SX1262 refuses 0). */
+    if (g_ocp_given && g_ocp_ma == 0 && family == DAEMON_CHIP_FAMILY_SX127X) {
         snprintf(buf, buf_size,
                  "WARNING OCP disabled (--ocp 0): warranty void, hardware "
                  "may be in danger");
-    } else if (g_ocp_ma > def) {
-        snprintf(buf, buf_size,
-                 "WARNING OCP %d mA above the default %d mA: warranty void, "
-                 "hardware may be in danger", g_ocp_ma, def);
-    } else if (g_ocp_ma < def) {
-        snprintf(buf, buf_size,
-                 "NOTE OCP %d mA below the default %d mA: may limit output "
-                 "power", g_ocp_ma, def);
-    } else {
-        return false;
+        return true;
     }
-    return true;
+
+    /* --high-power without --ocp, or with --ocp at or below the default --
+     * on SX127x only: on SX1262 --high-power is inert and says so itself. */
+    if (high_power && family == DAEMON_CHIP_FAMILY_SX127X && ma <= OCP_DEFAULT_MA) {
+        snprintf(buf, buf_size,
+                 "WARNING OCP %d mA under --high-power: may limit output "
+                 "power (give --ocp above %d)", ma, OCP_DEFAULT_MA);
+        return true;
+    }
+    return false;
 }
 
 void daemon_ocp_boot_reset(void)

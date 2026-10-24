@@ -255,11 +255,11 @@ datasheet typical draw of 87 mA at +17 dBm on PA_BOOST; the daemon writes its ow
 every `SET POWER`, and after every LoRa/FSK switch, because `beginFSK()` re-pins it.
 
 The value is one per process, at every power level: `--ocp <mA>` ([cli.md](cli.md)), or without it
-**100 mA — the chip's own silicon default** on SX127x and **140 mA — the daemon's default** on
-SX1262. Only values the chip can represent are accepted (SX127x `0` = protection off, 45–120 in
-steps of 5, 130–240 in steps of 10; SX1262 5–140 in steps of 5); anything else is refused at
-startup. `GET STATUS` reports the value as `OCP=` ([conf-protocol.md](conf-protocol.md)). The
-register sequence is pinned by `tests/test_sx127x_power_register.cpp` and
+**100 mA** on every chip (the SX127x silicon default; 1.3.0 used 140 mA on SX1262). Only values the
+chip can represent are accepted (SX127x `0` = protection off, 45–120 in steps of 5, 130–240 in steps
+of 10; SX1262 5–140 in steps of 5); anything else is refused at startup. `GET STATUS` reports the
+value as `OCP=` ([conf-protocol.md](conf-protocol.md)). The register sequence is pinned by
+`tests/test_sx127x_power_register.cpp` and
 `tests/test_sx1262_ocp_register.cpp` against the real pinned RadioLib.
 
 `20` on SX127x runs on the same value. 1.2.0 raised the limit to 140 mA at exactly `20`; since 1.3.0
@@ -267,9 +267,9 @@ that pairing is gone, so `20` without `--ocp` runs on 100 mA. The datasheet says
 adapted to the actual power level" and gives 120 mA as the typical total draw at +20 dBm; `Imax`
 bounds the PA current only, so that typical does not translate into an exact PA figure, but 100 mA
 is likely to limit the amplifier there. The daemon says so at startup when `--high-power` is given
-without `--ocp`; an operator who wants +20 dBm at full drive gives `--ocp`. A value of `0` or above
-the default prints a warning at startup ("warranty void, hardware may be in danger"); no value has
-been current-measured on these boards.
+without `--ocp` or with a value of 100 or less; an operator who wants +20 dBm at full drive gives
+`--ocp` above 100, which runs without a notice. `--ocp 0` prints a warning at startup ("warranty void,
+hardware may be in danger"); no value has been current-measured on these boards.
 
 The defect the 100 mA fixes is that RadioLib's 60 mA sits *below* the typical draw at +17, so the
 protection can trip during ordinary transmission. Restoring the silicon default corrects that and

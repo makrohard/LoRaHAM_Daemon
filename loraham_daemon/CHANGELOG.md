@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1
+
+- The OCP default is 100 mA on every chip (SX1262 was 140); `--ocp` always wins.
+- `--high-power` on SX127x warns at startup when `--ocp` is absent or 100 or less; the other OCP notices are gone except `--ocp 0`.
+
 ## 1.3.0
 
 - SX1262: the PA over-current limit is 140 mA at every power level; RadioLib had left 60 mA.

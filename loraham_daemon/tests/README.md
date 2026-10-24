@@ -169,7 +169,7 @@ Lifecycle/helper behavior:
   what makes the HAL's "answer LOW on a read error" safe, since the wait is bounded at 150 % of
   the computed time-on-air -- and the chip is still parked in standby afterwards)
 - `test_sx1262_ocp_register` (the real `Sx1262Driver` and the real pinned RadioLib on
-  `tests/fakes/sx126x_register_model.h`: RegOcp 0x08E7 is 140 mA (or `--ocp 100`: 100 mA) after boot, after `SET POWER`, after
+  `tests/fakes/sx126x_register_model.h`: RegOcp 0x08E7 holds the value the driver was given (the rig gives 140 mA, the top of the range, or 100 mA) after boot, after `SET POWER`, after
   `MODE=FSK` and after the return to LoRa, where RadioLib alone leaves 60 mA; a value RadioLib refuses (145 mA, past
   `--ocp`'s validation) fails `begin()` with RadioLib's error; and the test fails on any SPI opcode the minimal model has
   not been checked against)

@@ -256,6 +256,40 @@ static int test_cli_ocp_refused(void)
     return TEST_PASS;
 }
 
+/* --ocp 0: accepted with a warning where the chip can switch OCP off (SX127x),
+ * refused where it cannot (SX1262: the daemon does not start). */
+static int test_cli_ocp_zero(void)
+{
+    char out[4096];
+    int exit_code = 0;
+    int ret = run_cli_capture3(g_bin, "--radio=868", "--hw=waveshare-sx1262", "--ocp=0",
+                               out, sizeof(out), &exit_code);
+
+    if (ret != TEST_PASS)
+        return ret;
+    if (exit_code != 1 ||
+        strstr(out, "invalid --ocp for SX1262: 0 mA (valid: 5..140 in steps of 5)") == NULL) {
+        fail_msg("SX1262 --ocp=0: exit %d, expected 1 with the reason, got: %s", exit_code, out);
+        return TEST_FAIL;
+    }
+
+    /* SX127x: past the check it would run for real where there is a radio. */
+    if (!radio_hardware_missing())
+        return TEST_PASS;
+    ret = run_cli_capture(g_bin, "--radio=433", "--ocp=0", out, sizeof(out), &exit_code);
+    if (ret != TEST_PASS)
+        return ret;
+    if (exit_code == 1 || strstr(out, "invalid --ocp") != NULL) {
+        fail_msg("SX127x --ocp=0 refused: exit %d, got: %s", exit_code, out);
+        return TEST_FAIL;
+    }
+    if (strstr(out, "[433] WARNING OCP disabled (--ocp 0): warranty void, hardware may be in danger") == NULL) {
+        fail_msg("SX127x --ocp=0: the warning is missing, got: %s", out);
+        return TEST_FAIL;
+    }
+    return TEST_PASS;
+}
+
 /* The removed band-suffixed overrides must fail closed as unknown options. */
 static int test_cli_banded_flag_rejected(void)
 {
@@ -927,6 +961,7 @@ int main(int argc, char **argv)
     run_test("CLI rejects --high-power with a value", test_cli_high_power_value_rejected);
     run_test("CLI accepts a valid --ocp", test_cli_ocp_value_accepted);
     run_test("CLI refuses an invalid --ocp with the reason", test_cli_ocp_refused);
+    run_test("CLI --ocp 0: SX127x warns, SX1262 refuses", test_cli_ocp_zero);
 
     run_test("single-radio socket mode 433", test_single_radio_socket_mode_433);
     run_test("single-radio socket mode 868", test_single_radio_socket_mode_868);

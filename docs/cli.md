@@ -46,7 +46,7 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `--cad-monitor VAL` | required | `on`, `off` | `off` |
 | `--cad-rssi DBM` | required | integer dBm, `-130`..`0` | `-90` |
 | `--high-power` | none | — | off |
-| `--ocp MA` | required | integer mA the chip can represent (see below) | SX127x `100`, SX1262 `140` |
+| `--ocp MA` | required | integer mA the chip can represent (see below) | `100` |
 | `--id ID` | required | 1–16 of `a-z 0-9 -`, first a letter | none (band names) |
 | `--usb-serial S` | required | 1–8 printable characters, no space; `meshstick-1262` only | none (the only stick, or the one stick without a serial) |
 | `-h`, `--help` | none | — | — |
@@ -115,7 +115,7 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--cad-monitor VAL` | the boot `CAD=0/1` monitoring opt-in | off when absent |
 | `--cad-rssi DBM` | the CAD busy RSSI threshold | keeps the built-in `-90` dBm when absent |
 | `--high-power` | permission for `POWER=20` on an SX127x board | off when absent; accepted and inert on an SX1262 |
-| `--ocp MA` | the PA over-current limit, at every power level | SX127x 100 mA, SX1262 140 mA when absent |
+| `--ocp MA` | the PA over-current limit, at every power level | 100 mA when absent, on every chip |
 | `--id ID` | the names of this process's sockets, lock and `-d` log: `lora-ID.sock`, `loraf-ID.sock`, `loraconf-ID.sock`, `instance-ID.lock`, `/tmp/lora_daemon-ID.log`; `ID=` in `GET STATUS` | the band's names when absent |
 | `--usb-serial S` | which Meshstick to open when two or more are plugged in (pine64 compares the first 8 characters); `BOUND=` in `GET STATUS` names the stick opened | the only stick, or the one stick without a serial |
 
@@ -152,15 +152,15 @@ over-current limit and the board caveat are in [limits.md](limits.md) and [hardw
 `--ocp MA` sets the PA over-current limit for the life of the process, at every power level,
 `POWER=20` included. Only values the chip of the `--hw` preset can represent are accepted, nothing
 is rounded: SX127x `0` (protection off), 45–120 in steps of 5, 130–240 in steps of 10; SX1262 5–140
-in steps of 5 (the SX1262 has no "off"). It is reported in `GET STATUS` as `OCP=`. One line is
-printed at startup when the value is not the default, or when `--high-power` is given on an SX127x
-without it:
+in steps of 5 (the SX1262 has no "off"). Without it the limit is 100 mA on every chip. It is
+reported in `GET STATUS` as `OCP=`. One line is printed at startup for `--ocp 0`, and when
+`--high-power` is given on an SX127x board without `--ocp` or with a value of 100 or less (on an
+SX1262 `--high-power` is inert and its own line says so; no OCP warning follows); a value above 100
+under `--high-power` runs without a notice:
 
 ```
 [433] WARNING OCP disabled (--ocp 0): warranty void, hardware may be in danger
-[433] WARNING OCP 150 mA above the default 100 mA: warranty void, hardware may be in danger
-[868] NOTE OCP 100 mA below the default 140 mA: may limit output power
-[433] WARNING OCP not specified under --high-power: the 100 mA default may limit +20 dBm
+[433] WARNING OCP 100 mA under --high-power: may limit output power (give --ocp above 100)
 ```
 
 ## Startup RF defaults

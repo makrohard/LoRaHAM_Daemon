@@ -7,7 +7,7 @@
 /*
  * The parser takes a strict non-negative integer; the family check accepts
  * exactly the values the chip can represent; the effective value is --ocp or
- * the family default; the startup notice is one line or nothing. The refusal
+ * the 100 mA default; the startup notice is one line or nothing. The refusal
  * and exit code of the binary itself are in test_interface_baseline.
  */
 
@@ -113,12 +113,12 @@ static void test_effective(void)
 {
     daemon_ocp_boot_reset();
     expect_int("default SX127x 100", daemon_ocp_default_ma(SX127X), 100);
-    expect_int("default SX1262 140", daemon_ocp_default_ma(SX1262), 140);
+    expect_int("default SX1262 100", daemon_ocp_default_ma(SX1262), 100);
     expect_int("not given: SX127x effective 100", daemon_ocp_effective_ma(SX127X), 100);
-    expect_int("not given: SX1262 effective 140", daemon_ocp_effective_ma(SX1262), 140);
+    expect_int("not given: SX1262 effective 100", daemon_ocp_effective_ma(SX1262), 100);
 
-    daemon_set_ocp_boot_global("100");
-    expect_int("--ocp 100: SX1262 effective 100", daemon_ocp_effective_ma(SX1262), 100);
+    daemon_set_ocp_boot_global("140");
+    expect_int("--ocp 140: SX1262 effective 140", daemon_ocp_effective_ma(SX1262), 140);
 
     daemon_ocp_boot_reset();
     daemon_set_ocp_boot_global("0");
@@ -139,31 +139,41 @@ static const char *notice(DaemonChipFamily family, bool high_power, const char *
     return buf;
 }
 
+#define HP_WARN(ma) "WARNING OCP " ma " mA under --high-power: may limit output power " \
+                    "(give --ocp above 100)"
+
 static void test_notice(void)
 {
+    /* Without --high-power: no notice, whatever the value (--ocp 0 aside). */
     expect_str("SX127x, no --ocp: silent", notice(SX127X, false, NULL), "(none)");
     expect_str("SX1262, no --ocp: silent", notice(SX1262, false, NULL), "(none)");
-    expect_str("SX1262, no --ocp, --high-power: silent", notice(SX1262, true, NULL), "(none)");
-    expect_str("SX127x, --ocp 100 (the default): silent", notice(SX127X, false, "100"), "(none)");
-    expect_str("SX1262, --ocp 140 (the default): silent", notice(SX1262, false, "140"), "(none)");
+    expect_str("SX127x --ocp 150: silent", notice(SX127X, false, "150"), "(none)");
+    expect_str("SX127x --ocp 60: silent", notice(SX127X, false, "60"), "(none)");
+    expect_str("SX1262 --ocp 140: silent", notice(SX1262, false, "140"), "(none)");
 
-    expect_str("SX127x --high-power without --ocp",
-               notice(SX127X, true, NULL),
-               "WARNING OCP not specified under --high-power: the 100 mA "
-               "default may limit +20 dBm");
+    /* With --high-power on SX127x: a warning when --ocp is absent or <= 100. */
+    expect_str("SX127x --high-power without --ocp", notice(SX127X, true, NULL), HP_WARN("100"));
+    expect_str("SX127x --high-power --ocp 100", notice(SX127X, true, "100"), HP_WARN("100"));
+    expect_str("SX127x --high-power --ocp 60", notice(SX127X, true, "60"), HP_WARN("60"));
+    expect_str("SX127x --high-power --ocp 105: silent", notice(SX127X, true, "105"), "(none)");
+    expect_str("SX127x --high-power --ocp 120: silent", notice(SX127X, true, "120"), "(none)");
+    expect_str("SX127x --ocp 100: silent", notice(SX127X, false, "100"), "(none)");
+
+    /* SX1262: --high-power is inert there, so no OCP warning at any value. */
+    expect_str("SX1262 --high-power without --ocp: silent", notice(SX1262, true, NULL), "(none)");
+    expect_str("SX1262 --high-power --ocp 100: silent", notice(SX1262, true, "100"), "(none)");
+    expect_str("SX1262 --high-power --ocp 105: silent", notice(SX1262, true, "105"), "(none)");
+    expect_str("SX1262 --high-power --ocp 140: silent", notice(SX1262, true, "140"), "(none)");
+
+    /* --ocp 0 turns the protection off: always said, with or without --high-power. */
     expect_str("SX127x --ocp 0",
                notice(SX127X, false, "0"),
                "WARNING OCP disabled (--ocp 0): warranty void, hardware may be in danger");
-    expect_str("SX127x --ocp 150",
-               notice(SX127X, true, "150"),
-               "WARNING OCP 150 mA above the default 100 mA: warranty void, "
-               "hardware may be in danger");
-    expect_str("SX127x --ocp 60",
-               notice(SX127X, false, "60"),
-               "NOTE OCP 60 mA below the default 100 mA: may limit output power");
-    expect_str("SX1262 --ocp 100",
-               notice(SX1262, false, "100"),
-               "NOTE OCP 100 mA below the default 140 mA: may limit output power");
+    expect_str("SX1262 --ocp 0: no notice (refused at startup, test_interface_baseline)",
+               notice(SX1262, false, "0"), "(none)");
+    expect_str("SX127x --high-power --ocp 0",
+               notice(SX127X, true, "0"),
+               "WARNING OCP disabled (--ocp 0): warranty void, hardware may be in danger");
 
     char tiny[1] = { 'x' };
     daemon_ocp_boot_reset();

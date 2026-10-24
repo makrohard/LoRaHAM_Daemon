@@ -304,7 +304,7 @@ static void daemon_print_usage(const char *argv0)
     printf("      --ocp MA            PA over-current limit in mA, every power level\n");
     printf("                          SX127x: %s (default: 100)\n",
            daemon_ocp_valid_text(DAEMON_CHIP_FAMILY_SX127X));
-    printf("                          SX1262: %s (default: 140)\n",
+    printf("                          SX1262: %s (default: 100)\n",
            daemon_ocp_valid_text(DAEMON_CHIP_FAMILY_SX1262));
     printf("  -h, --help       print this help and exit\n");
     printf("\n");
