@@ -95,6 +95,11 @@ jobs:
           TEST_TIMEOUT_SECONDS=90 \
           ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
 
+      # Red-before harness only (never on the topic): a non-loraham entry left in /tmp
+      # after the tests, which the check below must catch.
+      - name: Red-before harness, leave a non-loraham entry in /tmp
+        run: touch "/tmp/spike-${GITHUB_RUN_ID}-${{ matrix.name }}"
+
       - name: No test files left in /tmp
         shell: bash
         run: |
