@@ -83,12 +83,38 @@ jobs:
         if: matrix.name == 'normal'
         run: loraham_daemon/tests/test_daemon_liveness.sh
 
+      # What a run leaves in /tmp is checked against this list: the suite keeps its
+      # files in its own TMPDIR and removes that at exit.
+      - name: List /tmp before the tests
+        id: tmp_before
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -A /tmp | sort > "$RUNNER_TEMP/tmp-before.txt"
+
       - name: Run tests
         working-directory: loraham_daemon
         run: |
           RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" \
           TEST_TIMEOUT_SECONDS=90 \
           ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
+
+      # Also after a failed test step (a failing run must not hide a leftover); not after a
+      # cancel, and only where the list above was taken.
+      - name: No test files left in /tmp
+        if: ${{ !cancelled() && steps.tmp_before.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Both listings are files from checked pipelines: a failed listing fails the step.
+          ls -A /tmp | sort > "$RUNNER_TEMP/tmp-after.txt"
+          left="$(comm -13 "$RUNNER_TEMP/tmp-before.txt" "$RUNNER_TEMP/tmp-after.txt")"
+          if [[ -n "$left" ]]; then
+            echo "FAIL: the test run left these new entries in /tmp:"
+            printf '%s\n' "$left"
+            exit 1
+          fi
+          echo "OK: no new entry in /tmp"
 
       - name: Meshstick library built from the pinned source (normal lane)
         if: matrix.name == 'normal'

@@ -22,6 +22,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "test_tmpdir.h"
+
 static int g_ok = 0;
 static int g_fail = 0;
 
@@ -243,7 +245,7 @@ int main(void)
 {
     char dir[256];
 
-    snprintf(dir, sizeof(dir), "/tmp/loraham-itest-%d", (int)getpid());
+    test_tmp_dir(dir, sizeof(dir), "loraham-itest");
     mkdir(dir, 0755);
     setenv("LORAHAM_RUNTIME_DIR", dir, 1);
 

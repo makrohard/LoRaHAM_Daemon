@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "test_tmpdir.h"
+
 /* --- Cross-process GPIO ownership tests (audit P1-1) ----------------------- */
 /*
  * Uses a private LORAHAM_RUNTIME_DIR. flock is per open-file-description, so
@@ -176,7 +178,7 @@ static void test_claim_then_conflict_skips_hw_init(void)
 
 int main(void)
 {
-    snprintf(g_dir, sizeof(g_dir), "/tmp/loraham-gpiolock-%d", (int)getpid());
+    test_tmp_dir(g_dir, sizeof(g_dir), "loraham-gpiolock");
     if (mkdir(g_dir, 0700) != 0) {
         printf("[FAIL] test dir setup\n");
         printf("\nSummary: ok=0 fail=1\n");

@@ -14,6 +14,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "test_tmpdir.h"
+
 static int g_ok = 0;
 static int g_fail = 0;
 
@@ -117,15 +119,15 @@ int main(void)
 {
     /* The HAL opens the process-shared SPI lock in a trusted directory; give it
      * a private one, as test_locking_pihal does. */
-    char dir[64];
-    snprintf(dir, sizeof(dir), "/tmp/loraham-test-kcs-%d", (int)getpid());
+    char dir[TEST_TMP_DIR_MAX + 1];
+    test_tmp_dir(dir, sizeof(dir), "loraham-test-kcs");
     mkdir(dir, 0700);
     setenv("LORAHAM_RUNTIME_DIR", dir, 1);
 
     test_kernel_cs7_opens_spidev01_and_claims_no_cs_line();
     test_soft_cs7_opens_spidev00_and_claims_the_cs_line();
 
-    char lock[96];
+    char lock[TEST_TMP_DIR_MAX + 16];
     snprintf(lock, sizeof(lock), "%s/spi0.lock", dir);
     unlink(lock);
     rmdir(dir);
