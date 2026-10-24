@@ -21,6 +21,13 @@
  * it): this test is about build.sh's handling of the pine64 tree, and the
  * real daemon compile is run_tests.sh's own build. The stub's record shows
  * the daemon gets the lock's commit as LORAHAM_CH341_PIN_EXPECTED and -ldl.
+ *
+ * build.sh also looks beside its checkout (../libch341-spi-userspace,
+ * ../RadioLib), where a box keeps the real clones (LHPC's src/ layout). So it
+ * runs from a copy of this daemon directory inside the test's own directory,
+ * where nothing sits beside it, and RadioLib is a stub tree given by
+ * RADIOLIB_DIR (the compile it would feed is a stub too): the "no tree" cases
+ * then mean no tree on every machine.
  */
 
 #include <cstdio>
@@ -47,7 +54,8 @@ static void expect(const char *name, bool cond)
 }
 
 static std::string g_tmp;
-static std::string g_build_sh;
+static std::string g_src_dir;   /* the daemon directory under test */
+static std::string g_build_sh;  /* build.sh in the test's copy of it */
 
 static int sh(const std::string &cmd)
 {
@@ -76,7 +84,7 @@ static bool log_contains(const std::string &log, const char *needle)
 static void write_stub_tree(const std::string &dir)
 {
     sh("mkdir -p '" + dir + "/libusb-1.0'");
-    std::string fakes = g_build_sh.substr(0, g_build_sh.rfind('/')) + "/tests/fakes/stub_libusb";
+    std::string fakes = g_src_dir + "/tests/fakes/stub_libusb";
     sh("cp '" + fakes + "/libusb-1.0/libusb.h' '" + dir + "/libusb-1.0/libusb.h'");
     FILE *h = fopen((dir + "/libpinedio-usb.h").c_str(), "w");
     fputs("#include <stdint.h>\n#include <stdbool.h>\n#include <libusb-1.0/libusb.h>\n"
@@ -150,9 +158,9 @@ static int run_build(const char *name, const std::string &pinedio_dir,
     *out_dir = g_tmp + "/out-" + name;
     *log = g_tmp + "/log-" + name + ".txt";
     sh("mkdir -p '" + *out_dir + "' '" + g_tmp + "/home'");
-    std::string env = "HOME='" + g_tmp + "/home' PINEDIO_LOCK_FILE='" + lock + "' CXX='" +
-                      g_tmp + "/fake-cxx' FAKE_CXX_RECORD='" + *out_dir + "/cxx-args.txt' LDFLAGS='-L" +
-           g_tmp + "/fakeusb' ";
+    std::string env = "HOME='" + g_tmp + "/home' RADIOLIB_DIR='" + g_tmp + "/radiolib' PINEDIO_LOCK_FILE='" +
+                      lock + "' CXX='" + g_tmp + "/fake-cxx' FAKE_CXX_RECORD='" + *out_dir +
+                      "/cxx-args.txt' LDFLAGS='-L" + g_tmp + "/fakeusb' ";
     env += pinedio_dir.empty() ? "env -u PINEDIO_DIR " : "PINEDIO_DIR='" + pinedio_dir + "' ";
     return sh(env + "'" + g_build_sh + "' --debug --output '" + *out_dir + "/loraham_daemon' > '" +
               *log + "' 2>&1");
@@ -182,7 +190,7 @@ int main(void)
     }
     exe[n] = '\0';
     std::string tests_dir(exe, strrchr(exe, '/') - exe);
-    g_build_sh = tests_dir + "/../build.sh";
+    g_src_dir = tests_dir + "/..";
 
     char tmpl[] = "/tmp/loraham-build-ch341.XXXXXX";
     if (!mkdtemp(tmpl)) {
@@ -190,6 +198,21 @@ int main(void)
         return 1;
     }
     g_tmp = tmpl;
+
+    /* build.sh and the sources it reads, copied: its checkout's neighbours are
+     * now this directory's, which hold only what the test puts there. */
+    std::string copy = g_tmp + "/checkout/loraham_daemon";
+    sh("mkdir -p '" + copy + "' && cp -p '" + g_src_dir + "'/build.sh '" + g_src_dir + "'/*.c '" + g_src_dir +
+       "'/*.cpp '" + g_src_dir + "'/*.h '" + copy + "/'");
+    g_build_sh = copy + "/build.sh";
+    expect("build.sh runs from a copy with nothing beside it",
+           file_exists(g_build_sh) && !file_exists(g_tmp + "/libch341-spi-userspace") &&
+               !file_exists(g_tmp + "/RadioLib"));
+
+    /* A RadioLib stub tree: the files build.sh checks for (the daemon compile is a stub). */
+    sh("mkdir -p '" + g_tmp + "/radiolib/src/hal/RPi' '" + g_tmp + "/radiolib/build' && touch '" + g_tmp +
+       "/radiolib/src/RadioLib.h' '" + g_tmp + "/radiolib/src/hal/RPi/PiHal.h' '" + g_tmp +
+       "/radiolib/build/libRadioLib.a'");
 
     /* The stub daemon compiler: records its arguments, writes -o. */
     {
