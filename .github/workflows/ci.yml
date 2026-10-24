@@ -83,12 +83,29 @@ jobs:
         if: matrix.name == 'normal'
         run: loraham_daemon/tests/test_daemon_liveness.sh
 
+      # What a run leaves in /tmp is checked against this list: the suite keeps its
+      # files in its own TMPDIR and removes that at exit.
+      - name: List /tmp before the tests
+        run: ls -A /tmp | sort > "$RUNNER_TEMP/tmp-before.txt"
+
       - name: Run tests
         working-directory: loraham_daemon
         run: |
           RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" \
           TEST_TIMEOUT_SECONDS=90 \
           ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
+
+      - name: No test files left in /tmp
+        shell: bash
+        run: |
+          set -euo pipefail
+          left="$(comm -13 "$RUNNER_TEMP/tmp-before.txt" <(ls -A /tmp | sort) | grep '^loraham-' || true)"
+          if [[ -n "$left" ]]; then
+            echo "FAIL: the test run left these loraham-* entries in /tmp:"
+            printf '%s\n' "$left"
+            exit 1
+          fi
+          echo "OK: no loraham-* entry left in /tmp"
 
       - name: Meshstick library built from the pinned source (normal lane)
         if: matrix.name == 'normal'

@@ -259,8 +259,7 @@ int main(int argc, char *argv[])
     /* Point the spawned daemons at a writable shared lock dir (the production
      * default /run/lock/loraham fails closed for a non-root test runner). Both
      * children inherit this via the environment. */
-    snprintf(runtime_dir, sizeof(runtime_dir),
-             "/tmp/loraham-mi-%d", (int)getpid());
+    test_tmp_dir(runtime_dir, sizeof(runtime_dir), "loraham-mi");
     mkdir(runtime_dir, 0755);
     setenv("LORAHAM_RUNTIME_DIR", runtime_dir, 1);
 

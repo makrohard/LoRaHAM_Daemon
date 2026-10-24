@@ -10,11 +10,18 @@ DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 # shellcheck source=tests/daemon_liveness.sh
 . "$TEST_DIR/daemon_liveness.sh"
 
+# This run's own temp directory, removed at exit: the tests make their
+# directories under TMPDIR (tests/test_tmpdir.h), so what they leave there (the
+# lock files their daemons create, a test killed by its timeout) goes with it.
+run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/loraham-run.XXXXXX")"
+trap 'rm -rf -- "$run_tmp"' EXIT
+export TMPDIR="$run_tmp"
+
 # Tests run as a non-root user, so point every spawned daemon at a writable,
 # trusted lock directory via the dev override. The production default
 # (/run/lock/loraham) requires a root-owned directory provisioned by tmpfiles.d.
 # 0700 keeps it non-group/world-writable so it still passes lock-dir validation.
-export LORAHAM_RUNTIME_DIR="${LORAHAM_RUNTIME_DIR:-/tmp/loraham-test-$$}"
+export LORAHAM_RUNTIME_DIR="${LORAHAM_RUNTIME_DIR:-$run_tmp/runtime}"
 mkdir -p "$LORAHAM_RUNTIME_DIR"
 chmod 700 "$LORAHAM_RUNTIME_DIR"
 
@@ -1540,6 +1547,7 @@ cleanup_on_exit() {
   fi
 
   cleanup_test_binaries
+  rm -rf -- "$run_tmp"
   return "$rc"
 }
 
