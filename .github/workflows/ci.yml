@@ -88,12 +88,14 @@ jobs:
       - name: List /tmp before the tests
         run: ls -A /tmp | sort > "$RUNNER_TEMP/tmp-before.txt"
 
+      # Red-before harness only (never on the topic): the test step fails after leaving a
+      # unique entry in /tmp; the check below must still run and name it.
       - name: Run tests
         working-directory: loraham_daemon
         run: |
-          RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" \
-          TEST_TIMEOUT_SECONDS=90 \
-          ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
+          touch "/tmp/spike-${GITHUB_RUN_ID}-${{ matrix.name }}"
+          echo "harness: planted /tmp/spike-${GITHUB_RUN_ID}-${{ matrix.name }}; failing the test step"
+          exit 1
 
       - name: No test files left in /tmp
         shell: bash
