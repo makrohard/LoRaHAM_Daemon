@@ -77,6 +77,12 @@ jobs:
           git -C "$RUNNER_TEMP/libch341-spi-userspace" checkout --detach "$PINEDIO_COMMIT"
           echo "PINEDIO_DIR=$RUNNER_TEMP/libch341-spi-userspace" >> "$GITHUB_ENV"
 
+      # Its own step: the test counts every loraham_daemon on the runner, so it must not
+      # overlap the suite's daemons.
+      - name: Test runner liveness predicate (normal lane)
+        if: matrix.name == 'normal'
+        run: loraham_daemon/tests/test_daemon_liveness.sh
+
       - name: Run tests
         working-directory: loraham_daemon
         run: |

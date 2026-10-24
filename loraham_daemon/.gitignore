@@ -4,6 +4,7 @@
 !/tests/test_*.c
 !/tests/test_*.cpp
 !/tests/test_*.h
+!/tests/test_*.sh
 
 # Local test backups created by helper scripts
 /tests/backup-*/

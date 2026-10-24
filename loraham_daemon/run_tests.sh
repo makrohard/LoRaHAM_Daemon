@@ -6,6 +6,10 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 TEST_DIR="$SCRIPT_DIR/tests"
 DAEMON_BIN="$SCRIPT_DIR/loraham_daemon"
 
+# daemon_running: is a loraham_daemon alive (a zombie awaiting its reap is not).
+# shellcheck source=tests/daemon_liveness.sh
+. "$TEST_DIR/daemon_liveness.sh"
+
 # Tests run as a non-root user, so point every spawned daemon at a writable,
 # trusted lock directory via the dev override. The production default
 # (/run/lock/loraham) requires a root-owned directory provisioned by tmpfiles.d.
@@ -1336,7 +1340,7 @@ require_command mktemp
 require_command rm
 require_command timeout
 
-if pgrep -x loraham_daemon >/dev/null; then
+if daemon_running; then
   echo "ERROR: loraham_daemon is already running:"
   pgrep -af loraham_daemon
   echo
@@ -1511,7 +1515,7 @@ record_test_result() {
 cleanup_lingering_daemon() {
   local test_bin="$1"
 
-  if pgrep -x loraham_daemon >/dev/null; then
+  if daemon_running; then
     echo "ERROR: loraham_daemon is still running after $test_bin"
     pgrep -af loraham_daemon || true
     pkill -TERM -x loraham_daemon 2>/dev/null || true
@@ -1526,7 +1530,7 @@ cleanup_lingering_daemon() {
 cleanup_on_exit() {
   local rc=$?
 
-  if [[ "$running_tests" == true ]] && pgrep -x loraham_daemon >/dev/null; then
+  if [[ "$running_tests" == true ]] && daemon_running; then
     echo
     echo "ERROR: cleaning up lingering loraham_daemon before exit"
     pgrep -af loraham_daemon || true
