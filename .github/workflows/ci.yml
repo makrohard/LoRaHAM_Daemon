@@ -92,12 +92,12 @@ jobs:
           set -euo pipefail
           ls -A /tmp | sort > "$RUNNER_TEMP/tmp-before.txt"
 
+      # Red-before harness only (never on the topic): no suite; the check's after-listing
+      # below is pointed at a directory that does not exist, so that listing fails.
       - name: Run tests
         working-directory: loraham_daemon
         run: |
-          RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" \
-          TEST_TIMEOUT_SECONDS=90 \
-          ./run_tests.sh ${{ matrix.args }} --timeout-seconds 90
+          echo "harness - the suite is not run; the after-listing will fail"
 
       # Also after a failed test step (a failing run must not hide a leftover); not after a
       # cancel, and only where the list above was taken.
@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           # Both listings are files from checked pipelines: a failed listing fails the step.
-          ls -A /tmp | sort > "$RUNNER_TEMP/tmp-after.txt"
+          ls -A "/tmp/no-such-dir-${GITHUB_RUN_ID}" | sort > "$RUNNER_TEMP/tmp-after.txt"
           left="$(comm -13 "$RUNNER_TEMP/tmp-before.txt" "$RUNNER_TEMP/tmp-after.txt")"
           if [[ -n "$left" ]]; then
             echo "FAIL: the test run left these new entries in /tmp:"
