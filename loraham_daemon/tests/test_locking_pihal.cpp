@@ -19,6 +19,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "test_tmpdir.h"
+
 static int g_ok = 0;
 static int g_fail = 0;
 
@@ -361,7 +363,7 @@ static void test_unlock_hard_failure_is_fatal(void)
 int main(void)
 {
     /* Isolate the lock file in a private temp dir. */
-    snprintf(g_tmpdir, sizeof(g_tmpdir), "/tmp/loraham-test-%d", (int)getpid());
+    test_tmp_dir(g_tmpdir, sizeof(g_tmpdir), "loraham-test");
     mkdir(g_tmpdir, 0755);
     setenv("LORAHAM_RUNTIME_DIR", g_tmpdir, 1);
 
