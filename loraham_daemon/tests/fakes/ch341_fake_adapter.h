@@ -163,6 +163,7 @@ static const LorahamCh341Api g_fake_ch341_api = {
     fake_mon_unbind,
     fake_identity,
     fake_seed_idle,
+    nullptr,                /* open_port: this fake has no open by port */
 };
 
 #endif
