@@ -120,6 +120,7 @@ Client/socket/runtime:
 Lifecycle/helper behavior:
 
 - `test_daemon_radio_selection` (`--radio` 433, 868 and 915; anything else refused)
+- `test_hf_path` (the HF path of 868 and 915, not 433: the RX buffer cleared after a read, inside its length; the 50 ms TX guard, counted through a test hook, never timed)
 - `test_hardware_profile` (`--hw` preset resolution: legacy per-band identity, Uputronics NC pins/capabilities/slot LEDs, Waveshare SX1262 pin set, the Meshstick's CH341 pin set / 868-only / no Pi claims / 22 dBm ceiling while every Pi preset stays non-USB, unknown-preset rejection)
 - `test_ch341_hal` (the real `Ch341Hal`, `Sx1262Driver` and pinned RadioLib on `tests/fakes/ch341_fake_adapter.h` backed by the SX126x register model: boot, RX interrupt on D6, RXEN on D1 in RX/standby, SET POWER up to 22 under the preset ceiling, FSK and back, closed opcode list; startup USB failures latch without exiting; the device closes exactly once on a clean stop, a `begin()` failure after open and, in a forked child, the exit 5 after a failed transfer or a lost device)
 - `test_instance_id` (`--id`: the accepted format, the socket/lock/`-d` log names with and without it on both bands, r3/r3f distinct, the 107-byte socket path limit measured in bytes incl. a multibyte directory; the 915 band's names, range 902.0–928.0, boot defaults and no LED; the real binary refuses a bad id with exit 1 and an over-long path with exit 4, `--radio 915` on a Pi preset and an unknown band with exit 1)

@@ -87,6 +87,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/framed_data_tx.cpp"
   "$SCRIPT_DIR/daemon_framed_data_runtime.cpp"
   "$SCRIPT_DIR/daemon_rx.cpp"
+  "$SCRIPT_DIR/daemon_hf_path.cpp"
   "$SCRIPT_DIR/daemon_monitoring.cpp"
   "$SCRIPT_DIR/rf_packet.cpp"
   "$SCRIPT_DIR/radio_tx_limit.cpp"
