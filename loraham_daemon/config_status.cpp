@@ -457,8 +457,8 @@ void config_status_format(char *buf,
              /* USBWAIT / ID (appended 1.3.0): the port a Meshstick daemon
               * without a serial waits on, and the --id; "-" when none. */
              (ctrl && ctrl->usb_wait_port[0]) ? ctrl->usb_wait_port : "-",
-             /* BOUND (appended 1.3.0): how the open Meshstick was identified,
-              * serial:<8 chars> or port:<bus-port>; "-" unless READY. */
+             /* BOUND (appended 1.3.0; both parts since 1.4.0): the open stick,
+              * <serial>@<bus-port> (serial - / ?); "-" unless READY. */
              (ctrl && radio_controller_ready(ctrl) && ctrl->bound[0]) ? ctrl->bound : "-",
              (ctrl && ctrl->instance_id) ? ctrl->instance_id : "-",
              /* FREQ / SF / POWER (appended 1.3.0): the values the CONF apply

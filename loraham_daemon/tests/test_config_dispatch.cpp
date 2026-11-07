@@ -532,10 +532,10 @@ static void test_status_reports_high_power_and_family(void)
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "-");
-    /* BOUND= (1.3.0): the open stick's identity, reported only while READY. */
-    snprintf(ctrl.bound, sizeof(ctrl.bound), "serial:TESTSN01");
+    /* BOUND= (1.3.0; <serial>@<port> since 1.4.0): the open stick, reported only while READY. */
+    snprintf(ctrl.bound, sizeof(ctrl.bound), "TESTSN01@1-2");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status BOUND=serial:... while READY", status, " USBWAIT=- BOUND=serial:TESTSN01 ID=r3 FREQ=- SF=- POWER=-\n");
+    expect_contains("status BOUND=<serial>@<port> while READY", status, " USBWAIT=- BOUND=TESTSN01@1-2 ID=r3 FREQ=- SF=- POWER=-\n");
     ctrl.health = RADIO_HEALTH_UNPLUGGED;
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
@@ -552,7 +552,7 @@ static void test_status_reports_high_power_and_family(void)
     ctrl.ocp_ma = 240;
     ctrl.instance_id = "abcdefghijklmnop";                 /* the longest id */
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "255-7.7.7.7.7.7.7"); /* the longest port path */
-    snprintf(ctrl.bound, sizeof(ctrl.bound), "port:255-7.7.7.7.7.7.7");
+    snprintf(ctrl.bound, sizeof(ctrl.bound), "%%25%%25%%25%%25%%25%%25%%25%%25@255-7.7.7.7.7.7.7");   /* the longest BOUND */
     /* The applied values at their widest normalized form. */
     config_apply_replay_note("FREQ", "869.524999");
     config_apply_replay_note("SF", "12");

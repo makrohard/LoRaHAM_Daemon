@@ -6,7 +6,7 @@
  *   T1/T3/T11  unplug: RADIO=UNPLUGGED, every client stays, a NEW client is
  *              accepted, framed TX answered RADIO_NOT_READY, no exit
  *   T12        a TX in flight at the unplug gets exactly one TX_RESULT
- *   T21/BOUND  USBWAIT= and BOUND= follow the runtime: -/port:1-2 when READY,
+ *   T21/BOUND  USBWAIT= and BOUND= follow the runtime: -/-@1-2 when READY,
  *              1-2/- while waiting (gone, other port, a serial stick on the
  *              port, BUSY), back after the return
  *   T4/T6      the return: re-init + replay line + READY; a chip that fails
@@ -387,8 +387,8 @@ static void scenario_unplug_and_return(void)
     expect("S1 the stick without a serial: READY", wait_status(C, "RADIO=READY", 8000));
     std::string st = status(C);
     /* Changed guard (1.3.0): the applied FREQ= SF= POWER= now end the line. */
-    expect("T21/BOUND READY: ... USBWAIT=- BOUND=port:1-2 ID=ms1, nothing applied yet",
-           st.find(" USBWAIT=- BOUND=port:1-2 ID=ms1 FREQ=- SF=- POWER=-") != std::string::npos &&
+    expect("T21/BOUND READY: ... USBWAIT=- BOUND=-@1-2 ID=ms1, nothing applied yet",
+           st.find(" USBWAIT=- BOUND=-@1-2 ID=ms1 FREQ=- SF=- POWER=-") != std::string::npos &&
            st.size() > 26 && st.substr(st.size() - 26) == "ID=ms1 FREQ=- SF=- POWER=-");
     expect("S1 SET SF=9 POWER=5 applied", conf(C, "SET SF=9 POWER=5", "") == "OK");
     expect("S1 STATUS reports the applied SF and POWER, FREQ unset",
@@ -460,7 +460,7 @@ static void scenario_unplug_and_return(void)
     expect("T4 the replay line", log_has(log, "[CH341] configuration replayed: SET SF=9 POWER=5"));
     expect("T4 STATUS after the replay: the applied SF and POWER kept",
            status(C).find(" ID=ms1 FREQ=- SF=9 POWER=5") != std::string::npos);
-    expect("T21/BOUND back: USBWAIT=- BOUND=port:1-2", status(C).find(" USBWAIT=- BOUND=port:1-2 ID=ms1") != std::string::npos);
+    expect("T21/BOUND back: USBWAIT=- BOUND=-@1-2", status(C).find(" USBWAIT=- BOUND=-@1-2 ID=ms1") != std::string::npos);
     expect("S1 clients still connected after the return", connected(keep_conf) && connected(raw) && connected(fr));
 
     close(keep_conf);
@@ -605,9 +605,9 @@ static void scenario_instances(void)
     }
     expect("T19 nine distinct sockets", all);
     expect("T19 CONF answers on each: ID=r3 / ID=r3f / ID=-",
-           status("loraconf-r3.sock").find(" BOUND=serial:AAAA0001 ID=r3") != std::string::npos &&
-           status("loraconf-r3f.sock").find(" BOUND=serial:BBBB0002 ID=r3f") != std::string::npos &&
-           status("loraconf868.sock").find(" BOUND=serial:CCCC0003 ID=-") != std::string::npos);
+           status("loraconf-r3.sock").find(" BOUND=AAAA0001@1-2 ID=r3") != std::string::npos &&
+           status("loraconf-r3f.sock").find(" BOUND=BBBB0002@1-3 ID=r3f") != std::string::npos &&
+           status("loraconf868.sock").find(" BOUND=CCCC0003@1-4 ID=-") != std::string::npos);
 
     pid_t d = start(mesh({ "--id", "r3", "--usb-serial", "BBBB0002" }), g_tmp + "/s5d.log");
     int rc = wait_exit(d, 8000);
@@ -627,7 +627,7 @@ static void scenario_instances(void)
         stop(e);
     std::string s3 = status("loraconf-r3.sock");
     expect("T22 the first undisturbed: READY, still bound",
-           s3.find("RADIO=READY") != std::string::npos && s3.find(" BOUND=serial:AAAA0001 ") != std::string::npos);
+           s3.find("RADIO=READY") != std::string::npos && s3.find(" BOUND=AAAA0001@1-2 ") != std::string::npos);
     expect("T22 the first still running", wait_exit(a, 200) == -2);
     term(a);
     term(b);
@@ -775,7 +775,7 @@ static void scenario_start_arrival(void)
     release("scandelay");
     expect("r12 start: a duplicate leaving during the start selection: READY on the remaining stick",
            wait_status("loraconf868.sock", "RADIO=READY", 8000) &&
-           status("loraconf868.sock").find("BOUND=serial:SERIAL01") != std::string::npos);
+           status("loraconf868.sock").find("BOUND=SERIAL01@1-2") != std::string::npos);
     expect("r12 start: ... no refusal", !log_has(log, "refused"));
     expect("r12 start: the scan step held until released (no watchdog)", held_until_released());
     term(pid);

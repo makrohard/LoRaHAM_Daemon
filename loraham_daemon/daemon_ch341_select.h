@@ -89,9 +89,9 @@ uint64_t daemon_ch341_select_retry_at(void);
 const char *daemon_ch341_select_wait_port(void);
 
 /* The identity of the last verified open, for STATUS BOUND=:
- * "serial:<first 8 characters>", or "port:<bus-port>" only for a stick with
- * iSerialNumber 0 (an unreadable serial is never port:); bytes outside
- * 0x21..0x7E and '%' are written as %XX. "-" before the first open. */
+ * "<serial>@<bus-port>": the first 8 serial characters, "-" for a stick with
+ * iSerialNumber 0, "?" for one whose serial cannot be read; bytes outside
+ * 0x21..0x7E, '%' and '@' are written as %XX. "-" before the first open. */
 const char *daemon_ch341_select_bound(void);
 void daemon_ch341_bound_text(const loraham_ch341_scan_item *id, char *out, size_t n);
 

@@ -453,8 +453,8 @@ static void test_r2_serial(void)
     expect("T15 single stick without a serial: plain open, no walk",
            run(true, &o, &why) == CH341_SEL_OPENED && o == 0 && B.seeds == 0);
     expect("T15 ... identity = its port", strcmp(daemon_ch341_select_wait_port(), "1-2") == 0);
-    expect("BOUND: port:1-2 for the stick without a serial",
-           strcmp(daemon_ch341_select_bound(), "port:1-2") == 0);
+    expect("BOUND: -@1-2 for the stick without a serial",
+           strcmp(daemon_ch341_select_bound(), "-@1-2") == 0);
     /* Reopen with only serial sticks attached: refused with the line, waits. */
     B.s[0] = {"AAAAAAAA", "1-5", 1, false, false};
     B.s[1] = {"BBBBBBBB", "1-6", 1, false, false};
@@ -462,17 +462,17 @@ static void test_r2_serial(void)
     expect("T15 reopen, several sticks all with a serial: waits with the line",
            run(false, &o, &why) == CH341_SEL_WAIT && has(why, "give --usb-serial"));
 
-    /* BOUND: serial kind; a serial stick on the stored port of a port daemon is never port:. */
+    /* BOUND: <serial>@<port>; a serial stick on the stored port of a port daemon is refused, BOUND kept. */
     bus({{"TESTSN01", "1-2", 1, false, false}});
     init("TESTSN01");
     run(true, &o, &why);
-    expect("BOUND: serial:TESTSN01 after a --usb-serial open",
-           strcmp(daemon_ch341_select_bound(), "serial:TESTSN01") == 0);
+    expect("BOUND: TESTSN01@1-2 after a --usb-serial open",
+           strcmp(daemon_ch341_select_bound(), "TESTSN01@1-2") == 0);
     bus({{"A B%C", "1-2", 1, false, false}});
     init(nullptr);
     run(true, &o, &why);
     expect("BOUND: a space and a %% are written %20 / %25",
-           strcmp(daemon_ch341_select_bound(), "serial:A%20B%25C") == 0);
+           strcmp(daemon_ch341_select_bound(), "A%20B%25C@1-2") == 0);
     bus({{nullptr, "1-2", 1, false, false}});
     init(nullptr);
     run(true, &o, &why);                         /* port daemon on 1-2 */
@@ -482,7 +482,7 @@ static void test_r2_serial(void)
            !B.s[0].claimed);
 
     /* DELTA-4-v3: a serial index whose string cannot be read is never the
-     * stick without a serial and never BOUND=port:. */
+     * stick without a serial, and BOUND stays - (nothing opened). */
     bus({{"TESTSN01", "1-2", 1, false, false}});
     B.unreadable[0] = true;
     init(nullptr);
@@ -496,8 +496,8 @@ static void test_r2_serial(void)
     B.unreadable[0] = true;
     expect("unreadable serial swapped into the stored port: refused, waits, released",
            run(false, &o, &why) == CH341_SEL_WAIT && has(why, "unreadable serial") && !B.s[0].claimed);
-    expect("... BOUND keeps the last verified open (port:1-2), never port: for the swapped stick",
-           strcmp(daemon_ch341_select_bound(), "port:1-2") == 0);
+    expect("... BOUND keeps the last verified open (-@1-2), never the swapped stick",
+           strcmp(daemon_ch341_select_bound(), "-@1-2") == 0);
 
     /* In a Rule B walk an unreadable serial is held like a serial: the walk goes on. */
     bus({{"AAAAAAAA", "1-1", 1, false, false}, {"TESTSN01", "1-2", 1, false, false},
@@ -506,7 +506,7 @@ static void test_r2_serial(void)
     init(nullptr);
     expect("Rule B with an unreadable serial among serial sticks: opens the stick without a serial",
            run(true, &o, &why) == CH341_SEL_OPENED && o == 2 && !B.s[1].claimed &&
-           strcmp(daemon_ch341_select_bound(), "port:1-3") == 0);
+           strcmp(daemon_ch341_select_bound(), "-@1-3") == 0);
 
     /* A --usb-serial daemon retries every 200 ms; no walk gap applies to it. */
     bus({{"TESTSN01", "1-2", 1, true, true}});
@@ -2134,8 +2134,33 @@ static void test_r20(void)
            std::to_string(cells) + bad + ")", ok == 16 && cells == 16);
 }
 
+/* BOUND=<serial>@<port> (DEC-W26): the serial (%XX for a byte outside 0x21..0x7E, '%' and '@'), "-" for a stick
+ * without one, "?" for one that cannot be read; the port path, escaped alike. */
+static void test_bound_text(void)
+{
+    loraham_ch341_scan_item id{};
+    char out[64];
+    id.serial_state = 1; snprintf(id.serial, sizeof(id.serial), "CHE1W433"); snprintf(id.port, sizeof(id.port), "1-1.2");
+    daemon_ch341_bound_text(&id, out, sizeof(out));
+    expect("bound_text: serial@port", strcmp(out, "CHE1W433@1-1.2") == 0);
+    id.serial_state = 0; id.serial[0] = '\0'; snprintf(id.port, sizeof(id.port), "3-1.4.2");
+    daemon_ch341_bound_text(&id, out, sizeof(out));
+    expect("bound_text: no serial is -", strcmp(out, "-@3-1.4.2") == 0);
+    id.serial_state = -1; snprintf(id.port, sizeof(id.port), "1-3");
+    daemon_ch341_bound_text(&id, out, sizeof(out));
+    expect("bound_text: an unreadable serial is ?", strcmp(out, "?@1-3") == 0);
+    id.serial_state = 1; snprintf(id.serial, sizeof(id.serial), "A@B"); snprintf(id.port, sizeof(id.port), "1-1");
+    daemon_ch341_bound_text(&id, out, sizeof(out));
+    expect("bound_text: an @ in the serial is written %40", strcmp(out, "A%40B@1-1") == 0);
+    char small[8];
+    id.serial_state = 1; snprintf(id.serial, sizeof(id.serial), "CHE1W433"); snprintf(id.port, sizeof(id.port), "1-1.2");
+    daemon_ch341_bound_text(&id, small, sizeof(small));
+    expect("bound_text: a short buffer stays terminated", strlen(small) < sizeof(small));
+}
+
 int main(void)
 {
+    test_bound_text();
     test_serial_selector();
     test_no_selector();
     test_rule_b();

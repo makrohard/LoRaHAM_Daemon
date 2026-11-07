@@ -26,7 +26,7 @@ static char g_selector[9];          /* --usb-serial, first 8 characters; "" = no
 static Mode g_mode = MODE_ANY;      /* the remembered identity */
 static char g_serial[9];
 static char g_port[32];
-static char g_bound[48] = "-";     /* the last verified open's identity */
+static char g_bound[96] = "-";     /* the last verified open's identity: <serial>@<port> */
 
 static bool g_at_start;
 static Phase g_phase = PH_IDLE;
@@ -105,28 +105,39 @@ const char *daemon_ch341_select_bound(void)
     return g_bound;
 }
 
-void daemon_ch341_bound_text(const loraham_ch341_scan_item *id, char *out, size_t n)
+/* Append `value` to out[k..] with every byte outside 0x21..0x7E, '%' and '@' written %XX; returns the new k. */
+static size_t bound_append(char *out, size_t n, size_t k, const char *value)
 {
-    char serial[9];
-    const char *value = id->port;
-    size_t k;
-
-    if (id->serial_state == 1) {
-        snprintf(serial, sizeof(serial), "%.8s", id->serial);
-        value = serial;
-    }
-    if (id->serial_state == -1) {           /* unreadable: no identity to report */
-        snprintf(out, n, "-");
-        return;
-    }
-    k = (size_t)snprintf(out, n, "%s:", id->serial_state == 1 ? "serial" : "port");
     for (const unsigned char *p = (const unsigned char *)value; *p && k + 4 < n; p++) {
-        if (*p >= 0x21 && *p <= 0x7e && *p != '%')
+        if (*p >= 0x21 && *p <= 0x7e && *p != '%' && *p != '@')
             out[k++] = (char)*p;
         else
             k += (size_t)snprintf(out + k, n - k, "%%%02X", *p);
     }
     out[k] = '\0';
+    return k;
+}
+
+void daemon_ch341_bound_text(const loraham_ch341_scan_item *id, char *out, size_t n)
+{
+    char serial[9];
+    size_t k = 0;
+
+    if (n == 0)
+        return;
+    out[0] = '\0';
+    if (id->serial_state == 1) {
+        snprintf(serial, sizeof(serial), "%.8s", id->serial);
+        k = bound_append(out, n, k, serial);
+    } else if (k + 2 < n) {
+        out[k++] = id->serial_state == -1 ? '?' : '-';   /* unreadable / none */
+        out[k] = '\0';
+    }
+    if (k + 2 < n) {
+        out[k++] = '@';
+        out[k] = '\0';
+        bound_append(out, n, k, id->port);
+    }
 }
 
 void daemon_ch341_select_begin(bool at_start)

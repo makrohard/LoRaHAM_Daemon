@@ -122,12 +122,12 @@ struct RadioController {
     int ocp_ma;
     /* STATUS ID= (--id, NULL = "-"), USBWAIT= (the port the daemon of a
      * Meshstick without a serial waits on while UNPLUGGED, "-" otherwise) and
-     * BOUND= (the open Meshstick's identity, serial:<8> / port:<bus-port>,
+     * BOUND= (the open stick's identity, <serial>@<bus-port>, serial - / ?,
      * set after the post-open checks, "-" after a teardown; reported only
      * while READY). Written and read on the main loop only. */
     const char *instance_id;
     char usb_wait_port[32];
-    char bound[48];
+    char bound[96];
 
     DaemonRadioStats stats;
 
