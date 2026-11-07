@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 - `--hw pinedio-usb-1262` (PINE64 USB adapter, SX1262, 868) and `--hw ch341-rfm98pw-433` (CH341A +
   RFM98PW, SX127x, 433): USB stick presets on the Meshstick's library. See docs/hardware.md.
