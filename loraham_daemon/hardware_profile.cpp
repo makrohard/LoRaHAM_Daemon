@@ -37,7 +37,8 @@ const char *daemon_chip_family_name(DaemonChipFamily family)
 
 const char *daemon_hardware_profile_known(void)
 {
-    return "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262";
+    return "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262, "
+           "pinedio-usb-1262, ch341-rfm98pw-433";
 }
 
 static void profile_claimed_finish(DaemonHardwareProfile *p)
@@ -172,6 +173,69 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->usb_pid = 0x5512;
         p->power_max_dbm = 22;          /* ELECROW: "+22 dBm@Max" */
         p->claimed_count = 0;           /* nothing on the Pi's GPIO */
+        return true;
+    }
+
+    if (strcmp(preset, "pinedio-usb-1262") == 0) {
+        /* PINE64 USB LoRa adapter (Pinedio): SX1262 behind the same CH341
+         * (USB 1A86:5512) as the Meshstick. From the PINE64 documentation and
+         * meshtasticd's lora-pinedio-usb-sx1262.yaml: CS D0, DIO1 on INT#,
+         * BUSY on SLCT, no reset line, no TCXO, no RF-switch pins. INT# and
+         * SLCT are CH341 status bits 10 and 11 (the input word, read through
+         * pinedio_get_irq_state by ch341_adapter.c); SLCT = BUSY measured on
+         * the adapter. 868 until the band marking says otherwise. */
+        if (band != 868)
+            return false;
+        p->name = "pinedio-usb-1262";
+        p->family = DAEMON_CHIP_FAMILY_SX1262;
+        p->cs = 0;                      /* D0 */
+        p->irq = 10;                    /* INT# = DIO1 */
+        p->rst = DAEMON_HW_PIN_NC;      /* not wired: warm start */
+        p->gpio = 11;                   /* SLCT = BUSY */
+        p->aux = DAEMON_HW_PIN_NC;
+        p->txen = DAEMON_HW_PIN_NC;
+        p->rxen = DAEMON_HW_PIN_NC;
+        p->tcxo_voltage = 0.0f;         /* crystal, no TCXO on DIO3 */
+        p->led_pin = DAEMON_HW_PIN_NC;
+        p->cad_scan_available = true;   /* SX126x hardware CAD */
+        p->fsk_stream_available = false;
+        p->reset_wired = false;
+        p->usb_ch341 = true;
+        p->usb_vid = 0x1A86;
+        p->usb_pid = 0x5512;
+        p->power_max_dbm = 14;          /* until the module's rating is known */
+        p->claimed_count = 0;
+        return true;
+    }
+
+    if (strcmp(preset, "ch341-rfm98pw-433") == 0) {
+        /* A CH341A board + HopeRF RFM98PW (SX1278-class, PA_BOOST, 433 MHz),
+         * wired per the operator's build guide: D0 NSS, D2 RESET, D6 DIO0,
+         * D4 DIO1, D3/D5/D7 SPI. Same USB 1A86:5512 as the other sticks: the
+         * model is the operator's choice, never the USB id. High power is the
+         * --high-power switch, as on every SX127x board. DIO1 is polled over
+         * USB, too slowly for an FSK stream. */
+        if (band != 433)
+            return false;
+        p->name = "ch341-rfm98pw-433";
+        p->family = DAEMON_CHIP_FAMILY_SX127X;
+        p->cs = 0;                      /* D0 = NSS */
+        p->irq = 6;                     /* D6 = DIO0 */
+        p->rst = 2;                     /* D2 = RESET */
+        p->gpio = 4;                    /* D4 = DIO1 */
+        p->aux = DAEMON_HW_PIN_NC;
+        p->txen = DAEMON_HW_PIN_NC;
+        p->rxen = DAEMON_HW_PIN_NC;
+        p->tcxo_voltage = 0.0f;
+        p->led_pin = DAEMON_HW_PIN_NC;
+        p->cad_scan_available = true;   /* CadDone/CadDetected from RegIrqFlags */
+        p->fsk_stream_available = false;
+        p->reset_wired = true;
+        p->usb_ch341 = true;
+        p->usb_vid = 0x1A86;
+        p->usb_pid = 0x5512;
+        p->power_max_dbm = 0;           /* the SX127x ceiling (config_policy.h) */
+        p->claimed_count = 0;
         return true;
     }
 

@@ -175,6 +175,67 @@ static void test_meshstick(void)
     }
 }
 
+/* The PINE64 USB LoRa adapter (Pinedio): SX1262 behind the same CH341 as the
+ * Meshstick; INT# is its DIO1, SLCT its BUSY (CH341 status bits 10 and 11, read
+ * through the input word), no reset line, no TCXO; 868 only until the marking. */
+static void test_pinedio_usb(void)
+{
+    expect_int("set pinedio", daemon_set_hardware_preset("pinedio-usb-1262"), 1);
+    expect_int("pinedio 433 refused (868 until the marking)", daemon_hardware_profile_resolve(433), 0);
+    expect_int("resolve pinedio 868", daemon_hardware_profile_resolve(868), 1);
+    expect_str("pd name", daemon_hw_profile.name, "pinedio-usb-1262");
+    expect_int("pd family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
+    expect_int("pd usb", daemon_hw_profile.usb_ch341, 1);
+    expect_int("pd vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);
+    expect_int("pd pid 5512", daemon_hw_profile.usb_pid, 0x5512);
+    expect_int("pd cs D0", daemon_hw_profile.cs, 0);
+    expect_int("pd irq/dio1 INT# (10)", daemon_hw_profile.irq, 10);
+    expect_int("pd rst none", daemon_hw_profile.rst < 0, 1);
+    expect_int("pd reset not wired (warm start)", daemon_hw_profile.reset_wired, 0);
+    expect_int("pd gpio/busy SLCT (11)", daemon_hw_profile.gpio, 11);
+    expect_int("pd rxen NC", daemon_hw_profile.rxen < 0, 1);
+    expect_int("pd txen NC", daemon_hw_profile.txen < 0, 1);
+    expect_int("pd no tcxo", daemon_hw_profile.tcxo_voltage == 0.0f, 1);
+    expect_int("pd led NC", daemon_hw_profile.led_pin < 0, 1);
+    expect_int("pd claims no Pi line", daemon_hw_profile.claimed_count, 0);
+    expect_int("pd power ceiling 14 dBm", daemon_hw_profile.power_max_dbm, 14);
+    expect_int("pd cad scan", daemon_hw_profile.cad_scan_available, 1);
+}
+
+/* The CH341 + HopeRF RFM98PW 433 build: SX127x with PA_BOOST behind the CH341
+ * (D0 NSS, D2 RESET, D6 DIO0, D4 DIO1); 433 only. High power is the
+ * --high-power switch, as on every SX127x board; no FSK stream over USB. */
+static void test_rfm98pw_433(void)
+{
+    expect_int("set rfm98pw", daemon_set_hardware_preset("ch341-rfm98pw-433"), 1);
+    expect_int("rfm98pw 868 refused (433 hardware)", daemon_hardware_profile_resolve(868), 0);
+    expect_int("resolve rfm98pw 433", daemon_hardware_profile_resolve(433), 1);
+    expect_str("rf name", daemon_hw_profile.name, "ch341-rfm98pw-433");
+    expect_int("rf family sx127x", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX127X);
+    expect_int("rf usb", daemon_hw_profile.usb_ch341, 1);
+    expect_int("rf vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);
+    expect_int("rf pid 5512", daemon_hw_profile.usb_pid, 0x5512);
+    expect_int("rf cs D0", daemon_hw_profile.cs, 0);
+    expect_int("rf irq/dio0 D6", daemon_hw_profile.irq, 6);
+    expect_int("rf rst D2", daemon_hw_profile.rst, 2);
+    expect_int("rf reset wired", daemon_hw_profile.reset_wired, 1);
+    expect_int("rf gpio/dio1 D4", daemon_hw_profile.gpio, 4);
+    expect_int("rf rxen NC", daemon_hw_profile.rxen < 0, 1);
+    expect_int("rf txen NC", daemon_hw_profile.txen < 0, 1);
+    expect_int("rf no tcxo", daemon_hw_profile.tcxo_voltage == 0.0f, 1);
+    expect_int("rf claims no Pi line", daemon_hw_profile.claimed_count, 0);
+    expect_int("rf default power ceiling", daemon_hw_profile.power_max_dbm, 0);
+    expect_int("rf no fsk stream over usb", daemon_hw_profile.fsk_stream_available, 0);
+    expect_int("rf cad scan", daemon_hw_profile.cad_scan_available, 1);
+}
+
+static void test_known_lists_every_preset(void)
+{
+    expect_str("known presets", daemon_hardware_profile_known(),
+               "loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262, "
+               "pinedio-usb-1262, ch341-rfm98pw-433");
+}
+
 static void test_unknown_preset(void)
 {
     expect_int("set unknown records name",
@@ -243,6 +304,9 @@ int main(void)
     test_uputronics_ce1();
     test_waveshare();
     test_meshstick();
+    test_pinedio_usb();
+    test_rfm98pw_433();
+    test_known_lists_every_preset();
     test_unknown_preset();
     test_family_names();
     test_spi_soft_cs_keeps_the_profile();
