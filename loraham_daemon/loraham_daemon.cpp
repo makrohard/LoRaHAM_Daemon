@@ -290,9 +290,12 @@ static void daemon_print_usage(const char *argv0)
     printf("      --id ID      instance id: 1-16 of a-z 0-9 -, first a letter; names the\n");
     printf("                   sockets lora-ID.sock, loraf-ID.sock, loraconf-ID.sock and the\n");
     printf("                   lock instance-ID.lock instead of the band (default: none)\n");
-    printf("      --usb-serial S  meshstick-1262 only: open the stick with this serial\n");
+    printf("      --usb-serial S  USB stick presets only: open the stick with this serial\n");
     printf("                   (1-8 characters; for two or more sticks;\n");
     printf("                   default: the only stick, or the one stick without a serial)\n");
+    printf("      --usb-port P USB stick presets only: open the stick without a serial on\n");
+    printf("                   USB port P (<bus>-<port>[.<port>...], as in sysfs; for two\n");
+    printf("                   or more sticks without a serial; not with --usb-serial)\n");
     printf("      --hw PRESET  hardware profile: %s\n",
            daemon_hardware_profile_known());
     printf("                   (default: loraham)\n");
@@ -348,6 +351,37 @@ static bool daemon_usb_serial_valid(const char *s)
     return true;
 }
 
+/* --usb-port: "<bus>-<port>[.<port>...]" as sysfs names it: numbers of 1-3
+ * digits, at most 7 ports (the USB tier limit). */
+static const char *g_usb_port = NULL;
+
+static bool daemon_usb_port_valid(const char *s)
+{
+    int digits = 0, ports = 0;
+    bool dash = false;
+
+    if (!s || strlen(s) > 31)
+        return false;
+    for (const char *p = s;; p++) {
+        if (*p >= '0' && *p <= '9') {
+            if (++digits > 3)
+                return false;
+            continue;
+        }
+        if (digits == 0)
+            return false;                   /* an empty number */
+        digits = 0;
+        if (dash && ++ports > 7)
+            return false;
+        if (*p == '\0')
+            return dash;
+        if (*p == '-' && !dash)
+            dash = true;
+        else if (!(*p == '.' && dash))
+            return false;
+    }
+}
+
 static bool daemon_parse_args(int argc, char *argv[])
 {
     int opt;
@@ -367,6 +401,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"ocp",         required_argument, 0, 1015},
         {"id",          required_argument, 0, 1016},
         {"usb-serial",  required_argument, 0, 1017},
+        {"usb-port",    required_argument, 0, 1018},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -476,6 +511,16 @@ static bool daemon_parse_args(int argc, char *argv[])
                 g_usb_serial = optarg;
                 daemon_debug_ctx("STARTUP", "option --usb-serial recognised: %s", optarg);
                 break;
+            case 1018:
+                if (!daemon_usb_port_valid(optarg)) {
+                    fprintf(stderr, "invalid --usb-port (<bus>-<port>[.<port>...], e.g. 1-1.2): %s\n",
+                            optarg ? optarg : "");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                g_usb_port = optarg;
+                daemon_debug_ctx("STARTUP", "option --usb-port recognised: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -531,8 +576,14 @@ static bool daemon_parse_args(int argc, char *argv[])
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
-    if (g_usb_serial && !daemon_hw_profile.usb_ch341) {
-        fprintf(stderr, "--usb-serial is only for --hw meshstick-1262\n");
+    if ((g_usb_serial || g_usb_port) && !daemon_hw_profile.usb_ch341) {
+        fprintf(stderr, "--usb-serial / --usb-port are only for a USB stick preset "
+                        "(meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433)\n");
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+    if (g_usb_serial && g_usb_port) {
+        fprintf(stderr, "--usb-serial and --usb-port exclude each other\n");
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -575,6 +626,7 @@ static bool daemon_parse_args(int argc, char *argv[])
          * the instance lock (daemon_io_init), never here: libusb's threads do not
          * survive fork(), and a duplicate --id must stop at its lock first. */
         daemon_ch341_set_usb_serial(g_usb_serial);
+        daemon_ch341_set_usb_port(g_usb_port);
     }
 
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1

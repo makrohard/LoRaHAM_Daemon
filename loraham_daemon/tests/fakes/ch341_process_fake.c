@@ -198,16 +198,17 @@ static void hold(const char *ctl, const char *marker, const char *arg)
     }
 }
 
-loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial)
+/* The first free stick (with this serial, on this port when given). */
+static loraham_ch341 *open_match(const char *serial, const char *port)
 {
     stick bus[MAXS];
     int n = read_bus(bus);
-    (void)vid;
-    (void)pid;
     for (int i = 0; i < n; i++) {
         if (bus[i].access || bus[i].detachfail)
             continue;
         if (serial && strncmp(bus[i].serial, serial, 8) != 0)
+            continue;
+        if (port && strcmp(bus[i].port, port) != 0)
             continue;
         int fd = claim(bus[i].port);
         if (fd < 0)
@@ -222,9 +223,27 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
             hold("opendelay", "openwait %s", bus[i].port);
         return d;
     }
-    logline("open-none %s", serial ? serial : "-");
+    logline("open-none %s", port ? port : serial ? serial : "-");
     return NULL;
 }
+
+loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial)
+{
+    (void)vid;
+    (void)pid;
+    return open_match(serial, NULL);
+}
+
+#ifndef FAKE_NO_OPEN_PORT
+/* The library with the open by port (FAKE_NO_OPEN_PORT: one without it). */
+loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *port)
+{
+    (void)vid;
+    (void)pid;
+    logline("openport %s", port);
+    return open_match(NULL, port);
+}
+#endif
 
 void loraham_ch341_close(loraham_ch341 *d)
 {

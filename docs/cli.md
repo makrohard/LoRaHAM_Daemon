@@ -48,7 +48,8 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `--high-power` | none | — | off |
 | `--ocp MA` | required | integer mA the chip can represent (see below) | `100` |
 | `--id ID` | required | 1–16 of `a-z 0-9 -`, first a letter | none (band names) |
-| `--usb-serial S` | required | 1–8 printable characters, no space; `meshstick-1262` only | none (the only stick, or the one stick without a serial) |
+| `--usb-serial S` | required | 1–8 printable characters, no space; USB stick presets only | none (the only stick, or the one stick without a serial) |
+| `--usb-port P` | required | `<bus>-<port>[.<port>...]` (numbers of 1–3 digits, at most 7 ports); USB stick presets only; not with `--usb-serial` | none |
 | `-h`, `--help` | none | — | — |
 
 `-v` / `--version` prints the version and exits with success. `-h` / `--help` prints the usage
@@ -118,6 +119,7 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--ocp MA` | the PA over-current limit, at every power level | 100 mA when absent, on every chip |
 | `--id ID` | the names of this process's sockets, lock and `-d` log: `lora-ID.sock`, `loraf-ID.sock`, `loraconf-ID.sock`, `instance-ID.lock`, `/tmp/lora_daemon-ID.log`; `ID=` in `GET STATUS` | the band's names when absent |
 | `--usb-serial S` | which Meshstick to open when two or more are plugged in (pine64 compares the first 8 characters); `BOUND=` in `GET STATUS` names the stick opened | the only stick, or the one stick without a serial |
+| `--usb-port P` | which stick without a serial to open: the one on USB port `P`, opened by port (other sticks are never opened); needs the libch341 build with port selection, else exit `4` | as without it |
 
 `--cad-monitor` exists so that a `CONF` client which cannot send `SET CADMONITOR=1` still gets the
 `CAD=0`/`CAD=1` stream. It takes a required argument: a bare `--cad-monitor` with no value is a
@@ -216,7 +218,8 @@ anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 1
 | `--ocp` not a number | `invalid --ocp (an integer in mA): <value>` |
 | `--ocp` the chip cannot represent | `invalid --ocp for <family>: <n> mA (valid: <set>)` |
 | Bad `--id` | `invalid --id (1-16 of a-z 0-9 -, starting with a letter): <value>` |
-| Bad `--usb-serial`, or `--usb-serial` without `meshstick-1262` | `invalid --usb-serial (1-8 printable characters, no space; pine64 compares the first 8): <value>` / `--usb-serial is only for --hw meshstick-1262` |
+| Bad `--usb-serial`, or `--usb-serial` / `--usb-port` without a USB stick preset | `invalid --usb-serial (1-8 printable characters, no space; pine64 compares the first 8): <value>` / `--usb-serial / --usb-port are only for a USB stick preset (meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433)` |
+| Bad `--usb-port`, or both `--usb-serial` and `--usb-port` | `invalid --usb-port (<bus>-<port>[.<port>...], e.g. 1-1.2): <value>` / `--usb-serial and --usb-port exclude each other` |
 | Any non-option argument | `Unbekanntes Argument: <arg>` |
 | `--radio` missing | `missing option: --radio (433 or 868)` |
 

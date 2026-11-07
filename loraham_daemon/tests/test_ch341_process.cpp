@@ -18,7 +18,11 @@
  *              answers ID= on each; a duplicate --id exits 3 before any USB
  *              open; T22 a second id on a claimed stick exits 4 with BUSY:,
  *              the first undisturbed
- *   T23        --usb-serial on a Pi preset, or malformed -> exit 1
+ *   T23        --usb-serial / --usb-port on a Pi preset, malformed, or both
+ *              -> exit 1
+ *   PORT       --usb-port: two sticks without a serial, the named port opened
+ *              by port and READY (BOUND=-@<port>), the other never opened; a
+ *              library without the open by port -> exit 4
  *   F4         SIGTERM: exit 0, the stick closed before the monitor
  *   fds        mon_fds() == -1 after a registered fd: the stale registration
  *              is dropped (a reused, readable fd number does not spin the loop)
@@ -80,7 +84,7 @@ static uint64_t now_ms(void)
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
 }
 
-static std::string g_tmp, g_bin, g_fake, g_sock, g_run;
+static std::string g_tmp, g_bin, g_bin_noport, g_fake, g_sock, g_run;
 
 static void write_text(const std::string &path, const std::string &text)
 {
@@ -804,7 +808,9 @@ static void scenario_cli(void)
     pid_t p = start({ "--radio", "868", "--hw", "waveshare-sx1262", "--usb-serial", "AAAA0001" }, g_tmp + "/s6a.log");
     int rc = wait_exit(p, 8000);
     expect("T23 --usb-serial on a Pi preset: exit 1", rc == 1);
-    expect("T23 ... with the reason", log_has(g_tmp + "/s6a.log", "--usb-serial is only for --hw meshstick-1262"));
+    expect("T23 ... with the reason, naming every USB stick preset",
+           log_has(g_tmp + "/s6a.log", "--usb-serial / --usb-port are only for a USB stick preset "
+                                       "(meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433)"));
     if (rc == -2)
         stop(p);
     p = start(mesh({ "--usb-serial", "A B" }), g_tmp + "/s6b.log");
@@ -813,6 +819,61 @@ static void scenario_cli(void)
     expect("T23 ... with the reason", log_has(g_tmp + "/s6b.log", "invalid --usb-serial"));
     if (rc == -2)
         stop(p);
+    p = start({ "--radio", "868", "--hw", "waveshare-sx1262", "--usb-port", "1-2" }, g_tmp + "/s6c.log");
+    rc = wait_exit(p, 8000);
+    expect("T23 --usb-port on a Pi preset: exit 1", rc == 1);
+    expect("T23 ... with the reason", log_has(g_tmp + "/s6c.log", "are only for a USB stick preset"));
+    if (rc == -2)
+        stop(p);
+    p = start(mesh({ "--usb-port", "1-x" }), g_tmp + "/s6d.log");
+    rc = wait_exit(p, 8000);
+    expect("T23 a malformed --usb-port: exit 1", rc == 1);
+    expect("T23 ... with the reason", log_has(g_tmp + "/s6d.log", "invalid --usb-port"));
+    if (rc == -2)
+        stop(p);
+    p = start(mesh({ "--usb-port", "1-2", "--usb-serial", "AAAA0001" }), g_tmp + "/s6e.log");
+    rc = wait_exit(p, 8000);
+    expect("T23 --usb-port with --usb-serial: exit 1", rc == 1);
+    expect("T23 ... with the reason", log_has(g_tmp + "/s6e.log", "--usb-serial and --usb-port exclude each other"));
+    if (rc == -2)
+        stop(p);
+}
+
+/* --usb-port on the real binary: two sticks without a serial (Rule B refuses
+ * those), the port names one; a library without the open by port refuses. */
+static void scenario_usb_port(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/up1.log";
+    bus("1-2 - 1\n1-3 - 1\n");
+    pid_t pid = start(mesh({ "--id", "up", "--usb-port", "1-3" }), log);
+    const std::string C = "loraconf-up.sock";
+    expect("PORT --usb-port 1-3 beside another stick without a serial: READY",
+           wait_status(C, "RADIO=READY", 8000));
+    expect("PORT BOUND=-@1-3", status(C).find(" BOUND=-@1-3 ID=up") != std::string::npos);
+    bool by_port = false, other = false;
+    for (const Ev &e : events_of(pid)) {
+        if (e.what == "openport" && e.arg == "1-3")
+            by_port = true;
+        if ((e.what == "open" || e.what == "openport") && e.arg == "1-2")
+            other = true;
+    }
+    expect("PORT opened by port", by_port);
+    expect("PORT the stick on 1-2 never opened", !other);
+    stop(pid);
+
+    reset_dirs();
+    bus("1-2 - 1\n1-3 - 1\n");
+    std::string keep = g_bin;
+    g_bin = g_bin_noport;
+    pid = start(mesh({ "--usb-port", "1-3" }), g_tmp + "/up2.log");
+    g_bin = keep;
+    int rc = wait_exit(pid, 8000);
+    expect("PORT a library without the open by port: exit 4", rc == 4);
+    expect("PORT ... with the reason", log_has(g_tmp + "/up2.log",
+           "[CH341] refused: --usb-port needs the libch341 build with port selection"));
+    if (rc == -2)
+        stop(pid);
 }
 
 static double cpu_s(pid_t pid)
@@ -924,8 +985,14 @@ int main(int argc, char *argv[])
     expect("the fake Meshstick library builds",
            sh("cc -std=gnu11 -Wall -Wextra -Werror -shared -fPIC -DFAKE_PIN='\"" + pin + "\"' -o '" + g_tmp +
               "/bundle/lib/libloraham-ch341.so' '" + src + "'") == 0);
+    g_bin_noport = g_tmp + "/bundle-noport/loraham_daemon";
+    sh("mkdir -p '" + g_tmp + "/bundle-noport/lib' && cp '" + std::string(daemon) + "' '" + g_bin_noport + "'");
+    expect("the fake library without the open by port builds",
+           sh("cc -std=gnu11 -Wall -Wextra -Werror -shared -fPIC -DFAKE_NO_OPEN_PORT -DFAKE_PIN='\"" + pin +
+              "\"' -o '" + g_tmp + "/bundle-noport/lib/libloraham-ch341.so' '" + src + "'") == 0);
 
     scenario_cli();
+    scenario_usb_port();
     scenario_unplug_and_return();
     scenario_io_fault();
     scenario_reinit_failures();

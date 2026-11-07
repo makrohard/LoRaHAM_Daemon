@@ -8,7 +8,9 @@
  * has) and checks each refusal reason: missing file, a file that is not a
  * shared object, a library whose own dependency is missing (as a host without
  * libusb-1.0 would be), a missing symbol, the wrong commit, an empty expected
- * commit. On every refusal the caller's table stays untouched.
+ * commit. On every refusal the caller's table stays untouched. The one
+ * optional entry, loraham_ch341_open_port, is resolved when exported and NULL
+ * otherwise; neither refuses the library.
  */
 
 #include "../ch341_loader.h"
@@ -39,6 +41,9 @@ static std::string g_tmp;
 
 static const char *PIN_GOOD = "b0694ec84091b293cb1e97e00a821ff88353274f";
 static const char *PIN_OTHER = "0000000000000000000000000000000000000000";
+
+/* Set: the fake exports the optional loraham_ch341_open_port too. */
+static bool g_with_port = false;
 
 /* The adapter's functions (incl. the monitor); `omit` leaves one out, `pin` is what it reports. */
 static void write_fake_source(const std::string &path, const char *pin, const char *omit)
@@ -79,6 +84,9 @@ static void write_fake_source(const std::string &path, const char *pin, const ch
     for (const char *fn : funcs)
         if (!omit || !strstr(fn, omit))
             fprintf(f, "%s\n", fn);
+    if (g_with_port)
+        fprintf(f, "loraham_ch341 *loraham_ch341_open_port(uint16_t v, uint16_t p, const char *s)"
+                   " { (void)v; (void)p; (void)s; return (loraham_ch341 *)0x42; }\n");
     fclose(f);
 }
 
@@ -143,6 +151,10 @@ int main(void)
     expect("fake: wrong commit", build_so("wrongpin", PIN_OTHER, nullptr));
     expect("fake: missing in_error", build_so("nosym", PIN_GOOD, "loraham_ch341_in_error"));
     expect("fake: missing a monitor function", build_so("nomon", PIN_GOOD, "loraham_ch341_mon_present_bound"));
+    g_with_port = true;
+    expect("fake: with the open by port", build_so("withport", PIN_GOOD, nullptr));
+    expect("fake: with the open by port, wrong commit", build_so("withportpin", PIN_OTHER, nullptr));
+    g_with_port = false;
 
     /* A library that needs another shared object which is then gone: what a
      * host without libusb-1.0 does to the real one. */
@@ -184,7 +196,17 @@ int main(void)
                api.digital_write && api.digital_read && api.attach_interrupt &&
                api.detach_interrupt && api.in_error);
         expect("good: reports the expected commit", ok && strcmp(api.pin(), PIN_GOOD) == 0);
+        expect("good: no open by port in it, the optional entry NULL", ok && api.open_port == nullptr);
     }
+    {
+        LorahamCh341Api api = {};
+        std::string why;
+        bool ok = load("withport", PIN_GOOD, &api, &why);
+        expect("withport: loaded", ok);
+        expect("withport: the optional entry resolved to the library's function",
+               ok && api.open_port && api.open_port(0x1A86, 0x5512, "1-2") == (loraham_ch341 *)0x42);
+    }
+    refused("open by port, wrong commit", "withportpin", PIN_GOOD, "this daemon expects b0694ec8");
 
     /* The bundle path is the binary's own directory + lib/. */
     {

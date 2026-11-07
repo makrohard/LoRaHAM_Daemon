@@ -19,6 +19,8 @@
 
 /* From argument parsing: the --usb-serial value (or NULL). */
 void daemon_ch341_set_usb_serial(const char *serial);
+/* From argument parsing: the --usb-port value (or NULL). */
+void daemon_ch341_set_usb_port(const char *port);
 
 /* In the final process, after the instance lock, before lora_init(): open the
  * monitor (arming the state machine) and select the stick. false = refused:
@@ -29,8 +31,10 @@ bool daemon_ch341_start(char *why, size_t why_size);
 /* After the library loaded: open the monitor and arm the state machine. */
 void daemon_ch341_monitor_start(void);
 
-/* Then select and open the stick (--usb-serial or NULL); false = refused. */
-bool daemon_ch341_select_at_start(const char *usb_serial, char *why, size_t why_size);
+/* Then select and open the stick (--usb-serial, --usb-port, or neither);
+ * false = refused. */
+bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, char *why,
+                                  size_t why_size);
 
 /* The selected, checked stick for the HAL lora_init() creates (once). */
 loraham_ch341 *daemon_ch341_take_selected(void);

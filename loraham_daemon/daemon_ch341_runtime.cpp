@@ -32,6 +32,7 @@ static char g_fd_owner;
 static const LorahamCh341Api *g_api = nullptr;
 static loraham_ch341 *g_selected = nullptr;
 static const char *g_usb_serial = nullptr;
+static const char *g_usb_port = nullptr;
 /* The configuration to replay after a replug, copied at teardown. */
 static std::string g_replay;
 
@@ -48,6 +49,11 @@ static loraham_ch341 *sel_open(const char *serial)
 {
     return g_api->open((uint16_t)daemon_hw_profile.usb_vid, (uint16_t)daemon_hw_profile.usb_pid,
                        serial);
+}
+static loraham_ch341 *sel_open_port(const char *port)
+{
+    return g_api->open_port((uint16_t)daemon_hw_profile.usb_vid, (uint16_t)daemon_hw_profile.usb_pid,
+                            port);
 }
 static void sel_close(loraham_ch341 *dev) { g_api->close(dev); }
 static int sel_identity(loraham_ch341 *dev, loraham_ch341_scan_item *out) { return g_api->identity(dev, out); }
@@ -254,13 +260,19 @@ static bool refuse(char *why, size_t why_size, const char *text)
     return false;
 }
 
-bool daemon_ch341_select_at_start(const char *usb_serial, char *why, size_t why_size)
+bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, char *why,
+                                  size_t why_size)
 {
+    bool by_port = usb_port && usb_port[0];
+
     if (!g_api)
         return true;
+    if (by_port && !g_api->open_port)
+        return refuse(why, why_size, "--usb-port needs the libch341 build with port selection");
     if (!g_mon) {
-        /* No monitor: no scan and no Rule B; pine64's own choice, checked. */
-        loraham_ch341 *dev = sel_open(usb_serial);
+        /* No monitor: no scan and no Rule B; pine64's own choice (or the
+         * stick on --usb-port), checked. */
+        loraham_ch341 *dev = by_port ? sel_open_port(usb_port) : sel_open(usb_serial);
         loraham_ch341_scan_item id;
         if (!dev)
             return refuse(why, why_size, "no Meshstick could be opened (not plugged in, no "
@@ -280,6 +292,11 @@ bool daemon_ch341_select_at_start(const char *usb_serial, char *why, size_t why_
             g_api->close(dev);
             return refuse(why, why_size, "the opened stick is not the one --usb-serial names");
         }
+        if (by_port && (id.serial_state != 0 || strcmp(id.port, usb_port) != 0)) {
+            g_api->close(dev);
+            return refuse(why, why_size, "the opened stick is not the stick without a serial on "
+                          "the port --usb-port names");
+        }
         daemon_ch341_bound_text(&id, radio_controller.bound, sizeof(radio_controller.bound));
         g_selected = dev;
         return true;
@@ -298,7 +315,9 @@ bool daemon_ch341_select_at_start(const char *usb_serial, char *why, size_t why_
     ops.bound_left = sel_bound_left;
     ops.now_ms = op_now_ms;
     ops.take_events = sel_take_events;
-    daemon_ch341_select_init(&ops, usb_serial);
+    if (g_api->open_port)
+        ops.open_port = sel_open_port;
+    daemon_ch341_select_init(&ops, usb_serial, usb_port);
 
     /* At start the steps run back to back (no clients yet); an ACCESS or an
      * inconclusive scan is retried until its 2 s deadline. */
@@ -332,10 +351,15 @@ void daemon_ch341_set_usb_serial(const char *serial)
     g_usb_serial = serial;
 }
 
+void daemon_ch341_set_usb_port(const char *port)
+{
+    g_usb_port = port;
+}
+
 bool daemon_ch341_start(char *why, size_t why_size)
 {
     daemon_ch341_monitor_start();
-    return daemon_ch341_select_at_start(g_usb_serial, why, why_size);
+    return daemon_ch341_select_at_start(g_usb_serial, g_usb_port, why, why_size);
 }
 
 void daemon_ch341_shutdown(void)

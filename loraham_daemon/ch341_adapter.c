@@ -25,7 +25,8 @@ const char *loraham_ch341_pin(void)
     return LORAHAM_CH341_PIN;
 }
 
-loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial)
+/* port NULL: the library's own choice (pinedio_init). */
+static loraham_ch341 *open_dev(uint16_t vid, uint16_t pid, const char *serial, const char *port)
 {
     loraham_ch341 *dev = calloc(1, sizeof(*dev));
 
@@ -45,7 +46,12 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
      * leaving the handle NULL; a 0 without the OUT transfer is failed too.
      * Every reference taken is released here or in close, so replugs do not
      * accumulate them. */
+#ifdef PINEDIO_HAS_INIT_AT_PORT
+    int ret = pinedio_init_at_port(&dev->inst, NULL, port);
+#else
+    (void)port;
     int ret = pinedio_init(&dev->inst, NULL);
+#endif
     if (ret != 0 || !dev->inst.handle || !dev->inst.transfer_out) {
         if (ret != -1)
             libusb_exit(NULL);
@@ -67,6 +73,22 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
     }
     return dev;
 }
+
+loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial)
+{
+    return open_dev(vid, pid, serial, NULL);
+}
+
+#ifdef PINEDIO_HAS_INIT_AT_PORT
+/* Only a library with the open by port exports this (the loader's optional
+ * entry); without it --usb-port is refused. */
+loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *port)
+{
+    if (!port || port[0] == '\0')
+        return NULL;
+    return open_dev(vid, pid, NULL, port);
+}
+#endif
 
 void loraham_ch341_close(loraham_ch341 *dev)
 {

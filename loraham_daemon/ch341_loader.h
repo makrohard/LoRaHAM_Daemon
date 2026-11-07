@@ -8,7 +8,8 @@
  * meshstick-1262` loads it, at startup, from the bundle -- the lib/ directory
  * next to the running binary, never the library search path. Every symbol is
  * resolved at once (RTLD_NOW and one dlsym per entry), and the library must
- * report the pine64 commit this daemon was built against. Any failure leaves
+ * report the pine64 commit this daemon was built against; loraham_ch341_open_port
+ * alone is optional (NULL in the table when absent). Any failure leaves
  * the table untouched and gives one reason line; the caller refuses to start.
  */
 

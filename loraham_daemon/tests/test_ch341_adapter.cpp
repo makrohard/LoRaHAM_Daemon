@@ -12,7 +12,9 @@
  * left to the caller; if either pin-mode call fails, open returns NULL after
  * pinedio_deinit() -- no device that would break SPI is handed out; a failed
  * pinedio_init() returns NULL without a deinit (nothing was opened); close
- * runs pinedio_deinit() once.
+ * runs pinedio_deinit() once. Built a second time against a stub with
+ * pinedio_init_at_port (PINEDIO_HAS_INIT_AT_PORT): loraham_ch341_open_port
+ * opens by that port with the same settings; without it the symbol is absent.
  */
 
 #include <cstdio>
@@ -125,6 +127,20 @@ static const char *STUB_C =
     "int32_t pinedio_deattach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p) { (void)i; (void)p; return 0; }\n"
     "void pinedio_deinit(struct pinedio_inst *i) { i->handle = NULL; g_deinits++; }\n";
 
+/* The library with the open by port: the header's addition and the stub's
+ * pinedio_init_at_port, which records its port and options, then does what
+ * pinedio_init does. */
+static const char *STUB_PORT_H =
+    "#define PINEDIO_HAS_INIT_AT_PORT 1\n"
+    "int32_t pinedio_init_at_port(struct pinedio_inst *i, void *d, const char *p);\n";
+static const char *STUB_PORT_C =
+    "#include \"libpinedio-usb.h\"\n#include <stdio.h>\n"
+    "char g_init_port[32] = \"none\"; int g_port_inits; unsigned g_port_vid, g_port_serial_opt;\n"
+    "int32_t pinedio_init_at_port(struct pinedio_inst *i, void *d, const char *p) { g_port_inits++;"
+    " snprintf(g_init_port, sizeof(g_init_port), \"%s\", p ? p : \"(null)\");"
+    " g_port_vid = i->options[PINEDIO_OPTION_VID]; g_port_serial_opt = i->options[PINEDIO_OPTION_SEARCH_SERIAL];"
+    " return pinedio_init(i, d); }\n";
+
 /* The driver: open, report, close when open succeeded, report again.
  * DRIVER_WALK: a Rule B walk -- seed, open three sticks held at once, report
  * the pins, close all; three cycles, the references after each. */
@@ -135,7 +151,26 @@ static const char *DRIVER_C =
     "extern int g_d_reads, g_d_read_pin, g_irq_reads, g_irq_pin;\n"
     "#include <stdint.h>\nextern uint16_t pinedio_d_mode, pinedio_d_state;\n"
     "struct pinedio_inst;\n"
+    "extern loraham_ch341 *loraham_ch341_open_port(uint16_t, uint16_t, const char *) __attribute__((weak));\n"
+    "extern char g_init_port[] __attribute__((weak));\n"
+    "extern int g_port_inits __attribute__((weak));\n"
+    "extern unsigned g_port_vid __attribute__((weak)), g_port_serial_opt __attribute__((weak));\n"
     "int main(void) {\n"
+    "  if (getenv(\"DRIVER_PORT\")) {\n"
+    "    if (!loraham_ch341_open_port) { printf(\"has_port=0\\n\"); return 0; }\n"
+    "    loraham_ch341 *d = loraham_ch341_open_port(0x1A86, 0x5512, \"1-3\");\n"
+    "    printf(\"has_port=1 open=%s port=%s portinits=%d vid=%u serialopt=%u mode3=%d mode5=%d\\n\","
+    " d ? \"dev\" : \"null\", g_init_port, g_port_inits, g_port_vid, g_port_serial_opt, g_mode[3], g_mode[5]);\n"
+    "    if (d) loraham_ch341_close(d);\n"
+    "    int i0 = g_inits;\n"
+    "    loraham_ch341 *e = loraham_ch341_open_port(0x1A86, 0x5512, \"\"), *n = loraham_ch341_open_port(0x1A86, 0x5512, NULL);\n"
+    "    printf(\"empty=%s null=%s inits-for-those=%d\\n\", e ? \"dev\" : \"null\", n ? \"dev\" : \"null\", g_inits - i0);\n"
+    "    loraham_ch341 *p = loraham_ch341_open(0x1A86, 0x5512, NULL);\n"
+    "    printf(\"plain=%s plainport=%s\\n\", p ? \"dev\" : \"null\", g_init_port);\n"
+    "    if (p) loraham_ch341_close(p);\n"
+    "    printf(\"refs=%d\\n\", stub_default_refs);\n"
+    "    return 0;\n"
+    "  }\n"
     "  if (getenv(\"DRIVER_PINS\")) {\n"
     "    loraham_ch341 *d = loraham_ch341_open(0x1A86, 0x5512, NULL);\n"
     "    int pm0 = g_pin_modes, w0 = g_pin_writes;\n"
@@ -317,6 +352,37 @@ int main(void)
         std::string fm = run_driver("DRIVER_WALK=1", "driver_mut");
         expect((std::string("mutation seen: ") + m.name).c_str(),
                fm.find(m.seen1) != std::string::npos && fm.find(m.seen2) != std::string::npos);
+    }
+
+    /* Without PINEDIO_HAS_INIT_AT_PORT (pine64's library): no open by port. */
+    std::string np = run_driver("DRIVER_PORT=1");
+    expect("a library without the open by port: loraham_ch341_open_port absent",
+           np.find("has_port=0") != std::string::npos);
+
+    /* With it: the same adapter built against the port stub. */
+    {
+        std::string pd = g_tmp + "/port";
+        int mk = system(("mkdir -p '" + pd + "'").c_str());
+        (void)mk;
+        write_file(pd + "/libpinedio-usb.h", (std::string(STUB_H) + STUB_PORT_H).c_str());
+        write_file(pd + "/port_stub.c", STUB_PORT_C);
+        std::string ccp = "cc -std=gnu11 -Wall -Wextra -I'" + pd + "' -I'" + stub_dir + "' -I'" + src_dir +
+                          "' -DLORAHAM_CH341_PIN='\"stub\"' -o '" + g_tmp + "/driver_port' '" + g_tmp +
+                          "/driver.c' '" + g_tmp + "/stub.c' '" + pd + "/port_stub.c' '" + stub_dir +
+                          "/libusb_stub.c' '" + src_dir + "/ch341_adapter.c'";
+        expect("the adapter builds against a library with the open by port", system(ccp.c_str()) == 0);
+        std::string op = run_driver("DRIVER_PORT=1", "driver_port");
+        expect("open by port: a device, through pinedio_init_at_port with that port",
+               op.find("has_port=1 open=dev port=1-3 portinits=1 ") != std::string::npos);
+        expect("open by port: the VID set, no serial search",
+               op.find(" vid=6790 serialopt=0 ") != std::string::npos);
+        expect("open by port: D3 and D5 outputs, as the plain open",
+               op.find(" mode3=1 mode5=1") != std::string::npos);
+        expect("open by port: an empty or NULL port opens nothing (no init)",
+               op.find("empty=null null=null inits-for-those=0") != std::string::npos);
+        expect("the plain open goes through the same init with no port",
+               op.find("plain=dev plainport=(null)") != std::string::npos);
+        expect("open by port: every libusb reference released", op.find("refs=0") != std::string::npos);
     }
 
     std::string fp = run_driver("STUB_FAIL_PIN=3");

@@ -160,6 +160,23 @@ static int f_identity(loraham_ch341 *d, loraham_ch341_scan_item *o)
         snprintf(o->serial, sizeof(o->serial), "XXXXXXXX");
     return 0;
 }
+/* The library's open by port (pinedio_init_at_port): only the stick on that
+ * port, never another one. */
+static int g_port_opens;
+static loraham_ch341 *f_open_port(const char *port)
+{
+    g_port_opens++;
+    B.opens++;
+    for (int i = 0; i < B.n; i++) {
+        if (B.s[i].openable != 1 || strcmp(B.s[i].port, port) != 0)
+            continue;
+        if (B.s[i].claimed || B.detach_fail[i])
+            return nullptr;
+        B.s[i].claimed = true;
+        return reinterpret_cast<loraham_ch341 *>(static_cast<intptr_t>(i + 1));
+    }
+    return nullptr;
+}
 static void f_seed(void) { B.seeds++; }
 static int f_bind(loraham_ch341 *d)
 {
@@ -205,7 +222,7 @@ static void bus(std::initializer_list<Stick> sticks)
         B.s[B.n++] = s;
 }
 
-static void init(const char *usb_serial)
+static void init_with(const char *usb_serial, const char *usb_port, bool port_op)
 {
     DaemonCh341SelectOps ops{};
     ops.scan_begin = f_scan_begin;
@@ -220,9 +237,14 @@ static void init(const char *usb_serial)
     ops.take_events = f_take_events;
     ops.unbind = f_unbind;
     ops.bound_left = f_bound_left;
+    if (port_op)
+        ops.open_port = f_open_port;
+    g_port_opens = 0;
     daemon_ch341_select_reset();
-    daemon_ch341_select_init(&ops, usb_serial);
+    daemon_ch341_select_init(&ops, usb_serial, usb_port);
 }
+
+static void init(const char *usb_serial) { init_with(usb_serial, nullptr, false); }
 
 /* Run one selection to its end; returns the result, the opened stick and why. */
 static DaemonCh341SelectResult run(bool at_start, int *opened_idx, std::string *why)
@@ -2158,6 +2180,95 @@ static void test_bound_text(void)
     expect("bound_text: a short buffer stays terminated", strlen(small) < sizeof(small));
 }
 
+/* --usb-port: that port only, opened by the library's open by port. */
+static void test_usb_port(void)
+{
+    int o;
+    std::string why;
+
+    /* Two sticks without a serial (Rule B refuses those): the port names one. */
+    bus({{nullptr, "1-2", 1, false, false}, {nullptr, "1-3", 1, false, false}});
+    init_with(nullptr, "1-3", true);
+    DaemonCh341SelectResult r = run(true, &o, &why);
+    expect("P1 --usb-port 1-3 opens the stick on 1-3", r == CH341_SEL_OPENED && o == 1);
+    expect("P1 by the open by port, no walk", g_port_opens == 1 && B.opens == 1 && B.seeds == 0);
+    expect("P1 the stick on 1-2 is never claimed", !B.s[0].claimed);
+    expect("P1 BOUND names the port", strcmp(daemon_ch341_select_bound(), "-@1-3") == 0);
+    expect("P1 the wait port is 1-3", strcmp(daemon_ch341_select_wait_port(), "1-3") == 0);
+    B.s[1].claimed = false;
+    g_port_opens = 0;
+    r = run(false, &o, &why);
+    expect("P1 a reopen opens 1-3 by port again", r == CH341_SEL_OPENED && o == 1 && g_port_opens == 1);
+
+    /* Beside sticks with a serial (no --usb-serial needed). */
+    bus({{"TESTSN01", "1-2", 1, false, false}, {nullptr, "1-4", 1, false, false},
+         {"ABCDEFGH", "1-5", 1, false, false}});
+    init_with(nullptr, "1-4", true);
+    r = run(true, &o, &why);
+    expect("P2 --usb-port beside serial sticks opens its port only",
+           r == CH341_SEL_OPENED && o == 1 && B.opens == 1 && !B.s[0].claimed && !B.s[2].claimed);
+
+    bus({{nullptr, "1-2", 1, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P3 no stick on the port: refused at start, nothing opened",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("port 1-3") != std::string::npos);
+
+    bus({{nullptr, "1-2", 1, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(false, &o, &why);
+    expect("P3b no stick on the port on a reopen: wait for an ARRIVED",
+           r == CH341_SEL_WAIT && B.opens == 0 && daemon_ch341_select_retry_at() == 0);
+
+    bus({{nullptr, "1-3", -1, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P3c a stick that left during the scan is not on the port: refused",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("no Meshstick on port 1-3") != std::string::npos);
+
+    bus({{"TESTSN01", "1-3", 1, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P4 a stick with a serial on the port: refused, never opened",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("--usb-serial") != std::string::npos);
+
+    bus({{"TESTSN01", "1-3", 1, false, false}});
+    B.unreadable[0] = true;
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P5 an unreadable serial on the port: refused, never opened",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("could not be read") != std::string::npos);
+
+    bus({{nullptr, "1-3", 0, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P6 the port's stick not openable (ACCESS): the 2 s rule first",
+           r == CH341_SEL_WAIT && B.opens == 0);
+    B.now += DAEMON_CH341_ACCESS_MS;
+    r = run(true, &o, &why);
+    expect("P6 then refused, naming the port",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("stick 1-3") != std::string::npos);
+
+    bus({{nullptr, "1-3", 1, true, true}});
+    init_with(nullptr, "1-3", true);
+    r = run(true, &o, &why);
+    expect("P7 the port's stick claimed by another process: BUSY",
+           r == CH341_SEL_REFUSED && why.find("BUSY") != std::string::npos && g_port_opens == 1);
+
+    bus({{nullptr, "1-2", 1, false, false}, {nullptr, "1-3", 1, false, false}});
+    init_with(nullptr, "1-3", false);
+    r = run(true, &o, &why);
+    expect("P8 --usb-port with a library without the open by port: refused, nothing opened",
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("port selection") != std::string::npos);
+
+    /* The next selection without --usb-port: the port is gone with the reset. */
+    bus({{nullptr, "1-2", 1, false, false}, {nullptr, "1-3", 1, false, false}});
+    init(nullptr);
+    r = run(true, &o, &why);
+    expect("P9 a reset forgets --usb-port: two without a serial are refused by the limit",
+           r == CH341_SEL_REFUSED && why.find("only one is supported") != std::string::npos);
+}
+
 int main(void)
 {
     test_bound_text();
@@ -2186,6 +2297,7 @@ int main(void)
     test_r17();
     test_r18();
     test_r20();
+    test_usb_port();
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;
 }

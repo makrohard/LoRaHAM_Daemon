@@ -26,6 +26,7 @@ static char g_selector[9];          /* --usb-serial, first 8 characters; "" = no
 static Mode g_mode = MODE_ANY;      /* the remembered identity */
 static char g_serial[9];
 static char g_port[32];
+static bool g_port_asked;           /* --usb-port: g_port is the operator's, opened by port */
 static char g_bound[96] = "-";     /* the last verified open's identity: <serial>@<port> */
 
 static bool g_at_start;
@@ -66,13 +67,19 @@ static bool g_ruleb;                /* this selection opens by Rule B */
 static char g_walk_port[32];        /* the scanned port of the stick a Rule B walk opens */
 static char g_sole[32];             /* without a selector: the sole stick's serial, or its port (no serial) */
 
-void daemon_ch341_select_init(const DaemonCh341SelectOps *ops, const char *usb_serial)
+void daemon_ch341_select_init(const DaemonCh341SelectOps *ops, const char *usb_serial,
+                              const char *usb_port)
 {
     g_ops = *ops;
     snprintf(g_selector, sizeof(g_selector), "%s", usb_serial ? usb_serial : "");
     if (g_selector[0]) {
         g_mode = MODE_SERIAL;
         snprintf(g_serial, sizeof(g_serial), "%s", g_selector);
+    }
+    if (usb_port && usb_port[0]) {
+        g_mode = MODE_PORT;
+        g_port_asked = true;
+        snprintf(g_port, sizeof(g_port), "%s", usb_port);
     }
 }
 
@@ -82,6 +89,7 @@ void daemon_ch341_select_reset(void)
     g_selector[0] = g_serial[0] = g_port[0] = g_sole[0] = '\0';
     snprintf(g_bound, sizeof(g_bound), "-");
     g_mode = MODE_ANY;
+    g_port_asked = false;
     g_phase = PH_IDLE;
     g_retry_at = g_walk_end_ms = g_busy_logged_ms = g_list_logged_ms = 0;
     g_access.clear();
@@ -517,6 +525,38 @@ static DaemonCh341SelectResult opened(loraham_ch341 *dev, loraham_ch341 **out, c
 
 /* ---- the decision after a scan ----------------------------------------------- */
 
+/* --usb-port: only the stick on that port counts; the others are never
+ * opened, so neither their number nor their serials matter. */
+static DaemonCh341SelectResult decide_port(char *why, size_t n)
+{
+    char t[160];
+    const loraham_ch341_scan_item *it = NULL;
+
+    if (!g_ops.open_port)
+        return refuse(why, n, "--usb-port needs the libch341 build with port selection");
+    for (int i = 0; i < g_count; i++)
+        if (g_items[i].openable != -1 && strcmp(g_items[i].port, g_port) == 0)
+            it = &g_items[i];
+    if (!it) {
+        snprintf(t, sizeof(t), "no Meshstick on port %s", g_port);
+        return refuse(why, n, t);
+    }
+    if (it->openable != 1)                              /* ACCESS or another open error: the 2 s rule */
+        return access_wait(why, n, g_port);
+    if (it->serial_state == -1) {
+        snprintf(t, sizeof(t), "stick on port %s has a serial that could not be read "
+                 "(unreadable serial)", g_port);
+        return refuse(why, n, t);
+    }
+    if (it->serial_state == 1) {
+        snprintf(t, sizeof(t), "stick on port %s has serial %.8s: give --usb-serial %.8s",
+                 g_port, it->serial, it->serial);
+        return refuse(why, n, t);
+    }
+    g_phase = PH_OPEN;
+    return CH341_SEL_PENDING;
+}
+
 static DaemonCh341SelectResult decide_inner(char *why, size_t n)
 {
     /* unknown: could be anything (not openable on the monitor context, or a
@@ -554,6 +594,8 @@ static DaemonCh341SelectResult decide_inner(char *why, size_t n)
     const char *who = who_text();
 
     g_ruleb = false;
+    if (g_port_asked)
+        return decide_port(why, n);
     if (g_mode == MODE_SERIAL) {
         if (match > 1) {
             char t[96];
@@ -681,7 +723,8 @@ DaemonCh341SelectResult daemon_ch341_select_step(loraham_ch341 **out, char *why,
             return finish_wait(g_ops.now_ms());
         if (g_changes != g_scan_changes)        /* past the cap: never open on a stale snapshot */
             return refuse(why, why_size, "Meshsticks kept arriving during the selection");
-        loraham_ch341 *dev = g_ops.open(g_mode == MODE_SERIAL ? g_serial : NULL);
+        loraham_ch341 *dev = g_port_asked ? g_ops.open_port(g_port)
+                                          : g_ops.open(g_mode == MODE_SERIAL ? g_serial : NULL);
         if (!dev) {
             if (window_stale())
                 return finish_wait(g_ops.now_ms());

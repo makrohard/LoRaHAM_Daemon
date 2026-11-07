@@ -18,6 +18,10 @@
  *                         free sticks one by one, hold those with a serial,
  *                         until the one without opens; release the held ones.
  *                         More than one without a serial, or none: refused.
+ *   --usb-port P          the stick without a serial on port P, opened by
+ *                         port (no walk); none there: refused at start,
+ *                         waited for on a reopen. A stick with a serial on P
+ *                         is refused (--usb-serial names it).
  *   reopen                by the remembered serial (any port), or by Rule B
  *                         and the remembered port for the stick without one.
  * Every open passes the post-open checks before any radio init. A stick that
@@ -48,6 +52,9 @@ typedef struct {
      * (also a failed one) and identity read, before a result is committed.
      * NULL op = no monitor. */
     void (*take_events)(void);
+    /* --usb-port: open the stick on that port only (the library's open by
+     * port); NULL = the library has none, --usb-port is refused. */
+    loraham_ch341 *(*open_port)(const char *port);
 } DaemonCh341SelectOps;
 
 typedef enum {
@@ -63,7 +70,8 @@ typedef enum {
 #define DAEMON_CH341_SETTLE_QUIET_MS 500u
 #define DAEMON_CH341_SETTLE_CAP_MS 2000u
 
-void daemon_ch341_select_init(const DaemonCh341SelectOps *ops, const char *usb_serial);
+void daemon_ch341_select_init(const DaemonCh341SelectOps *ops, const char *usb_serial,
+                              const char *usb_port);
 
 /* Start a selection (at_start: refusals are final). */
 void daemon_ch341_select_begin(bool at_start);

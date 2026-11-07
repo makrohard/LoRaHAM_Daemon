@@ -79,6 +79,9 @@ bool daemon_ch341_load_from(const char *path, const char *expected_pin,
         dlclose(handle);
         return false;
     }
+    /* The one optional entry: a library without the open by port has none. */
+    tmp.open_port = reinterpret_cast<loraham_ch341 *(*)(uint16_t, uint16_t, const char *)>(
+        dlsym(handle, "loraham_ch341_open_port"));
 
     const char *pin = tmp.pin();
     if (!expected_pin || expected_pin[0] == '\0' || !pin || strcmp(pin, expected_pin) != 0) {

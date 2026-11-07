@@ -37,6 +37,11 @@ const char *loraham_ch341_pin(void);
  * leave chip select to the caller. NULL when no device could be opened. */
 loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial);
 
+/* As loraham_ch341_open, but only the device on USB port `port`
+ * ("<bus>-<port>[.<port>...]"). Exported only when the library has the open
+ * by port (PINEDIO_HAS_INIT_AT_PORT); the loader's table has NULL otherwise. */
+loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *port);
+
 /* Stop the interrupt poll thread, release interface 0, re-attach the kernel
  * driver, close the device. NULL is ignored. */
 void loraham_ch341_close(loraham_ch341 *dev);
@@ -165,6 +170,8 @@ typedef struct {
     void (*mon_scan_end)(loraham_ch341_mon *m);
     int (*identity)(loraham_ch341 *dev, loraham_ch341_scan_item *out);
     void (*seed_idle)(void);
+    /* Optional: NULL when the library has no open by port. */
+    loraham_ch341 *(*open_port)(uint16_t vid, uint16_t pid, const char *port);
 } LorahamCh341Api;
 
 #ifdef __cplusplus
