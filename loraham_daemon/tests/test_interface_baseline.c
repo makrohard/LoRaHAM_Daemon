@@ -49,11 +49,13 @@ static int test_cli_radio_help(void)
     return TEST_PASS;
 }
 
+/* 902 is no band (433, 868, 915 are; 915 since 1.4.0, so it no longer serves
+ * as the invalid example). */
 static int test_cli_radio_invalid(void)
 {
     char out[2048];
     int exit_code = 0;
-    int ret = run_cli_capture(g_bin, "--radio=915", NULL,
+    int ret = run_cli_capture(g_bin, "--radio=902", NULL,
                               out, sizeof(out), &exit_code);
 
     if (ret != TEST_PASS)
