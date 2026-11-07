@@ -126,7 +126,7 @@ jobs:
           test -f "$so"
           nm -D --defined-only "$so" | grep -qw loraham_ch341_pin
           grep -qaF "$PINEDIO_COMMIT" "$so"
-          echo "OK: $so carries pine64 $PINEDIO_COMMIT"
+          echo "OK: $so carries $PINEDIO_COMMIT of $PINEDIO_URL"
 
       - name: Chat client tests (normal lane)
         if: matrix.name == 'normal'
