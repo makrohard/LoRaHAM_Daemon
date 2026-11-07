@@ -1,4 +1,5 @@
-# pine64 libch341-spi-userspace (libpinedio-usb) for the ELECROW Meshstick (--hw meshstick-1262).
+# libch341-spi-userspace (libpinedio-usb) for the USB stick presets: the makrohard fork of pine64's library
+# (pine64 b0694ec8 + the selection, serial and interrupt-pin fixes + pinedio_init_at_port; its main).
 # build.sh builds lib/libloraham-ch341.so only from a checkout of exactly this commit, unmodified.
-PINEDIO_URL=https://github.com/pine64/libch341-spi-userspace.git
-PINEDIO_COMMIT=b0694ec84091b293cb1e97e00a821ff88353274f
+PINEDIO_URL=https://github.com/makrohard/libch341-spi-userspace.git
+PINEDIO_COMMIT=98b656bfce45596b04d55cd2fb6af31af1805652

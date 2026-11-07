@@ -8,6 +8,8 @@
   the 1.3.x forms `serial:` and `port:` are gone.
 - `--usb-port P` opens the stick without a serial on USB port P; it needs the libch341 build with
   port selection, else exit 4.
+- The USB library is the makrohard fork of pine64's libch341-spi-userspace (98b656bf, its selection
+  fixes and `pinedio_init_at_port`): `--usb-port` works in the bundle. See docs/hardware.md.
 - `--radio 915`: a third band (902.0–928.0 MHz, own sockets and lock) for `pinedio-usb-1262` and
   `meshstick-1262`; every other preset refuses it.
 

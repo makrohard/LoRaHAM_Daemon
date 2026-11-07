@@ -67,7 +67,7 @@ jobs:
       # normal lane builds the daemon with PINEDIO_DIR set, so build.sh attests
       # the checkout and compiles lib/libloraham-ch341.so; the other lanes
       # build without it, as a source build without the library does.
-      - name: Check out pinned pine64 libch341-spi-userspace (normal lane)
+      - name: Check out pinned libch341-spi-userspace (normal lane)
         if: matrix.name == 'normal'
         shell: bash
         run: |
