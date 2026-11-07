@@ -104,8 +104,9 @@ bool daemon_set_hardware_preset(const char *name);
 const char *daemon_hardware_preset_name(void);
 
 /*
- * Resolve the selected preset for the given band (433 or 868) into
- * daemon_hw_profile. Returns false for an unknown preset name.
+ * Resolve the selected preset for the given band (433, 868 or 915) into
+ * daemon_hw_profile. Returns false for an unknown preset name, or a band the
+ * preset does not serve.
  * "loraham" resolves per band exactly to the pre-profile hardcoded wiring.
  */
 bool daemon_hardware_profile_resolve(int band);

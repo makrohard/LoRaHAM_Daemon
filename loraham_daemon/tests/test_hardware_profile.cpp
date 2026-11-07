@@ -144,7 +144,7 @@ static void test_meshstick(void)
                                         "waveshare-sx1262" };
 
     expect_int("set meshstick", daemon_set_hardware_preset("meshstick-1262"), 1);
-    expect_int("meshstick 433 refused (868 hardware)", daemon_hardware_profile_resolve(433), 0);
+    expect_int("meshstick 433 refused (868/915 hardware)", daemon_hardware_profile_resolve(433), 0);
     expect_int("resolve meshstick 868", daemon_hardware_profile_resolve(868), 1);
     expect_int("ms family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
     expect_int("ms usb", daemon_hw_profile.usb_ch341, 1);
@@ -181,7 +181,7 @@ static void test_meshstick(void)
 static void test_pinedio_usb(void)
 {
     expect_int("set pinedio", daemon_set_hardware_preset("pinedio-usb-1262"), 1);
-    expect_int("pinedio 433 refused (868 until the marking)", daemon_hardware_profile_resolve(433), 0);
+    expect_int("pinedio 433 refused (868/915 hardware)", daemon_hardware_profile_resolve(433), 0);
     expect_int("resolve pinedio 868", daemon_hardware_profile_resolve(868), 1);
     expect_str("pd name", daemon_hw_profile.name, "pinedio-usb-1262");
     expect_int("pd family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
@@ -227,6 +227,56 @@ static void test_rfm98pw_433(void)
     expect_int("rf default power ceiling", daemon_hw_profile.power_max_dbm, 0);
     expect_int("rf no fsk stream over usb", daemon_hw_profile.fsk_stream_available, 0);
     expect_int("rf cad scan", daemon_hw_profile.cad_scan_available, 1);
+}
+
+/* Which band each preset serves (W237: the two USB SX1262 sticks also serve 915,
+ * every other preset refuses it), and a band that is none of 433/868/915 is
+ * refused by every preset. Before, loraham took its 868 wiring for any band
+ * other than 433, and the uputronics and waveshare presets took any band. */
+static void test_band_matrix(void)
+{
+    static const struct { const char *preset; bool b433, b868, b915; } rows[] = {
+        { "loraham",           true,  true,  false },
+        { "uputronics-ce0",    true,  true,  false },
+        { "uputronics-ce1",    true,  true,  false },
+        { "waveshare-sx1262",  true,  true,  false },
+        { "meshstick-1262",    false, true,  true  },
+        { "pinedio-usb-1262",  false, true,  true  },
+        { "ch341-rfm98pw-433", true,  false, false },
+    };
+    static const int never[] = { 0, -1, 434, 869, 900, 2400 };
+
+    for (const auto &r : rows) {
+        char label[96];
+        daemon_set_hardware_preset(r.preset);
+        snprintf(label, sizeof(label), "band matrix %s 433", r.preset);
+        expect_int(label, daemon_hardware_profile_resolve(433), r.b433);
+        snprintf(label, sizeof(label), "band matrix %s 868", r.preset);
+        expect_int(label, daemon_hardware_profile_resolve(868), r.b868);
+        snprintf(label, sizeof(label), "band matrix %s 915", r.preset);
+        expect_int(label, daemon_hardware_profile_resolve(915), r.b915);
+        for (int band : never) {
+            snprintf(label, sizeof(label), "band matrix %s %d refused", r.preset, band);
+            expect_int(label, daemon_hardware_profile_resolve(band), 0);
+        }
+    }
+}
+
+/* On 915 the two sticks keep their wiring: the band changes nothing else. */
+static void test_usb_sx1262_915_same_profile(void)
+{
+    static const char *sticks[] = { "meshstick-1262", "pinedio-usb-1262" };
+
+    for (const char *name : sticks) {
+        char label[96];
+        daemon_set_hardware_preset(name);
+        daemon_hardware_profile_resolve(868);
+        DaemonHardwareProfile p868 = daemon_hw_profile;
+        snprintf(label, sizeof(label), "%s 915 resolves", name);
+        expect_int(label, daemon_hardware_profile_resolve(915), 1);
+        snprintf(label, sizeof(label), "%s 915 = its 868 profile", name);
+        expect_int(label, memcmp(&p868, &daemon_hw_profile, sizeof(p868)) == 0, 1);
+    }
 }
 
 static void test_known_lists_every_preset(void)
@@ -298,6 +348,8 @@ static void test_spi_kernel_cs_refuses_a_cs_off_ce0_ce1(void)
 
 int main(void)
 {
+    test_band_matrix();
+    test_usb_sx1262_915_same_profile();
     test_loraham_433();
     test_loraham_868();
     test_uputronics_ce0();

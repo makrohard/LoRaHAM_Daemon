@@ -62,6 +62,19 @@ static void profile_claimed_finish(DaemonHardwareProfile *p)
  * vendor statements (Uputronics), Waveshare wiki (SX1262 HAT). See
  * docs/hardware.md for the full derivation and the combination matrix.
  */
+/* The two Pi bands: every Pi board preset serves 433 and 868, nothing else. */
+static bool pi_band(int band)
+{
+    return band == 433 || band == 868;
+}
+
+/* The USB SX1262 sticks: 868, or 915 for the stick variant made for it (the
+ * variant must match the band: the daemon cannot see the RF front end). */
+static bool usb_sx1262_band(int band)
+{
+    return band == 868 || band == 915;
+}
+
 static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
 {
     memset(p, 0, sizeof(*p));
@@ -69,6 +82,8 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
     if (strcmp(preset, "loraham") == 0) {
         /* LoRaHAM_Pi dual-module wiring, bit-identical to the pre-profile
          * hardcoded pins (433: Module(hal,8,25,5,24); 868: (hal,7,16,6,12)). */
+        if (!pi_band(band))
+            return false;
         p->name = "loraham";
         p->family = DAEMON_CHIP_FAMILY_SX127X;
         if (band == 433) {
@@ -97,6 +112,9 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
          * slot-based so two processes never claim the same line. */
         bool ce0 = (preset[strlen(preset) - 1] == '0');
 
+        if (!pi_band(band))
+            return false;
+
         p->name = ce0 ? "uputronics-ce0" : "uputronics-ce1";
         p->family = DAEMON_CHIP_FAMILY_SX127X;
         if (ce0) {
@@ -119,7 +137,6 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->fsk_stream_available = false;
         p->reset_wired = false;
         profile_claimed_finish(p);
-        (void)band;                     /* board works in either band */
         return true;
     }
 
@@ -127,6 +144,8 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         /* Waveshare SX1262 LoRaWAN Node HAT (SPI); LF and HF variants are
          * pin-identical, the band comes from --radio. RXEN switching is
          * internal via SX1262 DIO2; TCXO is powered from DIO3. */
+        if (!pi_band(band))
+            return false;
         p->name = "waveshare-sx1262";
         p->family = DAEMON_CHIP_FAMILY_SX1262;
         p->cs = 21;
@@ -142,7 +161,6 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->fsk_stream_available = false;
         p->reset_wired = true;
         profile_claimed_finish(p);
-        (void)band;
         return true;
     }
 
@@ -151,8 +169,9 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
          * EU868 hardware. Wiring and settings from meshtasticd's
          * bin/config.d/lora-usb-meshstick-1262.yaml (CS 0, IRQ 6, Reset 2,
          * Busy 4, RXen 1, DIO2_AS_RF_SWITCH, DIO3_TCXO_VOLTAGE true = 1.8 V,
-         * USB 1A86:5512). The pins are CH341 D-lines, not BCM. */
-        if (band != 868)
+         * USB 1A86:5512). The pins are CH341 D-lines, not BCM. 868, or 915
+         * on the stick's 915 variant. */
+        if (!usb_sx1262_band(band))
             return false;
         p->name = "meshstick-1262";
         p->family = DAEMON_CHIP_FAMILY_SX1262;
@@ -183,8 +202,8 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
          * BUSY on SLCT, no reset line, no TCXO, no RF-switch pins. INT# and
          * SLCT are CH341 status bits 10 and 11 (the input word, read through
          * pinedio_get_irq_state by ch341_adapter.c); SLCT = BUSY measured on
-         * the adapter. 868 until the band marking says otherwise. */
-        if (band != 868)
+         * the adapter. 868, or 915 on the adapter's 915 variant. */
+        if (!usb_sx1262_band(band))
             return false;
         p->name = "pinedio-usb-1262";
         p->family = DAEMON_CHIP_FAMILY_SX1262;
