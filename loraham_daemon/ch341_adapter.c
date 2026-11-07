@@ -94,19 +94,33 @@ int loraham_ch341_transceive(loraham_ch341 *dev, const uint8_t *out, uint8_t *in
     return ret < 0 ? -1 : 0;
 }
 
+/* Pins 0-7 are the D-lines (UIO stream). Pins 8-23 are the CH341's status
+ * bits in the input word (ERR 8, PEMP 9, INT# 10, SLCT 11, ...): inputs only,
+ * read through pinedio_get_irq_state -- the PINE64 adapter has DIO1 on INT#
+ * and BUSY on SLCT, which pinedio_digital_read (D-lines only) reads as 0. */
+#define CH341_DLINES 8u
+#define CH341_INPUT_WORD_BITS 24u
+
 int loraham_ch341_pin_mode(loraham_ch341 *dev, uint32_t pin, int output)
 {
+    if (pin >= CH341_DLINES)
+        return (output || pin >= CH341_INPUT_WORD_BITS) ? -1 : 0;   /* a status bit is an input already */
     return pinedio_set_pin_mode(&dev->inst, pin, output ? 1 : 0) < 0 ? -1 : 0;
 }
 
 int loraham_ch341_digital_write(loraham_ch341 *dev, uint32_t pin, int level)
 {
+    if (pin >= CH341_DLINES)
+        return -1;                                  /* a status bit cannot be driven */
     return pinedio_digital_write(&dev->inst, pin, level != 0) < 0 ? -1 : 0;
 }
 
 int loraham_ch341_digital_read(loraham_ch341 *dev, uint32_t pin)
 {
-    int32_t ret = pinedio_digital_read(&dev->inst, pin);
+    if (pin >= CH341_INPUT_WORD_BITS)
+        return -1;
+    int32_t ret = pin >= CH341_DLINES ? pinedio_get_irq_state(&dev->inst, pin)
+                                      : pinedio_digital_read(&dev->inst, pin);
 
     if (ret < 0)
         return -1;

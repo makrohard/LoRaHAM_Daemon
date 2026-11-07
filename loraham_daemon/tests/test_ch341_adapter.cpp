@@ -73,6 +73,7 @@ static const char *STUB_H =
     "int32_t pinedio_set_pin_mode(struct pinedio_inst *i, uint32_t p, uint32_t m);\n"
     "int32_t pinedio_digital_write(struct pinedio_inst *i, uint32_t p, bool a);\n"
     "int32_t pinedio_digital_read(struct pinedio_inst *i, uint32_t p);\n"
+    "int32_t pinedio_get_irq_state(struct pinedio_inst *i, uint32_t p);\n"
     "int32_t pinedio_transceive(struct pinedio_inst *i, uint8_t *w, uint8_t *r, uint32_t n);\n"
     "int32_t pinedio_attach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p,"
     " enum pinedio_int_mode m, void (*cb)(void));\n"
@@ -111,7 +112,12 @@ static const char *STUB_C =
     " if (p < 8) g_mode[p] = (int)m;"
     " if (m == 1) pinedio_d_mode |= (uint16_t)(1u << p); else pinedio_d_mode &= (uint16_t)~(1u << p);"  /* :331-335 */
     " return 0; }\n"
-    "int32_t pinedio_digital_read(struct pinedio_inst *i, uint32_t p) { (void)i; (void)p; return 0; }\n"
+    "int g_d_reads = 0, g_d_read_pin = -1, g_irq_reads = 0, g_irq_pin = -1;\n"
+    "int32_t pinedio_digital_read(struct pinedio_inst *i, uint32_t p) { (void)i; g_d_reads++; g_d_read_pin = (int)p;"
+    " return 0; }\n"
+    /* The status bits: bit 11 (SLCT) set, every other bit clear. */
+    "int32_t pinedio_get_irq_state(struct pinedio_inst *i, uint32_t p) { (void)i; g_irq_reads++; g_irq_pin = (int)p;"
+    " return p == 11 ? 1 : 0; }\n"
     "int32_t pinedio_transceive(struct pinedio_inst *i, uint8_t *w, uint8_t *r, uint32_t n)"
     " { (void)i; (void)w; (void)r; (void)n; g_spi++; return 0; }\n"
     "int32_t pinedio_attach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p,"
@@ -126,9 +132,25 @@ static const char *DRIVER_C =
     "#include <stdio.h>\n#include <stdlib.h>\n#include \"ch341_adapter.h\"\n"
     "extern int g_inits, g_deinits, g_mode[8], stub_default_refs;\n"
     "extern int g_pin_writes, g_spi, g_last_mode, g_last_state, g_write_pin, g_write_level, g_pin_modes;\n"
+    "extern int g_d_reads, g_d_read_pin, g_irq_reads, g_irq_pin;\n"
     "#include <stdint.h>\nextern uint16_t pinedio_d_mode, pinedio_d_state;\n"
     "struct pinedio_inst;\n"
     "int main(void) {\n"
+    "  if (getenv(\"DRIVER_PINS\")) {\n"
+    "    loraham_ch341 *d = loraham_ch341_open(0x1A86, 0x5512, NULL);\n"
+    "    int pm0 = g_pin_modes, w0 = g_pin_writes;\n"
+    "    int in11 = loraham_ch341_pin_mode(d, 11, 0), out11 = loraham_ch341_pin_mode(d, 11, 1);\n"
+    "    int wr11 = loraham_ch341_digital_write(d, 11, 1);\n"
+    "    int r11 = loraham_ch341_digital_read(d, 11), irq11 = g_irq_pin, d11 = g_d_reads;\n"
+    "    int r10 = loraham_ch341_digital_read(d, 10);\n"
+    "    int r24 = loraham_ch341_digital_read(d, 24);\n"
+    "    int r4 = loraham_ch341_digital_read(d, 4);\n"
+    "    printf(\"in11=%d out11=%d wr11=%d pinmodes=%d writes=%d r11=%d irq11=%d dreads-at-11=%d r10=%d r24=%d"
+    " r4=%d dpin=%d irqreads=%d\\n\", in11, out11, wr11, g_pin_modes - pm0, g_pin_writes - w0, r11, irq11, d11,"
+    " r10, r24, r4, g_d_read_pin, g_irq_reads);\n"
+    "    loraham_ch341_close(d);\n"
+    "    return 0;\n"
+    "  }\n"
     "  if (getenv(\"DRIVER_WALK\")) {\n"
     "    for (int c = 0; c < 3; c++) {\n"
     "      loraham_ch341 *h[3]; int w0 = g_pin_writes;\n"
@@ -191,6 +213,21 @@ int main(void)
                      "/driver.c' '" + g_tmp + "/stub.c' '" + stub_dir + "/libusb_stub.c' '" +
                      src_dir + "/ch341_adapter.c'";
     expect("the real ch341_adapter.c builds against the stub", system(cc.c_str()) == 0);
+
+    /* The status bits (INT# 10, SLCT 11: the PINE64's DIO1 and BUSY) are inputs of the input word, never D-lines:
+     * a pin mode of one is an input already (no library call), an output or a write is refused, and a read goes
+     * through pinedio_get_irq_state; a D-line read stays pinedio_digital_read; past bit 23 nothing is read. */
+    std::string pins = run_driver("DRIVER_PINS=1");
+    expect("status bit 11: input mode accepted without a library call, output refused",
+           pins.find("in11=0 out11=-1 ") != std::string::npos && pins.find(" pinmodes=0 ") != std::string::npos);
+    expect("status bit 11: a write refused, nothing written",
+           pins.find(" wr11=-1 ") != std::string::npos && pins.find(" writes=0 ") != std::string::npos);
+    expect("status bit 11 read through the input word (SLCT high)",
+           pins.find(" r11=1 irq11=11 dreads-at-11=0 ") != std::string::npos);
+    expect("status bit 10 read through the input word (INT# low)", pins.find(" r10=0 ") != std::string::npos);
+    expect("past the input word: refused", pins.find(" r24=-1 ") != std::string::npos);
+    expect("a D-line read stays the D-line read",
+           pins.find(" r4=0 dpin=4 irqreads=2") != std::string::npos);
 
     std::string ok = run_driver("");
     expect("no fault: open returns a device", ok.find("open=dev") != std::string::npos);
