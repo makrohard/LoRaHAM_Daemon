@@ -4,6 +4,10 @@
 
 - `--hw pinedio-usb-1262` (PINE64 USB adapter, SX1262, 868) and `--hw ch341-rfm98pw-433` (CH341A +
   RFM98PW, SX127x, 433): USB stick presets on the Meshstick's library. See docs/hardware.md.
+- **Behaviour change:** `BOUND=` in `GET STATUS` is `<serial>@<port>` (`-` no serial, `?` unreadable);
+  the 1.3.x forms `serial:` and `port:` are gone.
+- `--usb-port P` opens the stick without a serial on USB port P; it needs the libch341 build with
+  port selection, else exit 4.
 
 ## 1.3.1
 
