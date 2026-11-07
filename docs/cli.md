@@ -20,7 +20,7 @@ band starts with. Board wiring and the meaning of the `--hw` presets live in
 ## Synopsis
 
 ```
-loraham_daemon --radio 433|868 [options]
+loraham_daemon --radio 433|868|915 [options]
 ```
 
 `--radio` is the only mandatory option. With nothing else given, the daemon runs in the
@@ -40,7 +40,7 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `-d`, `--daemon` | none | — | off (foreground) |
 | `-v`, `--version` | none | — | — |
 | `--debug` | none | — | off |
-| `--radio MODE` | required | `433`, `868` | none — must be given |
+| `--radio MODE` | required | `433`, `868`, `915` (`915`: `pinedio-usb-1262` and `meshstick-1262` only) | none — must be given |
 | `--hw PRESET` | required | `loraham`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262`, `meshstick-1262` | `loraham` |
 | `--tx-mode MODE` | required | `direct`, `managed` | `managed` |
 | `--cad-monitor VAL` | required | `on`, `off` | `off` |
@@ -79,11 +79,15 @@ One process drives one band. The selection is unset until `--radio` is parsed, a
 refuses to start without it:
 
 ```
-missing option: --radio (433 or 868)
+missing option: --radio (433, 868 or 915)
 ```
 
-The value must be `433` or `868`; anything else is rejected with `invalid radio mode: <value>`
-and `allowed: 433, 868`. Both failures print the usage text and exit non-zero. Argument parsing
+The value must be `433`, `868` or `915`; anything else is rejected with `invalid radio mode: <value>`
+and `allowed: 433, 868, 915`. `915` is a band of its own (its own sockets, lock and logs, never an
+868 process on another frequency), and only the USB SX1262 sticks serve it; every other preset
+refuses it as an invalid hardware profile. The daemon does not know the region it runs in: 915 is
+for the regions where 902–928 MHz may be used, and the stick's variant must be the one made for
+that band. Both failures print the usage text and exit non-zero. Argument parsing
 runs before any I/O setup, so a missing or invalid selection fails before locks, GPIO, sockets or
 RadioLib are touched.
 
@@ -209,7 +213,7 @@ anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 1
 
 | Cause | Message |
 | --- | --- |
-| Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868` |
+| Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868, 915` |
 | Bad `--tx-mode` value | `invalid TX mode: <value>` + `allowed: direct, managed` |
 | Bad `--cad-monitor` value | `invalid CAD monitor value: <value>` + `allowed: on, off` |
 | Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
@@ -221,7 +225,7 @@ anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 1
 | Bad `--usb-serial`, or `--usb-serial` / `--usb-port` without a USB stick preset | `invalid --usb-serial (1-8 printable characters, no space; pine64 compares the first 8): <value>` / `--usb-serial / --usb-port are only for a USB stick preset (meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433)` |
 | Bad `--usb-port`, or both `--usb-serial` and `--usb-port` | `invalid --usb-port (<bus>-<port>[.<port>...], e.g. 1-1.2): <value>` / `--usb-serial and --usb-port exclude each other` |
 | Any non-option argument | `Unbekanntes Argument: <arg>` |
-| `--radio` missing | `missing option: --radio (433 or 868)` |
+| `--radio` missing | `missing option: --radio (433, 868 or 915)` |
 
 ## Options removed in version 112
 

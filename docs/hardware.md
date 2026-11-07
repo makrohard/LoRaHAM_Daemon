@@ -92,8 +92,8 @@ pinedio-usb-1262, ch341-rfm98pw-433`.
 | `uputronics-ce0` | SX127x | Uputronics Pi Zero LoRa expansion board (HopeRF RFM95/98W), CE switch on CE0 | either band |
 | `uputronics-ce1` | SX127x | same board, CE switch on CE1 | either band |
 | `waveshare-sx1262` | SX1262 | Waveshare SX1262 LoRaWAN Node HAT | either band; LF and HF variants are pin-identical |
-| `meshstick-1262` | SX1262 | ELECROW Meshstick, USB (CH341 USB-to-SPI bridge) — [own section](#elecrow-meshstick-usb) | `868` only; `--radio 433` is refused like an unknown preset |
-| `pinedio-usb-1262` | SX1262 | PINE64 USB LoRa adapter, the same CH341 bridge — [other USB sticks](#other-usb-sticks-on-the-ch341) | `868` only |
+| `meshstick-1262` | SX1262 | ELECROW Meshstick, USB (CH341 USB-to-SPI bridge) — [own section](#elecrow-meshstick-usb) | `868` or `915`; `--radio 433` is refused like an unknown preset |
+| `pinedio-usb-1262` | SX1262 | PINE64 USB LoRa adapter, the same CH341 bridge — [other USB sticks](#other-usb-sticks-on-the-ch341) | `868` or `915` |
 | `ch341-rfm98pw-433` | SX127x | a CH341A board wired to a HopeRF RFM98PW — [other USB sticks](#other-usb-sticks-on-the-ch341) | `433` only |
 
 * The band stays the identity key. `--radio` is resolved first and the profile is then resolved for
@@ -105,7 +105,8 @@ pinedio-usb-1262, ch341-rfm98pw-433`.
 * Board-variant frequency ranges (the Uputronics 434 or 868 variant, the Waveshare LF or HF
   variant) are vendor properties the daemon never sees. What the code enforces is the per-band
   frequency policy — `430.0`–`440.0` MHz on the 433 process, `863.0`–`870.0` MHz on the 868
-  process (`config_policy_freq_valid_band`); see [Limits](limits.md).
+  process, `902.0`–`928.0` MHz on the 915 process (`config_policy_freq_valid_band`); see
+  [Limits](limits.md). The Pi presets serve 433 and 868 only.
 * Every preset is driven as a raw LoRa radio. There is no LoRaWAN stack; "LoRaWAN" appears only in
   a board name.
 * An unknown preset is rejected once the band is frozen: the daemon prints the offending name and

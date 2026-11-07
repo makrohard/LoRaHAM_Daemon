@@ -95,6 +95,9 @@ collision at a socket pathname.
 | `DATA868_FRAMED_SOCKET` | `/run/loraham/lora868f.sock` | framed DATA |
 | `CONF433_SOCKET` | `/run/loraham/loraconf433.sock` | CONF commands |
 | `CONF868_SOCKET` | `/run/loraham/loraconf868.sock` | CONF commands |
+| `DATA915_SOCKET` | `/run/loraham/lora915.sock` | raw DATA |
+| `DATA915_FRAMED_SOCKET` | `/run/loraham/lora915f.sock` | framed DATA |
+| `CONF915_SOCKET` | `/run/loraham/loraconf915.sock` | CONF commands |
 
 With `--id ID` the three sockets are `lora-ID.sock` (raw DATA), `loraf-ID.sock` (framed DATA) and
 `loraconf-ID.sock` (CONF) in the same directory, and the instance lock is `instance-ID.lock`, so two

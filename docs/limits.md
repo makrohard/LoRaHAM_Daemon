@@ -194,6 +194,7 @@ A `SET` outside these ranges is rejected before any hardware is touched.
 |---|---|
 | `FREQ` (`--radio 433` process) | `430.0`–`440.0` MHz |
 | `FREQ` (`--radio 868` process) | `863.0`–`870.0` MHz |
+| `FREQ` (`--radio 915` process) | `902.0`–`928.0` MHz (boot default `906.875`) |
 | `SF` | `7`–`12` |
 | `BW` | `7.8`, `10.4`, `15.6`, `20.8`, `31.25`, `41.7`, `62.5`, `125`, `250`, `500` kHz |
 | `CR` | `5`–`8` |
