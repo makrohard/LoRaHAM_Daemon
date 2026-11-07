@@ -283,7 +283,7 @@ bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, 
             g_api->close(dev);
             return refuse(why, why_size, "the opened stick could not be identified (serial or port unreadable)");
         }
-        if (id.serial_state == -1) {
+        if (id.serial_state == -1 && !by_port) {    /* --usb-port: the port is the identity */
             g_api->close(dev);
             return refuse(why, why_size, "the opened stick's serial could not be read (unreadable serial)");
         }
@@ -292,10 +292,9 @@ bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, 
             g_api->close(dev);
             return refuse(why, why_size, "the opened stick is not the one --usb-serial names");
         }
-        if (by_port && (id.serial_state != 0 || strcmp(id.port, usb_port) != 0)) {
+        if (by_port && strcmp(id.port, usb_port) != 0) {
             g_api->close(dev);
-            return refuse(why, why_size, "the opened stick is not the stick without a serial on "
-                          "the port --usb-port names");
+            return refuse(why, why_size, "the opened stick is not on the port --usb-port names");
         }
         daemon_ch341_bound_text(&id, radio_controller.bound, sizeof(radio_controller.bound));
         g_selected = dev;

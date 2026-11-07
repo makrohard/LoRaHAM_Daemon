@@ -2226,18 +2226,33 @@ static void test_usb_port(void)
     expect("P3c a stick that left during the scan is not on the port: refused",
            r == CH341_SEL_REFUSED && B.opens == 0 && why.find("no Meshstick on port 1-3") != std::string::npos);
 
-    bus({{"TESTSN01", "1-3", 1, false, false}});
+    /* B4b (DEC-W35): the port names the stick, whatever its serial says. lhpc resolves a bound
+     * stick's serial to its current port and starts the daemon with --usb-port. */
+    bus({{"AAAA0001", "1-2", 1, false, false}, {"TESTSN01", "1-3", 1, false, false}});
     init_with(nullptr, "1-3", true);
     r = run(true, &o, &why);
-    expect("P4 a stick with a serial on the port: refused, never opened",
-           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("--usb-serial") != std::string::npos);
+    expect("P4 a stick with a serial on the port: opened by port, the other never",
+           r == CH341_SEL_OPENED && o == 1 && g_port_opens == 1 && B.opens == 1 && !B.s[0].claimed);
+    expect("P4 BOUND names its serial and the port", strcmp(daemon_ch341_select_bound(), "TESTSN01@1-3") == 0);
+    B.s[1].claimed = false;
+    g_port_opens = 0;
+    r = run(false, &o, &why);
+    expect("P4 a reopen takes the same port again (not the serial elsewhere)",
+           r == CH341_SEL_OPENED && o == 1 && g_port_opens == 1);
 
-    bus({{"TESTSN01", "1-3", 1, false, false}});
+    bus({{"CHE1W433", "1-3", 1, false, false}});
     B.unreadable[0] = true;
     init_with(nullptr, "1-3", true);
     r = run(true, &o, &why);
-    expect("P5 an unreadable serial on the port: refused, never opened",
-           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("could not be read") != std::string::npos);
+    expect("P5 a stick whose serial cannot be read: opened by port", r == CH341_SEL_OPENED && o == 0);
+    expect("P5 BOUND says the serial is unreadable", strcmp(daemon_ch341_select_bound(), "?@1-3") == 0);
+
+    /* The stick moved: a serial stick that now sits on another port is not taken. */
+    bus({{"TESTSN01", "1-4", 1, false, false}});
+    init_with(nullptr, "1-3", true);
+    r = run(false, &o, &why);
+    expect("P5b the named port is empty on a reopen: wait, even with the serial elsewhere",
+           r == CH341_SEL_WAIT && B.opens == 0);
 
     bus({{nullptr, "1-3", 0, false, false}});
     init_with(nullptr, "1-3", true);

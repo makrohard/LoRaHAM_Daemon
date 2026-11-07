@@ -18,10 +18,10 @@
  *                         free sticks one by one, hold those with a serial,
  *                         until the one without opens; release the held ones.
  *                         More than one without a serial, or none: refused.
- *   --usb-port P          the stick without a serial on port P, opened by
- *                         port (no walk); none there: refused at start,
- *                         waited for on a reopen. A stick with a serial on P
- *                         is refused (--usb-serial names it).
+ *   --usb-port P          the stick on port P, whatever its serial says (one,
+ *                         none, or unreadable), opened by port (no walk, no
+ *                         other stick opened); none there: refused at start,
+ *                         waited for on a reopen.
  *   reopen                by the remembered serial (any port), or by Rule B
  *                         and the remembered port for the stick without one.
  * Every open passes the post-open checks before any radio init. A stick that

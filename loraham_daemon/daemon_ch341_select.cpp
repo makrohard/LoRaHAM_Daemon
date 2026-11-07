@@ -409,7 +409,7 @@ static bool post_open_ok(loraham_ch341 *dev, loraham_ch341_scan_item *out_id, bo
     }
     /* Only iSerialNumber 0 makes "the stick without a serial": a serial that
      * is there but cannot be read is neither identity. */
-    if (id.serial_state == -1) {
+    if (id.serial_state == -1 && !g_port_asked) {   /* --usb-port: the port is the identity */
         snprintf(why, n, "stick on port %s has a serial that could not be read (unreadable serial)",
                  id.port);
         return false;
@@ -428,8 +428,8 @@ static bool post_open_ok(loraham_ch341 *dev, loraham_ch341_scan_item *out_id, bo
         return false;
     }
     /* The stick without a serial is identified by its port; a stick WITH a
-     * serial on that port is another stick. */
-    if (g_mode == MODE_PORT && id.serial_state == 1) {
+     * serial on that port is another stick (unless --usb-port named the port). */
+    if (g_mode == MODE_PORT && !g_port_asked && id.serial_state == 1) {
         snprintf(why, n, "stick on port %s has serial %.8s, waiting for the stick without a "
                  "serial: replug it, or restart", id.port, id.serial);
         return false;
@@ -543,16 +543,8 @@ static DaemonCh341SelectResult decide_port(char *why, size_t n)
     }
     if (it->openable != 1)                              /* ACCESS or another open error: the 2 s rule */
         return access_wait(why, n, g_port);
-    if (it->serial_state == -1) {
-        snprintf(t, sizeof(t), "stick on port %s has a serial that could not be read "
-                 "(unreadable serial)", g_port);
-        return refuse(why, n, t);
-    }
-    if (it->serial_state == 1) {
-        snprintf(t, sizeof(t), "stick on port %s has serial %.8s: give --usb-serial %.8s",
-                 g_port, it->serial, it->serial);
-        return refuse(why, n, t);
-    }
+    /* B4b (DEC-W35): the port names the stick, whatever its serial says (one, none, or
+     * unreadable); BOUND= reports what was read. */
     g_phase = PH_OPEN;
     return CH341_SEL_PENDING;
 }

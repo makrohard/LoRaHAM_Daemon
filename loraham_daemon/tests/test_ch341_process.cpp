@@ -862,6 +862,15 @@ static void scenario_usb_port(void)
     expect("PORT the stick on 1-2 never opened", !other);
     stop(pid);
 
+    /* B4b (DEC-W35): the port names the stick, whatever its serial says. */
+    reset_dirs();
+    bus("1-2 AAAA0001 1\n1-3 TESTSN01 1\n");
+    pid = start(mesh({ "--id", "up2", "--usb-port", "1-3" }), g_tmp + "/up1b.log");
+    expect("PORT a stick with a serial on the port: READY", wait_status("loraconf-up2.sock", "RADIO=READY", 8000));
+    expect("PORT ... BOUND=TESTSN01@1-3",
+           status("loraconf-up2.sock").find(" BOUND=TESTSN01@1-3 ID=up2") != std::string::npos);
+    stop(pid);
+
     reset_dirs();
     bus("1-2 - 1\n1-3 - 1\n");
     std::string keep = g_bin;

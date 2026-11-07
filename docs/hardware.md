@@ -180,10 +180,12 @@ What differs from a Pi board, and why:
   opened on: replugged into another port, it is ignored ("replug into the same port, or restart")
   and `USBWAIT=<port>` in `GET STATUS` says where it waits. If several daemons reopen at the same
   moment, one can be delayed while another holds its stick; both log the not-claimable line.
-* **Two or more sticks without a serial.** `--usb-port <bus>-<port>[.<port>...]` (the sysfs name,
-  e.g. `1-1.2`) names the stick: it is opened by its port, no walk, and no other stick is opened.
-  A stick with a serial on that port is refused (`--usb-serial` names it); no stick there refuses
-  at start and is waited for on a reopen (`USBWAIT=<port>`). It needs the libch341 build with
+* **By port.** `--usb-port <bus>-<port>[.<port>...]` (the sysfs name, e.g. `1-1.2`) names the
+  stick, whatever its serial says (one, none, or one the library cannot read): it is opened by its
+  port, no walk, and no other stick is opened; `BOUND=` names the serial as read (`-` none, `?`
+  unreadable). No stick there refuses at start and is waited for on a reopen (`USBWAIT=<port>`):
+  a stick moved to another port is the controller's to follow (LoRaHAM Pi Control starts the
+  daemon with the port sysfs names for the bound serial). It needs the libch341 build with
   port selection (`pinedio_init_at_port`); with pine64's library the daemon exits `4`
   ([CLI](cli.md)).
 * **On a Raspberry Pi Zero** consider a powered USB hub between the board and the stick.

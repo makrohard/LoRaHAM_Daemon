@@ -123,7 +123,7 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--ocp MA` | the PA over-current limit, at every power level | 100 mA when absent, on every chip |
 | `--id ID` | the names of this process's sockets, lock and `-d` log: `lora-ID.sock`, `loraf-ID.sock`, `loraconf-ID.sock`, `instance-ID.lock`, `/tmp/lora_daemon-ID.log`; `ID=` in `GET STATUS` | the band's names when absent |
 | `--usb-serial S` | which Meshstick to open when two or more are plugged in (pine64 compares the first 8 characters); `BOUND=` in `GET STATUS` names the stick opened | the only stick, or the one stick without a serial |
-| `--usb-port P` | which stick without a serial to open: the one on USB port `P`, opened by port (other sticks are never opened); needs the libch341 build with port selection, else exit `4` | as without it |
+| `--usb-port P` | which stick to open: the one on USB port `P`, whatever its serial says (one, none, or unreadable), opened by port (other sticks are never opened); `BOUND=` names what was read; needs the libch341 build with port selection, else exit `4` | as without it |
 
 `--cad-monitor` exists so that a `CONF` client which cannot send `SET CADMONITOR=1` still gets the
 `CAD=0`/`CAD=1` stream. It takes a required argument: a bare `--cad-monitor` with no value is a

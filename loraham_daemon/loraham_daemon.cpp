@@ -294,9 +294,9 @@ static void daemon_print_usage(const char *argv0)
     printf("      --usb-serial S  USB stick presets only: open the stick with this serial\n");
     printf("                   (1-8 characters; for two or more sticks;\n");
     printf("                   default: the only stick, or the one stick without a serial)\n");
-    printf("      --usb-port P USB stick presets only: open the stick without a serial on\n");
-    printf("                   USB port P (<bus>-<port>[.<port>...], as in sysfs; for two\n");
-    printf("                   or more sticks without a serial; not with --usb-serial)\n");
+    printf("      --usb-port P USB stick presets only: open the stick on USB port P\n");
+    printf("                   (<bus>-<port>[.<port>...], as in sysfs), whatever its serial\n");
+    printf("                   says; not with --usb-serial)\n");
     printf("      --hw PRESET  hardware profile: %s\n",
            daemon_hardware_profile_known());
     printf("                   (default: loraham)\n");
