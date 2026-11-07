@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `--hw pinedio-usb-1262` (PINE64 USB adapter, SX1262, 868) and `--hw ch341-rfm98pw-433` (CH341A +
+  RFM98PW, SX127x, 433): USB stick presets on the Meshstick's library. See docs/hardware.md.
+
 ## 1.3.1
 
 - The OCP default is 100 mA on every chip (SX1262 was 140); `--ocp` always wins.

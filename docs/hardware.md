@@ -83,7 +83,8 @@ With packages, RadioLib and SPI in place, build and run the daemon as described 
 ## Board presets
 
 `--hw PRESET` selects the hardware profile for this process's radio. The default is `loraham`. The
-known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262`.
+known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262,
+pinedio-usb-1262, ch341-rfm98pw-433`.
 
 | Preset | Chip family | Board | Band |
 |---|---|---|---|
@@ -92,6 +93,8 @@ known presets are exactly `loraham, uputronics-ce0, uputronics-ce1, waveshare-sx
 | `uputronics-ce1` | SX127x | same board, CE switch on CE1 | either band |
 | `waveshare-sx1262` | SX1262 | Waveshare SX1262 LoRaWAN Node HAT | either band; LF and HF variants are pin-identical |
 | `meshstick-1262` | SX1262 | ELECROW Meshstick, USB (CH341 USB-to-SPI bridge) — [own section](#elecrow-meshstick-usb) | `868` only; `--radio 433` is refused like an unknown preset |
+| `pinedio-usb-1262` | SX1262 | PINE64 USB LoRa adapter, the same CH341 bridge — [other USB sticks](#other-usb-sticks-on-the-ch341) | `868` only |
+| `ch341-rfm98pw-433` | SX127x | a CH341A board wired to a HopeRF RFM98PW — [other USB sticks](#other-usb-sticks-on-the-ch341) | `433` only |
 
 * The band stays the identity key. `--radio` is resolved first and the profile is then resolved for
   that band, so a band-independent preset takes its frequency band from `--radio`, not from the
@@ -119,10 +122,28 @@ process accepts exactly `POWER=20`; what that does depends on the board:
 | `uputronics-ce0` / `-ce1` | bare HopeRF RFM95/98W: the chip's PA_BOOST drives the antenna | the datasheet's own +20 dBm (100 mW) case, under its restrictions (duty ≤ 1 %, VSWR ≤ 3:1, VDD 2.4–3.7 V — [limits.md](limits.md)). The proof case for the feature; requested chip power, not a calibrated connector measurement |
 | `waveshare-sx1262` | SX1262, single PA path | nothing new: `0`–`20` was always accepted and the flag is inert |
 | `meshstick-1262` | SX1262, single PA path | the flag is inert; this preset accepts `0`–`22` (the manufacturer's maximum) and prints a warning for `21` and `22` — [limits.md](limits.md) |
+| `pinedio-usb-1262` | SX1262, single PA path | the flag is inert; this preset accepts `0`–`14` until the module's rating is known |
+| `ch341-rfm98pw-433` | **HopeRF RFM98PW** on PA_BOOST, as `loraham` 433 below | the same as `loraham` 433, with the same caveat |
 | `loraham`, 868 | described as a 100 mW module; exact module unconfirmed | as a bare module; do not read a confirmed BOM into it |
 | `loraham`, 433 | **HopeRF RFM98PW**: an enhanced-power module based on the RF98/RF96 device, nominally +30 dBm (1 W), 5–6 V supply, hundreds of mA in TX; its internal RF chain is not modelled by the daemon and the die is not independently established | the chip drives the module's RF chain 3 dB harder. **Unvalidated on the LoRaHAM 433 RFM98PW: the reviewed module documentation does not establish the permitted chip-drive setting or the resulting module output.** Compression, supply and matching can change the outcome; +3 dB of drive does not guarantee +3 dB of output or that the amplifier tolerates it. The permission is the same switch there by the maintainer's decision, and this note is the only guard |
 
 Chip OCP protects the chip's PA; it does not limit an external amplifier's supply current.
+
+## Other USB sticks on the CH341
+
+Two more presets drive a radio behind the same CH341 bridge (USB `1A86:5512`) through the same
+library, monitor, stick selection (`--usb-serial`, `--usb-port`) and replug handling as the
+[Meshstick](#elecrow-meshstick-usb). The USB id is the same for all three, so the preset is the
+operator's choice; the daemon cannot tell the boards apart.
+
+| Preset | Wiring (CH341 lines) | Notes |
+|---|---|---|
+| `pinedio-usb-1262` | CS D0, DIO1 on INT# (status bit 10), BUSY on SLCT (status bit 11) | from the PINE64 documentation and meshtasticd's `lora-pinedio-usb-sx1262.yaml`; SLCT = BUSY measured on the adapter. No RESET line (a warm start: `reset_wired` false), no TCXO, no RF-switch pins |
+| `ch341-rfm98pw-433` | NSS D0, RESET D2, DIO0 D6, DIO1 D4; SPI on D3/D5/D7 | an SX127x board: `--high-power` as on every SX127x board. DIO1 is polled over USB, too slowly for an FSK stream |
+
+The status bits are inputs of the CH341's input word, read through the library's
+`pinedio_get_irq_state`: a pin number 8–23 reads that bit, a pin mode for it can only be input, and
+a write to it is refused.
 
 ## ELECROW Meshstick (USB)
 

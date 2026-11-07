@@ -213,7 +213,7 @@ anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 1
 | Bad `--tx-mode` value | `invalid TX mode: <value>` + `allowed: direct, managed` |
 | Bad `--cad-monitor` value | `invalid CAD monitor value: <value>` + `allowed: on, off` |
 | Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
-| Bad `--hw` value (or `meshstick-1262` with `--radio 433`) | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262` |
+| Bad `--hw` value (or a USB stick preset with a band it does not have) | `invalid hardware profile: <value>` + `known: loraham, uputronics-ce0, uputronics-ce1, waveshare-sx1262, meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433` |
 | `--high-power` with a value | getopt's `option '--high-power' doesn't allow an argument`, then the usage text |
 | `--ocp` not a number | `invalid --ocp (an integer in mA): <value>` |
 | `--ocp` the chip cannot represent | `invalid --ocp for <family>: <n> mA (valid: <set>)` |
