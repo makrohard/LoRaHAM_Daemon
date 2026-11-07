@@ -286,7 +286,8 @@ static void daemon_print_usage(const char *argv0)
     printf("                   (/tmp/lora_daemon-<id>.log with --id)\n");
     printf("  -v, --version    print the version and exit\n");
     printf("      --debug      enable the debug log\n");
-    printf("      --radio MODE select the radio: 433, 868 (required)\n");
+    printf("      --radio MODE select the radio: 433, 868, 915 (required; 915 only\n");
+    printf("                   for pinedio-usb-1262 and meshstick-1262)\n");
     printf("      --id ID      instance id: 1-16 of a-z 0-9 -, first a letter; names the\n");
     printf("                   sockets lora-ID.sock, loraf-ID.sock, loraconf-ID.sock and the\n");
     printf("                   lock instance-ID.lock instead of the band (default: none)\n");
@@ -318,6 +319,9 @@ static void daemon_print_usage(const char *argv0)
     printf("  DATAF 868: %s\n", DATA868_FRAMED_SOCKET);
     printf("  CONF  433: %s\n", CONF433_SOCKET);
     printf("  CONF  868: %s\n", CONF868_SOCKET);
+    printf("  DATA  915: %s\n", DATA915_SOCKET);
+    printf("  DATAF 915: %s\n", DATA915_FRAMED_SOCKET);
+    printf("  CONF  915: %s\n", CONF915_SOCKET);
     printf("  (directory /run/loraham; group loraham for client access;\n");
     printf("   LORAHAM_SOCKET_DIR overrides it for dev and test runs only)\n");
     printf("\n");
@@ -423,7 +427,7 @@ static bool daemon_parse_args(int argc, char *argv[])
             case 1001:
                 if (!daemon_parse_radio_selection(optarg)) {
                     fprintf(stderr, "invalid radio mode: %s\n", optarg ? optarg : "");
-                    fprintf(stderr, "allowed: 433, 868\n");
+                    fprintf(stderr, "allowed: 433, 868, 915\n");
                     daemon_print_usage(argv[0]);
                     exit(EXIT_FAILURE);
                 }
@@ -548,7 +552,7 @@ static bool daemon_parse_args(int argc, char *argv[])
     }
 
     if (!daemon_radio_selection_is_set()) {
-        fprintf(stderr, "missing option: --radio (433 or 868)\n");
+        fprintf(stderr, "missing option: --radio (433, 868 or 915)\n");
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
@@ -556,8 +560,7 @@ static bool daemon_parse_args(int argc, char *argv[])
     /* Selection is final: freeze the band descriptor, then resolve the
      * hardware preset against it; an unknown preset fails closed via the
      * standard usage-error path. */
-    daemon_band_resolve(daemon_radio_433_enabled() ? RADIO_BAND_433
-                                                   : RADIO_BAND_868);
+    daemon_band_resolve(daemon_radio_selection_band());
     /* Every socket path must fit sun_path; measured whole, before any copy.
      * The same answer after every restart: the non-restartable exit. */
     {

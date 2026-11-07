@@ -160,7 +160,9 @@ void daemon_io_init(void)
 
     daemon_debug_ctx("SOCKET", "opening socket files");
     if (radio_channel_open_sockets(&channel) != 0) {
-        perror(band->band == RADIO_BAND_433 ? "socket 433" : "socket 868");
+        char what[16];
+        snprintf(what, sizeof(what), "socket %s", band->tag);
+        perror(what);
         printf("[Daemon] socket setup %s failed, exiting.\n", band->tag);
         daemon_io_startup_cleanup();
         exit(EXIT_FAILURE);

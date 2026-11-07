@@ -30,6 +30,9 @@
 #define DATA433_FRAMED_SOCKET_NAME "lora433f.sock"
 #define CONF868_SOCKET_NAME "loraconf868.sock"
 #define CONF433_SOCKET_NAME "loraconf433.sock"
+#define DATA915_SOCKET_NAME "lora915.sock"
+#define DATA915_FRAMED_SOCKET_NAME "lora915f.sock"
+#define CONF915_SOCKET_NAME "loraconf915.sock"
 
 /* With --id <id> (daemon_band.h) the names are keyed by the id instead of the
  * band. The prefixes lora-, loraf-, loraconf- differ at character 5 and a band
@@ -44,6 +47,9 @@
 #define DATA433_FRAMED_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA433_FRAMED_SOCKET_NAME
 #define CONF868_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" CONF868_SOCKET_NAME
 #define CONF433_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" CONF433_SOCKET_NAME
+#define DATA915_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA915_SOCKET_NAME
+#define DATA915_FRAMED_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" DATA915_FRAMED_SOCKET_NAME
+#define CONF915_SOCKET LORAHAM_SOCKET_DIR_DEFAULT "/" CONF915_SOCKET_NAME
 
 /* --- Test aliases --- */
 

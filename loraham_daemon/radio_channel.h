@@ -10,7 +10,8 @@
 
 typedef enum {
     RADIO_BAND_433 = 433,
-    RADIO_BAND_868 = 868
+    RADIO_BAND_868 = 868,
+    RADIO_BAND_915 = 915
 } RadioBand_t;
 
 /* --- Radio modem mode --- */

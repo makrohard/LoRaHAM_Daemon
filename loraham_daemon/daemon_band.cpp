@@ -58,6 +58,20 @@ static const RadioRfDefaults rf_defaults_868 = {
     10          /* power_dbm */
 };
 
+/* 915 (W237, DEC-W30): Meshtastic US LongFast's default slot, the rest the
+ * 868 set; every client sets its own channel on connect. */
+static const RadioRfDefaults rf_defaults_915 = {
+    906.875f,   /* freq_mhz */
+    11,         /* spreading_factor */
+    250.0f,     /* bandwidth_khz */
+    0x2B,       /* sync_word */
+    16,         /* preamble_len */
+    5,          /* coding_rate */
+    true,       /* crc_on */
+    -1,         /* ldro: autoLDRO() only */
+    10          /* power_dbm */
+};
+
 /* --- Band descriptors ------------------------------------------------------ */
 
 static const DaemonBandDescriptor band_433 = {
@@ -102,6 +116,31 @@ static const DaemonBandDescriptor band_868 = {
     870.0f,
     &rf_defaults_868,
     DAEMON_LED_PIN_868
+};
+
+/* 915: a band of its own (never a wider 868: the sockets, lock and logs name
+ * the band). Only the USB SX1262 sticks serve it, so there is no pre-profile
+ * LED; 902.0-928.0 MHz is the US ISM band (AU 915-928 inside it). */
+static const DaemonBandDescriptor band_915 = {
+    RADIO_BAND_915,
+    915,
+    "915",
+    true,
+    DATA915_SOCKET,
+    DATA915_FRAMED_SOCKET,
+    CONF915_SOCKET,
+    "TX915",
+    "TX915F",
+    "RX915",
+    "CONF915",
+    "CONFIG915",
+    "CLIENT915",
+    "CAD915",
+    "RSSI915",
+    902.0f,
+    928.0f,
+    &rf_defaults_915,
+    -1
 };
 
 static const DaemonBandDescriptor *g_band = NULL;
@@ -197,7 +236,7 @@ static void band_socket_path(char *out, const char *dir, const char *name)
 void daemon_band_resolve(RadioBand_t band)
 {
     const DaemonBandDescriptor *table =
-        (band == RADIO_BAND_868) ? &band_868 : &band_433;
+        band == RADIO_BAND_868 ? &band_868 : band == RADIO_BAND_915 ? &band_915 : &band_433;
     const char *dir = getenv("LORAHAM_SOCKET_DIR");
     char name_data[48];
     char name_framed[48];
@@ -217,13 +256,10 @@ void daemon_band_resolve(RadioBand_t band)
         snprintf(name_framed, sizeof(name_framed), DATA_ID_FRAMED_SOCKET_FMT, g_instance_id);
         snprintf(name_conf, sizeof(name_conf), CONF_ID_SOCKET_FMT, g_instance_id);
     } else {
-        snprintf(name_data, sizeof(name_data), "%s",
-                 band == RADIO_BAND_868 ? DATA868_SOCKET_NAME : DATA433_SOCKET_NAME);
-        snprintf(name_framed, sizeof(name_framed), "%s",
-                 band == RADIO_BAND_868 ? DATA868_FRAMED_SOCKET_NAME
-                                        : DATA433_FRAMED_SOCKET_NAME);
-        snprintf(name_conf, sizeof(name_conf), "%s",
-                 band == RADIO_BAND_868 ? CONF868_SOCKET_NAME : CONF433_SOCKET_NAME);
+        /* The band's default names: the last part of its default paths. */
+        snprintf(name_data, sizeof(name_data), "%s", strrchr(table->data_socket, '/') + 1);
+        snprintf(name_framed, sizeof(name_framed), "%s", strrchr(table->framed_socket, '/') + 1);
+        snprintf(name_conf, sizeof(name_conf), "%s", strrchr(table->conf_socket, '/') + 1);
     }
 
     g_band_override = *table;

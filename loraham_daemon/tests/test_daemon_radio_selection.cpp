@@ -56,6 +56,23 @@ static void test_parse_868(void)
     expect_int("868 enables 868", daemon_radio_868_enabled(), 1);
 }
 
+/* W237: 915 is the third band. */
+static void test_parse_915(void)
+{
+    expect_int("parse 915", daemon_parse_radio_selection("915"), 1);
+    expect_str("915 name", daemon_radio_selection_name(daemon_radio_selection), "915");
+    expect_int("915 is set", daemon_radio_selection_is_set(), 1);
+    expect_int("915 disables 433", daemon_radio_433_enabled(), 0);
+    expect_int("915 disables 868", daemon_radio_868_enabled(), 0);
+    expect_int("915 enables 915", daemon_radio_915_enabled(), 1);
+    expect_int("915 band", daemon_radio_selection_band(), RADIO_BAND_915);
+    daemon_parse_radio_selection("433");
+    expect_int("433 band", daemon_radio_selection_band(), RADIO_BAND_433);
+    expect_int("433 disables 915", daemon_radio_915_enabled(), 0);
+    daemon_parse_radio_selection("868");
+    expect_int("868 band", daemon_radio_selection_band(), RADIO_BAND_868);
+}
+
 static void test_parse_both_rejected(void)
 {
     daemon_radio_selection = DAEMON_RADIO_SELECTION_UNSET;
@@ -72,7 +89,9 @@ static void test_invalid_selection(void)
     daemon_radio_selection = DAEMON_RADIO_SELECTION_UNSET;
 
     expect_int("parse null fails", daemon_parse_radio_selection(NULL), 0);
-    expect_int("parse invalid fails", daemon_parse_radio_selection("915"), 0);
+    expect_int("parse invalid fails", daemon_parse_radio_selection("902"), 0);
+    expect_int("parse 915x fails", daemon_parse_radio_selection("915x"), 0);
+    expect_int("parse empty fails", daemon_parse_radio_selection(""), 0);
     expect_str("invalid keeps previous selection",
                daemon_radio_selection_name(daemon_radio_selection), "unset");
     expect_str("unknown enum name",
@@ -109,6 +128,7 @@ int main(int argc, char **argv)
     test_default_selection();
     test_parse_433();
     test_parse_868();
+    test_parse_915();
     test_parse_both_rejected();
     test_invalid_selection();
     test_valid_selection_is_set();

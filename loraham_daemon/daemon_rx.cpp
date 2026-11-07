@@ -260,7 +260,7 @@ static void daemon_finish_rx_packet(RadioController *ctrl,
                                     uint8_t *buf,
                                     size_t buf_len)
 {
-    if (ctrl->band == RADIO_BAND_868)
+    if (ctrl->band != RADIO_BAND_433)          /* 868 and 915: the HF path */
         memset(buf, 0, buf_len);
 
     // Symmetric LoRa IRQ clearing: clear RxDone *after* readData() and before

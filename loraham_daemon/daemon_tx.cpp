@@ -222,7 +222,7 @@ static TxResult lora_send_controller(RadioController *ctrl,
             daemon_rflog_tx(radio_controller_tag(ctrl), "ok", send_buf, len);
         }
 
-        if (ctrl->band == RADIO_BAND_868)
+        if (ctrl->band != RADIO_BAND_433)      // 868 and 915: the HF path
             usleep(50000); // 50 ms guard delay
 
         // Restore IRQ handling and RX callback after TX.

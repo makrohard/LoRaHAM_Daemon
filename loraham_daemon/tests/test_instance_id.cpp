@@ -9,6 +9,7 @@
 
 #include "../daemon_band.h"
 #include "../daemon_protocol.h"
+#include "../radio_rf_defaults.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -120,6 +121,66 @@ static void test_names(void)
     daemon_instance_id_reset();
 }
 
+/* W237 / DEC-W30: the 915 band, a band of its own (never a wider 868): its own
+ * socket, lock and log names, the 902.0-928.0 MHz range, Meshtastic US
+ * LongFast's 906.875 MHz with the 868 set as boot defaults, the HF path, and
+ * no pre-profile LED. */
+static void test_band_915(void)
+{
+    daemon_instance_id_reset();
+    unsetenv("LORAHAM_SOCKET_DIR");
+    daemon_band_resolve(RADIO_BAND_915);
+    const DaemonBandDescriptor *b = daemon_band();
+    expect("915: band", b->band == RADIO_BAND_915 && b->band_number == 915);
+    expect_str("915: tag", b->tag, "915");
+    expect("915: the HF path", b->is_hf);
+    expect_str("915: data", b->data_socket, "/run/loraham/lora915.sock");
+    expect_str("915: framed", b->framed_socket, "/run/loraham/lora915f.sock");
+    expect_str("915: conf", b->conf_socket, "/run/loraham/loraconf915.sock");
+    expect_str("915: TX log", b->tx_log_ctx, "TX915");
+    expect_str("915: framed TX log", b->framed_log_ctx, "TX915F");
+    expect_str("915: RX log", b->rx_log_ctx, "RX915");
+    expect_str("915: CONF log", b->conf_log_ctx, "CONF915");
+    expect_str("915: CONFIG log", b->config_log_ctx, "CONFIG915");
+    expect_str("915: CLIENT log", b->client_log_ctx, "CLIENT915");
+    expect_str("915: CAD log", b->cad_log_ctx, "CAD915");
+    expect_str("915: RSSI log", b->rssi_log_ctx, "RSSI915");
+    expect("915: range 902.0-928.0", b->freq_min_mhz == 902.0f && b->freq_max_mhz == 928.0f);
+    expect("915: no pre-profile LED", b->legacy_led_pin < 0);
+    const RadioRfDefaults *d = b->rf_defaults;
+    expect("915: boot frequency 906.875", d && d->freq_mhz == 906.875f);
+    daemon_band_resolve(RADIO_BAND_868);
+    const RadioRfDefaults *e = daemon_band()->rf_defaults;
+    expect("915: the rest of the boot set is 868's",
+           d && e && d->spreading_factor == e->spreading_factor && d->bandwidth_khz == e->bandwidth_khz &&
+           d->sync_word == e->sync_word && d->preamble_len == e->preamble_len &&
+           d->coding_rate == e->coding_rate && d->crc_on == e->crc_on && d->ldro == e->ldro &&
+           d->power_dbm == e->power_dbm);
+    expect("915: the boot frequency inside its range", d && d->freq_mhz >= 902.0f && d->freq_mhz <= 928.0f);
+
+    setenv("LORAHAM_SOCKET_DIR", "/tmp/x", 1);
+    daemon_band_resolve(RADIO_BAND_915);
+    expect_str("915 + dir: data", daemon_band()->data_socket, "/tmp/x/lora915.sock");
+    expect_str("915 + dir: framed", daemon_band()->framed_socket, "/tmp/x/lora915f.sock");
+    expect_str("915 + dir: conf", daemon_band()->conf_socket, "/tmp/x/loraconf915.sock");
+    unsetenv("LORAHAM_SOCKET_DIR");
+    expect("set r4", daemon_set_instance_id("r4"));
+    daemon_band_resolve(RADIO_BAND_915);
+    expect_str("915 with id: data", daemon_band()->data_socket, "/run/loraham/lora-r4.sock");
+    expect_str("915 with id: tag stays 915", daemon_band()->tag, "915");
+    daemon_instance_id_reset();
+
+    /* 433 and 868 keep their own names (the band choice is not two-way any more). */
+    daemon_band_resolve(RADIO_BAND_433);
+    expect_str("433 still 433", daemon_band()->tag, "433");
+    setenv("LORAHAM_SOCKET_DIR", "/tmp/x", 1);
+    daemon_band_resolve(RADIO_BAND_433);
+    expect_str("433 + dir: data", daemon_band()->data_socket, "/tmp/x/lora433.sock");
+    daemon_band_resolve(RADIO_BAND_868);
+    expect_str("868 + dir: conf", daemon_band()->conf_socket, "/tmp/x/loraconf868.sock");
+    unsetenv("LORAHAM_SOCKET_DIR");
+}
+
 /* T20: the whole path in bytes, before any copy, with and without --id. */
 static void test_path_length(void)
 {
@@ -202,6 +263,16 @@ static void test_binary(const char *bin)
     expect("binary: a >320-byte refusal: the line carries the path's tail and \"(exit 4).\"",
            run("grep -q 'wTAIL/lora[a-z]*-r3\\.sock (exit 4)\\.$' '" + log + "'") == 0);
 
+    /* W237: --radio 915 is a band; only the USB SX1262 sticks serve it. */
+    std::string lock = std::string("LORAHAM_RUNTIME_DIR='") + tmp + "/lock' '" + bin + "'";
+    rc = run(lock + " --radio 915 --hw loraham >'" + log + "' 2>&1");
+    expect("binary: --radio 915 on a Pi preset exits 1", rc == 1);
+    expect("binary: ... as an invalid hardware profile",
+           run("grep -q 'invalid hardware profile: loraham' '" + log + "'") == 0);
+    rc = run(lock + " --radio 902 --hw meshstick-1262 >'" + log + "' 2>&1");
+    expect("binary: --radio 902 exits 1", rc == 1);
+    expect("binary: ... naming the three bands", run("grep -q '^allowed: 433, 868, 915$' '" + log + "'") == 0);
+
     run("rm -rf '" + tmp + "'");
 }
 
@@ -215,6 +286,7 @@ int main(int argc, char *argv[])
     test_id_format();
     test_names();
     test_path_length();
+    test_band_915();
     if (bin)
         test_binary(bin);
     else
