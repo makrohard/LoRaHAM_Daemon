@@ -43,10 +43,10 @@ static loraham_ch341 *open_dev(uint16_t vid, uint16_t pid, const char *serial, c
 
     /* pinedio_init() calls libusb_init(NULL) and never libusb_exit(): -1 means
      * that reference was not taken (its mutex, condvar or libusb_init failed);
-     * 0, -2 (no stick) and -3 (its poll worker could not start) mean it was. Its allocation-failure path deinits and still returns 0,
-     * leaving the handle NULL; a 0 without the OUT transfer is failed too.
-     * Every reference taken is released here or in close, so replugs do not
-     * accumulate them. */
+     * 0, -2 (no stick, or no device list) and -3 (a transfer or its poll worker
+     * could not be set up) mean it was. A 0 without the handle or the OUT
+     * transfer is treated as failed too. Every reference taken is released
+     * here or in close, so replugs do not accumulate them. */
 #ifdef PINEDIO_HAS_INIT_AT_PORT
     int ret = pinedio_init_at_port(&dev->inst, NULL, port);
 #else
@@ -60,9 +60,10 @@ static loraham_ch341 *open_dev(uint16_t vid, uint16_t pid, const char *serial, c
         return NULL;
     }
 
-    /* pinedio_set_option() has no return statement at the pinned commit
-     * (libpinedio-usb.c:428-430): its result is not a value and is not read.
-     * pinedio_set_pin_mode() returns 0 there (:445-449) but is checked, so a
+    /* pinedio_set_option() returns 0 for a known option at the pinned commit
+     * (libpinedio-usb.c:460-465); AUTO_CS is set after init (init resets it),
+     * before any other call on this stick. pinedio_set_pin_mode() returns 0
+     * there (:482-486) but is checked, so a
      * library change cannot hand out a device whose SPI lines are inputs. */
     pinedio_set_option(&dev->inst, PINEDIO_OPTION_AUTO_CS, 0);
     if (pinedio_set_pin_mode(&dev->inst, 3, 1) < 0 ||
@@ -178,13 +179,9 @@ int loraham_ch341_in_error(loraham_ch341 *dev)
     return __atomic_load_n(&dev->inst.in_error, __ATOMIC_SEQ_CST) ? 1 : 0;
 }
 
-/* pine64's pin state: process-wide, defined in libpinedio-usb.c:86-87 (not in
- * its header). Every open writes it to the stick it opens. */
-extern uint16_t pinedio_d_mode;
-extern uint16_t pinedio_d_state;
-
+/* pine64's pin state is process-wide (libpinedio-usb.c:86-87, under its own
+ * lock since the pinned commit). Every open writes it to the stick it opens. */
 void loraham_ch341_seed_idle(void)
 {
-    pinedio_d_mode |= (uint16_t)(1u << 2);    /* RESET an output ... */
-    pinedio_d_state |= (uint16_t)(1u << 2);   /* ... and high */
+    pinedio_seed_pin_state((uint16_t)(1u << 2), (uint16_t)(1u << 2));   /* RESET an output, and high */
 }
