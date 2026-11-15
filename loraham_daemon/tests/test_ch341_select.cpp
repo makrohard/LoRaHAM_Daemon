@@ -225,6 +225,7 @@ static void bus(std::initializer_list<Stick> sticks)
 static void init_with(const char *usb_serial, const char *usb_port, bool port_op)
 {
     DaemonCh341SelectOps ops{};
+    ops.stick = "TEST STICK";
     ops.scan_begin = f_scan_begin;
     ops.scan_step = f_scan_step;
     ops.scan_end = f_scan_end;
@@ -295,7 +296,7 @@ static void test_serial_selector(void)
     bus({{"ABCDEFGH", "1-3", 1, false, false}});
     init("TESTSN01");
     expect("T15 the serial absent: refused at start",
-           run(true, &o, &why) == CH341_SEL_REFUSED && why.find("no Meshstick with serial") != std::string::npos);
+           run(true, &o, &why) == CH341_SEL_REFUSED && why.find("no TEST STICK with serial") != std::string::npos);
 
     bus({{"TESTSN01", "1-2", 1, false, false}});
     init("TESTSN01");
@@ -436,7 +437,7 @@ static void test_r2_serial(void)
     bus({{"ABCDEFGH", "1-3", 1, false, false}});
     init("TESTSN01");
     expect("T5 --usb-serial reopen, only another serial attached: waits with the line, opens nothing",
-           run(false, &o, &why) == CH341_SEL_WAIT && has(why, "no Meshstick with serial TESTSN01") &&
+           run(false, &o, &why) == CH341_SEL_WAIT && has(why, "no TEST STICK with serial TESTSN01") &&
            B.opens == 0);
     bus({{"TESTSN01", "1-2", 1, false, false}});
     init(nullptr);
@@ -445,7 +446,7 @@ static void test_r2_serial(void)
     B.s[0].serial = "ZZZZZZZZ";                  /* another stick on the same port */
     B.opens = 0;
     expect("T5 a different serial on the same port: ignored with the line, nothing opened",
-           run(false, &o, &why) == CH341_SEL_WAIT && has(why, "no Meshstick with serial TESTSN01") &&
+           run(false, &o, &why) == CH341_SEL_WAIT && has(why, "no TEST STICK with serial TESTSN01") &&
            B.opens == 0);
 
     /* T15: an unknown possible duplicate that reads different before the deadline. */
@@ -1269,7 +1270,7 @@ static void test_r10(void)
     init(nullptr);
     r = run_until_concluded(true, &o, &why, &ms);
     expect("r10 B1 Rule B target: a second stick without a serial arriving during the target open: refused",
-           r == CH341_SEL_REFUSED && why.find("more than one Meshstick without a serial") != std::string::npos);
+           r == CH341_SEL_REFUSED && why.find("more than one stick without a serial") != std::string::npos);
     expect("r10 B1 Rule B target: ... every stick released", !B.s[0].claimed && !B.s[1].claimed && !B.s[2].claimed);
 
     /* START, no selector: a second serial stick arrives during the plain open. */
@@ -1384,7 +1385,7 @@ static void test_r12(void)
     init(nullptr);
     r = run_until_concluded(true, &o, &why, &ms);
     expect("r12 B1 the last Rule B attempt fails with a second serial-less stick arriving: refused (more than one), not BUSY",
-           r == CH341_SEL_REFUSED && why.find("more than one Meshstick without a serial") != std::string::npos &&
+           r == CH341_SEL_REFUSED && why.find("more than one stick without a serial") != std::string::npos &&
            !B.s[0].claimed);
 
     /* B1 Rule B, the last attempt opens a serial stick that arrived during it
@@ -1489,7 +1490,7 @@ static void test_sweep(void)
         r = run(false, &o, &why);
     }
     expect("sweep B4 reopen: the target leaving after its scan: waits, nothing opened", r == CH341_SEL_WAIT &&
-           B.opens == opens && has(why, "no Meshstick with serial"));
+           B.opens == opens && has(why, "no TEST STICK with serial"));
 
     /* D1 START: open() NULL with no event: the BUSY refusal (exit 4). */
     bus({{"SERIAL01", "1-2", 1, true, true}});
@@ -1548,7 +1549,7 @@ static void test_r13(void)
     init(nullptr);
     r = run_until_concluded(true, &o, &why, &ms);
     expect("r13 B1 (b) a second serial-less stick arriving during the bind: refused (more than one), nothing kept",
-           r == CH341_SEL_REFUSED && has(why, "more than one Meshstick without a serial") && B.unbinds >= 1 &&
+           r == CH341_SEL_REFUSED && has(why, "more than one stick without a serial") && B.unbinds >= 1 &&
            !B.s[0].claimed && strcmp(daemon_ch341_select_bound(), "-") == 0);
 
     /* (c) reopen: the stick being bound leaves during the bind. */
@@ -1563,7 +1564,7 @@ static void test_r13(void)
     expect("r13 B1 (c) the bound stick leaving during the bind: not opened, unbound, classified again",
            r == CH341_SEL_WAIT && B.unbinds == 1 && !B.s[0].claimed);
     r = run(false, &o, &why);
-    expect("r13 B1 (c) ... the rescan finds it gone: waits for it", r == CH341_SEL_WAIT && has(why, "no Meshstick with serial"));
+    expect("r13 B1 (c) ... the rescan finds it gone: waits for it", r == CH341_SEL_WAIT && has(why, "no TEST STICK with serial"));
 
     /* (d) start: an unbound LEFT during the bind: classified again, then opens. */
     bus({{"AAAAAAAA", "1-2", 1, false, false}});
@@ -2224,7 +2225,7 @@ static void test_usb_port(void)
     init_with(nullptr, "1-3", true);
     r = run(true, &o, &why);
     expect("P3c a stick that left during the scan is not on the port: refused",
-           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("no Meshstick on port 1-3") != std::string::npos);
+           r == CH341_SEL_REFUSED && B.opens == 0 && why.find("no TEST STICK on port 1-3") != std::string::npos);
 
     /* B4b (DEC-W35): the port names the stick, whatever its serial says. lhpc resolves a bound
      * stick's serial to its current port and starts the daemon with --usb-port. */

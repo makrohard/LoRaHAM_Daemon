@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- A USB stick that disconnects and comes back (a re-enumeration) is waited for again: the daemon kept one
+  poll thread per applied setting, and the teardown after the disconnect freed the device under them, so the
+  daemon died without an exit line. The USB library is the fork's 66b6cf10: one poll thread per open stick,
+  from open to close. Expected: 4 threads per daemon, however many settings were applied.
+- The CH341 log lines name the stick by its model ("ELECROW Meshstick", "PINE64 USB LoRa adapter",
+  "CH341 + RFM98PW 433 build"), not "Meshstick" for every USB preset. The lines about several sticks say
+  "sticks". The lines that name the library ("Meshstick library …") and the unplug-wait note are unchanged.
+
 ## 1.4.0
 
 - `--hw pinedio-usb-1262` (PINE64 USB adapter, SX1262, 868) and `--hw ch341-rfm98pw-433` (CH341A +

@@ -174,6 +174,7 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         if (!usb_sx1262_band(band))
             return false;
         p->name = "meshstick-1262";
+        p->model = "ELECROW Meshstick";
         p->family = DAEMON_CHIP_FAMILY_SX1262;
         p->cs = 0;                      /* D0 */
         p->irq = 6;                     /* D6 = DIO1 */
@@ -206,6 +207,7 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         if (!usb_sx1262_band(band))
             return false;
         p->name = "pinedio-usb-1262";
+        p->model = "PINE64 USB LoRa adapter";
         p->family = DAEMON_CHIP_FAMILY_SX1262;
         p->cs = 0;                      /* D0 */
         p->irq = 10;                    /* INT# = DIO1 */
@@ -237,6 +239,7 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         if (band != 433)
             return false;
         p->name = "ch341-rfm98pw-433";
+        p->model = "CH341 + RFM98PW 433 build";
         p->family = DAEMON_CHIP_FAMILY_SX127X;
         p->cs = 0;                      /* D0 = NSS */
         p->irq = 6;                     /* D6 = DIO0 */

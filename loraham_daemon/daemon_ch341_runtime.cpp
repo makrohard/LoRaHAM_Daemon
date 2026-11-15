@@ -237,6 +237,7 @@ void daemon_ch341_monitor_start(void)
     ops.set_health = op_set_health;
     ops.fatal = op_fatal;
     ops.now_ms = op_now_ms;
+    ops.stick = daemon_hw_profile.model;
     daemon_usb_wait_init(&ops);
     printf("[CH341] unplug-wait active: a lost stick is waited for (libusb hotplug)\n");
 }
@@ -274,9 +275,11 @@ bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, 
          * stick on --usb-port), checked. */
         loraham_ch341 *dev = by_port ? sel_open_port(usb_port) : sel_open(usb_serial);
         loraham_ch341_scan_item id;
-        if (!dev)
-            return refuse(why, why_size, "no Meshstick could be opened (not plugged in, no "
-                          "permission, or in use by another process)");
+        if (!dev) {
+            snprintf(why, why_size, "no %s could be opened (not plugged in, no permission, or in use "
+                     "by another process)", daemon_hw_profile.model ? daemon_hw_profile.model : "USB stick");
+            return false;
+        }
         /* One identity read, the same rules as the post-open checks: an
          * unreadable serial is never "no serial" (DELTA-4-v3, every mode). */
         if (g_api->identity(dev, &id) != 0) {
@@ -314,6 +317,7 @@ bool daemon_ch341_select_at_start(const char *usb_serial, const char *usb_port, 
     ops.bound_left = sel_bound_left;
     ops.now_ms = op_now_ms;
     ops.take_events = sel_take_events;
+    ops.stick = daemon_hw_profile.model;
     if (g_api->open_port)
         ops.open_port = sel_open_port;
     daemon_ch341_select_init(&ops, usb_serial, usb_port);

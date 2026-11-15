@@ -46,6 +46,7 @@ typedef struct {
     void (*unbind)(void);                             /* undo bind (the result is not committed) */
     bool (*bound_left)(void);                         /* the bound stick's LEFT seen since the bind */
     uint64_t (*now_ms)(void);
+    const char *stick;                          /* the preset's model in the log lines (NULL: "USB stick") */
     /* Dispatch the monitor and feed every ARRIVED to
      * daemon_ch341_select_note_arrival() and every unbound LEFT to
      * daemon_ch341_select_note_left(): called after each blocking open

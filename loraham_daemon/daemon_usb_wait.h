@@ -53,6 +53,8 @@ typedef struct {
     void (*fatal)(const char *why);             /* exit 5; does not return in the daemon */
 
     uint64_t (*now_ms)(void);                   /* monotonic */
+
+    const char *stick;                          /* the preset's model in the log lines (NULL: "USB stick") */
 } DaemonUsbWaitOps;
 
 #define DAEMON_USB_WAIT_GRACE_MS 500u

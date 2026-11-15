@@ -216,6 +216,8 @@ static bool snapshot_stale(uint64_t now);
  * the monitor, so no new selection would start for it) makes it stale, at
  * start as on a reopen: classify again now, until the settle cap makes the
  * snapshot final. */
+static const char *stick(void) { return g_ops.stick ? g_ops.stick : "USB stick"; }
+
 static DaemonCh341SelectResult refuse(char *why, size_t n, const char *text)
 {
     uint64_t now = g_ops.now_ms();
@@ -482,7 +484,7 @@ static DaemonCh341SelectResult opened(loraham_ch341 *dev, loraham_ch341 **out, c
     }
     if (!g_ruleb && g_changes != g_scan_changes) {
         g_ops.close(dev);
-        return refuse(why, n, "Meshsticks kept arriving during the selection");
+        return refuse(why, n, "sticks kept arriving during the selection");
     }
     if (!ok) {
         g_ops.close(dev);
@@ -510,7 +512,7 @@ static DaemonCh341SelectResult opened(loraham_ch341 *dev, loraham_ch341 **out, c
             g_ops.close(dev);
             if (stale || gone)
                 return finish_wait(g_ops.now_ms());
-            return refuse(why, n, "Meshsticks kept arriving during the selection");
+            return refuse(why, n, "sticks kept arriving during the selection");
         }
     }
     commit_open(id);
@@ -538,7 +540,7 @@ static DaemonCh341SelectResult decide_port(char *why, size_t n)
         if (g_items[i].openable != -1 && strcmp(g_items[i].port, g_port) == 0)
             it = &g_items[i];
     if (!it) {
-        snprintf(t, sizeof(t), "no Meshstick on port %s", g_port);
+        snprintf(t, sizeof(t), "no %s on port %s", stick(), g_port);
         return refuse(why, n, t);
     }
     if (it->openable != 1)                              /* ACCESS or another open error: the 2 s rule */
@@ -601,12 +603,15 @@ static DaemonCh341SelectResult decide_inner(char *why, size_t n)
         if (unknown > 0)
             return access_wait(why, n, who);
         char t[96];
-        snprintf(t, sizeof(t), "no Meshstick with serial %s", g_serial);
+        snprintf(t, sizeof(t), "no %s with serial %s", stick(), g_serial);
         return refuse(why, n, t);
     }
 
-    if (present == 0)
-        return refuse(why, n, "no Meshstick attached");
+    if (present == 0) {
+        char t[96];
+        snprintf(t, sizeof(t), "no %s attached", stick());
+        return refuse(why, n, t);
+    }
     if (present == 1) {
         if (unopened > 0)                               /* ACCESS or another open error: the 2 s rule */
             return access_wait(why, n, who);
@@ -614,12 +619,12 @@ static DaemonCh341SelectResult decide_inner(char *why, size_t n)
         return CH341_SEL_PENDING;
     }
     if (no_serial > 1)
-        return refuse(why, n, "more than one Meshstick without a serial: only one is supported "
+        return refuse(why, n, "more than one stick without a serial: only one is supported "
                               "(no open by port)");
     if (unopened > 0)
         return access_wait(why, n, who);
     if (no_serial == 0)
-        return refuse(why, n, "several Meshsticks: give --usb-serial");
+        return refuse(why, n, "several sticks: give --usb-serial");
 
     /* Exactly one without a serial: Rule B. On a reopen the walk settles on
      * the ARRIVED burst first (500 ms without a further ARRIVED, at most 2 s
@@ -714,7 +719,7 @@ DaemonCh341SelectResult daemon_ch341_select_step(loraham_ch341 **out, char *why,
         if (snapshot_stale(g_ops.now_ms()))
             return finish_wait(g_ops.now_ms());
         if (g_changes != g_scan_changes)        /* past the cap: never open on a stale snapshot */
-            return refuse(why, why_size, "Meshsticks kept arriving during the selection");
+            return refuse(why, why_size, "sticks kept arriving during the selection");
         loraham_ch341 *dev = g_port_asked ? g_ops.open_port(g_port)
                                           : g_ops.open(g_mode == MODE_SERIAL ? g_serial : NULL);
         if (!dev) {

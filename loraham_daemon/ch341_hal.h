@@ -48,26 +48,27 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     static const uint32_t INT_RISING = 1;
     static const uint32_t INT_FALLING = 2;
 
-    Ch341Hal(const LorahamCh341Api *api, uint16_t vid, uint16_t pid)
+    /* stick: the preset's model in the log lines (NULL: "USB stick"). */
+    Ch341Hal(const LorahamCh341Api *api, uint16_t vid, uint16_t pid, const char *stick = nullptr)
       : RadioLibHal(MODE_INPUT, MODE_OUTPUT, 0, 1, INT_RISING, INT_FALLING),
-        _api(api)
+        _api(api), _stick(stick ? stick : "USB stick")
     {
         if (_api)
             _dev = _api->open(vid, pid, nullptr);
         if (!_dev)
-            fprintf(stderr, "[CH341] could not open the Meshstick %04x:%04x: not "
+            fprintf(stderr, "[CH341] could not open the %s %04x:%04x: not "
                             "plugged in, no permission, or in use by another "
-                            "process\n", vid, pid);
+                            "process\n", _stick, vid, pid);
     }
 
     /* A stick the daemon's selection already opened and checked
      * (daemon_ch341_select.h); the HAL owns it from here. */
-    Ch341Hal(const LorahamCh341Api *api, loraham_ch341 *dev)
+    Ch341Hal(const LorahamCh341Api *api, loraham_ch341 *dev, const char *stick = nullptr)
       : RadioLibHal(MODE_INPUT, MODE_OUTPUT, 0, 1, INT_RISING, INT_FALLING),
-        _api(api), _dev(dev)
+        _api(api), _stick(stick ? stick : "USB stick"), _dev(dev)
     {
         if (!_dev)
-            fprintf(stderr, "[CH341] no Meshstick selected\n");
+            fprintf(stderr, "[CH341] no %s selected\n", _stick);
     }
 
     ~Ch341Hal() override { close_device(); }
@@ -82,8 +83,11 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     void check_runtime() override
     {
-        if (_dev && _operational && !_lost && _api->in_error(_dev))
-            failure("Meshstick USB device lost");
+        if (_dev && _operational && !_lost && _api->in_error(_dev)) {
+            char why[96];
+            snprintf(why, sizeof(why), "%s USB device lost", _stick);
+            failure(why);
+        }
     }
 
     void set_loss_wait(void (*on_loss)(void)) override { _on_loss = on_loss; }
@@ -208,7 +212,7 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
         if (_dev)
             return true;
         char why[96];
-        snprintf(why, sizeof(why), "%s without an open Meshstick", what);
+        snprintf(why, sizeof(why), "%s without an open %s", what, _stick);
         failure(why);
         return false;
     }
@@ -256,6 +260,7 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     }
 
     const LorahamCh341Api *_api;
+    const char *_stick;                            /* the preset's model, for the log lines */
     loraham_ch341 *_dev = nullptr;
     bool _startupFailed = false;
     bool _operational = false;

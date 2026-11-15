@@ -47,10 +47,20 @@ void daemon_usb_wait_reset(void)
     g_loss_ms.store(0);
 }
 
+static const char *stick(void) { return g_ops.stick ? g_ops.stick : "USB stick"; }
+
+/* exit 5 with the stick's model in the reason (fatal does not return in the daemon) */
+static void fatal_stick(const char *fmt)
+{
+    static char why[160];
+    snprintf(why, sizeof(why), fmt, stick());
+    g_ops.fatal(why);
+}
+
 static void usb_wait_gone(const char *signal)
 {
-    printf("[CH341] Meshstick gone (%s): RADIO=UNPLUGGED, sockets stay, waiting for the stick\n",
-           signal);
+    printf("[CH341] %s gone (%s): RADIO=UNPLUGGED, sockets stay, waiting for the stick\n",
+           stick(), signal);
     fflush(stdout);
     g_state = USB_WAIT_TEARDOWN;
 }
@@ -96,9 +106,9 @@ void daemon_usb_wait_tick(void)
             break;
         }
         if (present < 0)
-            g_ops.fatal("Meshstick loss: the USB device list could not be read");
+            fatal_stick("%s loss: the USB device list could not be read");
         else
-            g_ops.fatal("USB I/O error with the Meshstick present");
+            fatal_stick("USB I/O error with the %s present");
         return;
     }
 
@@ -156,19 +166,19 @@ void daemon_usb_wait_tick(void)
             /* The new HAL latched a loss during the re-init's replay or RX
              * re-arm (on_loss: UNPLUGGED, the flag, a new stamp). It never
              * reports again, so it is classified like any loss, never READY. */
-            printf("[CH341] Meshstick lost again during the re-init: classifying\n");
+            printf("[CH341] %s lost again during the re-init: classifying\n", stick());
             fflush(stdout);
             g_state = USB_WAIT_READY;
             return;
         }
         if (ri == 1) {
-            printf("[CH341] Meshstick back: RADIO=READY\n");
+            printf("[CH341] %s back: RADIO=READY\n", stick());
             fflush(stdout);
             g_state = USB_WAIT_READY;
             return;
         }
         g_ops.set_health(RADIO_HEALTH_FAILED);
-        g_ops.fatal("Meshstick re-init after the replug failed");
+        fatal_stick("%s re-init after the replug failed");
         return;
     }
     }

@@ -46,6 +46,7 @@ static void test_loraham_433(void)
     expect_int("set loraham", daemon_set_hardware_preset("loraham"), 1);
     expect_int("resolve loraham 433", daemon_hardware_profile_resolve(433), 1);
     expect_str("loraham name", daemon_hw_profile.name, "loraham");
+    expect_int("loraham has no USB model", daemon_hw_profile.model == nullptr, 1);
     expect_int("legacy family sx127x", daemon_hw_profile.family,
                DAEMON_CHIP_FAMILY_SX127X);
     expect_int("legacy 433 cs", daemon_hw_profile.cs, 8);
@@ -148,6 +149,7 @@ static void test_meshstick(void)
     expect_int("resolve meshstick 868", daemon_hardware_profile_resolve(868), 1);
     expect_int("ms family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
     expect_int("ms usb", daemon_hw_profile.usb_ch341, 1);
+    expect_str("ms model", daemon_hw_profile.model, "ELECROW Meshstick");
     expect_int("ms vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);
     expect_int("ms pid 5512", daemon_hw_profile.usb_pid, 0x5512);
     expect_int("ms cs D0", daemon_hw_profile.cs, 0);
@@ -184,6 +186,7 @@ static void test_pinedio_usb(void)
     expect_int("pinedio 433 refused (868/915 hardware)", daemon_hardware_profile_resolve(433), 0);
     expect_int("resolve pinedio 868", daemon_hardware_profile_resolve(868), 1);
     expect_str("pd name", daemon_hw_profile.name, "pinedio-usb-1262");
+    expect_str("pd model", daemon_hw_profile.model, "PINE64 USB LoRa adapter");
     expect_int("pd family sx1262", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX1262);
     expect_int("pd usb", daemon_hw_profile.usb_ch341, 1);
     expect_int("pd vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);
@@ -211,6 +214,7 @@ static void test_rfm98pw_433(void)
     expect_int("rfm98pw 868 refused (433 hardware)", daemon_hardware_profile_resolve(868), 0);
     expect_int("resolve rfm98pw 433", daemon_hardware_profile_resolve(433), 1);
     expect_str("rf name", daemon_hw_profile.name, "ch341-rfm98pw-433");
+    expect_str("rf model", daemon_hw_profile.model, "CH341 + RFM98PW 433 build");
     expect_int("rf family sx127x", daemon_hw_profile.family, DAEMON_CHIP_FAMILY_SX127X);
     expect_int("rf usb", daemon_hw_profile.usb_ch341, 1);
     expect_int("rf vid 1A86", daemon_hw_profile.usb_vid, 0x1A86);

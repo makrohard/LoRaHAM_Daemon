@@ -76,7 +76,7 @@ static RadioLibHal *daemon_radio_hal_for_profile(const DaemonHardwareProfile &p,
                                                  DaemonHalControl **ctl)
 {
     if (p.usb_ch341) {
-        Ch341Hal *hal = new Ch341Hal(daemon_ch341_api(), daemon_ch341_take_selected());
+        Ch341Hal *hal = new Ch341Hal(daemon_ch341_api(), daemon_ch341_take_selected(), p.model);
         daemon_ch341_arm_hal(hal);
         *ctl = hal;
         return hal;
@@ -149,8 +149,8 @@ void lora_init(void) {
         state = RADIOLIB_ERR_SPI_CMD_FAILED;
         g_boot_lock_failed = true;
         if (daemon_hw_profile.usb_ch341)
-            printf("[CH341] error: Meshstick for %s not open - "
-                   "begin() skipped\n", tag);
+            printf("[CH341] error: %s for %s not open - "
+                   "begin() skipped\n", daemon_hw_profile.model ? daemon_hw_profile.model : "USB stick", tag);
         else
             printf("[SPI] error: SPI lock for %s unavailable - "
                    "begin() skipped\n", tag);

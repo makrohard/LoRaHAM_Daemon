@@ -32,6 +32,7 @@ typedef enum {
 
 typedef struct {
     const char *name;          /* preset name as given to --hw */
+    const char *model;         /* USB presets: the stick's model in the CH341 log lines; NULL otherwise */
     DaemonChipFamily family;
 
     /* RadioLib Module() arguments (family semantics, see above). */

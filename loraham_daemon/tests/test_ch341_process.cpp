@@ -417,7 +417,7 @@ static void scenario_unplug_and_return(void)
     release("txdelay");
     expect("T11 RADIO=UNPLUGGED", wait_status(C, "RADIO=UNPLUGGED", 3000));
     expect("T1 the loss is classified gone (log names the signal)",
-           wait_log(log, "[CH341] Meshstick gone (", 3000));
+           wait_log(log, "[CH341] ELECROW Meshstick gone (", 3000));
     expect("T21 waiting: USBWAIT=1-2 BOUND=-", wait_status(C, " USBWAIT=1-2 BOUND=- ID=ms1", 3000));
     std::vector<int> r1 = framed_results(fr, 3000);
     if (r1.size() == 1)
@@ -489,7 +489,7 @@ static void scenario_io_fault(void)
     conf("loraconf868.sock", "SET SF=10", "");
     int rc = wait_exit(pid, 5000);
     expect("T2 an I/O error with the stick present: the real process exits 5", rc == 5);
-    expect("T2 the log says present", log_has(log, "USB I/O error with the Meshstick present"));
+    expect("T2 the log says present", log_has(log, "USB I/O error with the ELECROW Meshstick present"));
     expect("F2(r5) the exit 5 closes the stick, then the monitor", closed_then_monitor(pid));
     if (rc == -2)
         stop(pid);
@@ -509,8 +509,8 @@ static void scenario_io_fault(void)
     conf("loraconf868.sock", "SET SF=10", "");
     rc = wait_exit(pid, 5000);
     expect("r19 lost events, then an I/O fault with the stick present: the presence check, exit 5", rc == 5 &&
-           log_has(log, "USB I/O error with the Meshstick present"));
-    expect("r19 ... never classified gone by a LEFT", !log_has(log, "Meshstick gone (LEFT event"));
+           log_has(log, "USB I/O error with the ELECROW Meshstick present"));
+    expect("r19 ... never classified gone by a LEFT", !log_has(log, "ELECROW Meshstick gone (LEFT event"));
     if (rc == -2)
         stop(pid);
 

@@ -129,6 +129,7 @@ static void setup(void)
     F.health = RADIO_HEALTH_READY;
 
     DaemonUsbWaitOps ops{};
+    ops.stick = "TEST STICK";
     ops.mon = nullptr;
     ops.mon_dispatch = f_dispatch;
     ops.mon_left_bound = f_left;
@@ -195,7 +196,7 @@ static void test_t2_deadline(void)
     daemon_usb_wait_tick();
     expect("T2: present at the deadline -> one presence check", F.present_calls == 1);
     expect("T2: present -> exit 5", F.fatals == 1 &&
-           strstr(F.fatal_why, "I/O error with the Meshstick present") != nullptr);
+           strstr(F.fatal_why, "I/O error with the TEST STICK present") != nullptr);
 
     setup();
     F.present = 0;
