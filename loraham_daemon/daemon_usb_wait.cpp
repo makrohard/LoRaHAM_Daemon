@@ -50,10 +50,10 @@ void daemon_usb_wait_reset(void)
 static const char *stick(void) { return g_ops.stick ? g_ops.stick : "USB stick"; }
 
 /* exit 5 with the stick's model in the reason (fatal does not return in the daemon) */
-static void fatal_stick(const char *fmt)
+static void fatal_stick(const char *before, const char *after)
 {
     static char why[160];
-    snprintf(why, sizeof(why), fmt, stick());
+    snprintf(why, sizeof(why), "%s%s%s", before, stick(), after);
     g_ops.fatal(why);
 }
 
@@ -106,9 +106,9 @@ void daemon_usb_wait_tick(void)
             break;
         }
         if (present < 0)
-            fatal_stick("%s loss: the USB device list could not be read");
+            fatal_stick("", " loss: the USB device list could not be read");
         else
-            fatal_stick("USB I/O error with the %s present");
+            fatal_stick("USB I/O error with the ", " present");
         return;
     }
 
@@ -178,7 +178,7 @@ void daemon_usb_wait_tick(void)
             return;
         }
         g_ops.set_health(RADIO_HEALTH_FAILED);
-        fatal_stick("%s re-init after the replug failed");
+        fatal_stick("", " re-init after the replug failed");
         return;
     }
     }
