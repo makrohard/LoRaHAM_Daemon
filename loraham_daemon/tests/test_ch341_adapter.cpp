@@ -311,6 +311,11 @@ int main(void)
     expect("close refused by deinit: the libusb reference is kept (no libusb_exit, no free)",
            fr.find("refs=1") != std::string::npos);
 
+    std::string fpr = run_driver("STUB_FAIL_PIN=3 STUB_DEINIT_REFUSE=1");
+    expect("pin mode fails and deinit refuses: open returns NULL", fpr.find("open=null") == 0);
+    expect("pin mode fails and deinit refuses: nothing freed, the libusb reference kept",
+           fpr.find("refs=1") != std::string::npos);
+
     std::string ft = run_driver("STUB_NO_TRANSFER=1");
     expect("init 0 with transfer_out NULL: open returns NULL", ft.find("open=null") == 0);
     expect("init 0 with transfer_out NULL: its libusb reference released", ft.find("refs=0") != std::string::npos);

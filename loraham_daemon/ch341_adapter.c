@@ -61,16 +61,17 @@ static loraham_ch341 *open_dev(uint16_t vid, uint16_t pid, const char *serial, c
     }
 
     /* pinedio_set_option() returns 0 for a known option at the pinned commit
-     * (libpinedio-usb.c:460-465); AUTO_CS is set after init (init resets it),
+     * (libpinedio-usb.c:475-480); AUTO_CS is set after init (init resets it),
      * before any other call on this stick. pinedio_set_pin_mode() returns 0
-     * there (:482-486) but is checked, so a
+     * there (:483-490) but is checked, so a
      * library change cannot hand out a device whose SPI lines are inputs. */
     pinedio_set_option(&dev->inst, PINEDIO_OPTION_AUTO_CS, 0);
     if (pinedio_set_pin_mode(&dev->inst, 3, 1) < 0 ||
         pinedio_set_pin_mode(&dev->inst, 5, 1) < 0) {
-        pinedio_deinit(&dev->inst);
-        libusb_exit(NULL);
-        free(dev);
+        if (pinedio_deinit(&dev->inst) == 0) {   /* -1: nothing released: never free it */
+            libusb_exit(NULL);
+            free(dev);
+        }
         return NULL;
     }
     return dev;
@@ -96,11 +97,11 @@ void loraham_ch341_close(loraham_ch341 *dev)
 {
     if (!dev)
         return;
-    /* -1: called on the library's poll worker (from an interrupt callback);
-     * nothing was released and the stick stays open: never free it under the
-     * worker. The daemon's callbacks only set a flag, so this is a guard. */
+    /* -1: deinit refused (called on the library's poll worker, or its worker
+     * could not be joined); nothing was released and the stick stays open:
+     * never free it. The daemon's callbacks only set a flag, so this is a guard. */
     if (pinedio_deinit(&dev->inst) != 0) {
-        fprintf(stderr, "[CH341] close from the USB poll callback refused: the stick stays open\n");
+        fprintf(stderr, "[CH341] close refused by the USB library (deinit -1): the stick stays open\n");
         return;
     }
     libusb_exit(NULL);
@@ -179,8 +180,8 @@ int loraham_ch341_in_error(loraham_ch341 *dev)
     return __atomic_load_n(&dev->inst.in_error, __ATOMIC_SEQ_CST) ? 1 : 0;
 }
 
-/* pine64's pin state is process-wide (libpinedio-usb.c:86-87, under its own
- * lock since the pinned commit). Every open writes it to the stick it opens. */
+/* pine64's pin template (libpinedio-usb.c:86-87): every later open copies it
+ * into that stick's own pin mode and state and writes it to the stick. */
 void loraham_ch341_seed_idle(void)
 {
     pinedio_seed_pin_state((uint16_t)(1u << 2), (uint16_t)(1u << 2));   /* RESET an output, and high */

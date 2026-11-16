@@ -4,7 +4,7 @@
 
 - A USB stick that disconnects and comes back (a re-enumeration) is waited for again: the daemon kept one
   poll thread per applied setting, and the teardown after the disconnect freed the device under them, so the
-  daemon died without an exit line. The USB library is the fork's 8d609e90: one poll thread per open stick,
+  daemon died without an exit line. The USB library is the fork's b97b567d: one poll thread per open stick,
   from open to close. Expected: 4 threads per daemon, however many settings were applied.
 - The CH341 log lines name the stick by its model ("ELECROW Meshstick", "PINE64 USB LoRa adapter",
   "CH341 + RFM98PW 433 build"), not "Meshstick" for every USB preset. The lines about several sticks say

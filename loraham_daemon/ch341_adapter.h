@@ -135,9 +135,9 @@ void loraham_ch341_mon_scan_end(loraham_ch341_mon *m);
 int loraham_ch341_identity(loraham_ch341 *dev, loraham_ch341_scan_item *out);
 
 /* Before an open that may land on a stick another daemon owns (Rule B): set
- * pine64's process-wide pin state so its open keeps RESET (D2) an output, high.
- * Its open still clears the D0 (CS) state bit (pinedio_set_cs, libpinedio-usb.c:441,
- * :497-499); it does not make D0 an output. */
+ * pine64's pin template so the open keeps RESET (D2) an output, high. The open
+ * still clears D0 (CS) in its own copy (pinedio_set_cs, libpinedio-usb.c:456,
+ * :496-501); it does not make D0 an output. */
 void loraham_ch341_seed_idle(void);
 
 /* The functions above as the daemon's loader resolves them (and a test fakes
