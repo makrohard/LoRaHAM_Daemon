@@ -559,6 +559,15 @@ void *receive_thread(void *arg) {
     send_lora_config(RX_FREQ);
     while (1) {
         int n = recv(sock_fd, buf, sizeof(buf) - 1, 0);
+        if (n == 0 || (n < 0 && errno != EINTR)) {
+            /* The daemon closed the data socket (stopped, restarted or gone):
+               say so once and end this thread; chat does not reconnect.
+               Looping on would get 0 again at once: a busy loop. */
+            add_to_history("System", "daemon gone: restart chat", 4);
+            redraw_chat();
+            doupdate();
+            break;
+        }
         if (n > 0) {
             buf[n] = '\0';
             char sender[20] = "UNK";

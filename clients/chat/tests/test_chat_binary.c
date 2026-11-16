@@ -10,7 +10,8 @@
  * --conf-socket: it connects to the data listener, its first CONF request
  * ("SET FREQ=<RX> ...") arrives on the CONF listener, and a line typed on the
  * terminal arrives on the data socket as its frame (TX = RX in lorachat.conf,
- * so no retune wait).
+ * so no retune wait). Then the data listener closes its end (the daemon
+ * gone): chat shows "daemon gone" and stays idle (CPU over 1 s).
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -143,6 +144,28 @@ static int read_until(int fd, const char *want, char *buf, size_t size, int ms)
     }
 }
 
+/* utime + stime of pid in clock ticks (/proc/<pid>/stat fields 14 and 15);
+ * -1 when the process is gone. */
+static long proc_cpu_ticks(pid_t pid)
+{
+    char path[64], line[1024];
+    snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return -1;
+    size_t n = fread(line, 1, sizeof(line) - 1, f);
+    fclose(f);
+    line[n] = '\0';
+    char *p = strrchr(line, ')');                 /* the comm field may hold spaces */
+    unsigned long ut, st;
+    char state;
+    if (!p || sscanf(p + 2, "%c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu", &state, &ut, &st) != 3)
+        return -1;
+    if (state == 'Z')
+        return -1;
+    return (long)(ut + st);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -220,6 +243,20 @@ int main(int argc, char **argv)
     if (write(master, "hello-bin\r", 10) != 10) { }
     expect("a typed line arrives on the data socket as its frame",
            dfd >= 0 && read_until(dfd, "hello-bin", buf, sizeof(buf), 3000));
+
+    /* The daemon gone: the data listener closes its end. */
+    if (dfd >= 0)
+        close(dfd);
+    expect("the daemon closes the data socket: chat shows \"daemon gone\"",
+           read_until(master, "daemon gone", buf, sizeof(buf), 3000));
+    long t0 = proc_cpu_ticks(pid);
+    read_until(master, "\001never\001", buf, sizeof(buf), 1000);   /* 1 s, drains the pty */
+    long t1 = proc_cpu_ticks(pid);
+    long hz = sysconf(_SC_CLK_TCK);
+    printf("       chat CPU in the 1 s after the close: %ld ticks (%ld per second)\n", t1 - t0, hz);
+    expect("chat is still running after the close (no crash)", t0 >= 0 && t1 >= 0);
+    expect("and idle: under 10 % of one CPU in that second (no busy loop on recv() == 0)",
+           t0 >= 0 && t1 >= 0 && (t1 - t0) * 10 < hz);
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
 
