@@ -204,7 +204,7 @@ builds and runs exactly as without it.
 
     sudo apt install libusb-1.0-0-dev -y
     git clone https://github.com/makrohard/libch341-spi-userspace ~/libch341-spi-userspace
-    git -C ~/libch341-spi-userspace checkout e5b7cbde8281856bfb45019b0c35cd2a1b9c1c26
+    git -C ~/libch341-spi-userspace checkout aeed755490a56afed0c0a5f01a05572d83d8ec07
 
 `build.sh` finds that checkout like RadioLib: `PINEDIO_DIR`, `--pinedio-dir`,
 `~/libch341-spi-userspace`, `~/src/libch341-spi-userspace` or `../libch341-spi-userspace`. It builds
