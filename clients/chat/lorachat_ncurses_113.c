@@ -273,7 +273,7 @@ void send_lora_config(const char* freq) {
         snprintf(config_cmd, sizeof(config_cmd),
                  "SET FREQ=%s SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=AUTO POWER=17",
                  freq);
-        send(cfg_fd, config_cmd, strlen(config_cmd), 0);
+        send(cfg_fd, config_cmd, strlen(config_cmd), MSG_NOSIGNAL);
     }
     close(cfg_fd);
 }
@@ -294,7 +294,7 @@ static int config_query(const char *cmd, char *out, size_t out_len) {
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, conf_path(), sizeof(addr.sun_path)-1);
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) { close(fd); return -1; }
-    if (send(fd, cmd, strlen(cmd), 0) < 0) { close(fd); return -1; }
+    if (send(fd, cmd, strlen(cmd), MSG_NOSIGNAL) < 0) { close(fd); return -1; }
     n = recv(fd, out, out_len - 1, 0);
     close(fd);
     if (n <= 0) return -1;
@@ -542,7 +542,7 @@ void send_aprs(const char *text) {
     packet[len++] = 0x3c; packet[len++] = 0xff; packet[len++] = 0x01;
     len += sprintf((char*)&packet[len], "%s%s%s%s%s:%s",
                    CALL_SIGN, CALL_SIGN_STOP, APRS_PATH, SEPERATOR, destination_callsign, text);
-    send(sock_fd, packet, len, 0);
+    send(sock_fd, packet, len, MSG_NOSIGNAL);   /* a closed daemon socket must not kill chat (SIGPIPE) */
     if (split_freq) {
         /* The frame is only QUEUED at this point. Retuning now would move the
            radio out from under a transmission still in progress -- that is the

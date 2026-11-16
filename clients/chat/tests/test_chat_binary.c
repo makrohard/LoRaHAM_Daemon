@@ -11,7 +11,8 @@
  * ("SET FREQ=<RX> ...") arrives on the CONF listener, and a line typed on the
  * terminal arrives on the data socket as its frame (TX = RX in lorachat.conf,
  * so no retune wait). Then the data listener closes its end (the daemon
- * gone): chat shows "daemon gone" and stays idle (CPU over 1 s).
+ * gone): chat shows "daemon gone" and stays idle (CPU over 1 s), and a line
+ * typed then does not kill it (SIGPIPE).
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -228,6 +229,7 @@ int main(int argc, char **argv)
         setenv("TERM", "xterm", 1);
         if (chdir(g_dir) != 0)
             _exit(126);
+        signal(SIGPIPE, SIG_DFL);                 /* ours is ignored, and exec keeps that */
         execl(g_bin, "loraham_chat", "--data-socket", dpath, "--conf-socket", cpath, (char *)NULL);
         _exit(127);
     }
@@ -244,7 +246,11 @@ int main(int argc, char **argv)
     expect("a typed line arrives on the data socket as its frame",
            dfd >= 0 && read_until(dfd, "hello-bin", buf, sizeof(buf), 3000));
 
-    /* The daemon gone: the data listener closes its end. */
+    /* The daemon gone: the data listener closes its end. First let chat
+     * finish drawing the sent line: chat's two threads both draw with
+     * ncurses, which is not thread-safe, and overlapping draws garble the
+     * screen. */
+    read_until(master, "\001never\001", buf, sizeof(buf), 500);
     if (dfd >= 0)
         close(dfd);
     expect("the daemon closes the data socket: chat shows \"daemon gone\"",
@@ -257,6 +263,19 @@ int main(int argc, char **argv)
     expect("chat is still running after the close (no crash)", t0 >= 0 && t1 >= 0);
     expect("and idle: under 10 % of one CPU in that second (no busy loop on recv() == 0)",
            t0 >= 0 && t1 >= 0 && (t1 - t0) * 10 < hz);
+
+    /* A line typed after "daemon gone": its send hits the closed data
+     * socket. Chat must survive it (no SIGPIPE death). */
+    if (write(master, "after-gone\r", 11) != 11) { }
+    int wst = 0;
+    pid_t wr = 0;
+    for (int k = 0; k < 20 && wr == 0; k++) {     /* up to 2 s for it to die */
+        read_until(master, "\001never\001", buf, sizeof(buf), 100);
+        wr = waitpid(pid, &wst, WNOHANG);
+    }
+    expect("a line typed after \"daemon gone\" does not kill chat (no SIGPIPE)", wr == 0);
+    if (wr == pid && WIFSIGNALED(wst))
+        printf("       chat ended by signal %d\n", WTERMSIG(wst));
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
 
