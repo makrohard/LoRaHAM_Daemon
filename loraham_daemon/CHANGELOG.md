@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.1
 
 - A USB stick that disconnects and comes back is waited for again (the daemon died: one poll thread per applied
   setting, freed under at the disconnect). The USB library is the fork's aeed7554: one poll thread per stick.
