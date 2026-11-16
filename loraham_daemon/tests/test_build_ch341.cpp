@@ -103,7 +103,9 @@ static void write_stub_tree(const std::string &dir)
           "int32_t pinedio_attach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p,"
           " enum pinedio_int_mode m, void (*cb)(void));\n"
           "int32_t pinedio_deattach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p);\n"
-          "void pinedio_deinit(struct pinedio_inst *i);\n", h);
+          "int32_t pinedio_get_irq_state(struct pinedio_inst *i, uint32_t p);\n"
+          "int32_t pinedio_deinit(struct pinedio_inst *i);\n"
+          "void pinedio_seed_pin_state(uint16_t mode_bits, uint16_t state_bits);\n", h);
     fclose(h);
     FILE *c = fopen((dir + "/libpinedio-usb.c").c_str(), "w");
     fputs("#include \"libpinedio-usb.h\"\n"
@@ -122,7 +124,9 @@ static void write_stub_tree(const std::string &dir)
           " enum pinedio_int_mode m, void (*cb)(void)) { (void)i; (void)p; (void)m; (void)cb; return 0; }\n"
           "int32_t pinedio_deattach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p)"
           " { (void)i; (void)p; return 0; }\n"
-          "void pinedio_deinit(struct pinedio_inst *i) { (void)i; }\n", c);
+          "int32_t pinedio_get_irq_state(struct pinedio_inst *i, uint32_t p) { (void)i; (void)p; return 0; }\n"
+          "int32_t pinedio_deinit(struct pinedio_inst *i) { (void)i; return 0; }\n"
+          "void pinedio_seed_pin_state(uint16_t m, uint16_t s) { pinedio_d_mode |= m; pinedio_d_state |= s; }\n", c);
     fclose(c);
 }
 

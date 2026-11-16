@@ -80,7 +80,8 @@ static const char *STUB_H =
     "int32_t pinedio_attach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p,"
     " enum pinedio_int_mode m, void (*cb)(void));\n"
     "int32_t pinedio_deattach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p);\n"
-    "void pinedio_deinit(struct pinedio_inst *i);\n";
+    "int32_t pinedio_deinit(struct pinedio_inst *i);\n"
+    "void pinedio_seed_pin_state(uint16_t mode_bits, uint16_t state_bits);\n";
 
 /* The stub: STUB_INIT_FAIL makes init fail, STUB_FAIL_PIN=<n> makes the
  * pin-mode call for pin n fail. It records every pin mode, counts deinit, and
@@ -99,7 +100,8 @@ static const char *STUB_C =
     " if (getenv(\"STUB_INIT_FAIL_EARLY\")) return -1;"      /* before libusb_init: no reference */
     " libusb_init(NULL);"
     " if (getenv(\"STUB_INIT_FAIL\")) return -2;"            /* no device: reference held */
-    " if (getenv(\"STUB_ALLOC_FAIL\")) { i->handle = NULL; return 0; }"   /* deinit + 0 */
+    " if (getenv(\"STUB_ALLOC_FAIL\")) { i->handle = NULL; return 0; }"   /* deinit + 0 (older library) */
+    " if (getenv(\"STUB_ALLOC_FAIL3\")) { i->handle = NULL; return -3; }"  /* a transfer or the worker: reference held */
     " i->handle = g_h; i->transfer_out = getenv(\"STUB_NO_TRANSFER\") ? NULL : (void *)g_h;"
     /* pinedio_init ends with pinedio_set_cs(inst, false) (:318) =
      * pinedio_digital_write(0, false) (:371-373): one pin write of the
@@ -125,7 +127,10 @@ static const char *STUB_C =
     "int32_t pinedio_attach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p,"
     " enum pinedio_int_mode m, void (*cb)(void)) { (void)i; (void)p; (void)m; (void)cb; return 0; }\n"
     "int32_t pinedio_deattach_interrupt(struct pinedio_inst *i, enum pinedio_int_pin p) { (void)i; (void)p; return 0; }\n"
-    "void pinedio_deinit(struct pinedio_inst *i) { i->handle = NULL; g_deinits++; }\n";
+    /* STUB_DEINIT_REFUSE: deinit refuses (-1, as when called from a poll callback) and releases nothing */
+    "int32_t pinedio_deinit(struct pinedio_inst *i) { g_deinits++; if (getenv(\"STUB_DEINIT_REFUSE\")) return -1;"
+    " i->handle = NULL; return 0; }\n"
+    "void pinedio_seed_pin_state(uint16_t m, uint16_t s) { pinedio_d_mode |= m; pinedio_d_state |= s; }\n";
 
 /* The library with the open by port: the header's addition and the stub's
  * pinedio_init_at_port, which records its port and options, then does what
@@ -295,6 +300,17 @@ int main(void)
     expect("init 0 with a NULL handle (allocation failure): open returns NULL", fa.find("open=null") == 0);
     expect("init 0 with a NULL handle: its libusb reference released", fa.find("refs=0") != std::string::npos);
 
+    std::string fa3 = run_driver("STUB_ALLOC_FAIL3=1");
+    expect("init -3 (a transfer or the poll worker): open returns NULL", fa3.find("open=null") == 0);
+    expect("init -3: its libusb reference released", fa3.find("refs=0") != std::string::npos);
+
+    /* A close the library refuses (called on its poll worker): nothing is
+     * released, the libusb reference stays, the stick is not freed. */
+    std::string fr = run_driver("STUB_DEINIT_REFUSE=1");
+    expect("close refused by deinit: deinit asked once", fr.find("after-close deinits=1") != std::string::npos);
+    expect("close refused by deinit: the libusb reference is kept (no libusb_exit, no free)",
+           fr.find("refs=1") != std::string::npos);
+
     std::string ft = run_driver("STUB_NO_TRANSFER=1");
     expect("init 0 with transfer_out NULL: open returns NULL", ft.find("open=null") == 0);
     expect("init 0 with transfer_out NULL: its libusb reference released", ft.find("refs=0") != std::string::npos);
@@ -326,7 +342,7 @@ int main(void)
      * walk against copies of the adapter whose close, before deinit, writes
      * one pin, sets one pin mode, or sets a pin state bit directly. */
     std::string src = read_file(src_dir + "/ch341_adapter.c");
-    const std::string at = "    pinedio_deinit(&dev->inst);\n    libusb_exit(NULL);\n    free(dev);\n";
+    const std::string at = "    if (pinedio_deinit(&dev->inst) != 0) {\n";
     expect("mutation: the adapter's close found", src.find(at) != std::string::npos);
     struct Mut { const char *name, *line, *seen1, *seen2; };
     const Mut muts[] = {
