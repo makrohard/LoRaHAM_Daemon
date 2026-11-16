@@ -97,9 +97,11 @@ void loraham_ch341_close(loraham_ch341 *dev)
 {
     if (!dev)
         return;
-    /* -1: deinit refused (called on the library's poll worker, or its worker
-     * could not be joined); nothing was released and the stick stays open:
-     * never free it. The daemon's callbacks only set a flag, so this is a guard. */
+    /* -1: deinit refused (called on the library's poll worker, its worker
+     * could not be joined, or a call, a poll callback or a USB transfer did
+     * not end within the library's deadline); nothing was released and the
+     * stick stays open: never free it (the memory stays allocated). The
+     * daemon's callbacks only set a flag, so this is a guard. */
     if (pinedio_deinit(&dev->inst) != 0) {
         fprintf(stderr, "[CH341] close refused by the USB library (deinit -1): the stick stays open\n");
         return;

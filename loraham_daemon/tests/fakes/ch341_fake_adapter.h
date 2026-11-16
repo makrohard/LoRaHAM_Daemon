@@ -76,7 +76,7 @@ static void fake_ch341_close(loraham_ch341 *)
 
 static int fake_ch341_transceive(loraham_ch341 *, const uint8_t *out, uint8_t *in, uint32_t len)
 {
-    if (len == 0)   /* the library's contract (libch341 fork 051d1aa3): a zero-length transfer is a no-op, 0 */
+    if (len == 0)   /* the library's contract (libch341 fork e5b7cbde): a zero-length transfer is a no-op, 0 */
         return g_fake_ch341.zero_len_fails ? -1 : 0;
     g_fake_ch341.transceives++;
     if (g_fake_ch341.fail_transceive)
