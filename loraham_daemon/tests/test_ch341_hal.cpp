@@ -296,7 +296,29 @@ static void inject_lost_device(Ch341Hal *hal)
 static void setFlagStub(void) { }
 
 static int g_loss_calls = 0;
+static void on_loss_count(void) { g_loss_calls++; }
 static int g_stderr_pipe = -1;          /* read end; -1 = not watching */
+/* A zero-length SPI transfer after READY (the library answers it 0, a no-op) is not a USB failure: no loss is
+ * latched and on_loss is not called; the next transfer still reaches the stick. With a library that answered it
+ * with an error (zero_len_fails, the -EINVAL of fork 14baca68 that the adapter maps to -1), the HAL latched a
+ * stick loss. */
+static void test_zero_length_no_loss(void)
+{
+    Sx126xRegisterModel model;
+    fake_ch341_reset(&model);
+    Ch341Hal hal(&g_fake_ch341_api, 0x1A86, 0x5512);
+    hal.set_loss_wait(on_loss_count);
+    hal.gpio_mark_operational();
+    uint8_t out[1] = { 0 }, in[1] = { 0 };
+    hal.spiTransfer(out, 0, in);
+    expect_int("zero-length transfer after READY: no loss latched", hal.loss_latched() ? 1 : 0, 0);
+    int before = g_fake_ch341.transceives;
+    uint8_t o2[3] = { 0xC0, 0, 0 }, i2[3] = { 0, 0, 0 };
+    hal.spiTransfer(o2, 3, i2);
+    expect_int("zero-length transfer after READY: the next transfer reaches the stick",
+               g_fake_ch341.transceives - before, 1);
+}
+
 static int g_logged_before_loss = -1;   /* bytes already written to stderr when on_loss ran */
 static void on_loss_cb(void)
 {
@@ -376,6 +398,7 @@ int main(void)
 {
     test_radio_over_ch341();
     test_startup_failures_latch();
+    test_zero_length_no_loss();
     run_operational_child("operational, SPI transfer fails", inject_failed_transfer);
     run_operational_child("operational, device lost (poll thread)", inject_lost_device);
     test_loss_wait("unplug-wait, SPI transfer fails", true);
