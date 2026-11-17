@@ -151,6 +151,7 @@ static const char *STUB_PORT_C =
  * the pins, close all; three cycles, the references after each. */
 static const char *DRIVER_C =
     "#include <stdio.h>\n#include <stdlib.h>\n#include \"ch341_adapter.h\"\n"
+    "#include <fcntl.h>\n#include <signal.h>\n#include <string.h>\n#include <unistd.h>\n"
     "extern int g_inits, g_deinits, g_mode[8], stub_default_refs;\n"
     "extern int g_pin_writes, g_spi, g_last_mode, g_last_state, g_write_pin, g_write_level, g_pin_modes;\n"
     "extern int g_d_reads, g_d_read_pin, g_irq_reads, g_irq_pin;\n"
@@ -209,6 +210,19 @@ static const char *DRIVER_C =
     "  loraham_ch341 *d = loraham_ch341_open(0x1A86, 0x5512, NULL);\n"
     "  printf(\"open=%s inits=%d deinits=%d mode3=%d mode5=%d\\n\", d ? \"dev\" : \"null\","
     " g_inits, g_deinits, g_mode[3], g_mode[5]);\n"
+    /* DRIVER_STDERR=noreader|full: the close runs with stderr a pipe without a reader (SIGPIPE at its default) or
+     * a full blocking pipe; a close that dies or blocks (alarm) never prints its after-close line. */
+    "  if (d && getenv(\"DRIVER_STDERR\")) {\n"
+    "    int p[2];\n"
+    "    if (pipe(p) != 0) return 2;\n"
+    "    signal(SIGPIPE, SIG_DFL);\n"
+    "    alarm(5);\n"
+    "    if (strcmp(getenv(\"DRIVER_STDERR\"), \"noreader\") == 0) close(p[0]);\n"
+    "    else { char j[4096]; memset(j, 'x', sizeof(j)); fcntl(p[1], F_SETFL, O_NONBLOCK);\n"
+    "      while (write(p[1], j, sizeof(j)) > 0) { } while (write(p[1], j, 1) == 1) { } fcntl(p[1], F_SETFL, 0); }\n"
+    "    fflush(stdout);\n"
+    "    dup2(p[1], 2);\n"
+    "  }\n"
     "  if (d) { loraham_ch341_close(d); printf(\"after-close deinits=%d\\n\", g_deinits); }\n"
     "  printf(\"refs=%d\\n\", stub_default_refs);\n"
     "  return 0;\n}\n";
@@ -310,6 +324,16 @@ int main(void)
     expect("close refused by deinit: deinit asked once", fr.find("after-close deinits=1") != std::string::npos);
     expect("close refused by deinit: the libusb reference is kept (no libusb_exit, no free)",
            fr.find("refs=1") != std::string::npos);
+    expect("close refused by deinit: the line reaches stderr, a regular file",
+           fr.find("[CH341] close refused by the USB library (deinit -1): the stick stays open") != std::string::npos);
+    /* The refusal line never blocks the close or ends the process (gate-2 FINAL1A): a pipe gets no line, as the
+     * library's diagnostics. */
+    std::string fnr = run_driver("STUB_DEINIT_REFUSE=1 DRIVER_STDERR=noreader");
+    expect("close refused, stderr a pipe without a reader: the close returns (no SIGPIPE)",
+           fnr.find("after-close deinits=1") != std::string::npos && fnr.find("refs=1") != std::string::npos);
+    std::string ffl = run_driver("STUB_DEINIT_REFUSE=1 DRIVER_STDERR=full");
+    expect("close refused, stderr a full pipe: the close returns (no block)",
+           ffl.find("after-close deinits=1") != std::string::npos && ffl.find("refs=1") != std::string::npos);
 
     std::string fpr = run_driver("STUB_FAIL_PIN=3 STUB_DEINIT_REFUSE=1");
     expect("pin mode fails and deinit refuses: open returns NULL", fpr.find("open=null") == 0);
