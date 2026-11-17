@@ -4,7 +4,8 @@
 
 - `pinedio-usb-1262` accepts `POWER` 0–20, the SX1262 range; the placeholder limit of 14 is gone.
 - Chat: its SET line no longer sends `POWER=17`; the power stays as configured. **Behaviour change:** a chat started
-  by hand against an unconfigured daemon sends at the band's boot default (10 dBm).
+  against a daemon that nobody configured, by hand or by a manager that applies no POWER, sends at the band's boot
+  default (10 dBm).
 - Chat: when the daemon goes away, chat shows "daemon gone: restart chat" instead of spinning a CPU core, and a send
   to the closed socket no longer kills it (SIGPIPE).
 
