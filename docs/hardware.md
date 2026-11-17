@@ -200,13 +200,15 @@ what the stick selection needs: a serial search leaves the other sticks' kernel 
 without a serial reports an empty serial, interrupt pins are bounds-checked, one poll thread per open stick
 from open to close, and `pinedio_init_at_port` opens one stick by its USB port (`--usb-port`). Its
 diagnostic lines never block on stderr and never end or stop the daemon; a log file on a stuck filesystem
-stalls them, as it stalls the daemon's own log lines. The daemon
-binary links neither that library nor libusb. Only this preset needs it, and every other preset
+stalls them, as it stalls the daemon's own log lines. Also not bounded (theoretical): when another thread
+redirects fd 2 during a line, the library's close of its stderr copy can be the last close of a TCP socket with
+`SO_LINGER` (waits up to the linger time) or of a serial terminal with stopped output (waits for the drain).
+The daemon binary links neither that library nor libusb. Only this preset needs it, and every other preset
 builds and runs exactly as without it.
 
     sudo apt install libusb-1.0-0-dev -y
     git clone https://github.com/makrohard/libch341-spi-userspace ~/libch341-spi-userspace
-    git -C ~/libch341-spi-userspace checkout c4589711a5d06076cb360785004ca9a9cae34ea0
+    git -C ~/libch341-spi-userspace checkout 745bd0671de5ab489c4736a2fc42a3de719b521d
 
 `build.sh` finds that checkout like RadioLib: `PINEDIO_DIR`, `--pinedio-dir`,
 `~/libch341-spi-userspace`, `~/src/libch341-spi-userspace` or `../libch341-spi-userspace`. It builds

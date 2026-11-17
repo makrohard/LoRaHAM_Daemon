@@ -8,7 +8,7 @@
   default (10 dBm).
 - Chat: when the daemon goes away, chat shows "daemon gone: restart chat" instead of spinning a CPU core, and a send
   to the closed socket no longer kills it (SIGPIPE).
-- USB sticks: a diagnostic line of the USB library (the fork's c4589711) or of the stick's close never blocks the
+- USB sticks: a diagnostic line of the USB library (the fork's 745bd067) or of the stick's close never blocks the
   daemon on a full stderr and never ends or stops it (a closed or redirected stderr, a log file at its size limit,
   a background terminal); a line that cannot be written at once is dropped and counted. Closing a stick waits for
   the library's poll thread only up to the library's deadline.
