@@ -10,7 +10,8 @@
   to the closed socket no longer kills it (SIGPIPE).
 - USB sticks: a diagnostic line of the USB library (the fork's bfe7f594) or of the stick's close never blocks the
   daemon on a full stderr and never ends it on a closed one (SIGPIPE); a line that cannot be written at once is
-  dropped and counted. Closing a stick waits for the library's poll thread only up to the library's deadline.
+  dropped (the library counts its dropped lines). Closing a stick waits for the library's poll thread only up to
+  the library's deadline.
 
 ## 1.4.1
 
