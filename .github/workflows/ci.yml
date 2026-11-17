@@ -49,6 +49,7 @@ jobs:
             cmake \
             git \
             liblgpio-dev \
+            libncurses-dev \
             libusb-1.0-0-dev
 
       - name: Build pinned RadioLib

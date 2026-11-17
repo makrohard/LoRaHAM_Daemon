@@ -27,6 +27,8 @@
  *   fds        mon_fds() == -1 after a registered fd: the stale registration
  *              is dropped (a reused, readable fd number does not spin the loop)
  *   T7         no hotplug: the startup note; a lost stick exits 5 as before
+ *   S9         preset POWER ceilings: PineDio 0..20, the Meshstick's 22
+ *   S10        the real chat binary leaves the operator's POWER alone
  */
 
 #include <cerrno>
@@ -84,7 +86,7 @@ static uint64_t now_ms(void)
     return (uint64_t)ts.tv_sec * 1000u + (uint64_t)(ts.tv_nsec / 1000000);
 }
 
-static std::string g_tmp, g_bin, g_bin_noport, g_fake, g_sock, g_run;
+static std::string g_tmp, g_bin, g_bin_noport, g_fake, g_sock, g_run, g_chat;
 
 static void write_text(const std::string &path, const std::string &text)
 {
@@ -961,6 +963,97 @@ static void scenario_pinedio_power(void)
     stop(pid);
 }
 
+/* Reads and drops a pseudo-terminal's output for `ms` (the chat child must
+ * not block on a full terminal buffer). */
+static void drain(int fd, int ms)
+{
+    char b[4096];
+    uint64_t end = now_ms() + (uint64_t)ms;
+    while (now_ms() < end) {
+        struct pollfd p = { fd, POLLIN, 0 };
+        if (poll(&p, 1, 50) > 0 && read(fd, b, sizeof(b)) <= 0)
+            break;
+    }
+}
+
+/* The chat binary on a new pseudo-terminal in `dir`, against radio `id`'s
+ * data and CONF sockets; *master gets the terminal's master side. */
+static pid_t start_chat(const std::string &dir, const std::string &id, int *master)
+{
+    int m = posix_openpt(O_RDWR | O_NOCTTY);
+    const char *name = m >= 0 && grantpt(m) == 0 && unlockpt(m) == 0 ? ptsname(m) : nullptr;
+    if (!name) {
+        if (m >= 0)
+            close(m);
+        return -1;
+    }
+    std::string slave = name, data = g_sock + "/lora-" + id + ".sock", cf = g_sock + "/loraconf-" + id + ".sock";
+    fflush(stdout);
+    pid_t pid = fork();
+    if (pid == 0) {
+        setsid();
+        int s = open(slave.c_str(), O_RDWR);        /* the controlling terminal */
+        if (s < 0 || chdir(dir.c_str()) != 0)
+            _exit(126);
+        dup2(s, STDIN_FILENO);
+        dup2(s, STDOUT_FILENO);
+        dup2(s, STDERR_FILENO);
+        close(m);
+        setenv("TERM", "xterm", 1);
+        signal(SIGPIPE, SIG_DFL);                   /* ours is ignored, and exec keeps that */
+        execl(g_chat.c_str(), "loraham_chat", "--data-socket", data.c_str(), "--conf-socket", cf.c_str(),
+              (char *)nullptr);
+        _exit(127);
+    }
+    *master = m;
+    return pid;
+}
+
+/* 1.4.2 (gate-2 NOTE): chat leaves the power alone, through the public path.
+ * A PineDio daemon is set to POWER=12, then the real chat binary starts
+ * against it on a pseudo-terminal. Once chat's SET line is applied (STATUS
+ * shows chat's FREQ; the line is applied whole or not at all), STATUS still
+ * reports POWER=12. A chat that sends a POWER, or a daemon that resets the
+ * power when it applies chat's other keys, fails here. */
+static void scenario_chat_keeps_power(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/s10.log";
+    bus("1-2 - 1\n");
+    pid_t pid = start({ "--radio", "868", "--hw", "pinedio-usb-1262", "--id", "pd2" }, log);
+    const std::string C = "loraconf-pd2.sock";
+    expect("S10 PineDio: READY", wait_status(C, "RADIO=READY", 8000));
+    expect("S10 the operator's SET POWER=12 applied", conf(C, "SET POWER=12", "") == "OK");
+    expect("S10 STATUS reports POWER=12, FREQ not set yet", status(C).find(" ID=pd2 FREQ=- SF=- POWER=12") != std::string::npos);
+    std::string dir = g_tmp + "/chat-run";
+    sh("rm -rf '" + dir + "' && mkdir -p '" + dir + "'");
+    write_text(dir + "/lorachat.conf", "TX=868.100\nRX=868.100\n");   /* TX = RX: no retune */
+    int master = -1;
+    pid_t chat = start_chat(dir, "pd2", &master);
+    expect("S10 chat starts on a pseudo-terminal", chat > 0);
+    bool applied = false;
+    for (uint64_t end = now_ms() + 8000; chat > 0 && !applied && now_ms() < end;) {
+        drain(master, 100);
+        applied = status(C).find(" ID=pd2 FREQ=868.1") != std::string::npos;
+    }
+    expect("S10 chat's SET line is applied (STATUS shows its FREQ=868.1)", applied);
+    if (chat > 0)
+        drain(master, 500);                         /* nothing later changes the power */
+    std::string st = status(C);
+    size_t at = st.rfind(" POWER=");
+    std::string pw = at == std::string::npos ? "?" : st.substr(at + 7);
+    while (!pw.empty() && (pw.back() == '\n' || pw.back() == '\r' || pw.back() == ' '))
+        pw.pop_back();
+    expect("S10 after chat's SET, STATUS still POWER=12 (was POWER=" + pw + ")", pw == "12");
+    expect("S10 chat is still running", chat > 0 && waitpid(chat, nullptr, WNOHANG) == 0);
+    if (chat > 0) {
+        kill(chat, SIGKILL);
+        waitpid(chat, nullptr, 0);
+        close(master);
+    }
+    stop(pid);
+}
+
 static void scenario_no_hotplug(void)
 {
     reset_dirs();
@@ -1029,6 +1122,10 @@ int main(int argc, char *argv[])
     expect("the fake library without the open by port builds",
            sh("cc -std=gnu11 -Wall -Wextra -Werror -shared -fPIC -DFAKE_NO_OPEN_PORT -DFAKE_PIN='\"" + pin +
               "\"' -o '" + g_tmp + "/bundle-noport/lib/libloraham-ch341.so' '" + src + "'") == 0);
+    /* The chat client, built as clients/chat/run_tests.sh builds it. */
+    g_chat = g_tmp + "/loraham_chat";
+    expect("the chat client builds",
+           sh("cc -std=gnu11 -Wall -o '" + g_chat + "' '" + exe_dir + "/../clients/chat/lorachat_ncurses_113.c' -lncurses -lpthread") == 0);
 
     scenario_cli();
     scenario_usb_port();
@@ -1043,6 +1140,7 @@ int main(int argc, char *argv[])
     scenario_fds();
     scenario_no_hotplug();
     scenario_pinedio_power();
+    scenario_chat_keeps_power();
 
     if (g_fail)
         sh("for f in '" + g_tmp + "'/*.log '" + g_fake + "/log'; do echo \"== $f\"; tail -n 40 \"$f\"; done");
