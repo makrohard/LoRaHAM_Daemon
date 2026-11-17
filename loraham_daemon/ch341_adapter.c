@@ -11,20 +11,12 @@
 
 #include "ch341_adapter.h"
 
-#include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
-#include <signal.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "ch341_adapter_priv.h"
+#include "libpinedio-usb-diag.h"
 
 #ifndef LORAHAM_CH341_PIN
 #error "build.sh defines LORAHAM_CH341_PIN as the measured library commit"
@@ -102,41 +94,6 @@ loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *p
 }
 #endif
 
-/* One line to stderr that never blocks and never raises SIGPIPE in the caller, as the library writes its
- * diagnostics (libpinedio-usb.c, diag_write): a regular file gets write(), a socket send() with MSG_DONTWAIT |
- * MSG_NOSIGNAL, a pipe, FIFO or terminal a write() on a private O_NONBLOCK open of the same one, with SIGPIPE
- * blocked around it and consumed. A line that cannot be written at once is dropped. */
-static void line_nonblocking(const char *s)
-{
-    size_t n = strlen(s);
-    struct stat st;
-
-    if (fstat(STDERR_FILENO, &st) != 0)
-        return;
-    if (S_ISREG(st.st_mode)) {
-        (void)!write(STDERR_FILENO, s, n);
-        return;
-    }
-    if (S_ISSOCK(st.st_mode)) {
-        (void)!send(STDERR_FILENO, s, n, MSG_DONTWAIT | MSG_NOSIGNAL);
-        return;
-    }
-    int fd = open("/proc/self/fd/2", O_WRONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
-    if (fd < 0)
-        return;
-    sigset_t pipe_set, old, pending;
-    sigemptyset(&pipe_set);
-    sigaddset(&pipe_set, SIGPIPE);
-    pthread_sigmask(SIG_BLOCK, &pipe_set, &old);
-    bool was_pending = sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE);
-    if (write(fd, s, n) < 0 && errno == EPIPE && !was_pending) {
-        struct timespec zero = { 0, 0 };
-        sigtimedwait(&pipe_set, NULL, &zero);
-    }
-    pthread_sigmask(SIG_SETMASK, &old, NULL);
-    close(fd);
-}
-
 void loraham_ch341_close(loraham_ch341 *dev)
 {
     if (!dev)
@@ -147,7 +104,9 @@ void loraham_ch341_close(loraham_ch341 *dev)
      * stick stays open: never free it (the memory stays allocated). The
      * daemon's callbacks only set a flag, so this is a guard. */
     if (pinedio_deinit(&dev->inst) != 0) {
-        line_nonblocking("[CH341] close refused by the USB library (deinit -1): the stick stays open\n");
+        /* by the library's diagnostic rules (libpinedio-usb-diag.h): never blocks, never ends or stops
+         * the caller, errno kept */
+        pinedio_diag_printf("[CH341] close refused by the USB library (deinit -1): the stick stays open\n");
         return;
     }
     libusb_exit(NULL);

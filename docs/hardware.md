@@ -198,13 +198,15 @@ The daemon drives the stick through libch341-spi-userspace (libpinedio-usb): the
 [`../.github/ci/libpinedio.lock`](../.github/ci/libpinedio.lock). The fork adds to pine64's b0694ec8
 what the stick selection needs: a serial search leaves the other sticks' kernel drivers alone, a stick
 without a serial reports an empty serial, interrupt pins are bounds-checked, one poll thread per open stick
-from open to close, and `pinedio_init_at_port` opens one stick by its USB port (`--usb-port`). The daemon
+from open to close, and `pinedio_init_at_port` opens one stick by its USB port (`--usb-port`). Its
+diagnostic lines never block on stderr and never end or stop the daemon; a log file on a stuck filesystem
+stalls them, as it stalls the daemon's own log lines. The daemon
 binary links neither that library nor libusb. Only this preset needs it, and every other preset
 builds and runs exactly as without it.
 
     sudo apt install libusb-1.0-0-dev -y
     git clone https://github.com/makrohard/libch341-spi-userspace ~/libch341-spi-userspace
-    git -C ~/libch341-spi-userspace checkout bfe7f594aef2b84ec712973d57676f70ed10f899
+    git -C ~/libch341-spi-userspace checkout 3a927ccaf330ff052391647a762586a28803ea4a
 
 `build.sh` finds that checkout like RadioLib: `PINEDIO_DIR`, `--pinedio-dir`,
 `~/libch341-spi-userspace`, `~/src/libch341-spi-userspace` or `../libch341-spi-userspace`. It builds

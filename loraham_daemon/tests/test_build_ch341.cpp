@@ -107,8 +107,12 @@ static void write_stub_tree(const std::string &dir)
           "int32_t pinedio_deinit(struct pinedio_inst *i);\n"
           "void pinedio_seed_pin_state(uint16_t mode_bits, uint16_t state_bits);\n", h);
     fclose(h);
+    FILE *dh = fopen((dir + "/libpinedio-usb-diag.h").c_str(), "w");   /* the library's private diagnostic entry */
+    fputs("void pinedio_diag_printf(const char *fmt, ...);\n", dh);
+    fclose(dh);
     FILE *c = fopen((dir + "/libpinedio-usb.c").c_str(), "w");
     fputs("#include \"libpinedio-usb.h\"\n"
+          "void pinedio_diag_printf(const char *fmt, ...) { (void)fmt; }\n"
           "uint16_t pinedio_d_mode, pinedio_d_state;\n"
           "int32_t pinedio_init(struct pinedio_inst *i, void *d) { (void)i; (void)d; return -2; }\n"
           "int32_t pinedio_set_option(struct pinedio_inst *i, enum pinedio_option o, uint32_t v)"

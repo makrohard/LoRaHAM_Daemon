@@ -1,7 +1,7 @@
 # libch341-spi-userspace (libpinedio-usb) for the USB stick presets: the makrohard fork of pine64's library
 # (pine64 b0694ec8 + the selection, serial and interrupt-pin fixes + pinedio_init_at_port + one joinable poll worker
-# per instance from init to deinit + diagnostics that never block or raise SIGPIPE and a join bounded by deinit's
+# per instance from init to deinit + diagnostics that never block, end or stop the process and a join bounded by deinit's
 # deadline; its main).
 # build.sh builds lib/libloraham-ch341.so only from a checkout of exactly this commit, unmodified.
 PINEDIO_URL=https://github.com/makrohard/libch341-spi-userspace.git
-PINEDIO_COMMIT=bfe7f594aef2b84ec712973d57676f70ed10f899
+PINEDIO_COMMIT=3a927ccaf330ff052391647a762586a28803ea4a
