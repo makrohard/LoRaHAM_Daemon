@@ -4,4 +4,4 @@
 # deadline; its main).
 # build.sh builds lib/libloraham-ch341.so only from a checkout of exactly this commit, unmodified.
 PINEDIO_URL=https://github.com/makrohard/libch341-spi-userspace.git
-PINEDIO_COMMIT=3a927ccaf330ff052391647a762586a28803ea4a
+PINEDIO_COMMIT=c4589711a5d06076cb360785004ca9a9cae34ea0
