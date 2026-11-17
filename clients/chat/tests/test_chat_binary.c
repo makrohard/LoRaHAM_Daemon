@@ -241,6 +241,9 @@ int main(int argc, char **argv)
     expect("the binary opens the given CONF socket (start check + its first request)", c1 >= 0 && c2 >= 0);
     expect("its first CONF request arrives there: SET FREQ=433.900 ...",
            c2 >= 0 && read_until(c2, "SET FREQ=433.900", buf, sizeof(buf), 3000));
+    /* 1.4.2: chat leaves the power alone (what LHPC applied stays). */
+    read_until(c2, "\001never\001", buf + strlen(buf), sizeof(buf) - strlen(buf), 300);
+    expect("... and it sets no POWER", c2 >= 0 && strstr(buf, "SET FREQ=433.900") && !strstr(buf, "POWER="));
     read_until(master, "> ", buf, sizeof(buf), 2000);   /* the input line is drawn */
     if (write(master, "hello-bin\r", 10) != 10) { }
     expect("a typed line arrives on the data socket as its frame",

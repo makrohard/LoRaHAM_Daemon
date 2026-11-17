@@ -201,7 +201,7 @@ static void test_pinedio_usb(void)
     expect_int("pd no tcxo", daemon_hw_profile.tcxo_voltage == 0.0f, 1);
     expect_int("pd led NC", daemon_hw_profile.led_pin < 0, 1);
     expect_int("pd claims no Pi line", daemon_hw_profile.claimed_count, 0);
-    expect_int("pd power ceiling 14 dBm", daemon_hw_profile.power_max_dbm, 14);
+    expect_int("pd power ceiling: the SX1262 range (0)", daemon_hw_profile.power_max_dbm, 0);
     expect_int("pd cad scan", daemon_hw_profile.cad_scan_available, 1);
 }
 

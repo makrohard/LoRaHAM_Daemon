@@ -931,6 +931,36 @@ static void scenario_fds(void)
     term(pid);
 }
 
+/* Preset POWER ceilings through the public path (the daemon binary, the CONF
+ * socket, STATUS): the PineDio takes the SX1262 range 0..20 (1.4.2: its
+ * placeholder 14 is gone); the Meshstick's raised 22 reaches the process. */
+static void scenario_pinedio_power(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/s9.log";
+    bus("1-2 - 1\n");
+    pid_t pid = start({ "--radio", "868", "--hw", "pinedio-usb-1262", "--id", "pd1" }, log);
+    const std::string C = "loraconf-pd1.sock";
+    expect("S9 PineDio: READY", wait_status(C, "RADIO=READY", 8000));
+    expect("S9 PineDio SET POWER=17 applied", conf(C, "SET POWER=17", "") == "OK");
+    expect("S9 STATUS reports POWER=17", status(C).find(" ID=pd1 FREQ=- SF=- POWER=17") != std::string::npos);
+    expect("S9 PineDio SET POWER=20 applied", conf(C, "SET POWER=20", "") == "OK");
+    expect("S9 PineDio SET POWER=21 refused", conf(C, "SET POWER=21", "").rfind("ERR", 0) == 0);
+    expect("S9 STATUS still POWER=20", status(C).find(" ID=pd1 FREQ=- SF=- POWER=20") != std::string::npos);
+    stop(pid);
+
+    /* The Meshstick's raised ceiling (22) reaches the running daemon. */
+    reset_dirs();
+    std::string log2 = g_tmp + "/s9b.log";
+    bus("1-2 - 1\n");
+    pid = start(mesh({ "--id", "ms9" }), log2);
+    const std::string M = "loraconf-ms9.sock";
+    expect("S9 Meshstick: READY", wait_status(M, "RADIO=READY", 8000));
+    expect("S9 Meshstick SET POWER=22 applied (its preset ceiling)", conf(M, "SET POWER=22", "") == "OK");
+    expect("S9 Meshstick SET POWER=23 refused", conf(M, "SET POWER=23", "").rfind("ERR", 0) == 0);
+    stop(pid);
+}
+
 static void scenario_no_hotplug(void)
 {
     reset_dirs();
@@ -1012,6 +1042,7 @@ int main(int argc, char *argv[])
     scenario_gap();
     scenario_fds();
     scenario_no_hotplug();
+    scenario_pinedio_power();
 
     if (g_fail)
         sh("for f in '" + g_tmp + "'/*.log '" + g_fake + "/log'; do echo \"== $f\"; tail -n 40 \"$f\"; done");

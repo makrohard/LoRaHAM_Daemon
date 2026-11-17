@@ -224,7 +224,7 @@ static bool profile_fill(const char *preset, int band, DaemonHardwareProfile *p)
         p->usb_ch341 = true;
         p->usb_vid = 0x1A86;
         p->usb_pid = 0x5512;
-        p->power_max_dbm = 14;          /* until the module's rating is known */
+        p->power_max_dbm = 0;           /* the SX1262 range (config_policy.h) */
         p->claimed_count = 0;
         return true;
     }

@@ -271,7 +271,7 @@ void send_lora_config(const char* freq) {
     strncpy(addr.sun_path, conf_path(), sizeof(addr.sun_path)-1);
     if (connect(cfg_fd, (struct sockaddr*)&addr, sizeof(addr)) != -1) {
         snprintf(config_cmd, sizeof(config_cmd),
-                 "SET FREQ=%s SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=AUTO POWER=17",
+                 "SET FREQ=%s SF=12 BW=125 CR=5 CRC=1 PREAMBLE=8 SYNC=0x12 LDRO=AUTO",
                  freq);
         send(cfg_fd, config_cmd, strlen(config_cmd), MSG_NOSIGNAL);
     }
