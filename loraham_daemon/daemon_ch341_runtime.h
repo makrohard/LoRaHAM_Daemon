@@ -22,8 +22,9 @@ void daemon_ch341_set_usb_serial(const char *serial);
 /* From argument parsing: the --usb-port value (or NULL). */
 void daemon_ch341_set_usb_port(const char *port);
 /* --radio-error retry: a present-path fault and a failed re-init are retried
- * (needs the hotplug monitor; without it a loss exits 5). */
-void daemon_ch341_set_radio_error_retry(bool retry);
+ * (needs the hotplug monitor; without it a loss exits 5, and an explicit
+ * retry (`given`) is named inert in the startup note). */
+void daemon_ch341_set_radio_error_retry(bool retry, bool given);
 
 /* In the final process, after the instance lock, before lora_init(): open the
  * monitor (arming the state machine) and select the stick. false = refused:

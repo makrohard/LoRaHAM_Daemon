@@ -1241,6 +1241,8 @@ static void scenario_no_hotplug(void)
     pid_t pid = start(mesh({}), log);
     expect("T7 no hotplug: READY", wait_status("loraconf868.sock", "RADIO=READY", 8000));
     expect("T7 the startup note", log_has(log, "libusb offers no usable hotplug here"));
+    expect("N1 no option (the default retry): the note does not name --radio-error",
+           !log_has(log, "--radio-error retry has no effect here"));
     expect("O2 no hotplug: the running mode is exit (a loss exits 5), USBFAULT=0",
            status("loraconf868.sock").find(" RADIOERR=exit USBFAULT=0 ") != std::string::npos);
     bus("");
@@ -1248,6 +1250,20 @@ static void scenario_no_hotplug(void)
     expect("T7 a lost stick exits 5 as before", rc == 5);
     if (rc == -2)
         stop(pid);
+
+    /* N1 (a25 on C1): an explicit --radio-error retry without hotplug is named
+     * inert, never silent (OPEN-A's rule). */
+    reset_dirs();
+    write_text(g_fake + "/nohotplug", "1\n");
+    bus("1-2 SERIAL01 1\n");
+    std::string logr = g_tmp + "/s8r.log";
+    pid = start(mesh({ "--radio-error", "retry" }), logr);
+    expect("N1 explicit retry, no hotplug: READY, RADIOERR=exit", wait_status("loraconf868.sock", "RADIO=READY", 8000) &&
+           status("loraconf868.sock").find(" RADIOERR=exit USBFAULT=0 ") != std::string::npos);
+    expect("N1 ... the note says the option has no effect here",
+           log_has(logr, "[CH341] note: libusb offers no usable hotplug here; a lost stick exits 5 as before "
+                         "(--radio-error retry has no effect here)"));
+    term(pid);
 
     /* Core r4 F4: without a monitor the start still refuses an unreadable
      * serial (DELTA-4-v3: never "no serial", in every mode). */

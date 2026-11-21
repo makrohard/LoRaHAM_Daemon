@@ -81,7 +81,7 @@ attempts: RADIO=READY`. If the USB library refuses to close the stick, nothing i
 every attempt line says `the library kept the old handle: restart the daemon`. `exit`: exit `5`, as
 1.4.x. The SPI boards always exit `5`; an explicit `retry` there is a usage error. `GET STATUS`
 shows the mode as `RADIOERR=` and the faults as `USBFAULT=`
-([conf-protocol.md](conf-protocol.md#get-status)). A USB stick without libusb hotplug runs `exit`.
+([conf-protocol.md](conf-protocol.md#get-status)). A USB stick without libusb hotplug runs `exit`; its startup note says so when `retry` was given.
 
 `--high-power` is a bare flag like `--debug`: present means on, absent means off, and any value
 (`--high-power=off`) is a usage error. What it permits is in [Boot overrides](#boot-overrides-for-tx-and-cad).

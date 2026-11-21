@@ -37,6 +37,7 @@ static const char *g_usb_port = nullptr;
 static std::string g_replay;
 /* --radio-error retry (the effective mode, resolved by preset at parse). */
 static bool g_radio_error_retry = false;
+static bool g_radio_error_given = false;  /* --radio-error retry given explicitly */
 /* The last teardown's close was refused by the library: it keeps the handle. */
 static bool g_kept = false;
 
@@ -221,7 +222,8 @@ void daemon_ch341_monitor_start(void)
                             (uint16_t)daemon_hw_profile.usb_pid);
     if (!g_mon) {
         printf("[CH341] note: libusb offers no usable hotplug here; a lost stick "
-               "exits 5 as before\n");
+               "exits 5 as before%s\n",
+               g_radio_error_given ? " (--radio-error retry has no effect here)" : "");
         return;
     }
 
@@ -369,9 +371,10 @@ void daemon_ch341_set_usb_port(const char *port)
     g_usb_port = port;
 }
 
-void daemon_ch341_set_radio_error_retry(bool retry)
+void daemon_ch341_set_radio_error_retry(bool retry, bool given)
 {
     g_radio_error_retry = retry;
+    g_radio_error_given = retry && given;
 }
 
 bool daemon_ch341_start(char *why, size_t why_size)

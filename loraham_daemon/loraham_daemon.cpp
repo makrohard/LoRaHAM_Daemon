@@ -656,7 +656,7 @@ static bool daemon_parse_args(int argc, char *argv[])
          * survive fork(), and a duplicate --id must stop at its lock first. */
         daemon_ch341_set_usb_serial(g_usb_serial);
         daemon_ch341_set_usb_port(g_usb_port);
-        daemon_ch341_set_radio_error_retry(g_radio_error != 2);
+        daemon_ch341_set_radio_error_retry(g_radio_error != 2, g_radio_error == 1);
     }
 
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1
