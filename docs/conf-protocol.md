@@ -40,6 +40,8 @@ GET STATUS
 GET STATS
 GET CHANNEL
 GET CHANNEL NOSCAN
+QUIT
+EXIT
 ```
 
 `SET KEY=VALUE ...` carries one or more space-separated tokens for the radio
@@ -53,6 +55,12 @@ a channel-activity scan: it takes the radio mutex, puts the chip into CAD and
 re-arms RX afterwards, so it **destroys a frame that is arriving**. `GET CHANNEL
 NOSCAN` answers the same line without ever scanning. See
 [Which queries cost the radio](#which-queries-cost-the-radio).
+
+`QUIT` (or `EXIT`, any case, no arguments: `QUIT now` answers `ERR MALFORMED`)
+answers `OK` and stops the daemon as SIGTERM does: the same cleanup, exit `0`,
+also during a USB retry. Anyone who can open the CONF socket (mode 0660) may
+send it. The `OK` is written before the stop; a client that does not read its
+socket can lose it, and the exit never waits for it. Added in 1.5.0.
 
 ## Line framing and parsing
 

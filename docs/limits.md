@@ -331,3 +331,14 @@ submission, and lets an already dequeued job run to completion before the thread
 Cleanup then proceeds in a fixed order: radios stopped, event backend closed, client connections
 closed, socket files removed, and the per-band instance lock released last, so a same-band restart
 cannot bind sockets this instance is about to delete.
+
+**Stop bound (SIGTERM, SIGINT, CONF `QUIT`), also during a USB retry.** The stop flag is seen between
+main-loop steps, so a stop waits for the step that runs: in the backoff wait it exits at once; inside
+a re-open it waits for the open and for the re-init with the replay that follows. Measured with the
+test library (`test_ch341_stop`, 1.5.0): 20 ms in the wait; 20–30 ms after a held open returns; a
+re-init on a stick whose every transfer fails runs about 10.2 s (RadioLib's chip search) and the exit
+follows its end within 20 ms. The constants on that path: a CH341 transfer 1000 ms, the re-init's
+no-progress deadline `PINEDIO_XFER_MS` 3000 ms, the teardown's deinit `PINEDIO_DRAIN_MS` 3000 ms, the
+serial read in the open at most 2 s. No bound holds while `libusb_open` or `libusb_get_device_list`
+runs (neither has a timeout, as at start and on an unplug): there systemd's `TimeoutStopSec` and LHPC's
+stop escalation are the backstop. The live value on a stick is a box measurement.

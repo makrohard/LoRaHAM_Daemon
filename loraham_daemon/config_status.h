@@ -26,6 +26,10 @@ void config_status_uppercase(char *s);
 int config_status_command_equals(const char *line,
                                                const char *expected);
 
+/* QUIT / EXIT (1.5.0): 1 = the bare command (any case), 2 = with arguments
+ * (ERR MALFORMED), 0 = neither. */
+int config_status_is_quit(const char *line);
+
 static inline int config_status_is_get_status(const char *line)
 {
     return config_status_command_equals(line, "GET STATUS");

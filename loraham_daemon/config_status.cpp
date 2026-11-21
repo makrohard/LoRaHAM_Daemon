@@ -64,6 +64,21 @@ int config_status_command_equals(const char *line,
     return strcmp(cmd, expected) == 0;
 }
 
+int config_status_is_quit(const char *line)
+{
+    char cmd[64];
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+
+    if (strcmp(cmd, "QUIT") == 0 || strcmp(cmd, "EXIT") == 0)
+        return 1;
+    if ((strncmp(cmd, "QUIT", 4) == 0 || strncmp(cmd, "EXIT", 4) == 0) &&
+        isspace((unsigned char)cmd[4]))
+        return 2;
+    return 0;
+}
+
 int config_status_is_set_txresult(const char *line,
                                                int *enabled)
 {

@@ -1,6 +1,7 @@
 #include <chrono>
 #include <thread>
 #include "../config_dispatch.h"
+#include "../daemon_lifecycle.h"
 
 #include <stdio.h>
 #include <atomic>
@@ -1904,6 +1905,28 @@ static void test_stable_conf_replies(void)
     dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                    "BOGUS\n", out, sizeof(out));
     expect_str("reply: unknown", out, "ERR UNKNOWN\n");
+
+    /* QUIT / EXIT (1.5.0): OK, then the SIGTERM stop flag; any case; with an
+     * argument ERR MALFORMED and no stop. */
+    {
+        const char *verbs[4] = { "QUIT\n", "quit\n", "EXIT\n", "exit\n" };
+        for (int i = 0; i < 4; i++) {
+            daemon_lifecycle_reset_stop();
+            dispatch_round(slots, &ctrl, sv, &set, &readfds, buf, verbs[i], out, sizeof(out));
+            expect_str("reply: QUIT/EXIT any case: OK", out, "OK\n");
+            expect_int("QUIT/EXIT any case: the stop flag is set", daemon_lifecycle_stop_requested(), 1);
+        }
+        const char *args[3] = { "QUIT now\n", "exit 0\n", "Quit\tx\n" };
+        for (int i = 0; i < 3; i++) {
+            daemon_lifecycle_reset_stop();
+            dispatch_round(slots, &ctrl, sv, &set, &readfds, buf, args[i], out, sizeof(out));
+            expect_str("reply: QUIT/EXIT with an argument: ERR MALFORMED", out, "ERR MALFORMED\n");
+            expect_int("QUIT/EXIT with an argument: no stop", daemon_lifecycle_stop_requested(), 0);
+        }
+        dispatch_round(slots, &ctrl, sv, &set, &readfds, buf, "QUITX\n", out, sizeof(out));
+        expect_int("QUITX is not QUIT: no stop", daemon_lifecycle_stop_requested(), 0);
+        daemon_lifecycle_reset_stop();
+    }
 
     /* Hardware failure: ERR HARDWARE (+ FAILED transition elsewhere). */
     g_apply_state.result_override = (int)CONFIG_APPLY_HW_ERROR;

@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 
+#include "daemon_lifecycle.h"
 #include "daemon_rx_rearm.h"
 #include "daemon_tx_async_runtime.h"
 #include "config_parser.h"
@@ -137,6 +138,23 @@ void config_dispatch_apply_line(const char *line, void *user)
         client_slot_flush_output(ctx->slot);
 
         return;
+    }
+
+    /* QUIT / EXIT (1.5.0): the reply is written first, then the same stop
+     * flag SIGTERM sets: the same exit (0), cleanup and bound, also during a
+     * USB retry. Anyone who can open the CONF socket may send it (0660). */
+    switch (config_status_is_quit(upper_line)) {
+    case 1:
+        printf("[%s] %s: stopping (as SIGTERM)\n", ctx->tag, upper_line);
+        fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
+        daemon_lifecycle_request_stop(0);
+        return;
+    case 2:
+        config_dispatch_reply(ctx->slot, "ERR MALFORMED\n");
+        return;
+    default:
+        break;
     }
 
     int txresult_enabled = 0;

@@ -7,6 +7,7 @@
   again on a backoff (1 s doubling to 1024 s, then every 30 min) instead of exit 5. `--radio-error exit` keeps 1.4.x.
   SPI boards are unchanged (exit 5); `retry` there is refused.
 - `GET STATUS`: two fields after `ID=`, `RADIOERR=` (the mode) and `USBFAULT=` (the faults since start, `-` on SPI).
+- CONF: `QUIT` / `EXIT` answer `OK` and stop the daemon as SIGTERM does (exit 0).
 
 ## 1.4.2
 

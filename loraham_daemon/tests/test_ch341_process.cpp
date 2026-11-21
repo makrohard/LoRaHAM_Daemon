@@ -20,6 +20,11 @@
  *              with the replay; T3 a failed re-init after an unplug retried;
  *              T6 a refused close: no new open, the "restart the daemon" line
  *              on each attempt
+ *   QUIT       (built as test_ch341_stop, -DCH341_PROCESS_STOP=1)
+ *              Q1 QUIT/quit/EXIT/exit: OK, exit 0; Q2 QUIT x: ERR MALFORMED,
+ *              running; Q3 a data client reads EOF; Q4 a never-reading CONF
+ *              client's QUIT still exits 0 in the bound; T5 SIGTERM / QUIT in
+ *              the backoff wait and inside a held re-open: exit 0 in the bound
  *   T16/T13    ACCESS at start -> exit 4 (never 5); ACCESS on a reopen ->
  *              waits with the line, a new ARRIVED succeeds
  *   T19        r3 / r3f / no id side by side: six+three distinct sockets, CONF
@@ -51,6 +56,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/file.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -59,6 +65,11 @@
 #include <unistd.h>
 
 #include "../framed_data.h"
+
+/* 1: the build of test_ch341_stop (run_tests.sh), the stop scenarios only. */
+#ifndef CH341_PROCESS_STOP
+#define CH341_PROCESS_STOP 0
+#endif
 
 static int g_ok = 0;
 static int g_fail = 0;
@@ -1019,6 +1030,208 @@ static void scenario_retry_kept(void)
     term(pid);
 }
 
+/* Q1-Q4 and T5 (1.5.0, the binary test_ch341_stop): QUIT / EXIT on the CONF
+ * socket and the stop during a USB retry. The stop is seen between main-loop
+ * steps, so "within the bound" = the exit follows the end of the step that
+ * runs when the stop comes (a re-init with its replay, an open) within
+ * 500 ms; outside a step (the backoff wait) the exit comes before the next
+ * attempt. The test and the fake share CLOCK_MONOTONIC; the times are printed
+ * (docs/limits.md). */
+
+/* The fake's events of `what` of `pid` after `after_ms`. */
+static std::vector<uint64_t> events_after(pid_t pid, const char *what, uint64_t after_ms)
+{
+    std::vector<uint64_t> t;
+    for (uint64_t ms : event_times(pid, what))
+        if (ms > after_ms)
+            t.push_back(ms);
+    return t;
+}
+
+static void scenario_quit(void)
+{
+    const char *verbs[4] = { "QUIT", "quit", "EXIT", "exit" };
+    for (int i = 0; i < 4; i++) {
+        reset_dirs();
+        bus("1-2 SERIAL01 1\n");
+        pid_t pid = start(mesh({}), g_tmp + "/q1.log");
+        wait_status("loraconf868.sock", "RADIO=READY", 8000);
+        int raw = connect_to("lora868.sock");
+        int c = connect_to("loraconf868.sock");
+        std::string line = std::string(verbs[i]) + "\n";
+        std::string reply = write(c, line.c_str(), line.size()) == (ssize_t)line.size() ? read_line(c, 2000) : "";
+        uint64_t t0 = now_ms();
+        int rc = wait_exit(pid, 10000);
+        uint64_t ms = now_ms() - t0;
+        expect(std::string("Q1 ") + verbs[i] + ": OK, then exit 0 (within 1 s)", reply == "OK" && rc == 0 && ms < 1000);
+        if (i == 0) {
+            printf("       Q1 QUIT -> exit: %llu ms\n", (unsigned long long)ms);
+            char b;
+            expect("Q3 a data client reads EOF at the QUIT", raw >= 0 && read(raw, &b, 1) == 0);
+            expect("Q1 the log names the stop", log_has(g_tmp + "/q1.log", "QUIT: stopping (as SIGTERM)"));
+        }
+        close(raw);
+        close(c);
+        if (rc == -2)
+            stop(pid);
+    }
+
+    reset_dirs();
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), g_tmp + "/q2.log");
+    wait_status("loraconf868.sock", "RADIO=READY", 8000);
+    expect("Q2 QUIT x: ERR MALFORMED", conf("loraconf868.sock", "QUIT x", "ERR") == "ERR MALFORMED");
+    conf("loraconf868.sock", "QUITX", "");
+    conf("loraconf868.sock", "Exit\tnow", "");
+    expect("Q2 ... and after QUITX and \"Exit<TAB>now\" the daemon keeps running", wait_exit(pid, 500) == -2 &&
+           status("loraconf868.sock").find("RADIO=READY") != std::string::npos);
+
+    /* Q4: a CONF client that never reads: 250 GET STATUS and a QUIT in one
+     * write. Its replies (about 93 KB) fill its socket (62 KB here) and wait
+     * in the daemon's output queue (64 KB); the QUIT still stops the daemon. */
+    int st_len = (int)status("loraconf868.sock").size() + 1;
+    int c = connect_to("loraconf868.sock");
+    std::string flood;
+    for (int i = 0; i < 250; i++)
+        flood += "GET STATUS\n";
+    flood += "QUIT\n";
+    bool w = send(c, flood.data(), flood.size(), MSG_NOSIGNAL) == (ssize_t)flood.size();
+    uint64_t t0 = now_ms();
+    int rc = wait_exit(pid, 10000);
+    uint64_t ms = now_ms() - t0;
+    int unread = 0;
+    ioctl(c, FIONREAD, &unread);
+    printf("       Q4 250 replies of %d bytes, %d readable at the exit; QUIT -> exit: %llu ms\n", st_len, unread,
+           (unsigned long long)ms);
+    expect("Q4 the never-reading client's socket was full (fewer bytes readable than replied)",
+           unread > 0 && unread < 250 * st_len);
+    expect("Q4 QUIT from the never-reading client: exit 0 within 1 s", w && rc == 0 && ms < 1000);
+    close(c);
+    if (rc == -2)
+        stop(pid);
+}
+
+/* A stop by SIGTERM (k 0) or QUIT (k 1); for QUIT the client and its OK. */
+static int stop_send(pid_t pid, int k)
+{
+    if (k == 0) {
+        kill(pid, SIGTERM);
+        return -1;
+    }
+    int c = connect_to("loraconf868.sock");           /* read by the daemon after the running step */
+    if (write(c, "QUIT\n", 5) != 5) { }
+    return c;
+}
+
+static void scenario_stop_in_retry(void)
+{
+    const char *how[2] = { "SIGTERM", "QUIT" };
+
+    /* (a) In the backoff wait: a fast failing re-init (badchip), then the
+     * stop in its 1 s wait: the exit comes before the next attempt. */
+    for (int k = 0; k < 2; k++) {
+        reset_dirs();
+        std::string log = g_tmp + "/t5a.log";
+        bus("1-2 SERIAL01 1\n");
+        pid_t pid = start(mesh({}), log);
+        wait_status("loraconf868.sock", "RADIO=READY", 8000);
+        bus("");
+        wait_log(log, "no ELECROW Meshstick with serial SERIAL01; waiting", 3000);
+        bus("1-2 SERIAL01 2 badchip\n");
+        bool in_wait = wait_log(log, "attempt 2: re-init failed: closing it, next attempt in 1 s", 5000);
+        int c = stop_send(pid, k);
+        std::string reply = k ? read_line(c, 2000) : "OK";
+        uint64_t t0 = now_ms();
+        int rc = wait_exit(pid, 10000);
+        uint64_t ms = now_ms() - t0;
+        expect(std::string("T5 ") + how[k] + " in the backoff wait: exit 0 before the next attempt",
+               in_wait && reply == "OK" && rc == 0 && ms < 1000 && !log_has(log, "attempt 3:"));
+        printf("       T5 %s in the backoff wait -> exit: %llu ms\n", how[k], (unsigned long long)ms);
+        if (c >= 0)
+            close(c);
+        if (rc == -2)
+            stop(pid);
+    }
+
+    /* (b) Inside a re-init step: a present-path fault (ioerr), the stop once
+     * the attempt's open is in the fake's log (the re-init runs on the failing
+     * stick, ~10 s on the fake: RadioLib's chip search against failing
+     * transfers): the exit follows that step's close. */
+    for (int k = 0; k < 2; k++) {
+        reset_dirs();
+        std::string log = g_tmp + "/t5b.log";
+        bus("1-2 SERIAL01 1\n");
+        pid_t pid = start(mesh({}), log);
+        wait_status("loraconf868.sock", "RADIO=READY", 8000);
+        bus("1-2 SERIAL01 1 ioerr\n");
+        sleep_ms(200);                                /* past the library's 20 ms bus cache */
+        conf("loraconf868.sock", "SET SF=10", "");
+        wait_log(log, "USB I/O error with the stick present: closing it, retry in 1 s (fault 1)", 3000);
+        uint64_t fault_close = 0;
+        for (int i = 0; i < 100 && !fault_close; i++) {
+            std::vector<uint64_t> cl = event_times(pid, "close");
+            fault_close = cl.empty() ? 0 : cl.back();
+            if (!fault_close)
+                sleep_ms(20);
+        }
+        bool opened = false;
+        for (int i = 0; i < 300 && !opened; i++) {    /* the attempt's open, 1 s after the close */
+            opened = !events_after(pid, "open", fault_close).empty();
+            if (!opened)
+                sleep_ms(10);
+        }
+        uint64_t t_stop = now_ms();
+        int c = stop_send(pid, k);
+        std::string reply = k ? read_line(c, 30000) : "OK";
+        int rc = wait_exit(pid, 30000);
+        uint64_t t_exit = now_ms();
+        std::vector<uint64_t> op = events_after(pid, "open", fault_close), cl = events_after(pid, "close", fault_close);
+        bool step = opened && !op.empty() && !cl.empty();
+        uint64_t step_end = step ? cl.front() : 0;
+        expect(std::string("T5 ") + how[k] + " inside a re-init step: exit 0, within 500 ms after the step ends",
+               step && reply == "OK" && rc == 0 && t_exit >= step_end && t_exit - step_end < 500 && t_stop < step_end);
+        if (step)
+            printf("       T5 %s inside a re-init step: step %llu ms, stop -> exit %llu ms, step end -> exit %llu ms\n",
+                   how[k], (unsigned long long)(step_end - op.front()), (unsigned long long)(t_exit - t_stop),
+                   (unsigned long long)(t_exit - step_end));
+        if (c >= 0)
+            close(c);
+        if (rc == -2)
+            stop(pid);
+    }
+
+    /* (c) Inside a held open (pinedio_init at its timeout): the stop while it
+     * is held, the stick healthy again, then the release: the exit follows the
+     * open's return within 1 s (the re-init that follows is short). */
+    for (int k = 0; k < 2; k++) {
+        reset_dirs();
+        std::string log = g_tmp + "/t5c.log";
+        bus("1-2 SERIAL01 1\n");
+        pid_t pid = start(mesh({}), log);
+        wait_status("loraconf868.sock", "RADIO=READY", 8000);
+        bus("1-2 SERIAL01 1 ioerr\n");
+        sleep_ms(200);
+        write_text(g_fake + "/opendelay", "1\n");
+        conf("loraconf868.sock", "SET SF=10", "");
+        bool held = wait_log(g_fake + "/log", " openwait 1-2", 5000);
+        int c = stop_send(pid, k);
+        bus("1-2 SERIAL01 1\n");                      /* the stick works again */
+        uint64_t t0 = now_ms();
+        release("opendelay");                         /* the library call returns */
+        std::string reply = k ? read_line(c, 5000) : "OK";
+        int rc = wait_exit(pid, 10000);
+        uint64_t ms = now_ms() - t0;
+        expect(std::string("T5 ") + how[k] + " inside a held open: exit 0 within 1 s after the call returns",
+               held && reply == "OK" && rc == 0 && ms < 1000);
+        printf("       T5 %s inside a held open -> exit after its return: %llu ms\n", how[k], (unsigned long long)ms);
+        expect("T5 the open was held until released (no watchdog)", held_until_released());
+        if (c >= 0)
+            close(c);
+        if (rc == -2)
+            stop(pid);
+    }
+}
+
 /* --usb-port on the real binary: two sticks without a serial (Rule B refuses
  * those), the port names one; a library without the open by port refuses. */
 static void scenario_usb_port(void)
@@ -1323,6 +1536,12 @@ int main(int argc, char *argv[])
     expect("the chat client builds",
            sh("cc -std=gnu11 -Wall -o '" + g_chat + "' '" + exe_dir + "/../clients/chat/lorachat_ncurses_113.c' -lncurses -lpthread") == 0);
 
+    if (CH341_PROCESS_STOP) {
+        /* test_ch341_stop: the stop scenarios (their re-init steps take ~10 s
+         * on the fake), apart, so each binary stays inside the suite's time limit. */
+        scenario_quit();
+        scenario_stop_in_retry();
+    } else {
     scenario_cli();
     scenario_usb_port();
     scenario_unplug_and_return();
@@ -1341,6 +1560,7 @@ int main(int argc, char *argv[])
     scenario_no_hotplug();
     scenario_pinedio_power();
     scenario_chat_keeps_power();
+    }
 
     if (g_fail)
         sh("for f in '" + g_tmp + "'/*.log '" + g_fake + "/log'; do echo \"== $f\"; tail -n 40 \"$f\"; done");

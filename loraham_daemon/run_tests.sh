@@ -86,6 +86,7 @@ test_binaries=(
   "$TEST_DIR/test_ch341_hal"
   "$TEST_DIR/test_ch341_no_dlopen"
   "$TEST_DIR/test_ch341_process"
+  "$TEST_DIR/test_ch341_stop"
   "$TEST_DIR/test_stdout_stamp"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
@@ -1144,6 +1145,7 @@ build_one_config_dispatch_test() {
     "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \
+    "$SCRIPT_DIR/daemon_lifecycle.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
     "$SCRIPT_DIR/radio_cad.cpp" \
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
@@ -1204,6 +1206,7 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_ch341_loader" "$TEST_DIR/test_ch341_loader.cpp" "$SCRIPT_DIR/ch341_loader.cpp"
   build_one_cpp_sources "$TEST_DIR/test_ch341_no_dlopen" "$TEST_DIR/test_ch341_no_dlopen.cpp"
   build_one_cpp_sources "$TEST_DIR/test_ch341_process" "$TEST_DIR/test_ch341_process.cpp"
+  build_one_cpp_sources "$TEST_DIR/test_ch341_stop" -DCH341_PROCESS_STOP=1 "$TEST_DIR/test_ch341_process.cpp"
   build_one_cpp_sources "$TEST_DIR/test_stdout_stamp" "$TEST_DIR/test_stdout_stamp.cpp" "$SCRIPT_DIR/daemon_stdout_stamp.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
