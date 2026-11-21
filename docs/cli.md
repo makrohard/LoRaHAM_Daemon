@@ -132,7 +132,7 @@ for the life of the process, that no `CONF` command can grant or revoke.
 | `--tx-mode MODE` | the boot TX mode | `managed` when the option is absent |
 | `--cad-monitor VAL` | the boot `CAD=0/1` monitoring opt-in | off when absent |
 | `--cad-rssi DBM` | the CAD busy RSSI threshold | keeps the built-in `-90` dBm when absent |
-| `--high-power` | permission for `POWER=20` on an SX127x board | off when absent; accepted and inert on an SX1262 |
+| `--high-power` | permission for `POWER=20` on an SX127x board, `21`–`22` on `meshstick-1262` | off when absent; accepted and inert on the other SX1262 presets |
 | `--ocp MA` | the PA over-current limit, at every power level | 100 mA when absent, on every chip |
 | `--id ID` | the names of this process's sockets, lock and `-d` log: `lora-ID.sock`, `loraf-ID.sock`, `loraconf-ID.sock`, `instance-ID.lock`, `/tmp/lora_daemon-ID.log`; `ID=` in `GET STATUS` | the band's names when absent |
 | `--usb-serial S` | which Meshstick to open when two or more are plugged in (pine64 compares the first 8 characters); `BOUND=` in `GET STATUS` names the stick opened | the only stick, or the one stick without a serial |
@@ -146,7 +146,8 @@ usage error and exits non-zero.
 What the threshold does at runtime is in [limits.md](limits.md).
 
 `--high-power` permits exactly `POWER=20` on an SX127x board — the datasheet's restricted +20 dBm
-mode — and nothing else. **The permission is process-wide:** once the process was started with it,
+mode — and `21`–`22` on `meshstick-1262` (startup line `WARNING SX1262 POWER 21..22 permitted
+(--high-power)`; [limits.md](limits.md)), nothing else. **The permission is process-wide:** once the process was started with it,
 *any* client's `SET POWER=20` on that band is admitted — a MeshCom firmware or a chat client that
 carries 20 in its own configuration will then drive the chip at +20 dBm, and the duty-cycle contract
 below applies to everything that band transmits. Otherwise it selects no power (the boot default is unchanged, a client still has to
@@ -162,7 +163,7 @@ accepted `POWER=20`:
 [433] WARNING outside-spec operation can damage hardware; warranty void if disregarded
 ```
 
-Without the flag a `SET POWER=20` is refused before any hardware effect, with
+Without the flag a `SET POWER=20` (Meshstick: `21`, `22`) is refused before any hardware effect, with
 `high-power mode not enabled (start with --high-power)` as the logged reason (the wire reply is the
 ordinary `ERR INVALID`). The permission and the running chip family are reported in `GET STATUS`
 as `HIGHPOWER=` and `CHIPFAMILY=` ([conf-protocol.md](conf-protocol.md)). The contract, the
@@ -174,7 +175,7 @@ is rounded: SX127x `0` (protection off), 45–120 in steps of 5, 130–240 in st
 in steps of 5 (the SX1262 has no "off"). Without it the limit is 100 mA on every chip. It is
 reported in `GET STATUS` as `OCP=`. One line is printed at startup for `--ocp 0`, and when
 `--high-power` is given on an SX127x board without `--ocp` or with a value of 100 or less (on an
-SX1262 `--high-power` is inert and its own line says so; no OCP warning follows); a value above 100
+SX1262 `--high-power` has its own line; no OCP warning follows); a value above 100
 under `--high-power` runs without a notice:
 
 ```

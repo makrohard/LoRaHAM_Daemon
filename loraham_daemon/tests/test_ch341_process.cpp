@@ -1326,7 +1326,11 @@ static void scenario_fds(void)
 
 /* Preset POWER ceilings through the public path (the daemon binary, the CONF
  * socket, STATUS): the PineDio takes the SX1262 range 0..20 (1.4.2: its
- * placeholder 14 is gone); the Meshstick's raised 22 reaches the process. */
+ * placeholder 14 is gone); the Meshstick's raised 22 reaches the process,
+ * and from 1.5.0 its 21 and 22 need --high-power: refused with the named
+ * reason without it; with it admitted by the CONF layer AND applied by the
+ * driver (its above-20 warning line is printed only after an accepted
+ * setOutputPower). */
 static void scenario_pinedio_power(void)
 {
     reset_dirs();
@@ -1342,15 +1346,60 @@ static void scenario_pinedio_power(void)
     expect("S9 STATUS still POWER=20", status(C).find(" ID=pd1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=20") != std::string::npos);
     stop(pid);
 
-    /* The Meshstick's raised ceiling (22) reaches the running daemon. */
+    /* The Meshstick without --high-power: 0..20 only; 21 and 22 refused
+     * with the switch named, STATUS keeps the applied 20. */
     reset_dirs();
     std::string log2 = g_tmp + "/s9b.log";
     bus("1-2 - 1\n");
     pid = start(mesh({ "--id", "ms9" }), log2);
     const std::string M = "loraconf-ms9.sock";
+    const std::string why = "(high-power mode not enabled (start with --high-power))";
     expect("S9 Meshstick: READY", wait_status(M, "RADIO=READY", 8000));
-    expect("S9 Meshstick SET POWER=22 applied (its preset ceiling)", conf(M, "SET POWER=22", "") == "OK");
-    expect("S9 Meshstick SET POWER=23 refused", conf(M, "SET POWER=23", "").rfind("ERR", 0) == 0);
+    expect("S9 Meshstick SET POWER=20 applied without the flag", conf(M, "SET POWER=20", "") == "OK");
+    std::string r21 = conf(M, "SET POWER=21", ""), r22 = conf(M, "SET POWER=22", "");
+    expect("S9 Meshstick SET POWER=21 refused without the flag (" + r21 + ")", r21.rfind("ERR", 0) == 0);
+    expect("S9 Meshstick SET POWER=22 refused without the flag (" + r22 + ")", r22.rfind("ERR", 0) == 0);
+    expect("S9 Meshstick the 21 refusal names the switch", wait_log(log2, "CONFIG rejected: POWER=21 " + why, 3000));
+    expect("S9 Meshstick the 22 refusal names the switch", wait_log(log2, "CONFIG rejected: POWER=22 " + why, 3000));
+    expect("S9 Meshstick STATUS still POWER=20", status(M).find(" SF=- POWER=20") != std::string::npos);
+    expect("S9 Meshstick no above-20 apply without the flag", !log_has(log2, "above +20 dBm"));
+    stop(pid);
+
+    /* With --high-power: the boot line, then 22 admitted and applied. */
+    reset_dirs();
+    std::string log3 = g_tmp + "/s9c.log";
+    bus("1-2 - 1\n");
+    pid = start(mesh({ "--id", "ms9", "--high-power" }), log3);
+    expect("S9 Meshstick --high-power: READY", wait_status(M, "RADIO=READY", 8000));
+    expect("S9 Meshstick --high-power: the boot line names 21..22",
+           log_has(log3, "WARNING SX1262 POWER 21..22 permitted (--high-power)"));
+    expect("S9 Meshstick SET POWER=22 applied with the flag", conf(M, "SET POWER=22", "") == "OK");
+    expect("S9 Meshstick STATUS POWER=22", status(M).find(" SF=- POWER=22") != std::string::npos);
+    expect("S9 Meshstick the driver applied 22 (its warning line)",
+           wait_log(log3, "WARNING POWER=22 above +20 dBm", 3000));
+    /* The FSK apply path has its own POWER branch in the driver. */
+    expect("S9 Meshstick SET MODE=FSK POWER=21 applied with the flag", conf(M, "SET MODE=FSK POWER=21", "") == "OK");
+    expect("S9 Meshstick the driver applied 21 in FSK (its warning line)",
+           wait_log(log3, "WARNING POWER=21 above +20 dBm", 3000));
+    expect("S9 Meshstick back to LoRa", conf(M, "SET MODE=LORA", "") == "OK");
+    std::string r23 = conf(M, "SET POWER=23", "");
+    expect("S9 Meshstick SET POWER=23 refused with the flag (" + r23 + ")", r23.rfind("ERR", 0) == 0);
+    expect("S9 Meshstick the 23 refusal is generic",
+           wait_log(log3, "CONFIG rejected: POWER=23 (invalid LoRa value)", 3000));
+    stop(pid);
+
+    /* The PineDio (ceiling 20) with --high-power: inert, 21 still refused
+     * with the generic reason. */
+    reset_dirs();
+    std::string log4 = g_tmp + "/s9d.log";
+    bus("1-2 - 1\n");
+    pid = start({ "--radio", "868", "--hw", "pinedio-usb-1262", "--id", "pd1", "--high-power" }, log4);
+    expect("S9 PineDio --high-power: READY", wait_status(C, "RADIO=READY", 8000));
+    expect("S9 PineDio --high-power: the inert line", log_has(log4, "--high-power: not applicable on"));
+    std::string p21 = conf(C, "SET POWER=21", "");
+    expect("S9 PineDio --high-power SET POWER=21 refused (" + p21 + ")", p21.rfind("ERR", 0) == 0);
+    expect("S9 PineDio --high-power the 21 refusal is generic",
+           wait_log(log4, "CONFIG rejected: POWER=21 (invalid LoRa value)", 3000));
     stop(pid);
 }
 

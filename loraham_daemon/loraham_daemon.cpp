@@ -307,7 +307,8 @@ static void daemon_print_usage(const char *argv0)
     printf("      --tx-mode MODE      TX mode: direct, managed (default: managed)\n");
     printf("      --cad-monitor VAL   CAD=0/1 monitor: on, off (default: off)\n");
     printf("      --cad-rssi DBM      CAD busy threshold, integer dBm -130..0 (default: -90)\n");
-    printf("      --high-power        permit POWER=20 on an SX127x board (+20 dBm; default: off)\n");
+    printf("      --high-power        permit POWER=20 on an SX127x board (+20 dBm), 21..22 on\n"
+           "                          meshstick-1262 (default: off)\n");
     printf("                          datasheet: duty cycle <= 1 %%, VSWR <= 3:1; nothing enforces it\n");
     printf("      --ocp MA            PA over-current limit in mA, every power level\n");
     printf("                          SX127x: %s (default: 100)\n",
@@ -691,7 +692,10 @@ static bool daemon_parse_args(int argc, char *argv[])
  * path re-runs on every MODE switch and would repeat the block. The full
  * contract is stated here because the log is where "the operator opted in"
  * is witnessed later; each later accepted SET POWER=20 adds one concise line
- * (sx127x_driver.cpp). On an SX1262 the flag changes nothing and says so.
+ * (sx127x_driver.cpp). On an SX1262 whose preset raised the ceiling
+ * (meshstick-1262) the flag admits 21 up to it, and each accepted SET adds
+ * its own line (sx1262_driver.cpp); on every other SX1262 the flag changes
+ * nothing and says so.
  */
 static void daemon_print_high_power_notice(void)
 {
@@ -701,8 +705,15 @@ static void daemon_print_high_power_notice(void)
     const char *tag = daemon_band()->tag;
 
     if (daemon_hw_profile.family != DAEMON_CHIP_FAMILY_SX127X) {
-        printf("[%s] --high-power: not applicable on %s (0..20 dBm accepted "
-               "unchanged)\n", tag, daemon_chip_family_name(daemon_hw_profile.family));
+        int max = config_policy_sx1262_power_max();
+        if (max > 20)
+            printf("[%s] WARNING SX1262 POWER 21..%d permitted (--high-power); "
+                   "this flag does not select power; regulatory limits apply, "
+                   "operator responsible\n", tag, max);
+        else
+            printf("[%s] --high-power: not applicable on %s (0..20 dBm accepted "
+                   "unchanged)\n", tag, daemon_chip_family_name(daemon_hw_profile.family));
+        fflush(stdout);
         return;
     }
 

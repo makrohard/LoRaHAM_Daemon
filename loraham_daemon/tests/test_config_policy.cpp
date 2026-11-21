@@ -146,7 +146,8 @@ static void test_power_policy_per_family(void)
     expect_int("sx127x with permission still rejects 1 (RFO path)",
                config_policy_power_valid_family(1, DAEMON_CHIP_FAMILY_SX127X, true), 0);
 
-    /* SX1262: the permission is irrelevant in both directions. */
+    /* SX1262 at the default ceiling (20, waveshare/PineDio): the permission
+     * changes nothing, as nothing above 20 exists there. */
     expect_int("sx1262 keeps 0",
                config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262, false), 1);
     expect_int("sx1262 keeps 20 without permission",
@@ -162,8 +163,9 @@ static void test_power_policy_per_family(void)
 }
 
 /* The SX1262 ceiling a preset may raise (meshstick-1262: 22). Without it
- * 21 and 22 stay refused; with it they pass and 23 does not; SX127x and its
- * permission are untouched by it. */
+ * 21 and 22 stay refused; with it they pass only with the --high-power
+ * permission (1.5.0) and 23 never does; SX127x and its permission are
+ * untouched by it. */
 static void test_sx1262_power_ceiling(void)
 {
     config_policy_sx1262_power_max_reset();
@@ -171,15 +173,30 @@ static void test_sx1262_power_ceiling(void)
     expect_int("default: sx1262 rejects 22",
                config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, false), 0);
 
+    expect_int("default: sx1262 rejects 22 with permission too",
+               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, true), 0);
+
     config_policy_set_sx1262_power_max(22);
-    expect_int("ceiling 22: sx1262 accepts 21",
-               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 1);
-    expect_int("ceiling 22: sx1262 accepts 22",
-               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("ceiling 22: sx1262 accepts 20 without permission",
+               config_policy_power_valid_family(20, DAEMON_CHIP_FAMILY_SX1262, false), 1);
+    expect_int("ceiling 22: sx1262 rejects 21 without permission",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx1262 rejects 22 without permission",
+               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx1262 accepts 21 with permission",
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, true), 1);
+    expect_int("ceiling 22: sx1262 accepts 22 with permission",
+               config_policy_power_valid_family(22, DAEMON_CHIP_FAMILY_SX1262, true), 1);
+    expect_int("ceiling 22: sx1262 rejects 23 with permission",
+               config_policy_power_valid_family(23, DAEMON_CHIP_FAMILY_SX1262, true), 0);
     expect_int("ceiling 22: sx1262 rejects 23",
                config_policy_power_valid_family(23, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx1262 accepts 0 without permission",
+               config_policy_power_valid_family(0, DAEMON_CHIP_FAMILY_SX1262, false), 1);
     expect_int("ceiling 22: sx1262 still rejects -1",
                config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+    expect_int("ceiling 22: sx1262 rejects -1 with permission too",
+               config_policy_power_valid_family(-1, DAEMON_CHIP_FAMILY_SX1262, true), 0);
     expect_int("ceiling 22: sx127x unchanged, 21 rejected with permission",
                config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX127X, true), 0);
     expect_int("ceiling 22: sx127x unchanged, 20 needs the permission",
@@ -189,7 +206,7 @@ static void test_sx1262_power_ceiling(void)
 
     config_policy_sx1262_power_max_reset();
     expect_int("reset: sx1262 rejects 21 again",
-               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, false), 0);
+               config_policy_power_valid_family(21, DAEMON_CHIP_FAMILY_SX1262, true), 0);
 }
 
 static void test_fsk_policy(void)

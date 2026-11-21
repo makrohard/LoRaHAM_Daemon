@@ -8,6 +8,8 @@
   SPI boards are unchanged (exit 5); `retry` there is refused.
 - `GET STATUS`: two fields after `ID=`, `RADIOERR=` (the mode) and `USBFAULT=` (the faults since start, `-` on SPI).
 - CONF: `QUIT` / `EXIT` answer `OK` and stop the daemon as SIGTERM does (exit 0).
+- **Behaviour change:** `meshstick-1262`: POWER 21 and 22 need `--high-power` (refused without it, as an SX127x 20
+  is). Upgrade: start a Meshstick daemon that is to send at 21 or 22 with `--high-power`.
 
 ## 1.4.2
 

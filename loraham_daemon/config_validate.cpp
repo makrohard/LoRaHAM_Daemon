@@ -80,17 +80,19 @@ static bool config_validate_power_value(const std::string &val,
            config_policy_power_valid_family(p, chip_family, high_power);
 }
 
-/* The one POWER refusal that has a remedy: exactly 20 on an SX127x board
- * without the boot permission. Named so the operator finds the switch
- * instead of reading "invalid value" for a number the datasheet lists. */
+/* The one POWER refusal that has a remedy: a value only the boot permission
+ * admits (SX127x: exactly 20; SX1262: 21 up to the preset's ceiling), sent
+ * without it. Named so the operator finds the switch instead of reading
+ * "invalid value" for a number the datasheet lists. */
 static bool config_validate_power_needs_permission(const std::string &val,
                                                    DaemonChipFamily chip_family,
                                                    bool high_power)
 {
     int p = 0;
 
-    return chip_family == DAEMON_CHIP_FAMILY_SX127X && !high_power &&
-           config_value_parse_int_exact(val, &p) && p == 20;
+    return config_value_parse_int_exact(val, &p) &&
+           !config_policy_power_valid_family(p, chip_family, high_power) &&
+           config_policy_power_valid_family(p, chip_family, true);
 }
 
 static bool config_validate_lora_value(const std::string &key,

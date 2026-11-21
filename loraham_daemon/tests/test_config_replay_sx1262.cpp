@@ -8,7 +8,9 @@
  *     FSK key the SX1262 accepts (FREQ POWER BR FREQDEV RXBW SHAPING ENCODING
  *     PREAMBLE SYNC; OOK is refused on this chip and never recorded) enters
  *     the record, last value per key, and a MODE switch starts it over;
- *   - POWER=22 is applied on replay with the 21/22 dBm warning printed again;
+ *   - POWER=22 is applied on replay with the 21/22 dBm warning printed again
+ *     (a Meshstick started with --high-power: the CONF layer and the driver
+ *     both hold the permission, 1.5.0);
  *   - the over-current limit (RegOcp) is written after the re-init's begin()
  *     and again after a replayed MODE switch: the final value is the
  *     configured one, never RadioLib's 60 mA;
@@ -49,7 +51,7 @@ struct Rig {
     Sx126xRegisterModel model;
     Module mod;
     Sx1262Driver drv;
-    Rig() : mod(&model, 21, 16, 18, 20), drv(&mod, 1.8f, -1, 140) { model.reset(); }
+    Rig() : mod(&model, 21, 16, 18, 20), drv(&mod, 1.8f, -1, 140, true) { model.reset(); }
 };
 
 static RadioRfDefaults defaults(void)

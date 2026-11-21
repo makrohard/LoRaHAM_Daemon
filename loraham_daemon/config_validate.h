@@ -24,7 +24,8 @@ void config_validation_result_init(ConfigValidationResult *result,
  * freq_min/max_mhz is the band's operational frequency policy — deliberately without defaults so no caller can
  * silently validate FREQ against an unbounded range.
  * high_power is the process's --high-power permission (daemon_high_power_boot.h): it admits exactly
- * POWER=20 on an SX127x board and nothing else. Deliberately without a default, for the same
+ * POWER=20 on an SX127x board, POWER 21 up to the preset's ceiling on an SX1262 board (meshstick-1262:
+ * 22), and nothing else. Deliberately without a default, for the same
  * reason: the whole-command prevalidation is where a POWER=20 without permission is refused, before
  * any hardware effect, and every caller must say which permission it holds. */
 bool config_validate_command(const ConfigCommand &cmd,

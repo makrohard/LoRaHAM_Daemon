@@ -10,21 +10,22 @@
 /* --- Construction ---------------------------------------------------------- */
 
 Sx1262Driver::Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin,
-                           int ocp_ma)
+                           int ocp_ma, bool high_power)
     : RadioDriver(nullptr),
       mod_(mod),
       radio_(new SX1262(mod)),
       tcxo_voltage_(tcxo_voltage),
       txen_pin_(txen_pin),
-      ocp_ma_(ocp_ma)
+      ocp_ma_(ocp_ma),
+      high_power_(high_power)
 {
     phy_ = radio_.get();
 }
 
 RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,
-                                  int txen_pin, int ocp_ma)
+                                  int txen_pin, int ocp_ma, bool high_power)
 {
-    return new Sx1262Driver(mod, tcxo_voltage, txen_pin, ocp_ma);
+    return new Sx1262Driver(mod, tcxo_voltage, txen_pin, ocp_ma, high_power);
 }
 
 const char *Sx1262Driver::chipName() const
@@ -63,7 +64,8 @@ static int16_t sx1262_apply_rf_switch(SX1262 *radio, Module *mod, int txen_pin)
 }
 
 /* --- Above +20 dBm ----------------------------------------------------------- */
-/* Only a preset that raised the ceiling (config_policy.h) gets here: one line
+/* Only a preset that raised the ceiling, under --high-power (config_policy.h),
+ * gets here: one line
  * per accepted apply, as SX127x prints for its +20 dBm mode. */
 static void sx1262_warn_above_20(int power_dbm, int state)
 {
@@ -290,10 +292,11 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "POWER") {
         int p = 0;
         if (config_value_parse_int_exact(val, &p) &&
-            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262, false)) {
-            /* Chip range -9..+22 dBm; the CONF policy (0..20, or the
-             * preset's ceiling) lies inside it, and RadioLib validates on
-             * top. */
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262,
+                                             high_power_)) {
+            /* Chip range -9..+22 dBm; the CONF policy (0..20, or with
+             * --high-power the preset's ceiling) lies inside it, and
+             * RadioLib validates on top. */
             state = radio.setOutputPower((int8_t)p);
             driver_config_print_state_int("POWER", p, state);
             sx1262_warn_above_20(p, state);
@@ -332,7 +335,8 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     if (key == "POWER") {
         int p = 0;
         if (config_value_parse_int_exact(val, &p) &&
-            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262, false)) {
+            config_policy_power_valid_family(p, DAEMON_CHIP_FAMILY_SX1262,
+                                             high_power_)) {
             state = radio.setOutputPower((int8_t)p);
             driver_config_print_state_int("POWER", p, state);
             sx1262_warn_above_20(p, state);

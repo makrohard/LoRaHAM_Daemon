@@ -122,7 +122,7 @@ process accepts exactly `POWER=20`; what that does depends on the board:
 |---|---|---|
 | `uputronics-ce0` / `-ce1` | bare HopeRF RFM95/98W: the chip's PA_BOOST drives the antenna | the datasheet's own +20 dBm (100 mW) case, under its restrictions (duty ≤ 1 %, VSWR ≤ 3:1, VDD 2.4–3.7 V — [limits.md](limits.md)). The proof case for the feature; requested chip power, not a calibrated connector measurement |
 | `waveshare-sx1262` | SX1262, single PA path | nothing new: `0`–`20` was always accepted and the flag is inert |
-| `meshstick-1262` | SX1262, single PA path | the flag is inert; this preset accepts `0`–`22` (the manufacturer's maximum) and prints a warning for `21` and `22` — [limits.md](limits.md) |
+| `meshstick-1262` | SX1262, single PA path | `0`–`20` always; `21`–`22` (the manufacturer's maximum) need `--high-power` and print a warning per apply — [limits.md](limits.md) |
 | `pinedio-usb-1262` | SX1262, single PA path | the flag is inert; this preset accepts `0`–`20` (the SX1262 range) |
 | `ch341-rfm98pw-433` | **HopeRF RFM98PW** on PA_BOOST, as `loraham` 433 below | the same as `loraham` 433, with the same caveat |
 | `loraham`, 868 | described as a 100 mW module; exact module unconfirmed | as a bare module; do not read a confirmed BOM into it |

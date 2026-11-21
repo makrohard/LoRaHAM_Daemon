@@ -94,10 +94,12 @@ bool config_policy_power_valid(int power)
  * this drive condition; the permission is the same switch there, and that
  * case is documented as unvalidated (docs/hardware.md).
  *
- * SX1262 keeps 0..20: its PA has a single output path and no such restriction,
- * so the permission changes nothing there. A preset may raise the ceiling to
- * what its manufacturer specifies (the ELECROW Meshstick: +22 dBm, the
- * SX1262's own maximum); only that preset sets it, at startup.
+ * SX1262 takes 0..20 always: its PA has a single output path and no such
+ * restriction. A preset may raise the ceiling to what its manufacturer
+ * specifies (the ELECROW Meshstick: +22 dBm, the SX1262's own maximum); only
+ * that preset sets it, at startup. The values above 20 are admitted only with
+ * --high-power, the same explicit acknowledgement as the SX127x +20 dBm mode
+ * (1.5.0); on a preset whose ceiling is 20 the permission changes nothing.
  */
 #define CONFIG_POLICY_SX1262_POWER_MAX_DEFAULT 20
 
@@ -127,7 +129,9 @@ bool config_policy_power_valid_family(int power, DaemonChipFamily family,
         return high_power && power == 20;
     }
 
-    return power >= 0 && power <= g_sx1262_power_max;
+    if (power >= 0 && power <= 20)
+        return true;
+    return high_power && power > 20 && power <= g_sx1262_power_max;
 }
 
 /* --- FSK CONFIG value policy -------------------------------------------- */

@@ -22,8 +22,8 @@
  *    compatibility control bits (setSyncWord(byte, 0x44)); on-air
  *    compatibility with SX127x peers is a bench item.
  *  - CRC: setCRC(len) -- LoRa CRC on == 2 bytes, off == 0.
- *  - Power range -9..+22 dBm (RadioLib validates; the CONF policy stays
- *    0..20 and therefore inside the chip's range).
+ *  - Power range -9..+22 dBm (RadioLib validates; the CONF policy is 0..20,
+ *    or with --high-power up to the preset's ceiling, inside the chip's range).
  *  - No OOK, and the FSK RXBW raster differs from the SX127x (RadioLib
  *    validates the chip's own raster and rejects foreign values).
  *  - Live RSSI through the GetRssiInst command (RadioLib getRSSI(false)),
@@ -33,9 +33,14 @@
 class Sx1262Driver : public RadioDriver {
 public:
     /* ocp_ma: the PA over-current limit, from --ocp or the 100 mA default
-     * (daemon_ocp_boot.h), written after every RadioLib init. */
+     * (daemon_ocp_boot.h), written after every RadioLib init.
+     * high_power: the process's --high-power permission; it admits POWER
+     * above 20 up to the preset's ceiling (config_policy.h). Defence in
+     * depth, as on SX127x: the whole-command prevalidation has already
+     * refused a value the process may not apply. Last, so a caller that
+     * gives only ocp_ma keeps its meaning. */
     Sx1262Driver(Module *mod, float tcxo_voltage, int txen_pin,
-                 int ocp_ma = 100);
+                 int ocp_ma = 100, bool high_power = false);
 
     int16_t begin(const RadioRfDefaults *defaults) override;
     int16_t switchMode(RadioMode_t mode,
@@ -62,10 +67,11 @@ private:
     float tcxo_voltage_;
     int txen_pin_;
     int ocp_ma_;
+    bool high_power_;   /* the process's --high-power permission (defence in depth) */
 };
 
 RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,
-                                  int txen_pin, int ocp_ma);
+                                  int txen_pin, int ocp_ma, bool high_power);
 
 /*
  * D8 (SX126x): exactly one profile-aware diagnostic line for a failed

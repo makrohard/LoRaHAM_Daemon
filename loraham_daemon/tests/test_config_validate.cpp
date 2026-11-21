@@ -1,6 +1,7 @@
 #include "../config_validate.h"
 
 #include "../config_parser.h"
+#include "../config_policy.h"
 #include "../radio_channel.h"
 
 #include <stdio.h>
@@ -398,6 +399,62 @@ static void test_power_permission_is_irrelevant_on_sx1262(void)
     expect_str("... generic reason, never the switch", r.reason, "invalid LoRa value");
 }
 
+/* 1.5.0: on a preset with a raised SX1262 ceiling (meshstick-1262: 22),
+ * 21 and 22 need the boot permission, with the same named reason as the
+ * SX127x 20, on both validator paths; 23 stays generic. */
+static void test_sx1262_above_20_needs_the_boot_permission(void)
+{
+    int ok = 0;
+    ConfigValidationResult r;
+
+    config_policy_set_sx1262_power_max(22);
+
+    r = validate_hp("SET POWER=20", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick POWER=20 valid without permission", ok, 1);
+    r = validate_hp("SET POWER=21", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick POWER=21 without permission is rejected", ok, 0);
+    expect_str("... key", r.key, "POWER");
+    expect_str("... reason names the switch", r.reason,
+               "high-power mode not enabled (start with --high-power)");
+    r = validate_hp("SET POWER=22", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick POWER=22 without permission is rejected", ok, 0);
+    expect_str("... reason names the switch", r.reason,
+               "high-power mode not enabled (start with --high-power)");
+    r = validate_hp("SET SF=9 POWER=22", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick SF=9 POWER=22 without permission: whole command rejected", ok, 0);
+
+    r = validate_hp("SET POWER=21", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, true, &ok);
+    expect_int("meshstick POWER=21 with permission is valid", ok, 1);
+    r = validate_hp("SET POWER=22", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, true, &ok);
+    expect_int("meshstick POWER=22 with permission is valid", ok, 1);
+    r = validate_hp("SET POWER=23", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, true, &ok);
+    expect_int("meshstick POWER=23 rejected with permission", ok, 0);
+    expect_str("... generic reason", r.reason, "invalid LoRa value");
+    r = validate_hp("SET POWER=23", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick POWER=23 rejected without permission", ok, 0);
+    expect_str("... and not blamed on the switch", r.reason, "invalid LoRa value");
+
+    /* The FSK validator's own POWER branch. */
+    r = validate_hp("SET MODE=FSK POWER=22", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, false, &ok);
+    expect_int("meshstick MODE=FSK POWER=22 without permission is rejected", ok, 0);
+    expect_str("... FSK path names the switch too", r.reason,
+               "high-power mode not enabled (start with --high-power)");
+    r = validate_hp("SET MODE=FSK POWER=22", RADIO_MODE_LORA,
+                    DAEMON_CHIP_FAMILY_SX1262, true, &ok);
+    expect_int("meshstick MODE=FSK POWER=22 with permission is valid", ok, 1);
+
+    config_policy_sx1262_power_max_reset();
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -436,6 +493,7 @@ int main(int argc, char **argv)
     test_power_20_permission_covers_the_fsk_path();
     test_power_20_multi_key_is_whole_command();
     test_power_permission_is_irrelevant_on_sx1262();
+    test_sx1262_above_20_needs_the_boot_permission();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

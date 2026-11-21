@@ -40,7 +40,8 @@ static RadioDriver *hw_driver_create(Module *mod, bool is_hf)
                                     daemon_hw_profile.tcxo_voltage,
                                     daemon_hw_profile.txen >= 0 ? daemon_hw_profile.txen
                                                                 : daemon_hw_profile.rxen,
-                                    daemon_ocp_effective_ma(DAEMON_CHIP_FAMILY_SX1262));
+                                    daemon_ocp_effective_ma(DAEMON_CHIP_FAMILY_SX1262),
+                                    daemon_high_power_enabled());
 
     return sx127x_driver_create(mod, is_hf, daemon_high_power_enabled(),
                                 daemon_ocp_effective_ma(DAEMON_CHIP_FAMILY_SX127X));
