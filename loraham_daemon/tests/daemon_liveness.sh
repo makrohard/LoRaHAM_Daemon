@@ -8,7 +8,10 @@
 #
 # Only what is observed is excluded: a pid in state Z, or a pid whose /proc
 # entry is gone. Anything the predicate cannot read counts as a live daemon, so
-# a check never passes on a read it could not make.
+# a check never passes on a read it could not make. One exception, with
+# LIVENESS_SCOPE set: a daemon whose executable cannot be read counts as
+# foreign (not the caller's, never stopped), since the caller can always read
+# the executables of the processes it started (in_scope below).
 
 # Scope (1.5.0): LIVENESS_SCOPE, when set, is a ':'-separated list of
 # directories; only a loraham_daemon whose executable lies under one of them
