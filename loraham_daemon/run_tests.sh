@@ -212,6 +212,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_tx_executor.cpp"
   "$SCRIPT_DIR/radio_cad.cpp"
   "$SCRIPT_DIR/config_status.cpp"
+  "$SCRIPT_DIR/config_radio.cpp"
   "$SCRIPT_DIR/config_dispatch.cpp"
   "$SCRIPT_DIR/daemon_tx_async_runtime.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"
@@ -475,6 +476,7 @@ build_one_data_tx_queue_runtime_test() {
     "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_radio.cpp" \
     "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
@@ -1082,6 +1084,8 @@ build_one_config_apply_transactional_test() {
     "$src" \
     "$SCRIPT_DIR/config_apply.cpp" \
     "$SCRIPT_DIR/config_replay.cpp" \
+    "$SCRIPT_DIR/config_radio.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/radio_tx_limit.cpp" \
     "$SCRIPT_DIR/daemon_band.cpp" \
     "$SCRIPT_DIR/config_parser.cpp" \
@@ -1142,6 +1146,7 @@ build_one_config_dispatch_test() {
     "${radiolib_cflags[@]}" \
     "$src" \
     "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_radio.cpp" \
     "$SCRIPT_DIR/config_replay.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \
     "$SCRIPT_DIR/config_dispatch.cpp" \

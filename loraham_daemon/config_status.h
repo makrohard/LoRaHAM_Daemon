@@ -30,6 +30,11 @@ int config_status_command_equals(const char *line,
  * (ERR MALFORMED), 0 = neither. */
 int config_status_is_quit(const char *line);
 
+static inline int config_status_is_get_radio(const char *line)
+{
+    return config_status_command_equals(line, "GET RADIO");
+}
+
 static inline int config_status_is_get_status(const char *line)
 {
     return config_status_command_equals(line, "GET STATUS");

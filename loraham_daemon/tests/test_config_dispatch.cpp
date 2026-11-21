@@ -1,5 +1,7 @@
 #include <chrono>
 #include <thread>
+#include <poll.h>
+#include "../config_replay.h"
 #include "../config_dispatch.h"
 #include "../daemon_lifecycle.h"
 
@@ -30,6 +32,8 @@ static int g_fail = 0;
 // Fake driver: overrides the virtual RadioDriver delegates and counts calls
 // exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
+    /* Every driver call (GET RADIO: zero). Atomic: T8a/T9 dispatch on a worker thread. */
+    mutable std::atomic<int> calls{0};
     int callback_count;
     int clear_callback_count;
     int start_receive_count;
@@ -45,6 +49,7 @@ struct FakeRadio : public RadioDriver {
 
     void setPacketReceivedAction(void (*cb)(void)) override
     {
+        calls++;
         last_callback = cb;
         callback_count++;
     }
@@ -54,23 +59,27 @@ struct FakeRadio : public RadioDriver {
      * driver needs this or the call dereferences null. */
     void clearPacketReceivedAction() override
     {
+        calls++;
         clear_callback_count++;
         last_callback = NULL;
     }
 
     int16_t startReceive() override
     {
+        calls++;
         start_receive_count++;
         return 0;
     }
 
     int16_t clearIrq(uint32_t) override
     {
+        calls++;
         return 0;
     }
 
     int16_t scanChannel() override
     {
+        calls++;
         scan_count++;
         return scan_result;
     }
@@ -82,22 +91,24 @@ struct FakeRadio : public RadioDriver {
     int get_rssi_count = 0;
     float getRSSI() override
     {
+        calls++;
         get_rssi_count++;
         return rssi;
     }
 
     float rssiProbe() override
     {
+        calls++;
         return rssi;
     }
 
-    int16_t begin(const RadioRfDefaults *) override { return 0; }
+    int16_t begin(const RadioRfDefaults *) override { calls++; return 0; }
     int16_t switchMode(RadioMode_t,
-                       const RadioRfDefaults *) override { return 0; }
+                       const RadioRfDefaults *) override { calls++; return 0; }
     int16_t applyLoraParam(const char *, const std::string &,
-                           const std::string &) override { return 0; }
+                           const std::string &) override { calls++; return 0; }
     int16_t applyFskParam(const char *, const std::string &,
-                          const std::string &) override { return 0; }
+                          const std::string &) override { calls++; return 0; }
     /* Deterministic drain-during-format hook. The CHANNEL formatter reads the live RSSI AFTER
      * its caller has already decided whether a packet is pending, so clearing `received` here
      * reproduces the real race -- the RX drain landing between the decision and the reply --
@@ -107,6 +118,7 @@ struct FakeRadio : public RadioDriver {
     // No Module behind the fake: live RSSI unavailable as before (-200).
     float readLiveRssi(RadioMode_t, bool) override
     {
+        calls++;
         if (drain_on_live_rssi)
             drain_on_live_rssi->store(false);
         return -200.0f;
@@ -115,16 +127,17 @@ struct FakeRadio : public RadioDriver {
      * packet is pending, so every fake needs both of these: the base class
      * forwards to phy_, which is NULL here. */
     int standby_count = 0;
-    int16_t standby() override { standby_count++; return 0; }
+    int16_t standby() override { calls++; standby_count++; return 0; }
 
     /* Mandatory since RadioDriver::rxDonePending() became pure virtual: a
      * default of false silently preserved the RX-erasure defect in any driver
      * that forgot it. These fakes never have a packet pending. */
-    bool rxDonePending() override { return false; }
+    bool rxDonePending() override { calls++; return false; }
 
-    const char *chipName() const override { return "FAKE"; }
+    const char *chipName() const override { calls++; return "FAKE"; }
     DaemonChipFamily chipFamily() const override
     {
+        calls++;
         return DAEMON_CHIP_FAMILY_SX127X;
     }
 };
@@ -2154,6 +2167,264 @@ static void test_reserved_setter_classification(void)
     client_slot_close(&slots[0]);
 }
 
+/* --- GET RADIO and Guard B (1.5.0, plan v17 §13 T6, T7, T8a, T9, N5) ------ */
+
+static const RadioRfDefaults k_radio_defaults_433 = {
+    433.900f, 12, 125.0f, 0x12, 8, 5, true, 1, 10
+};
+
+/* A radio_mutex holder on a second thread (a fake transmit() in flight): the
+ * test learns "held" and decides the release; always released and joined. */
+struct MutexHolder {
+    std::thread t;
+    std::atomic<bool> held{false};
+    std::atomic<bool> release{false};
+};
+
+static void holder_start(MutexHolder &h, RadioController *ctrl)
+{
+    h.t = std::thread([&h, ctrl] {
+        ctrl->radio_mutex.lock();
+        h.held = true;
+        while (!h.release)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ctrl->radio_mutex.unlock();
+    });
+    while (!h.held)
+        std::this_thread::yield();
+}
+
+static void holder_stop(MutexHolder &h)
+{
+    h.release = true;
+    if (h.t.joinable())
+        h.t.join();
+}
+
+/* One CONF client whose line is dispatched (the public path,
+ * config_dispatch_context) on a worker thread, so a dispatch that blocks on
+ * radio_mutex is seen as "not done" instead of hanging the test. */
+struct DispatchWorker {
+    int sv[2] = { -1, -1 };
+    ClientSlot slot[1];
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    uint8_t buf[buf_SIZE];
+    std::thread t;
+    std::atomic<bool> done{false};
+};
+
+static bool worker_start(DispatchWorker &w, RadioController *ctrl, const char *cmd)
+{
+    client_slot_init_all(w.slot, 1);
+    if (!make_socket_pair(w.sv) || event_loop_init(&w.set) != 0)
+        return false;
+    client_slot_set_fd(&w.slot[0], w.sv[1]);
+    SEND(write(w.sv[0], cmd, strlen(cmd)));
+    w.t = std::thread([&w, ctrl] {
+        event_loop_reset(&w.set);
+        event_loop_add_fd(&w.set, w.sv[1]);
+        if (event_loop_wait(&w.set, &w.ready, 1000000) == 1) {
+            ConfigDispatchContext ctx = make_context(w.slot, ctrl);
+            config_dispatch_context(&ctx, 1, &w.ready, w.buf);
+        }
+        w.done = true;
+    });
+    return true;
+}
+
+/* Done within `ms` (the watchdog), false otherwise. */
+static bool worker_wait(DispatchWorker &w, int ms)
+{
+    for (int i = 0; i < ms && !w.done; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    return w.done;
+}
+
+/* Everything the client has to read now (the dispatch wrote it before done). */
+static std::string worker_reply(DispatchWorker &w)
+{
+    std::string out;
+    char b[1024];
+    struct pollfd p = { w.sv[0], POLLIN, 0 };
+    while (poll(&p, 1, 0) == 1 && (p.revents & POLLIN)) {
+        ssize_t n = read(w.sv[0], b, sizeof(b));
+        if (n <= 0)
+            break;
+        out.append(b, (size_t)n);
+    }
+    return out;
+}
+
+static void worker_end(DispatchWorker &w)
+{
+    if (w.t.joinable())
+        w.t.join();
+    client_slot_close(&w.slot[0]);
+    if (w.sv[0] >= 0)
+        close(w.sv[0]);
+    event_loop_close(&w.set);
+}
+
+/* One line dispatched on a worker, `ms` watchdog: the reply, or "(blocked)". */
+static std::string dispatch_watched(RadioController *ctrl, const char *cmd, int ms, MutexHolder *h)
+{
+    DispatchWorker w;
+    if (!worker_start(w, ctrl, cmd))
+        return "(no socket)";
+    bool in_time = worker_wait(w, ms);
+    if (!in_time && h)
+        holder_stop(*h);                          /* the cleanup path: unblock, then join */
+    std::string reply = in_time ? worker_reply(w) : "(blocked)";
+    worker_end(w);
+    return reply;
+}
+
+/* T6 + T7: GET RADIO in every health state, its shape. */
+static void test_get_radio_states_and_shape(void)
+{
+    const RadioHealth states[4] = { RADIO_HEALTH_READY, RADIO_HEALTH_UNINITIALIZED, RADIO_HEALTH_FAILED,
+                                    RADIO_HEALTH_UNPLUGGED };
+    for (int i = 0; i < 4; i++) {
+        RadioController ctrl;
+        init_fake_controller(&ctrl, states[i]);
+        ctrl.rf_defaults = &k_radio_defaults_433;
+        std::string r = dispatch_watched(&ctrl, "GET RADIO\n", 5000, NULL);
+        std::string want = std::string("RADIO RADIO=") + radio_health_name(states[i]) +
+                           " MODE=LORA FREQ=433.9 SF=12 BW=125.0 CR=5 PREAMBLE=8 SYNC=0x12 CRC=1 LDRO=1 POWER=10\n";
+        expect_str("T6 GET RADIO answers in every health state, never ERR RADIO_NOT_READY", r.c_str(), want.c_str());
+        if (i == 0) {
+            /* T7: eleven named pairs in order (twelve tokens), one line, no OK. */
+            const char *names[11] = { "RADIO", "MODE", "FREQ", "SF", "BW", "CR", "PREAMBLE", "SYNC", "CRC", "LDRO",
+                                      "POWER" };
+            bool order = r.rfind("RADIO ", 0) == 0;
+            size_t pos = 6, tokens = 1, longest = 0;
+            for (int k = 0; k < 11 && order; k++) {
+                size_t end = r.find_first_of(" \n", pos);
+                std::string tok = r.substr(pos, end - pos);
+                order = tok.rfind(std::string(names[k]) + "=", 0) == 0 && tok.size() > strlen(names[k]) + 1;
+                longest = tok.size() > longest ? tok.size() : longest;
+                tokens++;
+                pos = end + 1;
+            }
+            expect_int("T7 eleven named pairs in order (twelve tokens with RADIO)", order && tokens == 12, 1);
+            expect_int("T7 one newline-terminated line, nothing after it (no trailing OK)",
+                       !r.empty() && r.back() == '\n' && r.find('\n') == r.size() - 1, 1);
+            expect_int("T7 n < 1024, every token <= 128 bytes", r.size() < 1024 && longest <= 128, 1);
+            expect_int("T7 the query made no driver call", fake(&ctrl)->calls.load(), 0);
+        }
+    }
+    /* T7 longest case: every field at its widest value (record values). */
+    RadioController ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_UNINITIALIZED);
+    ctrl.rf_defaults = &k_radio_defaults_433;
+    config_apply_replay_reset();
+    config_apply_replay_note("FREQ", "869.524999");
+    config_apply_replay_note("SF", "12");
+    config_apply_replay_note("BW", "31.25");
+    config_apply_replay_note("CR", "8");
+    config_apply_replay_note("PREAMBLE", "65535");
+    config_apply_replay_note("SYNC", "0xFFFF");
+    config_apply_replay_note("CRC", "1");
+    config_apply_replay_note("LDRO", "auto");
+    config_apply_replay_note("POWER", "-9");
+    std::string r = dispatch_watched(&ctrl, "GET RADIO\n", 5000, NULL);
+    printf("       T7 longest GET RADIO: %zu bytes\n", r.size());
+    expect_str("T7 the widest values", r.c_str(),
+               "RADIO RADIO=UNINITIALIZED MODE=LORA FREQ=869.524999 SF=12 BW=31.25 CR=8 PREAMBLE=65535 SYNC=0xFFFF "
+               "CRC=1 LDRO=AUTO POWER=-9\n");
+    expect_int("T7 longest case n < 1024", r.size() < 1024, 1);
+    config_apply_replay_reset();
+}
+
+/* T8a: while a second thread holds radio_mutex (a transmit in flight), GET
+ * RADIO and GET STATUS are answered (100 polls at 100 Hz), with zero driver
+ * calls. The bound is the event: every reply comes before the release. */
+static void test_get_radio_under_contention(void)
+{
+    RadioController ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    ctrl.rf_defaults = &k_radio_defaults_433;
+    MutexHolder h;
+    holder_start(h, &ctrl);
+    int radio_ok = 0, status_ok = 0;
+    for (int i = 0; i < 100 && !h.release; i++) {
+        std::string r = dispatch_watched(&ctrl, "GET RADIO\n", 5000, &h);
+        radio_ok += r.rfind("RADIO RADIO=READY MODE=LORA ", 0) == 0;
+        std::string st = dispatch_watched(&ctrl, "GET STATUS\n", 5000, &h);
+        status_ok += st.rfind("STATUS RADIO=READY ", 0) == 0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));   /* the 100 Hz poll */
+    }
+    bool still_held = !h.release;
+    holder_stop(h);
+    expect_int("T8a 100 GET RADIO answered while radio_mutex is held by another thread", radio_ok, 100);
+    expect_int("T8a 100 GET STATUS answered meanwhile (a second client)", status_ok, 100);
+    expect_int("T8a every reply before the holder's release", still_held, 1);
+    expect_int("T8a the query path made zero driver calls", fake(&ctrl)->calls.load(), 0);
+}
+
+/* T9: Guard B. An unknown non-SET line is answered ERR UNKNOWN before the
+ * readiness gate and the radio lock: while another thread holds the mutex.
+ * SET SF=7 (idle queue) still waits for it: the documented exception. */
+static void test_guard_b(void)
+{
+    RadioController ctrl;
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    g_stub_pending = 0;
+    g_stub_job_active = 0;
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    MutexHolder h;
+    holder_start(h, &ctrl);
+    const char *unknown[6] = { "GET FOO\n", "HELLO\n", "   \n", "set sf=7\n", " SET SF=7\n", "SET\tSF=7\n" };
+    const char *label[6] = { "GET FOO", "HELLO", "a line of spaces", "lowercase set sf=7", "leading-space SET",
+                             "SET<TAB>SF=7" };
+    for (int i = 0; i < 6 && !h.release; i++) {
+        std::string r = dispatch_watched(&ctrl, unknown[i], 5000, &h);
+        expect_str((std::string("T9 Guard B: ") + label[i] + ": ERR UNKNOWN while the mutex is held").c_str(),
+                   r.c_str(), "ERR UNKNOWN\n");
+    }
+    expect_int("T9 ... the apply path never ran for them", g_apply_state.calls, 0);
+    if (!h.release) {
+        DispatchWorker w;
+        bool started = worker_start(w, &ctrl, "SET SF=7\n");
+        bool blocked = started && !worker_wait(w, 300);          /* held: the SET waits */
+        holder_stop(h);
+        bool after = started && worker_wait(w, 5000);
+        std::string reply = after ? worker_reply(w) : "(blocked)";
+        worker_end(w);
+        expect_int("T9 SET SF=7 waits while the mutex is held (the documented exception)", blocked, 1);
+        expect_str("T9 ... and is applied after the release", reply.c_str(), "OK\n");
+    }
+    holder_stop(h);
+
+    /* Not READY: an unknown line is ERR UNKNOWN (1.4.2 answered RADIO_NOT_READY). */
+    RadioController nr;
+    init_fake_controller(&nr, RADIO_HEALTH_UNPLUGGED);
+    expect_str("T9 not READY: an unknown line is ERR UNKNOWN",
+               dispatch_watched(&nr, "GET FOO\n", 5000, NULL).c_str(), "ERR UNKNOWN\n");
+    expect_str("T9 not READY: a SET is still ERR RADIO_NOT_READY",
+               dispatch_watched(&nr, "SET SF=7\n", 5000, NULL).c_str(), "ERR RADIO_NOT_READY\n");
+}
+
+/* N5: Guard A's marker in dispatched STATUS replies, USB and SPI, every state. */
+static void test_status_radioerr_marker(void)
+{
+    const RadioHealth states[3] = { RADIO_HEALTH_READY, RADIO_HEALTH_UNPLUGGED, RADIO_HEALTH_FAILED };
+    for (int usb = 0; usb < 2; usb++) {
+        for (int i = 0; i < 3; i++) {
+            RadioController ctrl;
+            init_fake_controller(&ctrl, states[i]);
+            ctrl.radio_error_retry = usb != 0;
+            ctrl.usb_faults = usb ? 0 : -1;
+            std::string st = dispatch_watched(&ctrl, "GET STATUS\n", 5000, NULL);
+            expect_int(usb ? "N5 dispatched STATUS on a USB stick: RADIOERR=retry USBFAULT=0"
+                           : "N5 dispatched STATUS on SPI: RADIOERR=exit USBFAULT=-",
+                       st.find(usb ? " RADIOERR=retry USBFAULT=0 " : " RADIOERR=exit USBFAULT=- ") != std::string::npos,
+                       1);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
@@ -2206,6 +2477,10 @@ int main(int argc, char **argv)
     test_dispatch_set_cadtxaftertimeout();
     test_dispatch_set_cadwait_invalid_rejected();
     test_cad_policy_value_bounds();
+    test_get_radio_states_and_shape();
+    test_get_radio_under_contention();
+    test_guard_b();
+    test_status_radioerr_marker();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

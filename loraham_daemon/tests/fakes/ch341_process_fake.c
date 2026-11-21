@@ -33,12 +33,19 @@
  * $DIR/overflow: the next dispatch reports lost events (once), as the real
  * monitor does on a queue overflow: one arrival, and "uncertain" (2) for the
  * bound stick.
+ * $DIR/rxpoll (present when the interrupt is attached): an RX poll thread,
+ * like the library's, every 2 ms: a file $DIR/rx is taken (removed) as one
+ * received LoRa frame ("rxframe <port>" logged) and the interrupt callback
+ * fires; GetIrqStatus answers RX_DONE, GetRxBufferStatus its length,
+ * ReadBuffer its bytes, until ClearIrqStatus after the read. One frame at a
+ * time: the next rx file is taken only after that clear.
  *
  * The SPI side is the SX126x responder of tests/fakes/sx126x_register_model.h
  * in C: status byte OK, registers stored and read back, the packet type kept.
  */
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,6 +75,14 @@ struct loraham_ch341 {
     int rx_seen;
     uint8_t *regs;
     uint8_t packet_type;
+    /* $DIR/rxpoll: the RX frame and the poll thread (rx_mu guards the frame). */
+    void (*cb)(void);
+    pthread_mutex_t rx_mu;
+    pthread_t rx_thr;
+    int rx_thr_on;
+    volatile int rx_stop;
+    int rx_pending, rx_read, rx_len;
+    uint8_t rx_buf[256];
 };
 
 struct loraham_ch341_mon {
@@ -219,6 +234,7 @@ static loraham_ch341 *open_match(const char *serial, const char *port)
         d->s = bus[i];
         d->lockfd = fd;
         d->regs = calloc(1, 0x10000);
+        pthread_mutex_init(&d->rx_mu, NULL);
         memcpy(&d->regs[0x0320], bus[i].badchip ? "XX0000 V0D 0D00" : "SX1261 V2D 2D02", 16);
         logline("open %s", bus[i].port);
         if (file_exists("opendelay"))               /* the test changes the bus during this open */
@@ -256,8 +272,14 @@ int loraham_ch341_close(loraham_ch341 *d)
         logline("closefail %s", d->s.port);    /* kept: claim, handle and memory */
         return -1;
     }
+    if (d->rx_thr_on) {
+        d->rx_stop = 1;
+        pthread_join(d->rx_thr, NULL);
+        d->rx_thr_on = 0;
+    }
     logline("close %s", d->s.port);
     close(d->lockfd);
+    pthread_mutex_destroy(&d->rx_mu);
     free(d->regs);
     free(d);
     return 0;
@@ -295,6 +317,29 @@ int loraham_ch341_transceive(loraham_ch341 *d, const uint8_t *out, uint8_t *in, 
         d->packet_type = out[1];
     } else if (op == 0x11 && len > 2 && in) {
         in[2] = d->packet_type;
+    } else if (op == 0x12 && len > 3 && in) {     /* GetIrqStatus */
+        pthread_mutex_lock(&d->rx_mu);
+        in[3] = d->rx_pending ? 0x02 : 0x00;     /* RX_DONE */
+        pthread_mutex_unlock(&d->rx_mu);
+    } else if (op == 0x13 && len > 3 && in) {     /* GetRxBufferStatus */
+        pthread_mutex_lock(&d->rx_mu);
+        in[2] = d->rx_pending ? (uint8_t)d->rx_len : 0;
+        in[3] = 0;
+        pthread_mutex_unlock(&d->rx_mu);
+    } else if (op == 0x1E && len > 3 && in) {     /* ReadBuffer: op, offset, NOP, data */
+        pthread_mutex_lock(&d->rx_mu);
+        for (uint32_t i = 3; i < len; i++) {
+            uint32_t k = out[1] + (i - 3);
+            in[i] = d->rx_pending && k < (uint32_t)d->rx_len ? d->rx_buf[k] : 0;
+        }
+        if (d->rx_pending)
+            d->rx_read = 1;
+        pthread_mutex_unlock(&d->rx_mu);
+    } else if (op == 0x02) {                      /* ClearIrqStatus */
+        pthread_mutex_lock(&d->rx_mu);
+        if (d->rx_pending && d->rx_read)
+            d->rx_pending = d->rx_read = 0;
+        pthread_mutex_unlock(&d->rx_mu);
     } else if (op == 0x82) {                      /* SetRx */
         d->rx_seen = 1;
     } else if (op == 0xC5 || op == 0x83) {        /* SetCad / SetTx: a TX is in flight */
@@ -318,10 +363,52 @@ int loraham_ch341_transceive(loraham_ch341 *d, const uint8_t *out, uint8_t *in, 
 int loraham_ch341_pin_mode(loraham_ch341 *d, uint32_t p, int o) { (void)p; (void)o; return current(d) ? 0 : -1; }
 int loraham_ch341_digital_write(loraham_ch341 *d, uint32_t p, int l) { (void)p; (void)l; return current(d) ? 0 : -1; }
 int loraham_ch341_digital_read(loraham_ch341 *d, uint32_t p) { (void)p; return current(d) ? 0 : -1; }
+/* $DIR/rxpoll's thread: one frame from $DIR/rx at a time, then the callback. */
+static void *rx_poll(void *arg)
+{
+    loraham_ch341 *d = arg;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/rx", dir());
+    while (!d->rx_stop) {
+        void (*fire)(void) = NULL;
+        pthread_mutex_lock(&d->rx_mu);
+        if (!d->rx_pending && d->cb) {
+            FILE *f = fopen(path, "r");
+            if (f) {
+                size_t n = fread(d->rx_buf, 1, sizeof(d->rx_buf), f);
+                fclose(f);
+                unlink(path);
+                if (n > 0) {
+                    d->rx_len = (int)n;
+                    d->rx_pending = 1;
+                    d->rx_read = 0;
+                    fire = d->cb;
+                }
+            }
+        }
+        pthread_mutex_unlock(&d->rx_mu);
+        if (fire) {
+            logline("rxframe %s", d->s.port);
+            fire();
+        }
+        usleep(2000);
+    }
+    return NULL;
+}
+
 int loraham_ch341_attach_interrupt(loraham_ch341 *d, uint32_t p, uint32_t m, void (*cb)(void))
 {
-    (void)p; (void)m; (void)cb;
-    return current(d) ? 0 : -1;
+    (void)p; (void)m;
+    if (!current(d))
+        return -1;
+    pthread_mutex_lock(&d->rx_mu);
+    d->cb = cb;
+    pthread_mutex_unlock(&d->rx_mu);
+    if (!d->rx_thr_on && file_exists("rxpoll")) {
+        d->rx_stop = 0;
+        d->rx_thr_on = pthread_create(&d->rx_thr, NULL, rx_poll, d) == 0;
+    }
+    return 0;
 }
 int loraham_ch341_detach_interrupt(loraham_ch341 *d, uint32_t p) { (void)d; (void)p; return 0; }
 int loraham_ch341_in_error(loraham_ch341 *d) { return current(d) ? 0 : 1; }

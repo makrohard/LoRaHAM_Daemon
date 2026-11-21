@@ -37,6 +37,7 @@ SET CADIDLE=<milliseconds>
 SET CADPOLL=<milliseconds>
 SET CADTXAFTERTIMEOUT=0|1
 GET STATUS
+GET RADIO
 GET STATS
 GET CHANNEL
 GET CHANNEL NOSCAN
@@ -48,8 +49,8 @@ EXIT
 parameters in [CONFIG parameters](#config-parameters). The nine reserved
 `SET` forms above are runtime setters that do not touch the radio; they are
 matched as exact literals and are described in [Runtime setters](#runtime-setters).
-`GET STATUS`, `GET STATS`, `GET CHANNEL` and `GET CHANNEL NOSCAN` are the only
-recognised queries. **They do not cost the same.** `GET STATUS` and `GET STATS`
+`GET STATUS`, `GET RADIO`, `GET STATS`, `GET CHANNEL` and `GET CHANNEL NOSCAN` are the only
+recognised queries. **They do not cost the same.** `GET STATUS`, `GET RADIO` and `GET STATS`
 format cached fields and counters and never touch the radio. `GET CHANNEL` runs
 a channel-activity scan: it takes the radio mutex, puts the chip into CAD and
 re-arms RX afterwards, so it **destroys a frame that is arriving**. `GET CHANNEL
@@ -61,6 +62,11 @@ answers `OK` and stops the daemon as SIGTERM does: the same cleanup, exit `0`,
 also during a USB retry. Anyone who can open the CONF socket (mode 0660) may
 send it. The `OK` is written before the stop; a client that does not read its
 socket can lose it, and the exit never waits for it. Added in 1.5.0.
+
+Any other line that is not a `SET` (by the parser: the line starts with `SET` and a space, or is
+`SET`) answers `ERR UNKNOWN` at once, in every radio state, before the radio is locked: an unknown
+command never waits for a transmission. Since 1.5.0; before, it waited for the radio and answered
+`ERR RADIO_NOT_READY` while the radio was not ready.
 
 ## Line framing and parsing
 
@@ -274,6 +280,27 @@ without running a scan:
 The MANAGED-TX gate uses its own probe, whose pending-RX guard returns an
 unconditional `BUSY` instead.
 
+### `GET RADIO`
+
+The radio parameters in effect, one line, no `OK`, fields in this order:
+
+```
+RADIO RADIO= MODE= FREQ= SF= BW= CR= PREAMBLE= SYNC= CRC= LDRO= POWER=
+RADIO RADIO=READY MODE=LORA FREQ=433.175 SF=12 BW=125.0 CR=5 PREAMBLE=8 SYNC=0x12 CRC=1 LDRO=1 POWER=17
+```
+
+Each value is the last successful `SET` of the key since boot or the last `MODE` switch, else the
+default the daemon applied itself: the band's boot values in LoRa mode, the band's `FREQ` and
+`POWER` in FSK. `FREQ` (MHz) and `BW` (kHz) are decimals with one to six places, `SYNC` is `0x%02X`,
+`LDRO` is `AUTO`, `0` or `1`, the rest are integers. `-`: the key does not apply in this `MODE` (the
+LoRa keys in FSK) or is not reported (FSK `PREAMBLE`/`SYNC` before a successful `SET`). `?`: a
+recorded value that does not parse. `RADIO=` is the health, as in `STATUS`: the values describe
+the chip only with `RADIO=READY`; while `UNPLUGGED` they are kept and replayed on the stick's
+return, after a failed apply they are what was applied before the failure. It is formatted from
+memory: no radio lock, no chip read, answered in every health state. `GET STATUS` keeps its
+`FREQ=`, `SF=`, `POWER=` (`-` = not set since boot): what a client set, where `GET RADIO` is what
+is in effect. Added in 1.5.0.
+
 ### `GET CHANNEL NOSCAN`
 
 The same `CHANNEL` line, **never** running a channel-activity scan. This is what
@@ -309,6 +336,7 @@ every transmission regardless of what any client queries.
 | Query | Touches the radio? | Use on a timer? |
 |---|---|---|
 | `GET STATUS` | no | yes |
+| `GET RADIO` | no | yes |
 | `GET STATS` | no | yes |
 | `GET CHANNEL NOSCAN` | no scan; passive register reads only | yes |
 | `GET CHANNEL` | **yes — CAD scan, destroys an arriving frame** | **no** |

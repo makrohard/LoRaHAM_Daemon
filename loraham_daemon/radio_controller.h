@@ -133,6 +133,8 @@ struct RadioController {
      * since start; -1 = "-": not a USB stick). Main loop only. */
     bool radio_error_retry;
     long long usb_faults;
+    /* GET RADIO: the band's boot RF defaults (NULL: not reported). Set once at init. */
+    const struct RadioRfDefaults *rf_defaults;
 
     DaemonRadioStats stats;
 
@@ -196,6 +198,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     snprintf(ctrl->bound, sizeof(ctrl->bound), "-");
     ctrl->radio_error_retry = false;
     ctrl->usb_faults = -1;
+    ctrl->rf_defaults = NULL;
 
     daemon_radio_stats_init(&ctrl->stats);
 

@@ -79,6 +79,7 @@ daemon_support_sources=(
   "$SCRIPT_DIR/daemon_tx_executor.cpp"
   "$SCRIPT_DIR/radio_cad.cpp"
   "$SCRIPT_DIR/config_status.cpp"
+  "$SCRIPT_DIR/config_radio.cpp"
   "$SCRIPT_DIR/config_dispatch.cpp"
   "$SCRIPT_DIR/daemon_tx_async_runtime.cpp"
   "$SCRIPT_DIR/daemon_data_tx_runtime.cpp"

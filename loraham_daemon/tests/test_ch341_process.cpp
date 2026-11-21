@@ -20,6 +20,9 @@
  *              with the replay; T3 a failed re-init after an unplug retried;
  *              T6 a refused close: no new open, the "restart the daemon" line
  *              on each attempt
+ *   RADIO      GET RADIO: T1 the 868 defaults, T5 the values kept while
+ *              UNPLUGGED and after the replay; T8b RX frames through the fake's
+ *              RX poll thread, with and without GET RADIO polled at 100 Hz
  *   QUIT       (built as test_ch341_stop, -DCH341_PROCESS_STOP=1)
  *              Q1 QUIT/quit/EXIT/exit: OK, exit 0; Q2 QUIT x: ERR MALFORMED,
  *              running; Q3 a data client reads EOF; Q4 a never-reading CONF
@@ -44,7 +47,11 @@
  *   S10        the real chat binary leaves the operator's POWER alone
  */
 
+#include <algorithm>
+#include <atomic>
 #include <cerrno>
+#include <chrono>
+#include <thread>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -1234,6 +1241,127 @@ static void scenario_stop_in_retry(void)
     }
 }
 
+/* GET RADIO on the real binary (1.5.0, plan v17 §13 T5, T8b). */
+
+/* T5: the values are kept while UNPLUGGED and the same after the replay. */
+static void scenario_radio_across_unplug(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/rad5.log";
+    const std::string C = "loraconf868.sock";
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    expect("T5 READY", wait_status(C, "RADIO=READY", 8000));
+    const std::string dflt =
+        "RADIO RADIO=READY MODE=LORA FREQ=869.525 SF=11 BW=250.0 CR=5 PREAMBLE=16 SYNC=0x2B CRC=1 LDRO=AUTO POWER=10";
+    expect("T1 the real binary: the 868 defaults", conf(C, "GET RADIO", "RADIO") == dflt);
+    expect("T5 SET FREQ=869.4 SF=9 applied", conf(C, "SET FREQ=869.4 SF=9", "") == "OK");
+    const std::string set =
+        "RADIO MODE=LORA FREQ=869.4 SF=9 BW=250.0 CR=5 PREAMBLE=16 SYNC=0x2B CRC=1 LDRO=AUTO POWER=10";
+    auto with = [&set](const char *health) {
+        return std::string("RADIO RADIO=") + health + set.substr(5);
+    };
+    expect("T5 GET RADIO after the SET", conf(C, "GET RADIO", "RADIO") == with("READY"));
+    bus("");
+    expect("T5 unplugged", wait_status(C, "RADIO=UNPLUGGED", 3000));
+    expect("T5/T6 while UNPLUGGED: the same values, RADIO=UNPLUGGED (no ERR RADIO_NOT_READY)",
+           conf(C, "GET RADIO", "RADIO") == with("UNPLUGGED"));
+    bus("1-2 SERIAL01 2\n");
+    expect("T5 back READY with the replay", wait_status(C, "RADIO=READY", 8000) &&
+           log_has(log, "[CH341] configuration replayed: SET FREQ=869.4 SF=9"));
+    expect("T5 after the replay: the same values", conf(C, "GET RADIO", "RADIO") == with("READY"));
+    term(pid);
+}
+
+/* T8b: RX while GET RADIO is polled. Identifiable frames (a sequence number
+ * each), one at a time (the next only after the previous reached the raw
+ * client, so the received flag never coalesces two), through the fake's RX
+ * poll thread, the interrupt, the main loop's drain and the broadcast: once
+ * without and once with a client polling GET RADIO at 100 Hz. The same frames
+ * in the same order, all delivered; the latency compared between the two runs.
+ * Margin: the polled run's 95th percentile within 15 ms of the unpolled run's
+ * (one 10 ms main-loop tick plus the fake's 2 ms poll, rounded up). */
+static void scenario_rx_with_radio_polling(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/t8b.log";
+    const std::string C = "loraconf868.sock";
+    write_text(g_fake + "/rxpoll", "1\n");
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    expect("T8b READY", wait_status(C, "RADIO=READY", 8000));
+    int raw = connect_to("lora868.sock");
+    const int N = 30;
+    std::vector<uint64_t> lat[2];
+    bool in_order[2] = { true, true };
+    int polls = 0, polls_ok = 0;
+    for (int run = 0; run < 2; run++) {
+        std::atomic<bool> stop_poll{false};
+        std::atomic<int> n_poll{0}, n_ok{0};
+        std::thread poller;
+        if (run == 1) {
+            poller = std::thread([&] {
+                int c = connect_to(C);
+                while (c >= 0 && !stop_poll) {
+                    if (write(c, "GET RADIO\n", 10) != 10)
+                        break;
+                    n_ok += read_line(c, 1000).rfind("RADIO RADIO=READY MODE=LORA ", 0) == 0;
+                    n_poll++;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                if (c >= 0)
+                    close(c);
+            });
+            while (n_poll.load() < 3)                 /* the polling runs before the first frame */
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::string acc;
+        for (int k = 0; k < N; k++) {
+            char payload[32];
+            snprintf(payload, sizeof(payload), "T8B-%d-%03d", run, k);
+            write_text(g_fake + "/rx.tmp", payload);
+            uint64_t t0 = now_ms();
+            rename((g_fake + "/rx.tmp").c_str(), (g_fake + "/rx").c_str());   /* one whole frame */
+            bool seen = false;
+            while (!seen && now_ms() < t0 + 2000) {
+                struct pollfd p = { raw, POLLIN, 0 };
+                if (poll(&p, 1, 20) == 1) {
+                    char b[256];
+                    ssize_t n = read(raw, b, sizeof(b));
+                    if (n <= 0)
+                        break;
+                    acc.append(b, (size_t)n);
+                }
+                seen = acc.find(payload) != std::string::npos;
+            }
+            lat[run].push_back(now_ms() - t0);
+            /* in order: exactly this frame is what arrived since the last one */
+            in_order[run] = in_order[run] && seen && acc == payload;
+            acc.clear();
+        }
+        if (run == 1) {
+            stop_poll = true;
+            poller.join();
+            polls = n_poll.load();
+            polls_ok = n_ok.load();
+        }
+    }
+    close(raw);
+    expect("T8b without polling: all frames, each alone, in order", in_order[0] && lat[0].size() == N);
+    expect("T8b with GET RADIO polled at 100 Hz: the same frames, each alone, in order",
+           in_order[1] && lat[1].size() == N);
+    expect("T8b the polling ran through the second run, every reply a RADIO line", polls >= 10 && polls_ok == polls);
+    std::vector<uint64_t> a = lat[0], b = lat[1];
+    std::sort(a.begin(), a.end());
+    std::sort(b.begin(), b.end());
+    uint64_t p95a = a[(N * 95) / 100], p95b = b[(N * 95) / 100];
+    printf("       T8b latency median/p95 without polling %llu/%llu ms, with %llu/%llu ms (%d polls)\n",
+           (unsigned long long)a[N / 2], (unsigned long long)p95a, (unsigned long long)b[N / 2],
+           (unsigned long long)p95b, polls);
+    expect("T8b the polled run's p95 latency within 15 ms of the unpolled run's", p95b <= p95a + 15);
+    term(pid);
+}
+
 /* --usb-port on the real binary: two sticks without a serial (Rule B refuses
  * those), the port names one; a library without the open by port refuses. */
 static void scenario_usb_port(void)
@@ -1602,6 +1730,8 @@ int main(int argc, char *argv[])
     scenario_retry_fault();
     scenario_retry_reinit();
     scenario_retry_kept();
+    scenario_radio_across_unplug();
+    scenario_rx_with_radio_polling();
     scenario_access();
     scenario_instances();
     scenario_b4_classes();

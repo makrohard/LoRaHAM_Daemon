@@ -6,6 +6,7 @@
 #include "daemon_rx_rearm.h"
 #include "daemon_tx_async_runtime.h"
 #include "config_parser.h"
+#include "config_radio.h"
 
 /* Bodies moved verbatim from config_dispatch.h. */
 
@@ -84,6 +85,25 @@ void config_dispatch_apply_line(const char *line, void *user)
         if(!client_output_queue_append(&ctx->slot->output,
                                        (const uint8_t *)status,
                                        strlen(status))) {
+            client_slot_close(ctx->slot);
+            return;
+        }
+        client_slot_flush_output(ctx->slot);
+        return;
+    }
+
+    /* GET RADIO (1.5.0): the parameters in effect, from memory (config_radio.h):
+     * no radio lock, no chip access; answered in every health state. */
+    if(config_status_is_get_radio(upper_line)) {
+        char radio[CONFIG_RADIO_LINE_MAX];
+
+        config_radio_format(radio, sizeof(radio),
+                            radio_controller_health(ctx->ctrl),
+                            ctx->ctrl ? ctx->ctrl->mode : RADIO_MODE_LORA,
+                            ctx->ctrl ? ctx->ctrl->rf_defaults : NULL);
+        if(!client_output_queue_append(&ctx->slot->output,
+                                       (const uint8_t *)radio,
+                                       strlen(radio))) {
             client_slot_close(ctx->slot);
             return;
         }
@@ -287,6 +307,17 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     default:
         break;
+    }
+
+    /* Guard B (1.5.0): a line that is no SET (by the parser, on the line as
+     * the client sent it) and none of the commands above is refused here,
+     * before the readiness gate and before the radio lock: an unknown query
+     * never waits for a TX in flight. */
+    if(!config_parse_command(line).is_set) {
+        printf("[%s] unknown command: %s\n", ctx->tag, line);
+        fflush(stdout);
+        config_dispatch_reply(ctx->slot, "ERR UNKNOWN\n");
+        return;
     }
 
     if(!ctx->ctrl || !ctx->ctrl->driver ||

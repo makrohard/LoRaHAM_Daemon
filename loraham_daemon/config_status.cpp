@@ -1,5 +1,6 @@
 #include "config_status.h"
 #include "hardware_profile.h"
+#include "config_radio.h"
 #include "config_replay.h"
 #include <errno.h>
 #include <math.h>
@@ -373,58 +374,15 @@ unsigned config_status_txq_last_seq(const RadioController *ctrl)
     return result.seq;
 }
 
-/* One applied RF value for STATUS, normalized to LHPC's SET grammar: the
- * record keeps the value as the client wrote it (it passed the strict
- * parser, which allows "09", "+5", "8.69525e2" and trailing whitespace such
- * as a CR); STATUS prints it parsed again: a decimal in MHz with at most six
- * places and at least one ("869.525", "868.0"), or a plain integer. "-" when
- * the key is not set since boot or the last MODE switch; "?" if the recorded
- * text does not parse. Never empty, never a control character (LHPC discards
- * a whole STATUS line with either). */
-static void config_status_applied(const char *key, bool decimal, char *out, size_t out_size)
-{
-    const char *v = config_apply_replay_value(key);
-    char *end = NULL;
-
-    snprintf(out, out_size, "-");
-    if (!v || !v[0])
-        return;
-    errno = 0;
-    if (decimal) {
-        double d = strtod(v, &end);
-
-        if (end == v || errno != 0 || !isfinite(d)) {
-            snprintf(out, out_size, "?");
-            return;
-        }
-        snprintf(out, out_size, "%.6f", d);
-        size_t n = strlen(out);
-        while (n > 2 && out[n - 1] == '0' && out[n - 2] != '.')
-            out[--n] = '\0';
-    } else {
-        long l = strtol(v, &end, 10);
-
-        if (end == v || errno != 0) {
-            snprintf(out, out_size, "?");
-            return;
-        }
-        snprintf(out, out_size, "%ld", l);
-    }
-    while (*end && isspace((unsigned char)*end))
-        end++;
-    if (*end)
-        snprintf(out, out_size, "?");
-}
-
 void config_status_format(char *buf,
                                         size_t buf_size,
                                         const RadioController *ctrl)
 {
     char freq[32], sf[24], power[24], usbfault[24];
 
-    config_status_applied("FREQ", true, freq, sizeof(freq));
-    config_status_applied("SF", false, sf, sizeof(sf));
-    config_status_applied("POWER", false, power, sizeof(power));
+    config_radio_applied("FREQ", true, freq, sizeof(freq));
+    config_radio_applied("SF", false, sf, sizeof(sf));
+    config_radio_applied("POWER", false, power, sizeof(power));
     if (ctrl && ctrl->usb_faults >= 0)
         snprintf(usbfault, sizeof(usbfault), "%lld", ctrl->usb_faults);
     else

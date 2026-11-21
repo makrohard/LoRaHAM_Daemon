@@ -42,6 +42,7 @@ void daemon_radio_controller_init(void)
     radio_controller.high_power_enabled = daemon_high_power_enabled();
     radio_controller.ocp_ma = daemon_ocp_effective_ma(daemon_hw_profile.family);
     radio_controller.instance_id = daemon_instance_id();
+    radio_controller.rf_defaults = band->rf_defaults;
 }
 
 /* --- Radio controller shutdown ------------------------------------------ */

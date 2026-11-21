@@ -6,12 +6,23 @@
  *       whose apply failed and a rejected command are not recorded; GETRSSI is
  *       not recorded; the replay command applied to a fresh radio reproduces
  *       the same applies and the same record.
+ *
+ * GET RADIO (1.5.0, config_radio.h), the formatter on that record:
+ *   T1  every band's defaults: FREQ=433.9 (not 433.899994), LDRO=1 on 433,
+ *       AUTO on 868/915
+ *   T2  each key after a SET, in the SET grammar (SYNC=18 -> 0x12, LDRO=auto
+ *       -> AUTO, BW=62.50 -> 62.5, FREQ=+433.175 -> 433.175)
+ *   T3  MODE=FSK: LoRa keys -, FREQ/POWER the band's, FSK PREAMBLE/SYNC -
+ *       until a successful SET, then the value; MODE=LORA: the defaults again
+ *   T4  a refused command and an ignored key change nothing; a driver error
+ *       in the middle keeps the keys applied before it (with RADIO=FAILED)
  */
 
 #include "../config_apply.h"
 #include "../daemon_band.h"
 #include "../radio_driver.h"
 #include "../config_policy.h"
+#include "../config_radio.h"
 
 #include <atomic>
 #include <cstdio>
@@ -81,6 +92,84 @@ static ConfigApplyStatus apply(FakeRadio &r, const char *cmd, RadioMode_t &mode)
     return parse_and_apply_config_generic(r, "868", cmd, mode, getrssi, false);
 }
 
+static std::string radio_line(RadioHealth h, RadioMode_t mode)
+{
+    char buf[CONFIG_RADIO_LINE_MAX];
+    config_radio_format(buf, sizeof(buf), h, mode, daemon_band()->rf_defaults);
+    return buf;
+}
+
+static ConfigApplyStatus apply_on(FakeRadio &r, const char *tag, const char *cmd, RadioMode_t &mode)
+{
+    std::atomic<bool> getrssi{false};
+    return parse_and_apply_config_generic(r, tag, cmd, mode, getrssi, false);
+}
+
+static void test_get_radio(void)
+{
+    /* T1: a fresh record per band: every value is the band's default. */
+    const RadioBand_t bands[3] = { RADIO_BAND_433, RADIO_BAND_868, RADIO_BAND_915 };
+    const char *want[3] = {
+        "RADIO RADIO=READY MODE=LORA FREQ=433.9 SF=12 BW=125.0 CR=5 PREAMBLE=8 SYNC=0x12 CRC=1 LDRO=1 POWER=10\n",
+        "RADIO RADIO=READY MODE=LORA FREQ=869.525 SF=11 BW=250.0 CR=5 PREAMBLE=16 SYNC=0x2B CRC=1 LDRO=AUTO POWER=10\n",
+        "RADIO RADIO=READY MODE=LORA FREQ=906.875 SF=11 BW=250.0 CR=5 PREAMBLE=16 SYNC=0x2B CRC=1 LDRO=AUTO POWER=10\n",
+    };
+    for (int i = 0; i < 3; i++) {
+        daemon_band_resolve(bands[i]);
+        config_apply_replay_reset();
+        expect_str("T1 GET RADIO: the band's defaults (433.9, LDRO 1 on 433 / AUTO elsewhere)",
+                   radio_line(RADIO_HEALTH_READY, RADIO_MODE_LORA), want[i]);
+    }
+
+    /* T2: every key after a successful SET, normalized. */
+    daemon_band_resolve(RADIO_BAND_433);
+    config_apply_replay_reset();
+    config_apply_effective_reset();
+    FakeRadio r;
+    RadioMode_t mode = RADIO_MODE_LORA;
+    expect_int("T2 the SET applies",
+               (long)apply_on(r, "433", "SET SF=7 SYNC=18 LDRO=auto BW=62.50 FREQ=+433.175 CR=7 PREAMBLE=12 "
+                                        "CRC=0 POWER=5", mode), (long)CONFIG_APPLY_APPLIED);
+    const std::string t2 =
+        "RADIO RADIO=READY MODE=LORA FREQ=433.175 SF=7 BW=62.5 CR=7 PREAMBLE=12 SYNC=0x12 CRC=0 LDRO=AUTO POWER=5\n";
+    expect_str("T2 each key as applied, in the SET grammar", radio_line(RADIO_HEALTH_READY, mode), t2);
+    apply_on(r, "433", "SET SYNC=0x34 LDRO=1", mode);
+    expect_str("T2 SYNC given in hex, LDRO forced",
+               radio_line(RADIO_HEALTH_READY, mode),
+               "RADIO RADIO=READY MODE=LORA FREQ=433.175 SF=7 BW=62.5 CR=7 PREAMBLE=12 SYNC=0x34 CRC=0 LDRO=1 POWER=5\n");
+
+    /* T4: a refused command, an ignored key, a driver error in the middle. */
+    const std::string before = radio_line(RADIO_HEALTH_READY, mode);
+    expect_int("T4 SF=99 is refused", (long)apply_on(r, "433", "SET SF=99", mode),
+               (long)CONFIG_APPLY_REJECTED_INVALID);
+    expect_str("T4 ... the reply unchanged", radio_line(RADIO_HEALTH_READY, mode), before);
+    r.fail_key = "BW";
+    apply_on(r, "433", "SET SF=8 BW=125 CR=6", mode);
+    r.fail_key.clear();
+    expect_str("T4 a driver error at BW: SF=8 (before it) kept, BW and CR as before, RADIO=FAILED",
+               radio_line(RADIO_HEALTH_FAILED, mode),
+               "RADIO RADIO=FAILED MODE=LORA FREQ=433.175 SF=8 BW=62.5 CR=7 PREAMBLE=12 SYNC=0x34 CRC=0 LDRO=1 POWER=5\n");
+
+    /* T3: FSK. */
+    expect_int("T3 MODE=FSK applies", (long)apply_on(r, "433", "SET MODE=FSK", mode), (long)CONFIG_APPLY_APPLIED);
+    const std::string fsk =
+        "RADIO RADIO=READY MODE=FSK FREQ=433.9 SF=- BW=- CR=- PREAMBLE=- SYNC=- CRC=- LDRO=- POWER=10\n";
+    expect_str("T3 FSK: LoRa keys -, FREQ/POWER the band's, FSK PREAMBLE/SYNC - before a SET",
+               radio_line(RADIO_HEALTH_READY, mode), fsk);
+    apply_on(r, "433", "SET SF=9", mode);
+    expect_str("T4 a LoRa key in FSK is ignored: the reply unchanged", radio_line(RADIO_HEALTH_READY, mode), fsk);
+    expect_int("T3 FSK PREAMBLE and SYNC set", (long)apply_on(r, "433", "SET PREAMBLE=32 SYNC=0x2DD4", mode),
+               (long)CONFIG_APPLY_APPLIED);
+    expect_str("T3 FSK: PREAMBLE and SYNC as applied",
+               radio_line(RADIO_HEALTH_READY, mode),
+               "RADIO RADIO=READY MODE=FSK FREQ=433.9 SF=- BW=- CR=- PREAMBLE=32 SYNC=0x2DD4 CRC=- LDRO=- POWER=10\n");
+    apply_on(r, "433", "SET MODE=LORA", mode);
+    expect_str("T3 MODE=LORA after the SETs: the band's defaults again",
+               radio_line(RADIO_HEALTH_READY, mode), want[0]);
+    config_apply_replay_reset();
+    config_apply_effective_reset();
+}
+
 int main(void)
 {
     daemon_band_resolve(RADIO_BAND_868);
@@ -135,6 +224,8 @@ int main(void)
     expect_int("the replay applies the recorded key", fresh.lora_applies, 1);
     expect_str("the record after the replay equals the record before", config_apply_replay_command(),
                replay);
+
+    test_get_radio();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;
