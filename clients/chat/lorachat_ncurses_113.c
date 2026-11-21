@@ -149,7 +149,7 @@ void update_call_list();
 void setup_windows();
 void to_uppercase(char *str);
 void open_config_menu();
-void add_call(const char *call);
+int add_call(const char *call);
 void add_to_history(const char* sender, const char* text, int pair);
 void redraw_chat();
 void send_lora_config(const char* freq);
@@ -172,6 +172,57 @@ int call_count = 5;
 
 int sock_fd;
 WINDOW *title_win, *call_win, *chat_win, *input_win, *footer_win;
+
+/* --- The line queue: the only thing the receive thread shares ---
+ * ncurses is not thread-safe and the history has no lock, so the receive
+ * thread never touches either: it pushes each finished line here, and the
+ * main thread, which does all drawing and all history writes, drains it.
+ * Full: the oldest line is dropped and counted. The mutex is held only for
+ * one push or one pop, never across an ncurses call, a send or a wait. */
+#define LINE_QUEUE_LEN 64
+typedef struct {
+    char call[20];             /* a heard call for the call list, or "" */
+    char sender[20];
+    char text[MAX_MSG_LEN];
+    int pair;
+} QueuedLine;
+static QueuedLine g_lq[LINE_QUEUE_LEN];
+static int g_lq_head, g_lq_count;
+static unsigned long g_lq_dropped;
+static pthread_mutex_t g_lq_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void line_queue_push(const char *call, const char *sender, const char *text, int pair) {
+    pthread_mutex_lock(&g_lq_mu);
+    if (g_lq_count == LINE_QUEUE_LEN) {
+        g_lq_head = (g_lq_head + 1) % LINE_QUEUE_LEN;
+        g_lq_count--;
+        g_lq_dropped++;
+    }
+    QueuedLine *q = &g_lq[(g_lq_head + g_lq_count) % LINE_QUEUE_LEN];
+    snprintf(q->call, sizeof(q->call), "%s", call);
+    snprintf(q->sender, sizeof(q->sender), "%s", sender);
+    snprintf(q->text, sizeof(q->text), "%s", text);
+    q->pair = pair;
+    g_lq_count++;
+    pthread_mutex_unlock(&g_lq_mu);
+}
+
+/* One line, oldest first: 1, or 0 when the queue is empty. *dropped gets
+ * the lines dropped since the last pop. */
+static int line_queue_pop(QueuedLine *out, unsigned long *dropped) {
+    int got;
+    pthread_mutex_lock(&g_lq_mu);
+    got = g_lq_count > 0;
+    if (got) {
+        *out = g_lq[g_lq_head];
+        g_lq_head = (g_lq_head + 1) % LINE_QUEUE_LEN;
+        g_lq_count--;
+    }
+    *dropped = g_lq_dropped;
+    g_lq_dropped = 0;
+    pthread_mutex_unlock(&g_lq_mu);
+    return got;
+}
 
 // --- Chat-Sicherung mit Zeitstempel ---
 
@@ -280,7 +331,7 @@ void send_lora_config(const char* freq) {
 
 /*
  * Ask the daemon one question and read its answer. `send_lora_config` above
- * deliberately stays write-only (it is called from the receive thread too);
+ * deliberately stays write-only (a SET needs no answer);
  * this is the read path used to find out when a transmission has finished.
  */
 static int config_query(const char *cmd, char *out, size_t out_len) {
@@ -446,18 +497,48 @@ void update_footer() {
     wnoutrefresh(footer_win);
 }
 
-void add_call(const char *call) {
-    if (!call || strlen(call) < 3) return;
+/* 1 when the call is new to the list (the caller redraws it). */
+int add_call(const char *call) {
+    if (!call || strlen(call) < 3) return 0;
     char up_call[20];
     strncpy(up_call, call, 19);
     up_call[19] = '\0';
     to_uppercase(up_call);
     for (int i = 0; i < call_count; i++) {
-        if (strcmp(heard_calls[i], up_call) == 0) return;
+        if (strcmp(heard_calls[i], up_call) == 0) return 0;
     }
     if (call_count < MAX_CALLS) {
         strncpy(heard_calls[call_count++], up_call, 19);
+        return 1;
+    }
+    return 0;
+}
+
+/* Main thread only: the queued lines into the call list and the history;
+ * with `draw` also onto the screen (not while the config menu covers it:
+ * closing the menu redraws everything). */
+static void drain_lines(int draw) {
+    QueuedLine l;
+    unsigned long dropped, lost = 0;
+    int any = 0, calls = 0;
+    while (line_queue_pop(&l, &dropped)) {
+        lost += dropped;
+        if (l.call[0] && add_call(l.call))
+            calls = 1;
+        add_to_history(l.sender, l.text, l.pair);
+        any = 1;
+    }
+    if (lost) {
+        char note[48];
+        snprintf(note, sizeof(note), "(%lu lines dropped)", lost);
+        add_to_history("System", note, 4);
+    }
+    if (!draw)
+        return;
+    if (calls)
         update_call_list();
+    if (any) {
+        redraw_chat();
         doupdate();
     }
 }
@@ -474,6 +555,9 @@ void setup_windows() {
     call_win = newwin(h - 3, 11, 1, 0);
     chat_win = newwin(h - 3, w - 11, 1, 11);
     input_win = newwin(1, w - 2, h - 2, 1);
+    /* One thread draws: the input read returns every 100 ms so the main
+       loop drains the received lines (a new window starts blocking). */
+    wtimeout(input_win, 100);
     footer_win = newwin(1, w, h - 1, 0);
     wbkgd(title_win, COLOR_PAIR(1));
     wbkgd(chat_win, COLOR_PAIR(4));
@@ -499,8 +583,16 @@ void open_config_menu() {
         mvwprintw(cfg_win, 7, 2, "5. RX Frequenz : %s", RX_FREQ);
         mvwprintw(cfg_win, 10, 2, "Wähle 1-5 oder ESC zum Beenden");
         wrefresh(cfg_win);
-        int ch = wgetch(cfg_win);
+        /* The choice: a 100 ms read, so received lines reach the history
+           while the menu is open. */
+        wtimeout(cfg_win, 100);
+        int ch;
+        while ((ch = wgetch(cfg_win)) == ERR)
+            drain_lines(0);
         if (ch == 27) break;
+        /* A field: a blocking line read, so a typing pause never ends or
+           cuts it; lines queue meanwhile and drain after it. */
+        wtimeout(cfg_win, -1);
         echo(); curs_set(1);
         if (ch == '1') {
             mvwgetnstr(cfg_win, 8, 14, CALL_SIGN, 15); to_uppercase(CALL_SIGN);
@@ -542,7 +634,15 @@ void send_aprs(const char *text) {
     packet[len++] = 0x3c; packet[len++] = 0xff; packet[len++] = 0x01;
     len += sprintf((char*)&packet[len], "%s%s%s%s%s:%s",
                    CALL_SIGN, CALL_SIGN_STOP, APRS_PATH, SEPERATOR, destination_callsign, text);
-    send(sock_fd, packet, len, MSG_NOSIGNAL);   /* a closed daemon socket must not kill chat (SIGPIPE) */
+    /* MSG_NOSIGNAL: a closed daemon socket must not kill chat (SIGPIPE). */
+    if (send(sock_fd, packet, len, MSG_NOSIGNAL) != len) {
+        /* Not sent (an error or a short write): nothing to wait for. */
+        if (split_freq)
+            send_lora_config(RX_FREQ);
+        add_to_history("System", "not sent: daemon gone", 4);
+        redraw_chat();
+        return;
+    }
     if (split_freq) {
         /* The frame is only QUEUED at this point. Retuning now would move the
            radio out from under a transmission still in progress -- that is the
@@ -554,23 +654,23 @@ void send_aprs(const char *text) {
     redraw_chat();
 }
 
+/* Receives and parses frames; never draws and never writes the history
+   (the line queue above). */
 void *receive_thread(void *arg) {
     unsigned char buf[1024];
-    send_lora_config(RX_FREQ);
     while (1) {
         int n = recv(sock_fd, buf, sizeof(buf) - 1, 0);
         if (n == 0 || (n < 0 && errno != EINTR)) {
             /* The daemon closed the data socket (stopped, restarted or gone):
                say so once and end this thread; chat does not reconnect.
                Looping on would get 0 again at once: a busy loop. */
-            add_to_history("System", "daemon gone: restart chat", 4);
-            redraw_chat();
-            doupdate();
+            line_queue_push("", "System", "daemon gone: restart chat", 4);
             break;
         }
         if (n > 0) {
             buf[n] = '\0';
             char sender[20] = "UNK";
+            char call[20] = "";
             char *msg_content = "---";
             char *tag_open = strchr((char*)buf, '<');
             char *tag_close = strchr((char*)buf, '>');
@@ -580,7 +680,7 @@ void *receive_thread(void *arg) {
                 if (s_len > 0 && s_len < 20) {
                     strncpy(sender, call_start, s_len);
                     sender[s_len] = '\0';
-                    add_call(sender);
+                    snprintf(call, sizeof(call), "%s", sender);
                 }
             }
             char *first_colon = strchr((char*)buf, ':');
@@ -593,9 +693,7 @@ void *receive_thread(void *arg) {
                     msg_content[i] = ' ';
                 }
             }
-            add_to_history(sender, msg_content, 3);
-            redraw_chat();
-            doupdate();
+            line_queue_push(call, sender, msg_content, 3);
         }
     }
     return NULL;
@@ -649,12 +747,15 @@ int main(int argc, char **argv) {
     init_pair(7, COLOR_BLUE,   COLOR_BLACK); // FARBE FÜR DIE UHRZEIT
     
     setup_windows(); update_footer(); update_call_list(); doupdate();
+    send_lora_config(RX_FREQ);
     pthread_t tid;
     pthread_create(&tid, NULL, receive_thread, NULL);
     char input_buf[256];
     int pos = 0;
     while (1) {
         int ch = wgetch(input_win);
+        drain_lines(1);
+        if (ch == ERR) continue;
         if (ch == KEY_RESIZE) {
             setup_windows(); update_footer(); update_call_list(); doupdate();
             mvwaddstr(input_win, 0, 0, "> "); waddnstr(input_win, input_buf, pos);

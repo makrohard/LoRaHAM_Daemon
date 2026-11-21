@@ -10,6 +10,8 @@
 - CONF: `QUIT` / `EXIT` answer `OK` and stop the daemon as SIGTERM does (exit 0).
 - **Behaviour change:** `meshstick-1262`: POWER 21 and 22 need `--high-power` (refused without it, as an SX127x 20
   is). Upgrade: start a Meshstick daemon that is to send at 21 or 22 with `--high-power`.
+- Chat: one thread draws, so a line received while typing, sending or in the menu no longer garbles the screen; a
+  line that could not be sent shows "not sent: daemon gone".
 
 ## 1.4.2
 

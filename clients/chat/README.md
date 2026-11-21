@@ -22,7 +22,8 @@ socket, not the framed one); a path given here is used as is:
 `-h` prints the usage. An empty or over-long path, a path that cannot be connected or an unknown
 argument stops chat with the reason before the screen starts. Chat tunes the radio from
 `lorachat.conf`: for an 868 daemon set an 868 frequency there, or the daemon refuses the 433 default.
-The tests run without a terminal: `clients/chat/run_tests.sh`.
+The tests run without a terminal: `clients/chat/run_tests.sh` (also under ThreadSanitizer where its runtime is
+installed).
 
 ### Changes
 

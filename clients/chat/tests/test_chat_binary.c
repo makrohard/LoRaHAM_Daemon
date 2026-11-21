@@ -13,6 +13,17 @@
  * so no retune wait). Then the data listener closes its end (the daemon
  * gone): chat shows "daemon gone" and stays idle (CPU over 1 s), and a line
  * typed then does not kill it (SIGPIPE).
+ * One drawing thread (1.5.0): a second run against a CONF responder that
+ * answers GET STATS / GET CHANNEL. 45 frames with distinct senders arrive
+ * while a line is typed and sent (TX = RX), while the config menu waits for
+ * its choice, while a field is typed with 300 ms pauses, and while a split
+ * frequency send waits for its transmission; the history file then holds
+ * all 45 senders and the two sent lines (47 entries), and the slow field
+ * kept every character. 70 frames while a field is typed (nothing drains)
+ * overflow the 64-line queue: the oldest 6 go, counted. After the data
+ * socket closes, a typed line shows "not sent: daemon gone" within 1 s
+ * (TX != RX: no wait) and chat retunes to RX; a CONF peer that closes at
+ * once does not kill chat (MSG_NOSIGNAL).
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -24,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -167,6 +179,276 @@ static long proc_cpu_ticks(pid_t pid)
     return (long)(ut + st);
 }
 
+/* Drains the pseudo-terminal for ms (chat never blocks on a full one). */
+static void drain_ms(int master, int ms)
+{
+    char sink[8192];
+    read_until(master, "\001never\001", sink, sizeof(sink), ms);
+}
+
+/* One received frame, as the daemon hands it to a data client. */
+static void send_frame(int dfd, const char *sender)
+{
+    char f[160];
+    int n = snprintf(f, sizeof(f), "\x3c\xff\x01%s>APRS,WIDE1-1::ALL      :msg from %s", sender, sender);
+    if (write(dfd, f, (size_t)n) != n) { }
+}
+
+/* The CONF responder (a child process): GET STATS answers a TX counter
+ * that moves only on the 11th poll after a SET FREQ=<tx> (a transmission of
+ * about 1.1 s); GET CHANNEL answers BUSY=0; each SET is appended to `sets`
+ * as one line. */
+static void conf_responder(int lfd, const char *tx, const char *sets)
+{
+    long done = 0;
+    int polls = -1;
+    char want[64];
+    snprintf(want, sizeof(want), "SET FREQ=%s ", tx);
+    for (;;) {
+        int fd = accept(lfd, NULL, NULL);
+        if (fd < 0)
+            continue;
+        char b[512];
+        struct pollfd p = { fd, POLLIN, 0 };
+        ssize_t n = poll(&p, 1, 2000) == 1 ? read(fd, b, sizeof(b) - 1) : 0;
+        if (n > 0) {
+            b[n] = '\0';
+            if (strncmp(b, want, strlen(want)) == 0)
+                polls = 0;
+            if (strncmp(b, "SET ", 4) == 0) {
+                FILE *f = fopen(sets, "a");
+                if (f) {
+                    fprintf(f, "%.*s\n", (int)strcspn(b, "\n"), b);
+                    fclose(f);
+                }
+            }
+            if (strncmp(b, "GET STATS", 9) == 0) {
+                if (polls >= 0 && ++polls == 11) {
+                    done++;
+                    polls = -1;
+                }
+                char r[96];
+                int m = snprintf(r, sizeof(r), "STATS TXOK=%ld TXERR=0 TXBUSY=0\n", done);
+                if (write(fd, r, (size_t)m) != m) { }
+            } else if (strncmp(b, "GET CHANNEL", 11) == 0) {
+                if (write(fd, "CHANNEL BUSY=0\n", 15) != 15) { }
+            }
+        }
+        close(fd);
+    }
+}
+
+static int file_has(const char *path, const char *part)
+{
+    char b[16384];
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return 0;
+    size_t n = fread(b, 1, sizeof(b) - 1, f);
+    fclose(f);
+    b[n] = '\0';
+    return strstr(b, part) != NULL;
+}
+
+static int file_lines(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    int c, n = 0;
+    if (!f)
+        return -1;
+    while ((c = fgetc(f)) != EOF)
+        n += c == '\n';
+    fclose(f);
+    return n;
+}
+
+/* Waits up to ms for `part` in the file at path. */
+static int wait_file(const char *path, const char *part, int ms)
+{
+    for (int t = 0; t < ms; t += 50) {
+        if (file_has(path, part))
+            return 1;
+        usleep(50000);
+    }
+    return file_has(path, part);
+}
+
+static void scenario_one_drawing_thread(void)
+{
+    char dir[160], dpath[200], cpath[200], conf[200], hist[200], sets[200], name[16], buf[8192], t[200], cmd2[300];
+    snprintf(dir, sizeof(dir), "%s/ui", g_dir);
+    mkdir(dir, 0700);
+    snprintf(dpath, sizeof(dpath), "%s/lora-u.sock", dir);
+    snprintf(cpath, sizeof(cpath), "%s/loraconf-u.sock", dir);
+    snprintf(conf, sizeof(conf), "%s/lorachat.conf", dir);
+    snprintf(hist, sizeof(hist), "%s/lorachat.log", dir);
+    snprintf(sets, sizeof(sets), "%s/sets.log", dir);
+    FILE *cf = fopen(conf, "w");
+    if (cf) {
+        fputs("TX=433.900\nRX=433.900\n", cf);
+        fclose(cf);
+    }
+    int dl = listen_at(dpath), cl = listen_at(cpath);
+    expect("ui: two listeners", dl >= 0 && cl >= 0);
+    pid_t resp = fork();
+    if (resp == 0) {
+        conf_responder(cl, "433.775", sets);
+        _exit(0);
+    }
+    int master = -1;
+    pid_t pid = forkpty(&master, NULL, NULL, NULL);
+    if (pid == 0) {
+        setenv("TERM", "xterm", 1);
+        setenv("ESCDELAY", "25", 1);
+        if (chdir(dir) != 0)
+            _exit(126);
+        execl(g_bin, "loraham_chat", "--data-socket", dpath, "--conf-socket", cpath, (char *)NULL);
+        _exit(127);
+    }
+    int dfd = accept_within(dl, 5000);
+    expect("ui: chat connects", dfd >= 0);
+    drain_ms(master, 500);                        /* the first screen */
+
+    /* 15 frames while a line is typed and sent, TX = RX. */
+    const char *la = "typed-line-AAAA";
+    for (int i = 0; i < 15; i++) {
+        snprintf(name, sizeof(name), "TA%02d", i);
+        send_frame(dfd, name);
+        if (write(master, la + i, 1) != 1) { }
+        drain_ms(master, 40);
+    }
+    if (write(master, "\r", 1) != 1) { }
+    expect("ui: the typed line arrives on the data socket",
+           read_until(dfd, la, buf, sizeof(buf), 3000));
+
+    /* 10 frames while the menu waits for its choice. */
+    if (write(master, "\013", 1) != 1) { }
+    expect("ui: Ctrl-K opens the menu", read_until(master, "KONFIGURATION", buf, sizeof(buf), 3000));
+    for (int i = 0; i < 10; i++) {
+        snprintf(name, sizeof(name), "TC%02d", i);
+        send_frame(dfd, name);
+        drain_ms(master, 40);
+    }
+    expect("ui: lines received with the menu open reach the history while it is open",
+           wait_file(hist, "|TC09|", 2000));
+
+    /* 5 frames while the TX field is typed with 300 ms pauses. */
+    if (write(master, "4", 1) != 1) { }
+    drain_ms(master, 200);
+    const char *tx = "433.775";
+    for (int i = 0; i < 7; i++) {
+        if (write(master, tx + i, 1) != 1) { }
+        if (i < 5) {
+            snprintf(name, sizeof(name), "TD%02d", i);
+            send_frame(dfd, name);
+        }
+        drain_ms(master, 300);
+    }
+    if (write(master, "\r", 1) != 1) { }
+    drain_ms(master, 200);
+    if (write(master, "\033", 1) != 1) { }
+    expect("ui: the menu closes and the footer shows the new TX",
+           read_until(master, "TX: 433.775", buf, sizeof(buf), 3000));
+    expect("ui: the slow field kept every character (lorachat.conf TX=433.775)",
+           wait_file(conf, "TX=433.775\n", 2000));
+
+    /* 15 frames while a split frequency send waits for its transmission. */
+    const char *lb = "split-line-BBBB";
+    if (write(master, lb, strlen(lb)) != (ssize_t)strlen(lb) || write(master, "\r", 1) != 1) { }
+    for (int i = 0; i < 15; i++) {
+        snprintf(name, sizeof(name), "TB%02d", i);
+        send_frame(dfd, name);
+        drain_ms(master, 50);
+    }
+    expect("ui: the split line arrives on the data socket", read_until(dfd, lb, buf, sizeof(buf), 3000));
+    expect("ui: the split send ends and the last frame is shown", wait_file(hist, "|TB14|", 5000));
+
+    /* The history: 45 senders and the two sent lines, nothing else. */
+    int all = 1;
+    const char *groups[] = { "TA", "TC", "TD", "TB" };
+    const int counts[] = { 15, 10, 5, 15 };
+    for (int g = 0; g < 4; g++)
+        for (int i = 0; i < counts[g]; i++) {
+            snprintf(name, sizeof(name), "|%s%02d|", groups[g], i);
+            if (!file_has(hist, name)) {
+                printf("       missing in the history: %s\n", name);
+                all = 0;
+            }
+        }
+    expect("ui: the history holds all 45 senders, each by name", all);
+    expect("ui: and both sent lines", file_has(hist, "|Ich|typed-line-AAAA") && file_has(hist, "|Ich|split-line-BBBB"));
+    snprintf(t, sizeof(t), "ui: 47 entries in the history (got %d)", file_lines(hist));
+    expect(t, file_lines(hist) == 47);
+    if (file_lines(hist) != 47) {
+        snprintf(cmd2, sizeof(cmd2), "sed 's/^/       history: /' '%s' | cut -c1-110", hist);
+        if (system(cmd2) != 0) { }
+    }
+
+    /* 70 frames while the call field is typed: nothing drains, the queue
+     * keeps the newest 64 and counts the 6 it dropped. */
+    if (write(master, "\013", 1) != 1) { }
+    expect("ui: Ctrl-K opens the menu again", read_until(master, "KONFIGURATION", buf, sizeof(buf), 3000));
+    if (write(master, "1", 1) != 1) { }
+    drain_ms(master, 200);
+    for (int i = 0; i < 70; i++) {
+        snprintf(name, sizeof(name), "TE%02d", i);
+        send_frame(dfd, name);
+        drain_ms(master, 20);
+    }
+    if (write(master, "DL1TST\r\033", 8) != 8) { }
+    expect("ui: the overflow: the dropped count is shown", wait_file(hist, "|System|(6 lines dropped)", 3000));
+    int kept = 1;
+    for (int i = 21; i < 70; i++) {               /* the 50-line backlog: these 49 and the note */
+        snprintf(name, sizeof(name), "|TE%02d|", i);
+        kept = kept && file_has(hist, name);
+    }
+    expect("ui: the overflow: the newest lines are kept (TE21..TE69 and the note: the 50-line history)", kept);
+
+    /* A failed send: the data socket gone, TX != RX. */
+    close(dfd);
+    expect("ui: the daemon gone is shown", read_until(master, "daemon gone", buf, sizeof(buf), 3000));
+    drain_ms(master, 200);
+    if (write(master, "gone-line\r", 10) != 10) { }
+    FILE *sf = fopen(sets, "a");                  /* a marker: only the SETs after it count */
+    if (sf) {
+        fputs("MARK\n", sf);
+        fclose(sf);
+    }
+    expect("ui: a line typed then shows \"not sent: daemon gone\" within 1 s",
+           read_until(master, "not sent: daemon gone", buf, sizeof(buf), 1000));
+    char lastset[512] = "", line[512];
+    sf = fopen(sets, "r");
+    while (sf && fgets(line, sizeof(line), sf))
+        snprintf(lastset, sizeof(lastset), "%s", line);
+    if (sf)
+        fclose(sf);
+    snprintf(t, sizeof(t), "ui: ... and chat retuned to RX after it (last SET: %.60s)", lastset);
+    expect(t, strncmp(lastset, "SET FREQ=433.900 ", 17) == 0);
+    drain_ms(master, 1500);
+    expect("ui: ... and is not shown as sent", !file_has(hist, "|Ich|gone-line"));
+
+    /* A CONF peer that accepts and closes at once, then a retune. */
+    kill(resp, SIGKILL);
+    waitpid(resp, NULL, 0);
+    if (write(master, "n1-line\r", 8) != 8) { }
+    int closed = 0;
+    for (int k = 0; k < 15; k++) {
+        int fd = accept_within(cl, 100);
+        if (fd >= 0) {
+            close(fd);
+            closed++;
+        }
+        drain_ms(master, 10);
+    }
+    expect("ui: the retune reached the CONF peer that closes at once", closed > 0);
+    expect("ui: chat is still running (MSG_NOSIGNAL)", waitpid(pid, NULL, WNOHANG) == 0);
+    kill(pid, SIGKILL);
+    waitpid(pid, NULL, 0);
+    close(master);
+    close(dl);
+    close(cl);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -281,6 +563,8 @@ int main(int argc, char **argv)
         printf("       chat ended by signal %d\n", WTERMSIG(wst));
     kill(pid, SIGKILL);
     waitpid(pid, NULL, 0);
+
+    scenario_one_drawing_thread();
 
     char cmd[200];
     snprintf(cmd, sizeof(cmd), "rm -rf '%s'", g_dir);
