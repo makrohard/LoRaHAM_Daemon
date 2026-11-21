@@ -1067,7 +1067,9 @@ static void scenario_quit(void)
         if (i == 0) {
             printf("       Q1 QUIT -> exit: %llu ms\n", (unsigned long long)ms);
             char b;
-            expect("Q3 a data client reads EOF at the QUIT", raw >= 0 && read(raw, &b, 1) == 0);
+            struct pollfd p = { raw, POLLIN, 0 };          /* bounded: a daemon that keeps running fails, not hangs */
+            expect("Q3 a data client reads EOF at the QUIT",
+                   raw >= 0 && poll(&p, 1, 1000) == 1 && read(raw, &b, 1) == 0);
             expect("Q1 the log names the stop", log_has(g_tmp + "/q1.log", "QUIT: stopping (as SIGTERM)"));
         }
         close(raw);
