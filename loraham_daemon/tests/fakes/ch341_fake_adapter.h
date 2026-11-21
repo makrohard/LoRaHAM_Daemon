@@ -43,6 +43,7 @@ struct FakeCh341 {
     void (*irq_cb)(void) = nullptr;
 
     const char *close_log = nullptr;
+    int close_rc = 0;              /* what close returns (-1: deinit refused) */
 };
 
 static FakeCh341 g_fake_ch341;
@@ -61,7 +62,7 @@ static loraham_ch341 *fake_ch341_open(uint16_t, uint16_t, const char *)
     return g_fake_ch341.open_ok ? reinterpret_cast<loraham_ch341 *>(&g_fake_ch341) : nullptr;
 }
 
-static void fake_ch341_close(loraham_ch341 *)
+static int fake_ch341_close(loraham_ch341 *)
 {
     g_fake_ch341.closes++;
     if (g_fake_ch341.close_log) {
@@ -72,6 +73,7 @@ static void fake_ch341_close(loraham_ch341 *)
             close(fd);
         }
     }
+    return g_fake_ch341.close_rc;
 }
 
 static int fake_ch341_transceive(loraham_ch341 *, const uint8_t *out, uint8_t *in, uint32_t len)

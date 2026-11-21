@@ -35,6 +35,10 @@ static const char *g_usb_serial = nullptr;
 static const char *g_usb_port = nullptr;
 /* The configuration to replay after a replug, copied at teardown. */
 static std::string g_replay;
+/* --radio-error retry (the effective mode, resolved by preset at parse). */
+static bool g_radio_error_retry = false;
+/* The last teardown's close was refused by the library: it keeps the handle. */
+static bool g_kept = false;
 
 /* ---- the state machine's operations ---------------------------------------- */
 
@@ -94,11 +98,7 @@ static int op_reopen_step(void)
     }
 }
 
-static bool op_reopen_due(void)
-{
-    uint64_t at = daemon_ch341_select_retry_at();
-    return at != 0 && op_now_ms() >= at;
-}
+static uint64_t op_reopen_retry_at(void) { return daemon_ch341_select_retry_at(); }
 
 static void op_dispatch(void *) { g_api->mon_dispatch(g_mon); }
 /* The runtime acts on a real LEFT only; lost events (2) leave the §3.3
@@ -122,8 +122,11 @@ static bool op_teardown_try(void)
     g_api->mon_unbind(g_mon);
     radio_controller.driver.reset();
     radio_controller.mod.reset();
+    /* The close first, for its result (pine64 deinit; -1 = refused, the
+     * library keeps the handle), then the HAL. */
+    g_kept = radio_controller.hal_ctl && radio_controller.hal_ctl->close_device_now() != 0;
     radio_controller.hal_ctl = nullptr;
-    radio_controller.hal.reset();          /* closes the device: pine64 deinit */
+    radio_controller.hal.reset();
     radio_controller.received.store(false);
     radio_controller.rx_rearm_pending.store(false);
     radio_controller.cad_active.store(false);
@@ -173,6 +176,8 @@ static int op_reinit(void)
 }
 
 static void op_set_health(RadioHealth h) { radio_controller.health.store(h); }
+static uint32_t op_count_fault(void) { return (uint32_t)++radio_controller.usb_faults; }
+static bool op_handle_kept(void) { return g_kept; }
 
 /* Every exit 5 of the Meshstick: the device closed first (the HAL), then the
  * monitor (its references and libusb context), then _exit. */
@@ -231,14 +236,19 @@ void daemon_ch341_monitor_start(void)
     ops.reopen_arrival = op_reopen_arrival;
     ops.reopen_left = op_reopen_left;
     ops.reopen_step = op_reopen_step;
-    ops.reopen_due = op_reopen_due;
+    ops.reopen_retry_at = op_reopen_retry_at;
     ops.teardown_try = op_teardown_try;
     ops.reinit = op_reinit;
     ops.set_health = op_set_health;
     ops.fatal = op_fatal;
     ops.now_ms = op_now_ms;
     ops.stick = daemon_hw_profile.model;
+    ops.retry = g_radio_error_retry;
+    ops.count_fault = op_count_fault;
+    ops.handle_kept = op_handle_kept;
     daemon_usb_wait_init(&ops);
+    /* STATUS RADIOERR=: the running mode (without the monitor a loss exits 5). */
+    radio_controller.radio_error_retry = g_radio_error_retry;
     printf("[CH341] unplug-wait active: a lost stick is waited for (libusb hotplug)\n");
 }
 
@@ -359,8 +369,14 @@ void daemon_ch341_set_usb_port(const char *port)
     g_usb_port = port;
 }
 
+void daemon_ch341_set_radio_error_retry(bool retry)
+{
+    g_radio_error_retry = retry;
+}
+
 bool daemon_ch341_start(char *why, size_t why_size)
 {
+    radio_controller.usb_faults = 0;        /* STATUS USBFAULT=: counted on a USB stick */
     daemon_ch341_monitor_start();
     return daemon_ch341_select_at_start(g_usb_serial, g_usb_port, why, why_size);
 }

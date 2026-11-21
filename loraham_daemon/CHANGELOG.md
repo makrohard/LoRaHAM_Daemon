@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0
+
+- USB sticks: new option `--radio-error retry|exit`. **Behaviour change:** the default on a USB stick preset is
+  `retry`: an I/O error with the stick still present, or a failed set-up after a replug, closes the stick and opens it
+  again on a backoff (1 s doubling to 1024 s, then every 30 min) instead of exit 5. `--radio-error exit` keeps 1.4.x.
+  SPI boards are unchanged (exit 5); `retry` there is refused.
+- `GET STATUS`: two fields after `ID=`, `RADIOERR=` (the mode) and `USBFAULT=` (the faults since start, `-` on SPI).
+
 ## 1.4.2
 
 - `pinedio-usb-1262` accepts `POWER` 0–20, the SX1262 range; the placeholder limit of 14 is gone.

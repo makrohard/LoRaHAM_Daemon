@@ -43,8 +43,9 @@ loraham_ch341 *loraham_ch341_open(uint16_t vid, uint16_t pid, const char *serial
 loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *port);
 
 /* Stop the interrupt poll thread, release interface 0, re-attach the kernel
- * driver, close the device. NULL is ignored. */
-void loraham_ch341_close(loraham_ch341 *dev);
+ * driver, close the device: 0. -1 = pine64's deinit refused, nothing was
+ * released and the library keeps the handle (never use it again). NULL: 0. */
+int loraham_ch341_close(loraham_ch341 *dev);
 
 /* One full-duplex SPI transfer of `len` bytes; `in` may be NULL. */
 int loraham_ch341_transceive(loraham_ch341 *dev, const uint8_t *out, uint8_t *in, uint32_t len);
@@ -145,7 +146,7 @@ void loraham_ch341_seed_idle(void);
 typedef struct {
     const char *(*pin)(void);
     loraham_ch341 *(*open)(uint16_t vid, uint16_t pid, const char *serial);
-    void (*close)(loraham_ch341 *dev);
+    int (*close)(loraham_ch341 *dev);              /* 0 closed, -1 deinit refused (kept) */
     int (*transceive)(loraham_ch341 *dev, const uint8_t *out, uint8_t *in, uint32_t len);
     int (*pin_mode)(loraham_ch341 *dev, uint32_t pin, int output);
     int (*digital_write)(loraham_ch341 *dev, uint32_t pin, int level);

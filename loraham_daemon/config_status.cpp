@@ -405,14 +405,18 @@ void config_status_format(char *buf,
                                         size_t buf_size,
                                         const RadioController *ctrl)
 {
-    char freq[32], sf[24], power[24];
+    char freq[32], sf[24], power[24], usbfault[24];
 
     config_status_applied("FREQ", true, freq, sizeof(freq));
     config_status_applied("SF", false, sf, sizeof(sf));
     config_status_applied("POWER", false, power, sizeof(power));
+    if (ctrl && ctrl->usb_faults >= 0)
+        snprintf(usbfault, sizeof(usbfault), "%lld", ctrl->usb_faults);
+    else
+        snprintf(usbfault, sizeof(usbfault), "-");
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d USBWAIT=%s BOUND=%s ID=%s FREQ=%s SF=%s POWER=%s\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d USBWAIT=%s BOUND=%s ID=%s RADIOERR=%s USBFAULT=%s FREQ=%s SF=%s POWER=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -461,6 +465,10 @@ void config_status_format(char *buf,
               * <serial>@<bus-port> (serial - / ?); "-" unless READY. */
              (ctrl && radio_controller_ready(ctrl) && ctrl->bound[0]) ? ctrl->bound : "-",
              (ctrl && ctrl->instance_id) ? ctrl->instance_id : "-",
+             /* RADIOERR / USBFAULT (1.5.0): the running --radio-error mode and
+              * the USB stick's present-path faults since start ("-" on SPI). */
+             (ctrl && ctrl->radio_error_retry) ? "retry" : "exit",
+             usbfault,
              /* FREQ / SF / POWER (appended 1.3.0): the values the CONF apply
               * path last applied, from the replay record, normalized
               * (config_status_applied); "-" for a key not set since boot or

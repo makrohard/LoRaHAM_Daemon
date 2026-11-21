@@ -512,8 +512,8 @@ static void test_status_reports_high_power_and_family(void)
     /* Changed guard (1.3.0): OCP= is no longer the last field; USBWAIT=,
      * BOUND=, ID= and the applied FREQ=, SF=, POWER= follow it, "-" without
      * a waiting port, an open Meshstick, --id and an applied value. */
-    expect_contains("status default OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-, last fields, newline",
-                    status, " OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-\n");
+    expect_contains("status default OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-, last fields, newline",
+                    status, " OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
 
     ctrl.high_power_enabled = true;
     ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
@@ -527,20 +527,32 @@ static void test_status_reports_high_power_and_family(void)
 
     ctrl.instance_id = "r3";
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status ID=r3 last", status, " USBWAIT=- BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    expect_contains("status ID=r3 last", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "1-2");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "-");
     /* BOUND= (1.3.0; <serial>@<port> since 1.4.0): the open stick, reported only while READY. */
     snprintf(ctrl.bound, sizeof(ctrl.bound), "TESTSN01@1-2");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status BOUND=<serial>@<port> while READY", status, " USBWAIT=- BOUND=TESTSN01@1-2 ID=r3 FREQ=- SF=- POWER=-\n");
+    expect_contains("status BOUND=<serial>@<port> while READY", status, " USBWAIT=- BOUND=TESTSN01@1-2 ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
     ctrl.health = RADIO_HEALTH_UNPLUGGED;
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 FREQ=- SF=- POWER=-\n");
+    expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
     ctrl.health = RADIO_HEALTH_READY;
     snprintf(ctrl.bound, sizeof(ctrl.bound), "-");
+    /* RADIOERR= and USBFAULT= (1.5.0): after ID=, before FREQ=; the running
+     * mode and the count, "-" off a USB stick. */
+    ctrl.radio_error_retry = true;
+    ctrl.usb_faults = 0;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status RADIOERR=retry USBFAULT=0 after ID=, before FREQ=", status,
+                    " BOUND=- ID=r3 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-\n");
+    ctrl.usb_faults = 3;
+    config_status_format(status, sizeof(status), &ctrl);
+    expect_contains("status USBFAULT=3 is the count", status, " ID=r3 RADIOERR=retry USBFAULT=3 FREQ=");
+    ctrl.radio_error_retry = false;
+    ctrl.usb_faults = -1;
     ctrl.instance_id = NULL;
 
     /* Every counter at its widest must still end in the newline: a truncated
@@ -553,12 +565,17 @@ static void test_status_reports_high_power_and_family(void)
     ctrl.instance_id = "abcdefghijklmnop";                 /* the longest id */
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "255-7.7.7.7.7.7.7"); /* the longest port path */
     snprintf(ctrl.bound, sizeof(ctrl.bound), "%%25%%25%%25%%25%%25%%25%%25%%25@255-7.7.7.7.7.7.7");   /* the longest BOUND */
+    ctrl.radio_error_retry = true;                         /* the longer mode */
+    ctrl.usb_faults = 4294967295LL;                        /* the widest count */
     /* The applied values at their widest normalized form. */
     config_apply_replay_note("FREQ", "869.524999");
     config_apply_replay_note("SF", "12");
     config_apply_replay_note("POWER", "-9");
     config_status_format(status, sizeof(status), &ctrl);
     size_t n = strlen(status);
+    printf("       status at wide counters: %zu bytes\n", n);
+    expect_contains("status at wide counters: RADIOERR=retry USBFAULT=4294967295", status,
+                    " RADIOERR=retry USBFAULT=4294967295 FREQ=");
     expect_int("status at wide counters still ends in newline",
                n > 0 && status[n - 1] == '\n', 1);
     expect_int("status at wide counters fits the production buffer",
@@ -584,11 +601,13 @@ static void test_status_reports_high_power_and_family(void)
             }
         }
         expect_int("status at wide counters: at most 64 tokens", tokens <= 64, 1);
-        expect_int("status: 31 KEY=VALUE pairs (28 + FREQ, SF, POWER)", (long)pairs, 31);
+        expect_int("status: 33 KEY=VALUE pairs (28 + FREQ, SF, POWER + RADIOERR, USBFAULT)", (long)pairs, 33);
         expect_int("status at wide counters: no token over 128 bytes", longest <= 128, 1);
     }
     config_apply_replay_reset();
     ctrl.instance_id = NULL;
+    ctrl.radio_error_retry = false;
+    ctrl.usb_faults = -1;
 }
 
 /* FREQ=, SF=, POWER= (1.3.0): what the CONF apply path last applied, read off
@@ -602,19 +621,19 @@ static void test_status_reports_applied_rf(void)
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
     config_apply_replay_reset();
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: nothing set reads -", status, " ID=- FREQ=- SF=- POWER=-\n");
+    expect_contains("applied RF: nothing set reads -", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
 
     config_apply_replay_note("FREQ", "869.4");
     config_apply_replay_note("SF", "9");
     config_apply_replay_note("POWER", "5");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: the values as applied", status, " ID=- FREQ=869.4 SF=9 POWER=5\n");
+    expect_contains("applied RF: the values as applied", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=9 POWER=5\n");
 
     config_apply_replay_note("BW", "125");                  /* other keys are not echoed */
     config_apply_replay_note("SF", "11");                   /* the last value wins */
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("applied RF: the last value, other keys not echoed", status,
-                    " ID=- FREQ=869.4 SF=11 POWER=5\n");
+                    " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=11 POWER=5\n");
 
     /* Unplugged: the record is kept for the replay, so STATUS keeps it. */
     ctrl.health = RADIO_HEALTH_UNPLUGGED;
@@ -1947,8 +1966,8 @@ static void test_stable_conf_replies(void)
         dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                        "GET STATUS\n", line, sizeof(line));
         n = strlen(line);
-        expect_int("reply: GET STATUS ends with OCP=150 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=- and newline",
-                   n > 52 && strcmp(line + n - 52, " OCP=150 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-\n") == 0, 1);
+        expect_int("reply: GET STATUS ends with OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- and newline",
+                   n > 77 && strcmp(line + n - 77, " OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n") == 0, 1);
         ctrl.ocp_ma = 100;
     }
 

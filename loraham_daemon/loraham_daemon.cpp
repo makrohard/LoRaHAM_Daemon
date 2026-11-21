@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <strings.h>
 #include <getopt.h>
 #include <errno.h>
 #include <unistd.h>
@@ -300,6 +301,9 @@ static void daemon_print_usage(const char *argv0)
     printf("      --hw PRESET  hardware profile: %s\n",
            daemon_hardware_profile_known());
     printf("                   (default: loraham)\n");
+    printf("      --radio-error MODE  on a radio I/O error after start: retry, exit\n");
+    printf("                          (default: retry on a USB stick preset, exit on an SPI board);\n");
+    printf("                          retry: where the daemon can recover in-process; today the USB stick\n");
     printf("      --tx-mode MODE      TX mode: direct, managed (default: managed)\n");
     printf("      --cad-monitor VAL   CAD=0/1 monitor: on, off (default: off)\n");
     printf("      --cad-rssi DBM      CAD busy threshold, integer dBm -130..0 (default: -90)\n");
@@ -358,6 +362,8 @@ static bool daemon_usb_serial_valid(const char *s)
 /* --usb-port: "<bus>-<port>[.<port>...]" as sysfs names it: numbers of 1-3
  * digits, at most 7 ports (the USB tier limit). */
 static const char *g_usb_port = NULL;
+/* --radio-error: 0 omitted (by preset: retry on a USB stick, exit on SPI), 1 retry, 2 exit. */
+static int g_radio_error = 0;
 
 static bool daemon_usb_port_valid(const char *s)
 {
@@ -406,6 +412,7 @@ static bool daemon_parse_args(int argc, char *argv[])
         {"id",          required_argument, 0, 1016},
         {"usb-serial",  required_argument, 0, 1017},
         {"usb-port",    required_argument, 0, 1018},
+        {"radio-error", required_argument, 0, 1019},
         {"help",        no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -525,6 +532,19 @@ static bool daemon_parse_args(int argc, char *argv[])
                 g_usb_port = optarg;
                 daemon_debug_ctx("STARTUP", "option --usb-port recognised: %s", optarg);
                 break;
+            case 1019:
+                if (strcasecmp(optarg, "retry") == 0) {
+                    g_radio_error = 1;
+                } else if (strcasecmp(optarg, "exit") == 0) {
+                    g_radio_error = 2;
+                } else {
+                    fprintf(stderr, "invalid --radio-error: %s\n", optarg);
+                    fprintf(stderr, "allowed: retry, exit\n");
+                    daemon_print_usage(argv[0]);
+                    exit(EXIT_FAILURE);
+                }
+                daemon_debug_ctx("STARTUP", "option --radio-error recognised: %s", optarg);
+                break;
             case 'h':
                 daemon_print_usage(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -585,6 +605,12 @@ static bool daemon_parse_args(int argc, char *argv[])
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
+    if (g_radio_error == 1 && !daemon_hw_profile.usb_ch341) {
+        fprintf(stderr, "--radio-error retry is only for a USB stick preset "
+                        "(an SPI board exits 5 on a radio I/O error)\n");
+        daemon_print_usage(argv[0]);
+        exit(EXIT_FAILURE);
+    }
     if (g_usb_serial && g_usb_port) {
         fprintf(stderr, "--usb-serial and --usb-port exclude each other\n");
         daemon_print_usage(argv[0]);
@@ -630,6 +656,7 @@ static bool daemon_parse_args(int argc, char *argv[])
          * survive fork(), and a duplicate --id must stop at its lock first. */
         daemon_ch341_set_usb_serial(g_usb_serial);
         daemon_ch341_set_usb_port(g_usb_port);
+        daemon_ch341_set_radio_error_retry(g_radio_error != 2);
     }
 
     /* Chip selects: /dev/spidev0.1 exists only when the kernel owns CE0/CE1

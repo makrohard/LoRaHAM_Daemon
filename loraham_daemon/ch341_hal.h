@@ -78,6 +78,7 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     /* ---- DaemonHalControl ---------------------------------------------- */
     bool spi_lock_ready() const override { return _dev != nullptr; }
+    int close_device_now() override { return close_device(); }
     bool gpio_startup_ok() const override { return !_startupFailed; }
     void gpio_mark_operational() override { _operational = true; }
 
@@ -251,12 +252,16 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
         _exit(LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR);
     }
 
-    void close_device()
+    /* 0 closed (or nothing open), -1 refused: the library keeps the handle;
+     * the pointer is dropped either way (never used again). */
+    int close_device()
     {
+        int rc = 0;
         if (_dev) {
-            _api->close(_dev);
+            rc = _api->close(_dev);
             _dev = nullptr;
         }
+        return rc;
     }
 
     const LorahamCh341Api *_api;

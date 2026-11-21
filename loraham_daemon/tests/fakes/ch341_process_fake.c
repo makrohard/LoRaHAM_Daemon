@@ -10,7 +10,8 @@
  * badchip (the chip does not identify: begin() fails), ioerr (every transfer
  * fails while the stick stays present), failafterrx (transfers fail after the
  * first SetRx: lora_init() succeeds, the replay that follows fails),
- * unreadable (a serial index whose string cannot be read).
+ * unreadable (a serial index whose string cannot be read), closefail (pine64's
+ * deinit refuses: close returns -1, the claim and the handle are kept).
  *
  * A claim is an flock on $DIR/claim-<port>, so two daemons (and the test) see
  * each other's claims. $DIR/log gets one line per open/close/monitor event with
@@ -58,7 +59,7 @@ typedef struct {
     char port[32];
     char serial[16];      /* "" = none */
     int gen;
-    int access, detachfail, badchip, ioerr, failafterrx, unreadable;
+    int access, detachfail, badchip, ioerr, failafterrx, unreadable, closefail;
 } stick;
 
 struct loraham_ch341 {
@@ -129,6 +130,7 @@ static int read_bus(stick *out)
         s.ioerr = strstr(flags, "ioerr") != NULL;
         s.failafterrx = strstr(flags, "failafterrx") != NULL;
         s.unreadable = strstr(flags, "unreadable") != NULL;
+        s.closefail = strstr(flags, "closefail") != NULL;
         out[n++] = s;
     }
     fclose(f);
@@ -245,14 +247,20 @@ loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *p
 }
 #endif
 
-void loraham_ch341_close(loraham_ch341 *d)
+int loraham_ch341_close(loraham_ch341 *d)
 {
     if (!d)
-        return;
+        return 0;
+    const stick *c = current(d);
+    if (c && c->closefail) {
+        logline("closefail %s", d->s.port);    /* kept: claim, handle and memory */
+        return -1;
+    }
     logline("close %s", d->s.port);
     close(d->lockfd);
     free(d->regs);
     free(d);
+    return 0;
 }
 
 static int gone_or_failing(loraham_ch341 *d)

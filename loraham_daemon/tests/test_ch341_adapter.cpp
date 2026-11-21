@@ -218,8 +218,8 @@ static const char *DRIVER_C =
     "  loraham_ch341 *d = loraham_ch341_open(0x1A86, 0x5512, NULL);\n"
     "  printf(\"open=%s inits=%d deinits=%d mode3=%d mode5=%d\\n\", d ? \"dev\" : \"null\","
     " g_inits, g_deinits, g_mode[3], g_mode[5]);\n"
-    "  if (d) { loraham_ch341_close(d); printf(\"after-close deinits=%d diag-calls=%d diag=%s\", g_deinits,"
-    " g_diag_calls, g_diag_calls ? g_diag_line : \"-\\n\"); }\n"
+    "  if (d) { int crc = loraham_ch341_close(d); printf(\"after-close rc=%d deinits=%d diag-calls=%d diag=%s\", crc,"
+    " g_deinits, g_diag_calls, g_diag_calls ? g_diag_line : \"-\\n\"); }\n"
     "  printf(\"refs=%d\\n\", stub_default_refs);\n"
     "  return 0;\n}\n";
 
@@ -285,7 +285,8 @@ int main(void)
     expect("no fault: D3 and D5 set as outputs",
            ok.find("mode3=1 mode5=1") != std::string::npos);
     expect("no fault: nothing deinitialised while open", ok.find("open=dev inits=1 deinits=0") == 0);
-    expect("no fault: close deinitialises once", ok.find("after-close deinits=1") != std::string::npos);
+    expect("no fault: close deinitialises once", ok.find("deinits=1 diag") != std::string::npos);
+    expect("no fault: close returns 0", ok.find("after-close rc=0 ") != std::string::npos);
     expect("no fault: the close writes no line", ok.find("diag-calls=0 diag=-") != std::string::npos);
     expect("no fault: open + close leave no libusb reference", ok.find("refs=0") != std::string::npos);
 
@@ -319,7 +320,9 @@ int main(void)
     /* A close the library refuses (called on its poll worker): nothing is
      * released, the libusb reference stays, the stick is not freed. */
     std::string fr = run_driver("STUB_DEINIT_REFUSE=1");
-    expect("close refused by deinit: deinit asked once", fr.find("after-close deinits=1") != std::string::npos);
+    expect("close refused by deinit: deinit asked once", fr.find("deinits=1 diag") != std::string::npos);
+    expect("close refused by deinit: close returns -1 (the daemon keeps it as kept)",
+           fr.find("after-close rc=-1 ") != std::string::npos);
     expect("close refused by deinit: the libusb reference is kept (no libusb_exit, no free)",
            fr.find("refs=1") != std::string::npos);
     /* The refusal line goes through the library's diagnostic entry (gate 2 G2-DAEMON142-D: one implementation of

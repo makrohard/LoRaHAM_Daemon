@@ -394,8 +394,34 @@ static void test_loss_wait(const char *label, bool by_transfer)
                           g_fake_ch341.transceives == reads, 1);
 }
 
+/* 1.5.0: the teardown's close reports the library's answer, once. */
+static void test_close_device_now(void)
+{
+    Sx126xRegisterModel model;
+
+    fake_ch341_reset(&model);
+    g_fake_ch341.close_rc = -1;                 /* deinit refused */
+    {
+        Ch341Hal hal(&g_fake_ch341_api, 0x1A86, 0x5512);
+        DaemonHalControl *ctl = &hal;
+
+        expect_int("close_device_now: a refused close returns -1", ctl->close_device_now(), -1);
+        expect_int("close_device_now: the bus is no longer ready", hal.spi_lock_ready(), 0);
+        expect_int("close_device_now: nothing open any more: 0", ctl->close_device_now(), 0);
+    }
+    expect_int("close_device_now: closed once, never again by the destructor", g_fake_ch341.closes, 1);
+
+    fake_ch341_reset(&model);
+    {
+        Ch341Hal hal(&g_fake_ch341_api, 0x1A86, 0x5512);
+        expect_int("close_device_now: a close returns 0", hal.close_device_now(), 0);
+    }
+    expect_int("close_device_now: closed once", g_fake_ch341.closes, 1);
+}
+
 int main(void)
 {
+    test_close_device_now();
     test_radio_over_ch341();
     test_startup_failures_latch();
     test_zero_length_no_loss();

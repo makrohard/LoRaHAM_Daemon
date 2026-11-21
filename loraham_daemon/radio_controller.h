@@ -128,6 +128,11 @@ struct RadioController {
     const char *instance_id;
     char usb_wait_port[32];
     char bound[96];
+    /* STATUS RADIOERR= (the running --radio-error mode: retry only on a USB
+     * stick with the hotplug monitor) and USBFAULT= (present-path faults
+     * since start; -1 = "-": not a USB stick). Main loop only. */
+    bool radio_error_retry;
+    long long usb_faults;
 
     DaemonRadioStats stats;
 
@@ -189,6 +194,8 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->instance_id = NULL;
     snprintf(ctrl->usb_wait_port, sizeof(ctrl->usb_wait_port), "-");
     snprintf(ctrl->bound, sizeof(ctrl->bound), "-");
+    ctrl->radio_error_retry = false;
+    ctrl->usb_faults = -1;
 
     daemon_radio_stats_init(&ctrl->stats);
 

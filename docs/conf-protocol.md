@@ -192,13 +192,13 @@ connected to.
 One runtime snapshot line, in this exact field order:
 
 ```text
-STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP= USBWAIT= BOUND= ID= FREQ= SF= POWER=
+STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP= USBWAIT= BOUND= ID= RADIOERR= USBFAULT= FREQ= SF= POWER=
 ```
 
 A default snapshot reads:
 
 ```text
-STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100 USBWAIT=- BOUND=- ID=- FREQ=- SF=- POWER=-
+STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-
 ```
 
 | Field | Meaning |
@@ -225,6 +225,8 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `USBWAIT` | Meshstick only: the USB port (`<bus>-<port>[.<port>…]`) the daemon of the one stick without a serial waits on while `RADIO=UNPLUGGED` — whether the stick is gone or plugged in but held by another program; `-` otherwise. Added in 1.3.0 |
 | `BOUND` | USB stick presets only: the open stick, `<serial>@<port>` — `<serial>` its first 8 serial characters, `-` for a stick without a serial, `?` for one whose serial cannot be read; `<port>` its USB port path `<bus>-<port>[.<port>…]`; `-` unless `RADIO=READY` (and on every other preset). Bytes outside `!`..`~`, `%` and `@` are written as `%XX`. A controller compares it with the stick it expects. Added in 1.3.0 as `serial:<8>` or `port:<path>`; both parts since 1.4.0 |
 | `ID` | The `--id` of this process, `-` without one. Added in 1.3.0 |
+| `RADIOERR` | The running `--radio-error` mode, `retry` or `exit` ([cli.md](cli.md#options)). Added in 1.5.0 |
+| `USBFAULT` | USB stick presets: the I/O errors with the stick present since start (each one retried in `retry` mode); it stays after the recovery. `-` on an SPI board. While it rises with `RADIO=UNPLUGGED` and `lsusb` still lists the stick, the stick is wedged, not unplugged. Added in 1.5.0 |
 | `FREQ`, `SF`, `POWER` | The values the CONF apply path last applied (`SET`), as numbers in the `SET` grammar: `FREQ` in MHz with one to six decimals (`869.525`, `868.0`), `SF` and `POWER` (dBm) as integers. `-` when the key has not been set since boot or the last `MODE` switch: the band default is in effect (see the key table above). What the daemon applied, not a read-back from the chip. Kept while `RADIO=UNPLUGGED` and replayed on the stick's return. Added in 1.3.0; the last three fields |
 
 ### `GET STATS`

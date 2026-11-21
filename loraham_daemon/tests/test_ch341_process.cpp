@@ -11,7 +11,15 @@
  *              port, BUSY), back after the return
  *   T4/T6      the return: re-init + replay line + READY; a chip that fails
  *              re-init, or a replay that fails -> RADIO=FAILED path, exit 5
- *   T2         an I/O error with the stick present -> exit 5
+ *              (--radio-error exit, O3)
+ *   T2         an I/O error with the stick present -> exit 5 (exit mode, O3)
+ *   RETRY      --radio-error retry (the USB default, 1.5.0): O1 the option,
+ *              O2 RADIOERR=/USBFAULT=; T1/T1b/T7/T8 a present-path fault: the
+ *              same pid, UNPLUGGED, USBFAULT=1, re-opens >= 1, 2, 4 s after
+ *              each close, TX refused without reaching the chip, back READY
+ *              with the replay; T3 a failed re-init after an unplug retried;
+ *              T6 a refused close: no new open, the "restart the daemon" line
+ *              on each attempt
  *   T16/T13    ACCESS at start -> exit 4 (never 5); ACCESS on a reopen ->
  *              waits with the line, a new ARRIVED succeeds
  *   T19        r3 / r3f / no id side by side: six+three distinct sockets, CONF
@@ -394,11 +402,11 @@ static void scenario_unplug_and_return(void)
     std::string st = status(C);
     /* Changed guard (1.3.0): the applied FREQ= SF= POWER= now end the line. */
     expect("T21/BOUND READY: ... USBWAIT=- BOUND=-@1-2 ID=ms1, nothing applied yet",
-           st.find(" USBWAIT=- BOUND=-@1-2 ID=ms1 FREQ=- SF=- POWER=-") != std::string::npos &&
-           st.size() > 26 && st.substr(st.size() - 26) == "ID=ms1 FREQ=- SF=- POWER=-");
+           st.find(" USBWAIT=- BOUND=-@1-2 ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-") != std::string::npos &&
+           st.size() > 52 && st.substr(st.size() - 52) == "ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-");
     expect("S1 SET SF=9 POWER=5 applied", conf(C, "SET SF=9 POWER=5", "") == "OK");
     expect("S1 STATUS reports the applied SF and POWER, FREQ unset",
-           status(C).find(" ID=ms1 FREQ=- SF=9 POWER=5") != std::string::npos);
+           status(C).find(" ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=9 POWER=5") != std::string::npos);
     int keep_conf = connect_to(C);
     int raw = connect_to("lora-ms1.sock");
     int fr = connect_to("loraf-ms1.sock");
@@ -465,7 +473,7 @@ static void scenario_unplug_and_return(void)
     expect("T4 the return: READY", wait_status(C, "RADIO=READY", 8000));
     expect("T4 the replay line", log_has(log, "[CH341] configuration replayed: SET SF=9 POWER=5"));
     expect("T4 STATUS after the replay: the applied SF and POWER kept",
-           status(C).find(" ID=ms1 FREQ=- SF=9 POWER=5") != std::string::npos);
+           status(C).find(" ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=9 POWER=5") != std::string::npos);
     expect("T21/BOUND back: USBWAIT=- BOUND=-@1-2", status(C).find(" USBWAIT=- BOUND=-@1-2 ID=ms1") != std::string::npos);
     expect("S1 clients still connected after the return", connected(keep_conf) && connected(raw) && connected(fr));
 
@@ -484,8 +492,10 @@ static void scenario_io_fault(void)
     reset_dirs();
     std::string log = g_tmp + "/s2.log";
     bus("1-2 SERIAL01 1\n");
-    pid_t pid = start(mesh({}), log);
+    pid_t pid = start(mesh({ "--radio-error", "exit" }), log);
     expect("S2 READY", wait_status("loraconf868.sock", "RADIO=READY", 8000));
+    expect("O1/O2 --radio-error exit on a USB stick: RADIOERR=exit USBFAULT=0",
+           status("loraconf868.sock").find(" ID=- RADIOERR=exit USBFAULT=0 FREQ=") != std::string::npos);
     bus("1-2 SERIAL01 1 ioerr\n");                    /* same connection, transfers fail */
     sleep_ms(200);                                    /* past the library's 20 ms bus cache */
     conf("loraconf868.sock", "SET SF=10", "");
@@ -502,7 +512,7 @@ static void scenario_io_fault(void)
     reset_dirs();
     log = g_tmp + "/s2b.log";
     bus("1-2 SERIAL01 1\n");
-    pid = start(mesh({}), log);
+    pid = start(mesh({ "--radio-error", "exit" }), log);
     expect("r19 READY", wait_status("loraconf868.sock", "RADIO=READY", 8000));
     write_text(g_fake + "/overflow", "1\n");
     expect("r19 the fake reported lost events (marker)", wait_log(g_fake + "/log", " overflow", 3000));
@@ -546,7 +556,7 @@ static void scenario_reinit_failures(void)
         reset_dirs();
         std::string log = g_tmp + "/s3-" + std::to_string(k) + ".log";
         bus("1-2 SERIAL01 1\n");
-        pid_t pid = start(mesh({}), log);
+        pid_t pid = start(mesh({ "--radio-error", "exit" }), log);
         wait_status("loraconf868.sock", "RADIO=READY", 8000);
         conf("loraconf868.sock", "SET SF=9", "");
         bus("");
@@ -841,6 +851,174 @@ static void scenario_cli(void)
         stop(p);
 }
 
+/* The process's events of one kind, in order. */
+static std::vector<uint64_t> event_times(pid_t pid, const char *what)
+{
+    std::vector<uint64_t> t;
+    for (const Ev &e : events_of(pid))
+        if (e.what == what)
+            t.push_back(e.ms);
+    return t;
+}
+
+/* O1: --radio-error on the real binary. */
+static void scenario_radio_error_cli(void)
+{
+    reset_dirs();
+    pid_t p = start({ "--help" }, g_tmp + "/o1h.log");
+    expect("O1 --help: exit 0 and the option row", wait_exit(p, 8000) == 0 &&
+           log_has(g_tmp + "/o1h.log", "--radio-error MODE  on a radio I/O error after start: retry, exit"));
+    p = start(mesh({ "--radio-error", "foo" }), g_tmp + "/o1a.log");
+    int rc = wait_exit(p, 8000);
+    expect("O1 an unknown value: the usage error (exit 1) with the reason and the usage text", rc == 1 &&
+           log_has(g_tmp + "/o1a.log", "invalid --radio-error: foo") &&
+           log_has(g_tmp + "/o1a.log", "allowed: retry, exit") && log_has(g_tmp + "/o1a.log", "Usage:"));
+    if (rc == -2)
+        stop(p);
+    p = start(mesh({ "--radio-error" }), g_tmp + "/o1b.log");
+    rc = wait_exit(p, 8000);
+    expect("O1 a missing value: the usage error (exit 1)", rc == 1 && log_has(g_tmp + "/o1b.log", "Usage:"));
+    if (rc == -2)
+        stop(p);
+    p = start({ "--radio", "868", "--hw", "waveshare-sx1262", "--radio-error", "retry" }, g_tmp + "/o1c.log");
+    rc = wait_exit(p, 8000);
+    expect("O1 explicit retry on an SPI preset: refused at parse (exit 1), before any I/O", rc == 1 &&
+           log_has(g_tmp + "/o1c.log", "--radio-error retry is only for a USB stick preset") &&
+           !log_has(g_tmp + "/o1c.log", "[SPI]") && !socket_exists("loraconf868.sock"));
+    if (rc == -2)
+        stop(p);
+    /* An SPI board cannot come up here (no gpiochip: exit 4, as test_conf_status
+     * skips): "accepted" = past the parse, to the instance lock, no usage error.
+     * Its RADIOERR=exit USBFAULT=- is the controller default (test_config_dispatch). */
+    p = start({ "--radio", "433", "--radio-error", "EXIT" }, g_tmp + "/o1d.log");
+    rc = wait_exit(p, 8000);
+    expect("O1 explicit EXIT (any case) on an SPI preset: accepted (past the parse, no usage error)",
+           (rc == -2 || rc == 4) && wait_log(g_tmp + "/o1d.log", "instance lock acquired", 1000) &&
+           !log_has(g_tmp + "/o1d.log", "Usage:"));
+    if (rc == -2)
+        term(p);
+    p = start({ "--radio", "433" }, g_tmp + "/o1e.log");
+    rc = wait_exit(p, 8000);
+    expect("O1 no option on an SPI preset (B1): accepted (past the parse, no usage error)",
+           (rc == -2 || rc == 4) && wait_log(g_tmp + "/o1e.log", "instance lock acquired", 1000) &&
+           !log_has(g_tmp + "/o1e.log", "Usage:"));
+    if (rc == -2)
+        term(p);
+    bus("1-2 SERIAL01 1\n");
+    p = start(mesh({ "--radio-error", "RETRY" }), g_tmp + "/o1f.log");
+    expect("O1 RETRY (any case) on a USB stick: RADIOERR=retry",
+           wait_status("loraconf868.sock", " ID=- RADIOERR=retry USBFAULT=0 FREQ=", 8000));
+    term(p);
+}
+
+/* T1/T1b/T7/T8: a present-path fault in the default mode (retry). */
+static void scenario_retry_fault(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/r1.log";
+    const std::string C = "loraconf868.sock";
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    expect("O1/O2 no option on a USB stick: READY, RADIOERR=retry USBFAULT=0",
+           wait_status(C, "RADIO=READY", 8000) &&
+           status(C).find(" ID=- RADIOERR=retry USBFAULT=0 FREQ=") != std::string::npos);
+    expect("T1 SET SF=9 applied", conf(C, "SET SF=9", "") == "OK");
+    int fr = connect_to("lora868f.sock");
+    int keep_conf = connect_to(C);                    /* TX_RESULT frames while this client has TXRESULT=1 */
+    std::string ok;
+    bool txr = write(keep_conf, "SET TXRESULT=1\n", 15) == 15;
+    for (int i = 0; txr && i < 10 && ok != "OK"; i++)
+        ok = read_line(keep_conf, 1000);
+    expect("T8 TXRESULT=1 on a kept CONF client", ok == "OK");
+    bus("1-2 SERIAL01 1 ioerr\n");                    /* same connection, transfers fail */
+    sleep_ms(200);                                    /* past the library's 20 ms bus cache */
+    conf(C, "SET SF=10", "");
+    expect("T1 the fault line: closing it, retry in 1 s (fault 1)",
+           wait_log(log, "[CH341] ELECROW Meshstick: USB I/O error with the stick present: closing it, "
+                         "retry in 1 s (fault 1)", 3000));
+    expect("T7 during the retry: RADIO=UNPLUGGED USBFAULT=1", wait_status(C, "RADIO=UNPLUGGED", 2000) &&
+           status(C).find(" RADIOERR=retry USBFAULT=1 ") != std::string::npos);
+    write_text(g_fake + "/txdelay", "1\n");          /* a TX reaching the chip would log txpath */
+    framed_tx(fr, "during-retry");
+    std::vector<int> r = framed_results(fr, 2000);
+    expect("T8 framed TX during the retry: RADIO_NOT_READY (3)", r.size() == 1 && r[0] == 3);
+    if (!(r.size() == 1 && r[0] == 3))
+        printf("       T8 results: %zu, first %d\n", r.size(), r.empty() ? -1 : r[0]);
+    expect("T8 ... no radio I/O for it reached the fake", !log_has(g_fake + "/log", " txpath "));
+    release("txdelay");
+    expect("T8 SET during the retry: refused", conf(C, "SET SF=11", "ERR").rfind("ERR RADIO_NOT_READY", 0) == 0);
+    expect("T1 attempt 1 (a re-init on the failing stick): closed again, next attempt in 2 s",
+           wait_log(log, "ELECROW Meshstick: attempt 1: re-init failed: closing it, next attempt in 2 s", 4000));
+    bus("1-2 SERIAL01 1\n");                          /* the I/O works again, no USB event */
+    expect("T1 back after 2 attempts: READY, the same pid",
+           wait_log(log, "ELECROW Meshstick back after 2 attempts: RADIO=READY", 5000) &&
+           wait_status(C, "RADIO=READY", 2000) && wait_exit(pid, 0) == -2);
+    expect("T7 after: USBFAULT stays 1, the replay applied (SF=9)",
+           status(C).find(" RADIOERR=retry USBFAULT=1 FREQ=- SF=9 ") != std::string::npos &&
+           log_has(log, "[CH341] configuration replayed: SET SF=9"));
+    /* opens: the start, then attempts 1-2; closes: the fault teardown, then
+     * the one after the failed re-init. Each re-open waits its step after the
+     * close before it. */
+    std::vector<uint64_t> cl = event_times(pid, "close"), op = event_times(pid, "open");
+    bool gaps = cl.size() >= 2 && op.size() >= 3 && op[1] >= cl[0] + 1000 && op[2] >= cl[1] + 2000;
+    expect("T1b/T2 re-open >= 1 s after the fault's close, then >= 2 s after the next close", gaps);
+    if (gaps)
+        printf("       re-open after close: %llu, %llu ms\n", (unsigned long long)(op[1] - cl[0]),
+               (unsigned long long)(op[2] - cl[1]));
+    close(fr);
+    close(keep_conf);
+    expect("T1 SIGTERM: exit 0", term(pid) == 0);
+}
+
+/* T3: a failed re-init after a plain unplug is retried (the default). */
+static void scenario_retry_reinit(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/r3.log";
+    const std::string C = "loraconf868.sock";
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    wait_status(C, "RADIO=READY", 8000);
+    bus("");
+    expect("T3 unplugged; the immediate selection (attempt 1) finds no stick",
+           wait_status(C, "RADIO=UNPLUGGED", 3000) &&
+           wait_log(log, "no ELECROW Meshstick with serial SERIAL01; waiting", 3000));
+    bus("1-2 SERIAL01 2 badchip\n");
+    expect("T3 the re-init on the return (attempt 2) fails: closing it, next attempt in 1 s, no exit",
+           wait_log(log, "ELECROW Meshstick: attempt 2: re-init failed: closing it, next attempt in 1 s", 5000) &&
+           wait_exit(pid, 0) == -2);
+    expect("T3 during: UNPLUGGED, not a present-path fault (USBFAULT=0)", wait_status(C, "RADIO=UNPLUGGED", 2000) &&
+           status(C).find(" USBFAULT=0 ") != std::string::npos);
+    bus("1-2 SERIAL01 2\n");                          /* the same connection, the chip answers now */
+    expect("T3 the next timed attempt: back after 3 attempts, READY",
+           wait_log(log, "ELECROW Meshstick back after 3 attempts: RADIO=READY", 5000) &&
+           wait_status(C, "RADIO=READY", 2000));
+    term(pid);
+}
+
+/* T6: the library refuses the close: the handle is kept, nothing new opened. */
+static void scenario_retry_kept(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/r6.log";
+    const std::string C = "loraconf868.sock";
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    wait_status(C, "RADIO=READY", 8000);
+    bus("1-2 SERIAL01 1 ioerr closefail\n");
+    sleep_ms(200);
+    conf(C, "SET SF=10", "");
+    expect("T6 the close is refused (fake marker)", wait_log(g_fake + "/log", " closefail 1-2", 3000));
+    expect("T6 attempts 1 and 2: the library kept the old handle: restart the daemon",
+           wait_log(log, "attempt 1: the library kept the old handle: restart the daemon (next attempt in 2 s)", 3000) &&
+           wait_log(log, "attempt 2: the library kept the old handle: restart the daemon (next attempt in 4 s)", 4000));
+    expect("T6 no new handle opened after the refused close (the start's open only)",
+           event_times(pid, "open").size() == 1);
+    expect("T6 the same pid, UNPLUGGED", wait_exit(pid, 0) == -2 &&
+           status(C).find("RADIO=UNPLUGGED") != std::string::npos);
+    term(pid);
+}
+
 /* --usb-port on the real binary: two sticks without a serial (Rule B refuses
  * those), the port names one; a library without the open by port refuses. */
 static void scenario_usb_port(void)
@@ -945,10 +1123,10 @@ static void scenario_pinedio_power(void)
     const std::string C = "loraconf-pd1.sock";
     expect("S9 PineDio: READY", wait_status(C, "RADIO=READY", 8000));
     expect("S9 PineDio SET POWER=17 applied", conf(C, "SET POWER=17", "") == "OK");
-    expect("S9 STATUS reports POWER=17", status(C).find(" ID=pd1 FREQ=- SF=- POWER=17") != std::string::npos);
+    expect("S9 STATUS reports POWER=17", status(C).find(" ID=pd1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=17") != std::string::npos);
     expect("S9 PineDio SET POWER=20 applied", conf(C, "SET POWER=20", "") == "OK");
     expect("S9 PineDio SET POWER=21 refused", conf(C, "SET POWER=21", "").rfind("ERR", 0) == 0);
-    expect("S9 STATUS still POWER=20", status(C).find(" ID=pd1 FREQ=- SF=- POWER=20") != std::string::npos);
+    expect("S9 STATUS still POWER=20", status(C).find(" ID=pd1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=20") != std::string::npos);
     stop(pid);
 
     /* The Meshstick's raised ceiling (22) reaches the running daemon. */
@@ -1024,7 +1202,7 @@ static void scenario_chat_keeps_power(void)
     const std::string C = "loraconf-pd2.sock";
     expect("S10 PineDio: READY", wait_status(C, "RADIO=READY", 8000));
     expect("S10 the operator's SET POWER=12 applied", conf(C, "SET POWER=12", "") == "OK");
-    expect("S10 STATUS reports POWER=12, FREQ not set yet", status(C).find(" ID=pd2 FREQ=- SF=- POWER=12") != std::string::npos);
+    expect("S10 STATUS reports POWER=12, FREQ not set yet", status(C).find(" ID=pd2 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=12") != std::string::npos);
     std::string dir = g_tmp + "/chat-run";
     sh("rm -rf '" + dir + "' && mkdir -p '" + dir + "'");
     write_text(dir + "/lorachat.conf", "TX=868.100\nRX=868.100\n");   /* TX = RX: no retune */
@@ -1034,7 +1212,7 @@ static void scenario_chat_keeps_power(void)
     bool applied = false;
     for (uint64_t end = now_ms() + 8000; chat > 0 && !applied && now_ms() < end;) {
         drain(master, 100);
-        applied = status(C).find(" ID=pd2 FREQ=868.1") != std::string::npos;
+        applied = status(C).find(" ID=pd2 RADIOERR=retry USBFAULT=0 FREQ=868.1") != std::string::npos;
     }
     expect("S10 chat's SET line is applied (STATUS shows its FREQ=868.1)", applied);
     if (chat > 0)
@@ -1063,6 +1241,8 @@ static void scenario_no_hotplug(void)
     pid_t pid = start(mesh({}), log);
     expect("T7 no hotplug: READY", wait_status("loraconf868.sock", "RADIO=READY", 8000));
     expect("T7 the startup note", log_has(log, "libusb offers no usable hotplug here"));
+    expect("O2 no hotplug: the running mode is exit (a loss exits 5), USBFAULT=0",
+           status("loraconf868.sock").find(" RADIOERR=exit USBFAULT=0 ") != std::string::npos);
     bus("");
     int rc = wait_exit(pid, 5000);
     expect("T7 a lost stick exits 5 as before", rc == 5);
@@ -1132,6 +1312,10 @@ int main(int argc, char *argv[])
     scenario_unplug_and_return();
     scenario_io_fault();
     scenario_reinit_failures();
+    scenario_radio_error_cli();
+    scenario_retry_fault();
+    scenario_retry_reinit();
+    scenario_retry_kept();
     scenario_access();
     scenario_instances();
     scenario_b4_classes();

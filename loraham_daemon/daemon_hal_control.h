@@ -45,6 +45,9 @@ class DaemonHalControl {
     /* The restartable runtime fatal (exit 5), closing the device first. Only
      * reached through a latched loss, which only the USB HAL produces. */
     [[noreturn]] virtual void runtime_fatal(const char *why) = 0;
+    /* Close the device now (the USB stick's teardown): 0 closed or nothing
+     * open, -1 the library refused and keeps the handle. */
+    virtual int close_device_now() { return 0; }
 };
 
 #endif

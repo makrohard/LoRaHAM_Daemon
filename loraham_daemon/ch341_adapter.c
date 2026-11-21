@@ -94,10 +94,10 @@ loraham_ch341 *loraham_ch341_open_port(uint16_t vid, uint16_t pid, const char *p
 }
 #endif
 
-void loraham_ch341_close(loraham_ch341 *dev)
+int loraham_ch341_close(loraham_ch341 *dev)
 {
     if (!dev)
-        return;
+        return 0;
     /* -1: deinit refused (called on the library's poll worker, its worker
      * could not be joined, or a call, a poll callback or a USB transfer did
      * not end within the library's deadline); nothing was released and the
@@ -107,10 +107,11 @@ void loraham_ch341_close(loraham_ch341 *dev)
         /* by the library's diagnostic rules (libpinedio-usb-diag.h): never blocks, never ends or stops
          * the caller, errno kept */
         pinedio_diag_printf("[CH341] close refused by the USB library (deinit -1): the stick stays open\n");
-        return;
+        return -1;
     }
     libusb_exit(NULL);
     free(dev);
+    return 0;
 }
 
 int loraham_ch341_transceive(loraham_ch341 *dev, const uint8_t *out, uint8_t *in, uint32_t len)

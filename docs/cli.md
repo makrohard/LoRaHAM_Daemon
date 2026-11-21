@@ -42,6 +42,7 @@ The first invocation owns the 433 MHz radio, the second the 868 MHz radio.
 | `--debug` | none | — | off |
 | `--radio MODE` | required | `433`, `868`, `915` (`915`: `pinedio-usb-1262` and `meshstick-1262` only) | none — must be given |
 | `--hw PRESET` | required | `loraham`, `uputronics-ce0`, `uputronics-ce1`, `waveshare-sx1262`, `meshstick-1262` | `loraham` |
+| `--radio-error MODE` | required | `retry`, `exit`; `retry` on USB stick presets only | `retry` on a USB stick preset, `exit` on an SPI board |
 | `--tx-mode MODE` | required | `direct`, `managed` | `managed` |
 | `--cad-monitor VAL` | required | `on`, `off` | `off` |
 | `--cad-rssi DBM` | required | integer dBm, `-130`..`0` | `-90` |
@@ -64,11 +65,23 @@ $ ./loraham_daemon --radio 433
 [Daemon] loraham_daemon 0.9.0
 ```
 
-`--tx-mode` and `--cad-monitor` compare case-insensitively. `--radio` and `--hw` match exactly, so
+`--radio-error`, `--tx-mode` and `--cad-monitor` compare case-insensitively. `--radio` and `--hw` match exactly, so
 `--hw LORAHAM` is rejected with the list of known presets. What each `--hw` preset wires up is in [hardware.md](hardware.md).
 
 `--cad-rssi` is a supported boot option and is listed by `--help`, though it went undocumented for
 a long time.
+
+`--radio-error` decides what a radio I/O error after the start does. `retry`: where the daemon can
+recover in-process; today the USB stick. An I/O error with the stick still present, or a failed
+set-up after a replug, closes the stick and opens it again on a backoff (1, 2, 4 … 1024 s, then
+every 30 min, forever; the step returns to 1 s after 10 min of `RADIO=READY`) instead of exit `5`.
+Meanwhile `RADIO=UNPLUGGED`: TX and `SET` are refused, every socket stays open. A replug (a USB
+event) re-opens at once. The log has one line per fault and per attempt, and `<stick> back after N
+attempts: RADIO=READY`. If the USB library refuses to close the stick, nothing is opened again and
+every attempt line says `the library kept the old handle: restart the daemon`. `exit`: exit `5`, as
+1.4.x. The SPI boards always exit `5`; an explicit `retry` there is a usage error. `GET STATUS`
+shows the mode as `RADIOERR=` and the faults as `USBFAULT=`
+([conf-protocol.md](conf-protocol.md#get-status)). A USB stick without libusb hotplug runs `exit`.
 
 `--high-power` is a bare flag like `--debug`: present means on, absent means off, and any value
 (`--high-power=off`) is a usage error. What it permits is in [Boot overrides](#boot-overrides-for-tx-and-cad).
@@ -214,6 +227,8 @@ anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 1
 | Cause | Message |
 | --- | --- |
 | Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868, 915` |
+| Bad `--radio-error` value | `invalid --radio-error: <value>` + `allowed: retry, exit` |
+| `--radio-error retry` on an SPI preset | `--radio-error retry is only for a USB stick preset (an SPI board exits 5 on a radio I/O error)` |
 | Bad `--tx-mode` value | `invalid TX mode: <value>` + `allowed: direct, managed` |
 | Bad `--cad-monitor` value | `invalid CAD monitor value: <value>` + `allowed: on, off` |
 | Bad `--cad-rssi` value | `invalid CAD RSSI value: <value>` + `allowed: integer dBm between -130 and 0` |
