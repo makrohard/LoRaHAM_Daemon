@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include <signal.h>
 #include <sys/stat.h>
@@ -93,12 +94,16 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    char tmpl[] = "/tmp/loraham-ch341-dlopen.XXXXXX";
-    if (!mkdtemp(tmpl)) {
+    /* Under TMPDIR (run_tests.sh's own directory): its daemons are in the run's scope. */
+    const char *tmpdir = getenv("TMPDIR");
+    std::string tmpl_s = std::string(tmpdir && tmpdir[0] ? tmpdir : "/tmp") + "/loraham-ch341-dlopen.XXXXXX";
+    std::vector<char> tmpl(tmpl_s.begin(), tmpl_s.end());
+    tmpl.push_back('\0');
+    if (!mkdtemp(tmpl.data())) {
         printf("[FAIL] mkdtemp\n");
         return 1;
     }
-    std::string tmp = tmpl;
+    std::string tmp = tmpl.data();
     std::string bin = tmp + "/bundle/loraham_daemon";
     std::string so = tmp + "/bundle/lib/libloraham-ch341.so";
     std::string marker = tmp + "/marker";

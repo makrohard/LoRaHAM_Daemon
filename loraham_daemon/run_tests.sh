@@ -17,6 +17,12 @@ run_tmp="$(mktemp -d "${TMPDIR:-/tmp}/loraham-run.XXXXXX")"
 trap 'rm -rf -- "$run_tmp"' EXIT
 export TMPDIR="$run_tmp"
 
+# The daemons this run starts execute from this tree or from its temp
+# directory; the liveness checks, the start refusal and the cleanup look at
+# those only, never at a lab or system loraham_daemon (tests/daemon_liveness.sh).
+LIVENESS_SCOPE="$(cd -- "$SCRIPT_DIR" && pwd -P):$(cd -- "$run_tmp" && pwd -P)"
+export LIVENESS_SCOPE
+
 # Tests run as a non-root user, so point every spawned daemon at a writable,
 # trusted lock directory via the dev override. The production default
 # (/run/lock/loraham) requires a root-owned directory provisioned by tmpfiles.d.
@@ -1359,8 +1365,8 @@ require_command rm
 require_command timeout
 
 if daemon_running; then
-  echo "ERROR: loraham_daemon is already running:"
-  pgrep -af loraham_daemon
+  echo "ERROR: a loraham_daemon from this tree is already running:"
+  list_daemons
   echo
   echo "Stop it first, then run this script again."
   exit 1
@@ -1535,10 +1541,10 @@ cleanup_lingering_daemon() {
 
   if daemon_running; then
     echo "ERROR: loraham_daemon is still running after $test_bin"
-    pgrep -af loraham_daemon || true
-    pkill -TERM -x loraham_daemon 2>/dev/null || true
+    list_daemons || true
+    stop_daemons TERM
     sleep 1
-    pkill -KILL -x loraham_daemon 2>/dev/null || true
+    stop_daemons KILL
     return 1
   fi
 
@@ -1551,10 +1557,10 @@ cleanup_on_exit() {
   if [[ "$running_tests" == true ]] && daemon_running; then
     echo
     echo "ERROR: cleaning up lingering loraham_daemon before exit"
-    pgrep -af loraham_daemon || true
-    pkill -TERM -x loraham_daemon 2>/dev/null || true
+    list_daemons || true
+    stop_daemons TERM
     sleep 1
-    pkill -KILL -x loraham_daemon 2>/dev/null || true
+    stop_daemons KILL
   fi
 
   cleanup_test_binaries

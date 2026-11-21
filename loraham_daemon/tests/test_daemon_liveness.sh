@@ -21,7 +21,7 @@ cd "$(dirname "$0")"
 # shellcheck source=daemon_liveness.sh
 . ./daemon_liveness.sh
 
-tmp="$(mktemp -d)"
+tmp="$(cd "$(mktemp -d)" && pwd -P)"      # the real path: /proc/<pid>/exe shows it so
 parents=()
 cleanup() {      # only reached with fixtures left on a failure path: end them, never block on a FIFO
   local p
@@ -115,6 +115,34 @@ if [[ "$got" == "$lpid" ]]; then pass "live_daemon_pids lists the live one only"
 wait "$zparent" "$lpid"
 await_state "$zchild" gone || fail "the zombie $zchild was not reaped after its parent exited"
 if no_daemon_listed; then pass "released: no loraham_daemon left"; else fail "a loraham_daemon is left after the release"; fi
+
+# Scope (LIVENESS_SCOPE, 1.5.0): only a daemon whose executable lies under a
+# listed directory is counted and stopped; one outside (a lab daemon) is not.
+mkdir "$tmp/other"
+cp "$(command -v cat)" "$tmp/other/loraham_daemon"
+mkfifo "$tmp/hold-in" "$tmp/hold-out"
+"$tmp/live/loraham_daemon" "$tmp/hold-in" > /dev/null &
+ipid=$!; parents+=("$ipid")
+"$tmp/other/loraham_daemon" "$tmp/hold-out" > /dev/null &
+opid=$!; parents+=("$opid")
+await_comm "$ipid" loraham_daemon && await_comm "$opid" loraham_daemon \
+  || { fail "the scope fixtures never ran loraham_daemon"; exit 1; }
+got="$(LIVENESS_SCOPE="$tmp/live" live_daemon_pids)"
+if [[ "$got" == "$ipid" ]]; then pass "scope: only the daemon under the scope is listed"; else fail "scope: got '$got', want '$ipid'"; fi
+got="$(LIVENESS_SCOPE="$tmp/none:$tmp/live/" live_daemon_pids)"
+if [[ "$got" == "$ipid" ]]; then pass "scope: a later entry and a trailing / match"; else fail "scope list: got '$got', want '$ipid'"; fi
+if LIVENESS_SCOPE="$tmp/li" daemon_running; then fail "scope: a name prefix of a directory matched"; else pass "scope: a directory name prefix does not match"; fi
+if LIVENESS_SCOPE="$tmp/none" daemon_running; then fail "scope: a daemon outside the scope counts"; else pass "scope: a daemon outside the scope is not running for the caller"; fi
+got="$(unset LIVENESS_SCOPE; live_daemon_pids | sort | tr '\n' ' ')"
+if [[ "$got" == "$(printf '%s\n' "$ipid" "$opid" | sort | tr '\n' ' ')" ]]; then pass "no scope: both count"; else fail "no scope: got '$got'"; fi
+LIVENESS_SCOPE="$tmp/live" stop_daemons TERM
+ended=no                       # our child: a zombie until the shell reaps it, then gone
+for _ in $(seq 1 500); do st="$(state_of "$ipid")" || st=gone; [[ "$st" == Z || "$st" == gone ]] && { ended=yes; break; }; sleep 0.01; done
+if [[ "$ended" == yes ]]; then pass "scope: stop_daemons stopped the daemon under the scope"; else fail "scope: stop_daemons did not stop $ipid"; fi
+if await_state "$opid" alive; then pass "scope: stop_daemons left the daemon outside alone"; else fail "scope: stop_daemons stopped the daemon outside"; fi
+wait "$ipid" 2>/dev/null || true
+: > "$tmp/hold-out"
+wait "$opid" 2>/dev/null || true
 
 # The error paths. pids are always below pid_max, so pid_max is never a pid.
 nopid="$(cat /proc/sys/kernel/pid_max)"

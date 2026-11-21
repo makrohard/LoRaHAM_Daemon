@@ -1684,13 +1684,21 @@ int main(int argc, char *argv[])
     }
     signal(SIGPIPE, SIG_IGN);
 
-    char tmpl[] = "/tmp/loraham-ch341-process.XXXXXX";
-    if (!mkdtemp(tmpl)) {
+    /* Under TMPDIR (run_tests.sh's own directory): its daemons are in the run's scope. */
+    const char *tmpdir = getenv("TMPDIR");
+    std::string tmpl_s = std::string(tmpdir && tmpdir[0] ? tmpdir : "/tmp") + "/loraham-ch341-process.XXXXXX";
+    std::vector<char> tmpl(tmpl_s.begin(), tmpl_s.end());
+    tmpl.push_back('\0');
+    if (!mkdtemp(tmpl.data())) {
         printf("[FAIL] mkdtemp\n");
         return 1;
     }
-    g_tmp = tmpl;
-    g_bin = g_tmp + "/bundle/loraham_daemon";
+    g_tmp = tmpl.data();
+    /* The copies keep the given file name: a run under a private name (not
+     * loraham_daemon) stays out of name-based lab tools (pgrep/pkill -x). */
+    std::string name(daemon);
+    name = name.substr(name.rfind('/') + 1);
+    g_bin = g_tmp + "/bundle/" + name;
     g_fake = g_tmp + "/fake";
     g_sock = g_tmp + "/sock";
     g_run = g_tmp + "/run";
@@ -1705,7 +1713,7 @@ int main(int argc, char *argv[])
     expect("the fake Meshstick library builds",
            sh("cc -std=gnu11 -Wall -Wextra -Werror -shared -fPIC -DFAKE_PIN='\"" + pin + "\"' -o '" + g_tmp +
               "/bundle/lib/libloraham-ch341.so' '" + src + "'") == 0);
-    g_bin_noport = g_tmp + "/bundle-noport/loraham_daemon";
+    g_bin_noport = g_tmp + "/bundle-noport/" + name;
     sh("mkdir -p '" + g_tmp + "/bundle-noport/lib' && cp '" + std::string(daemon) + "' '" + g_bin_noport + "'");
     expect("the fake library without the open by port builds",
            sh("cc -std=gnu11 -Wall -Wextra -Werror -shared -fPIC -DFAKE_NO_OPEN_PORT -DFAKE_PIN='\"" + pin +
