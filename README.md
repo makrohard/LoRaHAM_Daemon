@@ -1,20 +1,15 @@
-![LoRaHAM_Pi](https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_logo.png?raw=true)
-
 # LoRaHAM_Daemon - Device Driver
 
 *Deutsch: [README.de.md](README.de.md)*
 
-**LoRaHAM_Daemon is the hardware driver for LoRa radios on a Raspberry Pi.** It owns the
-SPI-attached radio chip and exposes it on UNIX sockets, so an application can send, receive and
-configure the radio without touching the hardware itself — high-power LoRa with long range on a
-single-board computer, for amateur radio.
+**LoRaHAM_Daemon is the hardware driver for LoRa radios on Linux.** It owns the radio chip and
+exposes it on UNIX sockets, so an application can send, receive and configure the radio without
+touching the hardware itself — LoRa on single-board computers and PCs, for amateur radio.
 
-It is written for the **LoRaHAM_Pi HAT** and the **LoRaHAM Cartridge**, and also supports the
-Uputronics Pi Zero LoRa boards and the Waveshare SX1262 HAT. Other boards should work too: what it
-needs is an SX1276, SX1278 or SX1262 wired directly to the Pi's SPI bus, and a `--hw` preset whose
-wiring matches.
-
-<img src="https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_P1_3.jpg" alt="LoRaHAM_Pi" width="300" height="auto"><img src="https://github.com/LoRaHAM/LoRaHAM_Ressources/blob/main/LoRaHAM_Cartridge_for_pi500.png" alt="LoRaHAM Cartridge" width="300" height="auto">
+The daemon was originally written by Alexander Walter for the LoRaHAM_Pi HAT and has been
+refactored and extended by makrohard. It drives SX1276, SX1278 and SX1262 radio chips, wired
+directly to the SPI bus or behind a USB-to-SPI bridge. Other boards should work too, given a `--hw`
+preset whose wiring matches.
 
 ## Contents
 
@@ -26,9 +21,21 @@ wiring matches.
 
 ## Hardware
 
-* Raspberry Pi 3/4/5, Raspbian image
+* Raspberry Pi 3/4/5 and Zero 2 W, Raspbian image — or an x86 Linux PC with one of the USB sticks below
 * SPI enabled with the `spi0-0cs` overlay — [how](docs/hardware.md)
-* 433 MHz and 868 MHz, one daemon process per band
+* 433 MHz and 868 MHz, one daemon process per band; 915 untested
+
+<p>
+<a href="https://www.loraham.de/produkt/loraham-pi/"><img src="docs/img/readme/hw-loraham.jpg" width="240" alt="LoRaHAM Pi HAT"></a>
+<a href="https://store.uputronics.com/products/raspberry-pizero-loratm-expansion-board"><img src="docs/img/readme/hw-uputronics.jpg" width="240" alt="Uputronics Raspberry Pi Zero LoRa Expansion Board"></a>
+<a href="https://www.waveshare.com/sx1262-lorawan-hat.htm"><img src="docs/img/readme/hw-waveshare.jpg" width="240" alt="Waveshare SX1262 LoRaWAN/GNSS HAT"></a>
+</p>
+
+<p>
+<a href="https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html"><img src="docs/img/readme/hw-meshstick.jpg" width="240" alt="ELECROW Meshstick"></a>
+<a href="https://pine64.org/documentation/Pinedio/USB_adapter/"><img src="docs/img/readme/hw-pinedio.jpg" width="240" alt="PINE64 USB LoRa adapter"></a>
+<a href="https://github.com/makrohard/loraham-pi-control/blob/main/docs/usb-lora-diy-build.md"><img src="docs/img/readme/hw-diy.jpg" width="240" alt="The self-built CH341A stick"></a>
+</p>
 
 Supported radio boards, selected with `--hw`:
 
@@ -89,17 +96,16 @@ The reference documentation is in [`docs/`](docs/):
 | [Examples](docs/examples.md) | Short programs that talk to the daemon, in shell, Python and C |
 | [Soak test](docs/soak-test-2026-09-16.md) | Four hours, four instances, both bands: the sustained-load evidence behind the 1.0.0 pin |
 
-### The archived daemons
+### Archived: daemons and example clients
 
 [`archive/`](archive/) holds the single-file daemons, both bands in one process. They remain
 available and buildable, and [`archive/README.md`](archive/README.md) has everything needed to do
 it: prerequisites, RadioLib, the compile lines and how to run them.
 
-### Clients
-
-[`clients/`](clients/) has the programs that talk to the daemon — the
-[chat TUI](clients/chat/README.md), the [APRS iGate](clients/igate/README.md), dual-band RSSI bars
-and a Meshtastic decryptor. Start the daemon first, then a client.
+Chat and voice are the clients that ship (run by LoRaHAM_Pi Control; the source of the
+[chat TUI](clients/chat/README.md) is in [`clients/`](clients/)). The rest of `clients/` — the
+[APRS iGate](clients/igate/README.md), dual-band RSSI bars and a Meshtastic decryptor — are archived
+examples. Start the daemon first, then a client.
 
 Working on the code: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
@@ -117,8 +123,12 @@ Start there, change the payload, and watch `GET CHANNEL` while you move an anten
 
 ## Warnings
 
-This code is provided at your own risk and responsibility. This code is experimental.
-For radio amateur or laboratory use only.
+This code is provided at your own risk and responsibility.
+
+* Some frequencies (433 MHz) are licensed amateur radio frequencies: you need a ham licence, and
+  encryption is not allowed.
+* On licence-free frequencies (868 MHz in the EU) you must keep the power and duty-cycle limits.
+* You are responsible for complying with the local radio rules.
 
 ## Credits and license
 

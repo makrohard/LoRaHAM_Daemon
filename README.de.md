@@ -1,20 +1,16 @@
-![LoRaHAM_Pi](https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_logo.png?raw=true)
-
 # LoRaHAM_Daemon - Gerätetreiber
 
 *English: [README.md](README.md)*
 
-**LoRaHAM_Daemon ist der Hardware-Treiber für LoRa-Funkmodule am Raspberry Pi.** Er übernimmt das
-per SPI angebundene Funkmodul und stellt es über UNIX-Sockets bereit, sodass eine Anwendung senden,
-empfangen und konfigurieren kann, ohne die Hardware selbst anzufassen — LoRa mit hoher
-Sendeleistung und großer Reichweite auf einem Einplatinencomputer, für Funkamateure.
+**LoRaHAM_Daemon ist der Hardware-Treiber für LoRa-Funkmodule unter Linux.** Er übernimmt den
+Funkchip und stellt ihn über UNIX-Sockets bereit, sodass eine Anwendung senden, empfangen und
+konfigurieren kann, ohne die Hardware selbst anzufassen — LoRa auf Einplatinencomputern und PCs, für
+Funkamateure.
 
-Geschrieben ist er für den **LoRaHAM_Pi HAT** und die **LoRaHAM Cartridge**, unterstützt aber auch
-die Uputronics Pi Zero LoRa Boards und den Waveshare SX1262 HAT. Andere Boards sollten ebenfalls
-funktionieren: nötig sind ein SX1276, SX1278 oder SX1262 direkt am SPI-Bus des Pi und ein
-`--hw` Preset, dessen Verdrahtung passt.
-
-<img src="https://github.com/LoRaHAM/LoRaHAM_Pi/blob/main/LoRaHAM_P1_3.jpg" alt="LoRaHAM_Pi" width="300" height="auto"><img src="https://github.com/LoRaHAM/LoRaHAM_Ressources/blob/main/LoRaHAM_Cartridge_for_pi500.png" alt="LoRaHAM Cartridge" width="300" height="auto">
+Den Daemon hat ursprünglich Alexander Walter für den LoRaHAM_Pi HAT geschrieben; makrohard hat ihn
+überarbeitet und erweitert. Er steuert die Funkchips SX1276, SX1278 und SX1262 an, direkt am
+SPI-Bus oder hinter einer USB-SPI-Brücke. Andere Boards sollten ebenfalls funktionieren, wenn es ein
+`--hw` Preset mit passender Verdrahtung gibt.
 
 ## Inhalt
 
@@ -26,9 +22,21 @@ funktionieren: nötig sind ein SX1276, SX1278 oder SX1262 direkt am SPI-Bus des 
 
 ## Hardware
 
-* Raspberry Pi 3/4/5, Raspbian Image
+* Raspberry Pi 3/4/5 und Zero 2 W, Raspbian Image — oder ein x86-Linux-PC mit einem der USB-Sticks unten
 * SPI aktiviert mit dem `spi0-0cs` Overlay — [wie](docs/hardware.md)
-* 433 MHz und 868 MHz, ein Daemon-Prozess pro Band
+* 433 MHz und 868 MHz, ein Daemon-Prozess pro Band; 915 ungetestet
+
+<p>
+<a href="https://www.loraham.de/produkt/loraham-pi/"><img src="docs/img/readme/hw-loraham.jpg" width="240" alt="LoRaHAM Pi HAT"></a>
+<a href="https://store.uputronics.com/products/raspberry-pizero-loratm-expansion-board"><img src="docs/img/readme/hw-uputronics.jpg" width="240" alt="Uputronics Raspberry Pi Zero LoRa Expansion Board"></a>
+<a href="https://www.waveshare.com/sx1262-lorawan-hat.htm"><img src="docs/img/readme/hw-waveshare.jpg" width="240" alt="Waveshare SX1262 LoRaWAN/GNSS HAT"></a>
+</p>
+
+<p>
+<a href="https://www.elecrow.com/meshstick-usb-to-spi-sx1262-tcxo-lora-usb-stick-usb-plug-and-play-meshtastic-lora-mesh-node.html"><img src="docs/img/readme/hw-meshstick.jpg" width="240" alt="ELECROW Meshstick"></a>
+<a href="https://pine64.org/documentation/Pinedio/USB_adapter/"><img src="docs/img/readme/hw-pinedio.jpg" width="240" alt="PINE64 USB LoRa adapter"></a>
+<a href="https://github.com/makrohard/loraham-pi-control/blob/main/docs/usb-lora-diy-build.md"><img src="docs/img/readme/hw-diy.jpg" width="240" alt="The self-built CH341A stick"></a>
+</p>
 
 Unterstützte Funkmodule, ausgewählt mit `--hw`:
 
@@ -90,17 +98,16 @@ Die Referenzdokumentation liegt in [`docs/`](docs/) (englisch):
 | [Architektur](docs/architecture.md) | Modulkarte und Laufzeit-Design |
 | [Beispiele](docs/examples.md) | Kurze Programme, die mit dem Daemon sprechen — Shell, Python, C |
 
-### Die archivierten Daemons
+### Archiv: Daemons und Beispiel-Clients
 
 [`archive/`](archive/) enthält die Einzeldatei-Daemons, beide Bänder in einem Prozess. Sie bleiben
 verfügbar und baubar; [`archive/README.md`](archive/README.md) enthält alles Nötige:
 Voraussetzungen, RadioLib, Kompilierbefehle und Bedienung.
 
-### Clients
-
-In [`clients/`](clients/) liegen die Programme, die mit dem Daemon sprechen — die
-[Chat-TUI](clients/chat/README.md), das [APRS-iGate](clients/igate/README.md), Dualband-RSSI-Balken
-und ein Meshtastic-Decoder. Zuerst den Daemon starten, dann einen Client.
+Chat und Voice werden mitgeliefert (von LoRaHAM_Pi Control betrieben; der Quelltext der
+[Chat-TUI](clients/chat/README.md) liegt in [`clients/`](clients/)). Die übrigen Programme in
+`clients/` — das [APRS-iGate](clients/igate/README.md), Dualband-RSSI-Balken und ein
+Meshtastic-Decoder — sind archivierte Beispiele. Zuerst den Daemon starten, dann einen Client.
 
 Mitarbeit am Code: [`CONTRIBUTING.md`](CONTRIBUTING.md) (englisch).
 
@@ -119,8 +126,13 @@ Damit anfangen, die Nutzlast ändern und `GET CHANNEL` beobachten, während man 
 
 ## Warnungen
 
-Dieser Code wird auf eigenes Risiko und eigene Verantwortung zur Verfügung gestellt. Dieser Code ist experimentell.
-Er ist nur für Funkamateure oder Labore geeignet.
+Dieser Code wird auf eigenes Risiko und eigene Verantwortung zur Verfügung gestellt.
+
+* Einige Frequenzen (433 MHz) sind lizenzpflichtige Amateurfunkfrequenzen: Sie brauchen eine
+  Amateurfunklizenz, und Verschlüsselung ist nicht erlaubt.
+* Auf lizenzfreien Frequenzen (868 MHz in der EU) müssen Sie die Grenzen für Sendeleistung und
+  Duty-Cycle einhalten.
+* Sie sind selbst dafür verantwortlich, die örtlichen Funkvorschriften einzuhalten.
 
 ## Credits und Lizenz
 
