@@ -137,5 +137,5 @@ Dieser Code wird auf eigenes Risiko und eigene Verantwortung zur Verfügung gest
 ## Credits und Lizenz
 
     Copyright (c) 2020-2026 Alexander Walter
-    refactored by makrohard Johannes Loose 410733@gmail.com
+    refactored, enhanced and maintained by makrohard Johannes Loose 410733@gmail.com
     Licensed under the GNU GPL v3 (see LICENSE)

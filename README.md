@@ -133,5 +133,5 @@ This code is provided at your own risk and responsibility.
 ## Credits and license
 
     Copyright (c) 2020-2026 Alexander Walter
-    refactored by makrohard Johannes Loose 410733@gmail.com
+    refactored, enhanced and maintained by makrohard Johannes Loose 410733@gmail.com
     Licensed under the GNU GPL v3 (see LICENSE)
