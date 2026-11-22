@@ -58,8 +58,8 @@ matrix and how to add a board are in [`docs/hardware.md`](docs/hardware.md).
 
 **[LoRaHAM_Pi Control (LHPC)](https://github.com/makrohard/loraham-pi-control) installs and runs
 all of this for you**, from a web UI, on a box you flash and forget. There are
-**[ready-made SD-card images](https://github.com/makrohard/loraham-images)** — flash one, boot,
-open the web UI, pick your hardware and start a stack. It builds the daemon from this repository,
+**[ready-made SD-card images](https://github.com/makrohard/loraham-images)** for the Raspberry Pi
+only — flash one, boot, open the web UI, pick your hardware and start a stack. It builds the daemon from this repository,
 pins it to a tested commit, and manages the radios, the sockets and the systemd units.
 
 The nine stacks it can run:
@@ -102,7 +102,7 @@ The reference documentation is in [`docs/`](docs/):
 available and buildable, and [`archive/README.md`](archive/README.md) has everything needed to do
 it: prerequisites, RadioLib, the compile lines and how to run them.
 
-Chat and voice are the clients that ship (run by LoRaHAM_Pi Control; the source of the
+Chat and voice are the clients that ship (run by [LoRaHAM_Pi Control](https://github.com/makrohard/loraham-pi-control); the source of the
 [chat TUI](clients/chat/README.md) is in [`clients/`](clients/)). The rest of `clients/` — the
 [APRS iGate](clients/igate/README.md), dual-band RSSI bars and a Meshtastic decryptor — are archived
 examples. Start the daemon first, then a client.

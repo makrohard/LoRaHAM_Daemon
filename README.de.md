@@ -60,8 +60,8 @@ Fähigkeiten, die Kombinationsmatrix und wie man ein Board ergänzt stehen in
 
 **[LoRaHAM_Pi Control (LHPC)](https://github.com/makrohard/loraham-pi-control) installiert und
 betreibt das alles für Sie**, über eine Web-Oberfläche, auf einer Box zum Flashen und Vergessen.
-Es gibt **[fertige SD-Karten-Images](https://github.com/makrohard/loraham-images)** — Image
-schreiben, booten, Web-UI öffnen, Hardware auswählen, Stack starten. LHPC baut den Daemon aus
+Es gibt **[fertige SD-Karten-Images](https://github.com/makrohard/loraham-images)** nur für den
+Raspberry Pi — Image schreiben, booten, Web-UI öffnen, Hardware auswählen, Stack starten. LHPC baut den Daemon aus
 diesem Repository, pinnt ihn auf einen getesteten Commit und verwaltet Funkmodule, Sockets und
 systemd-Units.
 
@@ -104,7 +104,7 @@ Die Referenzdokumentation liegt in [`docs/`](docs/) (englisch):
 verfügbar und baubar; [`archive/README.md`](archive/README.md) enthält alles Nötige:
 Voraussetzungen, RadioLib, Kompilierbefehle und Bedienung.
 
-Chat und Voice werden mitgeliefert (von LoRaHAM_Pi Control betrieben; der Quelltext der
+Chat und Voice werden mitgeliefert (von [LoRaHAM_Pi Control](https://github.com/makrohard/loraham-pi-control) betrieben; der Quelltext der
 [Chat-TUI](clients/chat/README.md) liegt in [`clients/`](clients/)). Die übrigen Programme in
 `clients/` — das [APRS-iGate](clients/igate/README.md), Dualband-RSSI-Balken und ein
 Meshtastic-Decoder — sind archivierte Beispiele. Zuerst den Daemon starten, dann einen Client.
