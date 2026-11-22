@@ -1,6 +1,7 @@
 #include "../daemon_band.h"
 #include "../daemon_data_tx_runtime.h"
 
+#include <atomic>
 #include <chrono>
 #include <stdio.h>
 #include <thread>
@@ -53,7 +54,9 @@ void daemon_led_flash_pin(int pin)
 // Fake driver: overrides the virtual RadioDriver delegates and counts calls
 // exactly as the earlier template fake did (counter semantics unchanged).
 struct FakeRadio : public RadioDriver {
-    int scan_count;
+    /* Atomic: the TX worker counts its CAD probes while the test thread reads
+     * the count (TSan race at the queued-CAD test, CI 45018208772). */
+    std::atomic<int> scan_count;
     int scan_state;
     int scan_pattern[16];
     int scan_pattern_len;
@@ -100,9 +103,8 @@ struct FakeRadio : public RadioDriver {
 
     int16_t scanChannel() override
     {
-        int idx = scan_count;
+        int idx = scan_count++;
 
-        scan_count++;
         if (idx < scan_pattern_len)
             return scan_pattern[idx];
 
