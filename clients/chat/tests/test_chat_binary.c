@@ -58,6 +58,27 @@ static void expect(const char *name, int cond)
 static const char *g_bin;
 static char g_dir[64];
 
+/* A failed fork() or forkpty() returns -1, and kill(-1, ...) signals every
+ * process of the user. So a spawn failure ends the test at once (it ends the
+ * child already started), and a child is signalled only by a pid > 0. */
+static void end_child(pid_t pid)
+{
+    if (pid > 0) {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+    }
+}
+
+static void spawn_check(pid_t pid, const char *what, pid_t started)
+{
+    if (pid >= 0)
+        return;
+    printf("[FAIL] %s failed: %s; test ended\n", what, strerror(errno));
+    fflush(stdout);
+    end_child(started);
+    exit(1);
+}
+
 /* Run the binary without a terminal; returns the exit code, stderr in err and
  * stdout in out. Both pipes are read together (poll), so a full one never
  * blocks the child. */
@@ -67,6 +88,7 @@ static int run_notty(char *const args[], char *err, size_t err_size, char *out, 
     if (pipe(pe) || pipe(po))
         return -1;
     pid_t pid = fork();
+    spawn_check(pid, "fork", 0);
     if (pid == 0) {
         setsid();                                 /* no controlling terminal */
         int nul = open("/dev/null", O_RDONLY);
@@ -291,12 +313,14 @@ static void scenario_one_drawing_thread(void)
     int dl = listen_at(dpath), cl = listen_at(cpath);
     expect("ui: two listeners", dl >= 0 && cl >= 0);
     pid_t resp = fork();
+    spawn_check(resp, "fork", 0);
     if (resp == 0) {
         conf_responder(cl, "433.775", sets);
         _exit(0);
     }
     int master = -1;
     pid_t pid = forkpty(&master, NULL, NULL, NULL);
+    spawn_check(pid, "forkpty", resp);
     if (pid == 0) {
         setenv("TERM", "xterm", 1);
         setenv("ESCDELAY", "25", 1);
@@ -428,8 +452,7 @@ static void scenario_one_drawing_thread(void)
     expect("ui: ... and is not shown as sent", !file_has(hist, "|Ich|gone-line"));
 
     /* A CONF peer that accepts and closes at once, then a retune. */
-    kill(resp, SIGKILL);
-    waitpid(resp, NULL, 0);
+    end_child(resp);
     if (write(master, "n1-line\r", 8) != 8) { }
     int closed = 0;
     for (int k = 0; k < 15; k++) {
@@ -442,8 +465,7 @@ static void scenario_one_drawing_thread(void)
     }
     expect("ui: the retune reached the CONF peer that closes at once", closed > 0);
     expect("ui: chat is still running (MSG_NOSIGNAL)", waitpid(pid, NULL, WNOHANG) == 0);
-    kill(pid, SIGKILL);
-    waitpid(pid, NULL, 0);
+    end_child(pid);
     close(master);
     close(dl);
     close(cl);
@@ -507,6 +529,7 @@ int main(int argc, char **argv)
     }
     int master = -1;
     pid_t pid = forkpty(&master, NULL, NULL, NULL);
+    spawn_check(pid, "forkpty", 0);
     if (pid == 0) {
         setenv("TERM", "xterm", 1);
         if (chdir(g_dir) != 0)
@@ -561,8 +584,7 @@ int main(int argc, char **argv)
     expect("a line typed after \"daemon gone\" does not kill chat (no SIGPIPE)", wr == 0);
     if (wr == pid && WIFSIGNALED(wst))
         printf("       chat ended by signal %d\n", WTERMSIG(wst));
-    kill(pid, SIGKILL);
-    waitpid(pid, NULL, 0);
+    end_child(pid);
 
     scenario_one_drawing_thread();
 
