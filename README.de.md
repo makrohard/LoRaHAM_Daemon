@@ -24,7 +24,7 @@ SPI-Bus oder hinter einer USB-SPI-Brücke. Andere Boards sollten ebenfalls funkt
 
 * Raspberry Pi 3/4/5 und Zero 2 W, Raspbian Image — oder ein x86-Linux-PC mit einem der USB-Sticks unten
 * SPI aktiviert mit dem `spi0-0cs` Overlay — [wie](docs/hardware.md)
-* 433 MHz und 868 MHz, ein Daemon-Prozess pro Band; 915 ungetestet
+* 433 MHz und 868 MHz, ein Daemon-Prozess pro Funkmodul; 915 MHz ungetestet
 
 <p>
 <a href="https://www.loraham.de/produkt/loraham-pi/"><img src="docs/img/readme/hw-loraham.jpg" width="240" alt="LoRaHAM Pi HAT"></a>

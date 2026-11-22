@@ -23,7 +23,7 @@ preset whose wiring matches.
 
 * Raspberry Pi 3/4/5 and Zero 2 W, Raspbian image — or an x86 Linux PC with one of the USB sticks below
 * SPI enabled with the `spi0-0cs` overlay — [how](docs/hardware.md)
-* 433 MHz and 868 MHz, one daemon process per band; 915 untested
+* 433 MHz and 868 MHz, one daemon process per radio; 915 MHz untested
 
 <p>
 <a href="https://www.loraham.de/produkt/loraham-pi/"><img src="docs/img/readme/hw-loraham.jpg" width="240" alt="LoRaHAM Pi HAT"></a>
