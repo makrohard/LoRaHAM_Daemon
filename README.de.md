@@ -59,7 +59,7 @@ Fähigkeiten, die Kombinationsmatrix und wie man ein Board ergänzt stehen in
 ### Mit LoRaHAM_Pi Control
 
 **[LoRaHAM_Pi Control (LHPC)](https://github.com/makrohard/loraham-pi-control) installiert und
-betreibt das alles für Sie**, über eine Web-Oberfläche, auf einer Box zum Flashen und Vergessen.
+betreibt das alles für Sie**, über eine Web-Oberfläche.
 Es gibt **[fertige SD-Karten-Images](https://github.com/makrohard/loraham-images)** nur für den
 Raspberry Pi — Image schreiben, booten, Web-UI öffnen, Hardware auswählen, Stack starten. LHPC baut den Daemon aus
 diesem Repository, pinnt ihn auf einen getesteten Commit und verwaltet Funkmodule, Sockets und

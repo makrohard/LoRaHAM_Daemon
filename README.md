@@ -57,7 +57,7 @@ matrix and how to add a board are in [`docs/hardware.md`](docs/hardware.md).
 ### With LoRaHAM_Pi Control
 
 **[LoRaHAM_Pi Control (LHPC)](https://github.com/makrohard/loraham-pi-control) installs and runs
-all of this for you**, from a web UI, on a box you flash and forget. There are
+all of this for you**, from a web UI. There are
 **[ready-made SD-card images](https://github.com/makrohard/loraham-images)** for the Raspberry Pi
 only — flash one, boot, open the web UI, pick your hardware and start a stack. It builds the daemon from this repository,
 pins it to a tested commit, and manages the radios, the sockets and the systemd units.
