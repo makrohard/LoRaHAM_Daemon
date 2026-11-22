@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+- CONF: a radio health change is sent to every CONF client as `RADIO=<state>` (the `STATUS RADIO=` names). A client
+  that reads only replies must skip it, as `TX=`/`CAD=`/`RSSI=`; MeshCom's bridge needs v0.3.1.
+- Chat: a `TX=`/`CAD=`/`RSSI=`/`RADIO=` line before the daemon's reply is skipped, not read as the reply.
+
 ## 1.5.0
 
 - USB sticks: new option `--radio-error retry|exit`. **Behaviour change:** the default on a USB stick preset is

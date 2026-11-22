@@ -436,6 +436,7 @@ any command.
 | `CAD=1\n` | Live RSSI at or above the `CADRSSI` threshold, only while `CADMONITOR=1` |
 | `CAD=0\n` | Channel confirmed free again |
 | `RSSI=-87.50\n` | Live RSSI while `GETRSSI=1`, two decimals |
+| `RADIO=<state>\n` | The radio health changed; `<state>` as `STATUS RADIO=`: `READY`, `FAILED`, `UNINITIALIZED`, `UNPLUGGED`. Added in 1.6.0 |
 
 `TX=1`/`TX=0` are emitted by the main loop, not by the TX path itself: a
 transmit only bumps an atomic generation counter, and the monitoring tick
@@ -444,6 +445,14 @@ access client slots.
 
 Each CAD transition is broadcast exactly once, on the edge the tick returns.
 `CAD=0/1` monitoring is opt-in per band and off by default.
+
+`RADIO=<state>` comes from the monitoring tick too: it compares the health with
+the last one it announced, so each change is sent once, also while the USB stick
+is unplugged; a change that reverts within one loop pass is not sent. A client
+connected after a change gets no old line: it reads `GET STATUS` at connect, then
+follows the lines. On a stick's return the re-open and the replay run in one
+pass, so the lines are `RADIO=UNPLUGGED` then `RADIO=READY`. A client that waits
+for a reply skips these lines (they never start a reply).
 
 The RSSI stream stops automatically once no CONF client remains connected, so a
 reconnecting client must send `SET GETRSSI=1` again.
