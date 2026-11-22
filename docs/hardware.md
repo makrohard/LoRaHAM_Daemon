@@ -21,7 +21,7 @@ RadioLib, SPI). Building and running the daemon is in
 
 ## Host and packages
 
-Target platform: Raspberry Pi 3/4/5 running a Raspbian image.
+Target platform: Raspberry Pi 3/4/5 and Zero 2 W running a Raspbian image, or an x86 Linux PC with a USB stick (see the README).
 
     sudo apt update
     sudo apt install g++ make cmake build-essential -y
