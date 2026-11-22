@@ -88,6 +88,8 @@ struct RadioController {
     std::atomic<bool> tx_busy;
     std::atomic<uint32_t> tx_status_generation;
     uint32_t tx_status_broadcast_generation;
+    /* The health last announced as RADIO=<state> on CONF (main-loop-only). */
+    RadioHealth health_broadcast;
     std::atomic<bool> cad_active;
     std::atomic<bool> cad_broadcast_active;
     std::atomic<bool> cad_monitor_active;
@@ -173,6 +175,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->tx_busy.store(false);
     ctrl->tx_status_generation.store(0u);
     ctrl->tx_status_broadcast_generation = 0u;
+    ctrl->health_broadcast = RADIO_HEALTH_UNINITIALIZED;
     ctrl->cad_active.store(false);
     ctrl->cad_broadcast_active.store(false);
     ctrl->cad_monitor_active.store(false);

@@ -57,6 +57,31 @@ static void daemon_process_tx_status(RadioController *ctrl,
     }
 }
 
+/* --- Radio health ------------------------------------------------------- */
+/* RADIO=<state> to every CONF client when the health changes. The new state is
+ * stored with or without clients, so a client that connects later gets no old
+ * line (it reads GET STATUS). */
+static void daemon_process_radio_health(RadioController *ctrl,
+                                        RadioChannelIo *io)
+{
+    RadioHealth current;
+    char line[32];
+
+    if (!ctrl || !io)
+        return;
+
+    current = radio_controller_health(ctrl);
+    if (current == ctrl->health_broadcast)
+        return;
+
+    ctrl->health_broadcast = current;
+
+    if (client_slot_has_clients(io->conf_slots, MAX_CLIENTS)) {
+        snprintf(line, sizeof(line), "RADIO=%s\n", radio_health_name(current));
+        client_slot_broadcast_queued(io->conf_slots, MAX_CLIENTS, line);
+    }
+}
+
 /* --- CAD status ---------------------------------------------------------- */
 static void daemon_process_cad_status(RadioController *ctrl,
                                       RadioChannelIo *io)
@@ -216,6 +241,7 @@ void daemon_process_monitoring(DaemonDeadlineTimer *cad_timer,
                                 DaemonDeadlineTimer *stats_timer)
 {
     daemon_process_tx_status(&radio_controller, &channel);
+    daemon_process_radio_health(&radio_controller, &channel);
     daemon_process_cad_rssi(cad_timer, rssi_timer);
     daemon_process_periodic_stats(stats_timer);
 

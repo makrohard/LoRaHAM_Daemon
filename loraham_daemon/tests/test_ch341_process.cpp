@@ -45,6 +45,10 @@
  *   T7         no hotplug: the startup note; a lost stick exits 5 as before
  *   S9         preset POWER ceilings: PineDio 0..20, the Meshstick's 22
  *   S10        the real chat binary leaves the operator's POWER alone
+ *   RL         1.6.0 RADIO=<state> on CONF: each health change once, in order,
+ *              to every CONF client (unplug, a failed re-init in retry mode,
+ *              the return: UNPLUGGED, READY only); no line without a change;
+ *              a client connected after a change gets no old line
  */
 
 #include <algorithm>
@@ -405,6 +409,39 @@ static int run_piped(const std::vector<std::string> &args, const std::string &lo
     int rc = sh("bash '" + log + ".sh'");
     *pid_out = (pid_t)atoi(read_text(log + ".pid").c_str());
     return rc;
+}
+
+/* Lines on a kept CONF client up to the first one starting with `prefix`
+ * (returned; "" on timeout). Every RADIO= line read on the way goes to *radio. */
+static std::string read_until(int fd, const char *prefix, int ms, std::vector<std::string> *radio)
+{
+    uint64_t end = now_ms() + (uint64_t)ms;
+    while (now_ms() < end) {
+        std::string l = read_line(fd, (int)(end - now_ms()));
+        if (l.rfind("RADIO=", 0) == 0)
+            radio->push_back(l);
+        if (!l.empty() && l.rfind(prefix, 0) == 0)
+            return l;
+    }
+    return "";
+}
+
+/* One command on a kept CONF client; its reply line (prefix), RADIO= lines to *radio. */
+static std::string ask(int fd, const std::string &cmd, const char *prefix, std::vector<std::string> *radio)
+{
+    std::string line = cmd + "\n";
+    if (write(fd, line.data(), line.size()) != (ssize_t)line.size())
+        return "";
+    return read_until(fd, prefix, 2000, radio);
+}
+
+static size_t log_count(const std::string &log, const std::string &part)
+{
+    std::string s = read_text(log);
+    size_t n = 0;
+    for (size_t at = s.find(part); at != std::string::npos; at = s.find(part, at + part.size()))
+        n++;
+    return n;
 }
 
 /* ---- scenarios ---------------------------------------------------------------- */
@@ -1011,6 +1048,68 @@ static void scenario_retry_reinit(void)
     expect("T3 the next timed attempt: back after 3 attempts, READY",
            wait_log(log, "ELECROW Meshstick back after 3 attempts: RADIO=READY", 5000) &&
            wait_status(C, "RADIO=READY", 2000));
+    term(pid);
+}
+
+/* 1.6.0: RADIO=<state> on CONF, through the real unplug, re-init and replay. */
+static void scenario_radio_lines(void)
+{
+    reset_dirs();
+    std::string log = g_tmp + "/rl.log";
+    const std::string C = "loraconf868.sock";
+    const std::vector<std::string> both = { "RADIO=UNPLUGGED", "RADIO=READY" };
+    bus("1-2 SERIAL01 1\n");
+    pid_t pid = start(mesh({}), log);
+    expect("RL READY", wait_status(C, "RADIO=READY", 8000));
+    int a = connect_to(C), b = connect_to(C);
+    std::vector<std::string> ra, rb, rc, rd;
+    expect("RL two CONF clients: no line at connect, GET STATUS says READY",
+           ask(a, "GET STATUS", "STATUS", &ra).rfind("STATUS RADIO=READY ", 0) == 0 &&
+           ask(b, "GET STATUS", "STATUS", &rb).rfind("STATUS RADIO=READY ", 0) == 0 && ra.empty() && rb.empty());
+    bus("");                                          /* unplug */
+    expect("RL unplug: RADIO=UNPLUGGED to both clients",
+           read_until(a, "RADIO=", 3000, &ra) == "RADIO=UNPLUGGED" &&
+           read_until(b, "RADIO=", 3000, &rb) == "RADIO=UNPLUGGED");
+    expect("RL the line's value equals GET STATUS's RADIO=",
+           ask(a, "GET STATUS", "STATUS", &ra).rfind("STATUS RADIO=UNPLUGGED ", 0) == 0);
+    int c = connect_to(C);                            /* after the change was sent */
+    expect("RL a client connected after the change: no old line, GET STATUS says UNPLUGGED",
+           ask(c, "GET STATUS", "STATUS", &rc).rfind("STATUS RADIO=UNPLUGGED ", 0) == 0 && rc.empty());
+    bus("1-2 SERIAL01 2 badchip\n");
+    expect("RL the re-init on the return fails (retry mode: FAILED, then UNPLUGGED in the pass)",
+           wait_log(log, "attempt 2: re-init failed: closing it, next attempt in 1 s", 5000));
+    bus("1-2 SERIAL01 2\n");
+    expect("RL the next attempt (re-init + replay): RADIO=READY to all three clients",
+           read_until(a, "RADIO=READY", 6000, &ra) != "" && read_until(b, "RADIO=READY", 6000, &rb) != "" &&
+           read_until(c, "RADIO=READY", 6000, &rc) != "");
+    std::string st;
+    for (int i = 0; i < 20; i++)                      /* 20 round trips: 20+ loop passes, READY throughout */
+        st = ask(a, "GET STATUS", "STATUS", &ra);
+    ask(b, "GET STATUS", "STATUS", &rb);
+    ask(c, "GET STATUS", "STATUS", &rc);
+    expect("RL READY held: GET STATUS says READY", st.rfind("STATUS RADIO=READY ", 0) == 0);
+    expect("RL exactly UNPLUGGED, READY on each client, in order: no FAILED/UNINITIALIZED line, none without a change",
+           ra == both && rb == both && rc == std::vector<std::string>{ "RADIO=READY" });
+    if (ra != both || rb != both)
+        for (const std::string &l : ra)
+            printf("       RL client a: %s\n", l.c_str());
+
+    /* A change with no CONF client connected: stored all the same. The gone
+     * line is printed in the pass whose tick sees UNPLUGGED (on_loss stores
+     * it first); a client connected after that line gets no line. */
+    close(a);
+    close(b);
+    close(c);
+    bus("");
+    expect("RL unplug with no CONF client: the gone line",
+           [&] { uint64_t end = now_ms() + 3000;
+                 while (log_count(log, "ELECROW Meshstick gone (") < 2 && now_ms() < end)
+                     sleep_ms(50);
+                 return log_count(log, "ELECROW Meshstick gone (") >= 2; }());
+    int d = connect_to(C);
+    expect("RL a client connected after a change made with no client: no old line",
+           ask(d, "GET STATUS", "STATUS", &rd).rfind("STATUS RADIO=UNPLUGGED ", 0) == 0 && rd.empty());
+    close(d);
     term(pid);
 }
 
@@ -1737,6 +1836,7 @@ int main(int argc, char *argv[])
     scenario_radio_error_cli();
     scenario_retry_fault();
     scenario_retry_reinit();
+    scenario_radio_lines();
     scenario_retry_kept();
     scenario_radio_across_unplug();
     scenario_rx_with_radio_polling();
