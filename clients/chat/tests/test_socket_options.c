@@ -8,7 +8,12 @@
  *     path and an unknown argument are refused;
  *   - against two listening sockets named like a daemon started with --id t1:
  *     the data socket connects, and both CONF opens (send_lora_config and
- *     config_query) reach the given CONF socket.
+ *     config_query) reach the given CONF socket;
+ *   - config_query's read (1.6.0) against a fake CONF socket that writes each
+ *     part only after the client has read the one before: broadcast lines
+ *     (TX=, CAD=, RSSI=, RADIO=) before the reply are skipped, also one split
+ *     across reads; any other first line, EOF and a line that does not fit
+ *     end the read as before.
  */
 #define LORACHAT_NO_MAIN
 #include "../lorachat_ncurses_113.c"
@@ -17,6 +22,8 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <linux/sockios.h>
 
 static int g_ok = 0, g_fail = 0;
 
@@ -59,6 +66,69 @@ static int accept_read(int lfd, char *buf, size_t n)
     close(c);
     return 0;
 }
+
+/* The client has read everything sent on c (SIOCOUTQ 0: no byte of c is left
+ * in the socket's queue), within 5 s. */
+static int drained(int c)
+{
+    for (int i = 0; i < 5000; i++) {
+        int q = -1;
+        if (ioctl(c, SIOCOUTQ, &q) != 0)
+            return 0;
+        if (q == 0)
+            return 1;
+        (void)poll(NULL, 0, 1);
+    }
+    return 0;
+}
+
+/* A fake CONF socket in a child: accept one client, wait for its command, write
+ * the parts one by one, each only after the client has read the one before (so
+ * each part is its own recv). hold: then keep the connection until the client
+ * closes it (exit 0), else close at once (exit 0). Exit 1: a step failed or 5 s
+ * passed. */
+static pid_t conf_server(int lfd, const char *const *parts, int hold)
+{
+    fflush(stdout);
+    pid_t pid = fork();
+    if (pid != 0)
+        return pid;
+    char b[64];
+    int c = accept(lfd, NULL, NULL);
+    struct pollfd p = { c, POLLIN, 0 };
+    if (c < 0 || poll(&p, 1, 5000) != 1 || recv(c, b, sizeof(b), 0) <= 0)
+        _exit(1);
+    for (int i = 0; parts[i]; i++) {
+        if (i > 0 && !drained(c))
+            _exit(1);
+        if (send(c, parts[i], strlen(parts[i]), MSG_NOSIGNAL) != (ssize_t)strlen(parts[i]))
+            _exit(1);
+    }
+    if (!hold)
+        _exit(0);
+    while (poll(&p, 1, 5000) == 1) {
+        ssize_t r = recv(c, b, sizeof(b), 0);
+        if (r == 0 || (r < 0 && errno == ECONNRESET))   /* closed (with bytes unread: ECONNRESET) */
+            _exit(0);
+        if (r < 0)
+            _exit(1);
+    }
+    _exit(1);
+}
+
+static int server_ok(pid_t pid)
+{
+    int st = 0;
+    return waitpid(pid, &st, 0) == pid && WIFEXITED(st) && WEXITSTATUS(st) == 0;
+}
+
+/* Reaped only: the client closed before the last part, so its send may fail. */
+static int reaped(pid_t pid)
+{
+    return waitpid(pid, NULL, 0) == pid;
+}
+
+#define STATS_LINE "STATS UPTIME=5 RADIO=READY RX=0 RXBYTES=0 RXDROPS=0 TXOK=1 TXERR=0 TXBUSY=0 CADTIMEOUT=0\n"
 
 static void reset_opts(void)
 {
@@ -144,6 +214,44 @@ int main(void)
            accept_read(lc, buf, sizeof(buf)) == 0 && strncmp(buf, "GET STATUS", 10) == 0);
     kill(qfd, SIGKILL);
     waitpid(qfd, NULL, 0);
+
+    /* config_query's read: broadcasts before the reply (1.6.0). */
+    {
+        const char *p1[] = { "TX=0\n", STATS_LINE, NULL };
+        pid_t sp = conf_server(lc, p1, 1);
+        expect("TX=0 read on its own before the STATS reply: tx_completed_count reads the counters (1)",
+               tx_completed_count() == 1 && server_ok(sp));
+        const char *p2[] = { "TX", "=0\n", STATS_LINE, NULL };
+        sp = conf_server(lc, p2, 1);
+        expect("a broadcast split across reads (TX | =0), then STATS: the counters (1)",
+               tx_completed_count() == 1 && server_ok(sp));
+        const char *p3[] = { "RADIO=UNPLUGGED\n", "CHANNEL RADIO=READY BUSY=1 CAD=0 CADSCAN=0\n", NULL };
+        sp = conf_server(lc, p3, 1);
+        expect("RADIO=UNPLUGGED on its own before the CHANNEL reply: tx_busy_state reads BUSY=1",
+               tx_busy_state() == 1 && server_ok(sp));
+        const char *p8[] = { "CAD=1\n", "RSSI=-80.00\n", STATS_LINE, NULL };
+        sp = conf_server(lc, p8, 1);
+        expect("CAD=1 and RSSI= read on their own before the STATS reply: the counters (1)",
+               tx_completed_count() == 1 && server_ok(sp));
+        const char *p4[] = { "TX=0\n" STATS_LINE, NULL };
+        sp = conf_server(lc, p4, 1);
+        expect("keep-green: broadcast + STATS in one write: the counters (1)",
+               tx_completed_count() == 1 && server_ok(sp));
+        const char *p5[] = { "CAD=1\n", "RSSI=-80.00\n", NULL };
+        sp = conf_server(lc, p5, 0);
+        expect("keep-green: only broadcasts, then EOF: -1", tx_completed_count() == -1 && reaped(sp));
+        const char *p6[] = { "FOO=1\n", STATS_LINE, NULL };
+        sp = conf_server(lc, p6, 1);
+        expect("keep-green: any other first line ends the read (FOO=1: -1)",
+               tx_completed_count() == -1 && reaped(sp));
+        char big[601];
+        memset(big, 'x', 600);
+        big[600] = '\0';
+        const char *p7[] = { big, NULL };
+        sp = conf_server(lc, p7, 1);
+        expect("keep-green: a line longer than the buffer, connection held: -1, the client closes",
+               tx_completed_count() == -1 && server_ok(sp));
+    }
 
     char *a10[] = { "chat", "--data-socket", "/nonexistent/lora-x.sock", NULL };
     parse(3, a10);

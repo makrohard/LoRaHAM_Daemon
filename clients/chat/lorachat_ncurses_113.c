@@ -329,15 +329,27 @@ void send_lora_config(const char* freq) {
     close(cfg_fd);
 }
 
+/* A line the daemon sends on its own, never a reply (docs/conf-protocol.md,
+ * Unsolicited broadcasts). */
+static int conf_is_broadcast(const char *line) {
+    return strncmp(line, "TX=", 3) == 0 || strncmp(line, "CAD=", 4) == 0 ||
+           strncmp(line, "RSSI=", 5) == 0 || strncmp(line, "RADIO=", 6) == 0;
+}
+
 /*
  * Ask the daemon one question and read its answer. `send_lora_config` above
  * deliberately stays write-only (a SET needs no answer);
  * this is the read path used to find out when a transmission has finished.
+ * Broadcast lines before the answer are dropped (a partial line is kept for
+ * the next recv); `out` starts at the first complete other line. EOF or a line
+ * that does not fit: -1.
  */
 static int config_query(const char *cmd, char *out, size_t out_len) {
     int fd;
     struct sockaddr_un addr;
     ssize_t n;
+    size_t len = 0;
+    char *nl;
     if (!out || out_len == 0) return -1;
     fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -346,11 +358,19 @@ static int config_query(const char *cmd, char *out, size_t out_len) {
     strncpy(addr.sun_path, conf_path(), sizeof(addr.sun_path)-1);
     if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) { close(fd); return -1; }
     if (send(fd, cmd, strlen(cmd), MSG_NOSIGNAL) < 0) { close(fd); return -1; }
-    n = recv(fd, out, out_len - 1, 0);
+    while (len < out_len - 1) {
+        n = recv(fd, out + len, out_len - 1 - len, 0);
+        if (n <= 0) break;
+        len += (size_t)n;
+        out[len] = '\0';
+        while ((nl = strchr(out, '\n')) != NULL) {
+            if (!conf_is_broadcast(out)) { close(fd); return 0; }
+            len -= (size_t)(nl + 1 - out);
+            memmove(out, nl + 1, len + 1);
+        }
+    }
     close(fd);
-    if (n <= 0) return -1;
-    out[n] = '\0';
-    return 0;
+    return -1;
 }
 
 /*
