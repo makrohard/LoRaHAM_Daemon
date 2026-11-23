@@ -172,6 +172,12 @@ static void daemon_framed_tx_error(const char *msg, void *ctx)
 
     daemon_debug_ctx(err->tag ? err->tag : "TXF",
                      "frame error: %s", msg ? msg : "");
+    /* Default line: a client that never reads its ERROR frame (one-shot
+     * sender) leaves the journal as the only trace. A refused unqueued TX
+     * without TX_RESULT ends here too ("TX failed"), beside its own
+     * "DATA TX aborted" line. */
+    printf("[%s] DATA frame error: %s\n", err->tag ? err->tag : "TXF",
+           msg ? msg : "");
     if (daemon_queue_framed_error(err->slot, msg ? msg : "frame error") != 0)
         client_slot_close(err->slot);
 }

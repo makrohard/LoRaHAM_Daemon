@@ -369,39 +369,55 @@ static void test_drain_delivers_queued_completion(void)
  * the unqueued path prints the same wording under the band tag ("868"). */
 #define DRAIN_TAG "TX868F"
 
-/* Drain with stdout in a pipe; *out gets the printed text. 0 on success. */
-static int drain_captured(ClientSlot *slots, int max_clients,
-                          char *out, size_t out_len)
+/* stdout into a pipe, kept for capture_end. 0 on success. */
+static int capture_begin(int *saved, int *read_fd)
 {
     int pfd[2];
-    int saved;
-    size_t used = 0;
-    ssize_t n;
 
-    out[0] = '\0';
     fflush(stdout);
     if (pipe(pfd) != 0)
         return -1;
-    saved = dup(STDOUT_FILENO);
-    if (saved < 0 || dup2(pfd[1], STDOUT_FILENO) < 0) {
+    *saved = dup(STDOUT_FILENO);
+    if (*saved < 0 || dup2(pfd[1], STDOUT_FILENO) < 0) {
         close(pfd[0]);
         close(pfd[1]);
-        if (saved >= 0)
-            close(saved);
+        if (*saved >= 0)
+            close(*saved);
         return -1;
     }
     close(pfd[1]);
+    *read_fd = pfd[0];
+    return 0;
+}
 
-    daemon_drain_framed_tx_completions(DRAIN_TAG, slots, max_clients);
+/* Restore stdout; *out gets the text printed since capture_begin. */
+static void capture_end(int saved, int read_fd, char *out, size_t out_len)
+{
+    size_t used = 0;
+    ssize_t n;
 
     fflush(stdout);
     dup2(saved, STDOUT_FILENO);
     close(saved);
     while (used + 1 < out_len &&
-           (n = read(pfd[0], out + used, out_len - 1 - used)) > 0)
+           (n = read(read_fd, out + used, out_len - 1 - used)) > 0)
         used += (size_t)n;
     out[used] = '\0';
-    close(pfd[0]);
+    close(read_fd);
+}
+
+/* Drain with stdout captured into *out. 0 on success. */
+static int drain_captured(ClientSlot *slots, int max_clients,
+                          char *out, size_t out_len)
+{
+    int saved;
+    int read_fd;
+
+    out[0] = '\0';
+    if (capture_begin(&saved, &read_fd) != 0)
+        return -1;
+    daemon_drain_framed_tx_completions(DRAIN_TAG, slots, max_clients);
+    capture_end(saved, read_fd, out, out_len);
     return 0;
 }
 
@@ -555,6 +571,49 @@ static void test_drain_quiet_for_sent_jobs(void)
 }
 
 
+static void test_frame_error_logged(void)
+{
+    ClientSlot slots[1];
+    FramedDataTxState states[1];
+    EventLoopSet set;
+    EventLoopReadySet ready;
+    int sv[2];
+    int saved;
+    int read_fd;
+    char out[1024];
+    const char *msg = "unknown frame type";
+    const uint8_t bad_frame[FRAMED_DATA_HEADER_LEN] = { 0x7f, 0x00, 0x00 };
+
+    client_slot_init_all(slots, 1);
+    framed_data_tx_state_init_all(states, 1);
+    expect_int("frame error socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+    client_slot_set_fd(&slots[0], sv[0]);
+    expect_int("frame error write",
+               (int)write(sv[1], bad_frame, sizeof(bad_frame)),
+               (int)sizeof(bad_frame));
+    expect_int("frame error loop init", event_loop_init(&set), 0);
+    event_loop_add_fd(&set, sv[0]);
+    expect_int("frame error readable", event_loop_wait(&set, &ready, 1000000), 1);
+
+    out[0] = '\0';
+    expect_int("frame error capture", capture_begin(&saved, &read_fd), 0);
+    daemon_process_framed_data_slots(DRAIN_TAG, slots, states, 1, &ready,
+                                     NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+    capture_end(saved, read_fd, out, sizeof(out));
+
+    expect_int("frame error line",
+               count_text(out, "[" DRAIN_TAG "] DATA frame error: unknown frame type\n"), 1);
+    expect_int("frame error one line only", count_text(out, "DATA frame error"), 1);
+    expect_size("frame error ERROR frame queued",
+                client_output_queue_pending(&slots[0].output),
+                FRAMED_DATA_HEADER_LEN + strlen(msg));
+
+    event_loop_close(&set);
+    close(sv[1]);
+    client_slot_close_all(slots, 1);
+}
+
 static void test_encode_rejects_bad_args(void)
 {
     DaemonTxJob job = make_job(1, 0);
@@ -605,6 +664,7 @@ int main(int argc, char **argv)
     test_drain_logs_refusal_for_gone_client();
     test_drain_logs_radio_error_without_target();
     test_drain_quiet_for_sent_jobs();
+    test_frame_error_logged();
     test_encode_rejects_bad_args();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
