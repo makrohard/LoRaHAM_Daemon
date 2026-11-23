@@ -362,6 +362,199 @@ static void test_drain_delivers_queued_completion(void)
 }
 
 
+/* --- Default log line for a queued TX refused in the worker ------------ */
+
+/* The drain runs under the band's framed log context: band->framed_log_ctx,
+ * "TX868F" on 868 (daemon_band.h, daemon_socket_dispatch.cpp). With TXQUEUE=0
+ * the unqueued path prints the same wording under the band tag ("868"). */
+#define DRAIN_TAG "TX868F"
+
+/* Drain with stdout in a pipe; *out gets the printed text. 0 on success. */
+static int drain_captured(ClientSlot *slots, int max_clients,
+                          char *out, size_t out_len)
+{
+    int pfd[2];
+    int saved;
+    size_t used = 0;
+    ssize_t n;
+
+    out[0] = '\0';
+    fflush(stdout);
+    if (pipe(pfd) != 0)
+        return -1;
+    saved = dup(STDOUT_FILENO);
+    if (saved < 0 || dup2(pfd[1], STDOUT_FILENO) < 0) {
+        close(pfd[0]);
+        close(pfd[1]);
+        if (saved >= 0)
+            close(saved);
+        return -1;
+    }
+    close(pfd[1]);
+
+    daemon_drain_framed_tx_completions(DRAIN_TAG, slots, max_clients);
+
+    fflush(stdout);
+    dup2(saved, STDOUT_FILENO);
+    close(saved);
+    while (used + 1 < out_len &&
+           (n = read(pfd[0], out + used, out_len - 1 - used)) > 0)
+        used += (size_t)n;
+    out[used] = '\0';
+    close(pfd[0]);
+    return 0;
+}
+
+static int count_text(const char *text, const char *needle)
+{
+    int count = 0;
+    size_t len = strlen(needle);
+
+    for (const char *p = strstr(text, needle); p; p = strstr(p + len, needle))
+        count++;
+    return count;
+}
+
+static void push_completion(uint8_t flags, DaemonTxOutcome outcome,
+                            int slot, uint32_t generation)
+{
+    DaemonTxJob job = make_job(0x4242, flags);
+    DaemonTxJobResult result;
+
+    daemon_tx_job_result_init(&result, &job, outcome);
+    result.completion_slot = slot;
+    result.completion_generation = generation;
+    daemon_tx_completion_queue_push(
+        daemon_tx_async_runtime_completion_queue(),
+        &result);
+}
+
+static void test_drain_logs_refusal_for_live_client(void)
+{
+    ClientSlot slots[1];
+    int sv[2];
+    char out[1024];
+    uint8_t frame[FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN];
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+    client_slot_init_all(slots, 1);
+    expect_int("refusal live socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+    client_slot_set_fd(&slots[0], sv[0]);
+
+    /* CAD wait expired in the worker: CHANNEL_BUSY -> TX_RESULT_CAD_TIMEOUT. */
+    push_completion(FRAMED_DATA_TX_RESULT_FLAG_DEFERRED,
+                    DAEMON_TX_OUTCOME_CHANNEL_BUSY,
+                    0, client_slot_generation(&slots[0]));
+
+    expect_int("refusal live capture", drain_captured(slots, 1, out, sizeof(out)), 0);
+    expect_int("refusal live line",
+               count_text(out, "[" DRAIN_TAG "] DATA TX aborted: CAD_TIMEOUT\n"), 1);
+    expect_int("refusal live one line only",
+               count_text(out, "DATA TX aborted"), 1);
+    expect_int("refusal live TX_RESULT read",
+               (int)read(sv[1], frame, sizeof(frame)), (int)sizeof(frame));
+    expect_int("refusal live TX_RESULT type", frame[0], FRAMED_DATA_TYPE_TX_RESULT);
+    expect_int("refusal live TX_RESULT status", frame[3],
+               daemon_tx_outcome_to_framed_status(DAEMON_TX_OUTCOME_CHANNEL_BUSY));
+
+    close(sv[1]);
+    client_slot_close_all(slots, 1);
+    daemon_tx_async_runtime_shutdown();
+}
+
+static void test_drain_logs_refusal_for_gone_client(void)
+{
+    ClientSlot slots[1];
+    int old_sv[2];
+    int new_sv[2];
+    uint32_t old_generation;
+    char out[1024];
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+    client_slot_init_all(slots, 1);
+    expect_int("refusal stale old socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, old_sv), 0);
+    client_slot_set_fd(&slots[0], old_sv[0]);
+    old_generation = client_slot_generation(&slots[0]);
+    close(old_sv[1]);
+    client_slot_close(&slots[0]);
+    expect_int("refusal stale new socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, new_sv), 0);
+    client_slot_set_fd(&slots[0], new_sv[0]);
+
+    /* The sender is gone (its slot reused): no TX_RESULT, the line stays. */
+    push_completion(FRAMED_DATA_TX_RESULT_FLAG_DEFERRED,
+                    DAEMON_TX_OUTCOME_CHANNEL_BUSY, 0, old_generation);
+
+    expect_int("refusal stale capture", drain_captured(slots, 1, out, sizeof(out)), 0);
+    expect_int("refusal stale line",
+               count_text(out, "[" DRAIN_TAG "] DATA TX aborted: CAD_TIMEOUT\n"), 1);
+    expect_size("refusal stale counted stale",
+                daemon_tx_async_runtime_completion_stale(), 1);
+    expect_size("refusal stale nothing delivered",
+                client_output_queue_pending(&slots[0].output), 0);
+
+    close(new_sv[1]);
+    client_slot_close_all(slots, 1);
+    daemon_tx_async_runtime_shutdown();
+}
+
+static void test_drain_logs_radio_error_without_target(void)
+{
+    ClientSlot slots[1];
+    char out[1024];
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+    client_slot_init_all(slots, 1);
+
+    /* A raw-socket job has no completion target. */
+    push_completion(0, DAEMON_TX_OUTCOME_RADIO_ERROR,
+                    DAEMON_TX_COMPLETION_SLOT_NONE, 0u);
+
+    expect_int("radio error capture", drain_captured(slots, 1, out, sizeof(out)), 0);
+    expect_int("radio error line",
+               count_text(out, "[" DRAIN_TAG "] DATA TX aborted: RADIO_ERROR\n"), 1);
+
+    client_slot_close_all(slots, 1);
+    daemon_tx_async_runtime_shutdown();
+}
+
+static void test_drain_quiet_for_sent_jobs(void)
+{
+    ClientSlot slots[1];
+    int sv[2];
+    char out[1024];
+    uint8_t frames[2 * (FRAMED_DATA_HEADER_LEN + FRAMED_DATA_TX_RESULT_PAYLOAD_LEN)];
+
+    daemon_tx_async_runtime_shutdown();
+    daemon_tx_async_runtime_init();
+    client_slot_init_all(slots, 1);
+    expect_int("sent quiet socketpair",
+               socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
+    client_slot_set_fd(&slots[0], sv[0]);
+
+    /* Sent, and sent after a CAD timeout (CADTXAFTERTIMEOUT): no line. */
+    push_completion(FRAMED_DATA_TX_RESULT_FLAG_DEFERRED,
+                    DAEMON_TX_OUTCOME_OK, 0, client_slot_generation(&slots[0]));
+    push_completion(FRAMED_DATA_TX_RESULT_FLAG_DEFERRED |
+                        FRAMED_DATA_TX_RESULT_FLAG_CAD_TIMEOUT,
+                    DAEMON_TX_OUTCOME_OK, 0, client_slot_generation(&slots[0]));
+
+    expect_int("sent quiet capture", drain_captured(slots, 1, out, sizeof(out)), 0);
+    expect_int("sent quiet no line", count_text(out, "DATA TX aborted"), 0);
+    expect_int("sent quiet both TX_RESULTs",
+               (int)read(sv[1], frames, sizeof(frames)), (int)sizeof(frames));
+
+    close(sv[1]);
+    client_slot_close_all(slots, 1);
+    daemon_tx_async_runtime_shutdown();
+}
+
+
 static void test_encode_rejects_bad_args(void)
 {
     DaemonTxJob job = make_job(1, 0);
@@ -408,6 +601,10 @@ int main(int argc, char **argv)
     test_completion_ignores_missing_target();
     test_drain_counts_stale_completion();
     test_drain_delivers_queued_completion();
+    test_drain_logs_refusal_for_live_client();
+    test_drain_logs_refusal_for_gone_client();
+    test_drain_logs_radio_error_without_target();
+    test_drain_quiet_for_sent_jobs();
     test_encode_rejects_bad_args();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);

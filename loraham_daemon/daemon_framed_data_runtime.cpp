@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -11,6 +12,7 @@
 #include "daemon_tx_completion.h"
 #include "daemon_tx_outcome.h"
 #include "framed_data.h"
+#include "tx_result.h"
 
 /* --- Framed DATA runtime helpers ---------------------------------------- */
 
@@ -265,6 +267,15 @@ void daemon_drain_framed_tx_completions(const char *tag,
         return;
 
     while (daemon_tx_async_runtime_pop_completion(&result) == 0) {
+        /* A queued TX refused in the worker (CAD, radio error) gets the
+         * unqueued path's default line here, before delivery, so also for
+         * a gone client or a raw-socket job. `tag` is the framed log context
+         * ("TX868F"); with TXQUEUE=0 the same refusal prints the band tag
+         * ("868"). OK, also OK after a CAD timeout, stays quiet as there. */
+        if (result.tx_result != TX_RESULT_OK)
+            printf("[%s] DATA TX aborted: %s\n", tag ? tag : "TXF",
+                   tx_result_name(result.tx_result));
+
         int rc = daemon_tx_completion_deliver_to_slot(slots,
                                                       max_clients,
                                                       &result);

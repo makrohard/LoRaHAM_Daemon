@@ -920,7 +920,8 @@ build_one_tx_completion_test() {
     "$SCRIPT_DIR/daemon_stats.cpp" \
     "$SCRIPT_DIR/daemon_log.cpp" \
     "$SCRIPT_DIR/framed_data_tx.cpp" \
-    "$SCRIPT_DIR/framed_data.cpp"
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp"
 }
 
 
