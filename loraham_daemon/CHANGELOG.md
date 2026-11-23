@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1
+
+- Log: a queued TX refused by the worker's CAD check (`TXQUEUE=1`) prints `[TX868F] DATA TX aborted: <result>`
+  (433: `TX433F`), as the unqueued path does under the band tag; a framed-data frame error prints
+  `[TX868F] DATA frame error: <msg>`. Protocol unchanged.
+
 ## 1.6.0
 
 - CONF: a radio health change is sent to every CONF client as `RADIO=<state>` (the `STATUS RADIO=` names). A client
