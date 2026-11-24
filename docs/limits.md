@@ -104,8 +104,10 @@ and the reply contract are in [CONF protocol](conf-protocol.md).
 
 `AUTO` for the three SX126x CAD parameters is the daemon's per-SF table at BW 125 kHz, and
 RadioLib's own default (4 symbols, `detPeak` SF+13, `detMin` 10) at any other SF or bandwidth. The
-table has no entries yet, so `AUTO` is RadioLib's default everywhere. Stated limit: the table can
-cover SF7–SF12 at BW 125 kHz only.
+table (4 symbols, `detMin` 10; `detPeak` SF8 23, SF9 27, SF10 27, SF11 28, SF12 31) is listed in
+[conf-protocol.md](conf-protocol.md). Stated limits: it covers SF8–SF12 at BW 125 kHz only (SF7 and
+every other bandwidth are RadioLib's default), and it was measured on two SX1262 boards at one site;
+it is a site-measured default, not a Semtech table.
 
 `CADRSSI` is the busy threshold of the **passive** RSSI mechanism: the `CAD=0/1` monitor, and the
 degraded path a profile would take if it declared no trustworthy active CAD. Since the SX127x

@@ -201,10 +201,22 @@ flag.
 count, `detPeak` and `detMin` of the SX126x channel-activity scan, passed to
 RadioLib's `scanChannel(const ChannelScanConfig_t &)`. They apply from the next
 scan on: `GET CHANNEL` and the `MANAGED` TX gate. `AUTO` takes the daemon's
-per-SF table for SF7 to SF12 at BW 125 kHz; at any other SF or bandwidth it
-leaves the value to RadioLib's own default (4 symbols, SF+13, 10). The table has
-no entries yet: every field is left to RadioLib, so `AUTO` scans exactly as
-earlier releases did.
+per-SF table at BW 125 kHz; at any other SF or bandwidth it leaves the value to
+RadioLib's own default (4 symbols, SF+13, 10). The table was measured on two
+SX1262 boards on an idle channel (RadioLib's SF+13 read the noise floor as busy
+from SF8 up) and checked to still detect real frames:
+
+| SF | `CADSYM` | `CADPEAK` | `CADMIN` |
+|---|---|---|---|
+| 7 | RadioLib default | RadioLib default | RadioLib default |
+| 8 | 4 | 23 | 10 |
+| 9 | 4 | 27 | 10 |
+| 10 | 4 | 27 | 10 |
+| 11 | 4 | 28 | 10 |
+| 12 | 4 | 31 | 10 |
+
+A higher `detPeak` is less sensitive. SF7 keeps RadioLib's default because the
+frame-detection check was not run there.
 `255` is RadioLib's "default" marker and is not accepted. On an SX127x board a
 valid value answers `ERR INVALID` and nothing is stored (its CAD has no such
 parameters). The values survive a USB stick re-init, like `CADWAIT`.

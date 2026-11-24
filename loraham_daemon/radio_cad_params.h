@@ -71,21 +71,32 @@ static inline bool radio_cad_table_bw(float bw_khz)
  * given. AUTO takes the table entry for SF7..SF12 at BW 125 kHz; any other SF or
  * bandwidth leaves the field to RadioLib's default.
  *
- * Table: every field RADIOLIB_SX126X_CAD_PARAM_DEFAULT for now, so AUTO sends
- * exactly the bytes of the no-argument scanChannel() (RadioLib fills each 0xFF
- * field with its own default). The no-TX sweep on two SX1262 boards fills it.
+ * Table: measured on two SX1262 boards at one site, BW 125 kHz, idle channel
+ * (sweep S 2848cb4f, pick rule NOTE f6ec9c83, 200-probe guard at another hour,
+ * detection leg D with real frames; RESULTS 8a73d7ea). Each entry is the lowest
+ * detPeak with 0/40 BUSY at rest on both boards at it and one step above, and
+ * guard counts are BUSY/200 on the two boards. RadioLib's detPeak SF+13 reads
+ * BUSY on that noise floor at SF8 and up (SF12: 33/40). An entry of
+ * RADIOLIB_SX126X_CAD_PARAM_DEFAULT (0xFF) leaves the field to RadioLib, the
+ * bytes of the no-argument scanChannel().
  */
 static inline RadioCadScanParams radio_cad_sx126x_params(int sf, float bw_khz,
                                                          RadioCadParamSettings set)
 {
 #define D_ RADIOLIB_SX126X_CAD_PARAM_DEFAULT
     static const RadioCadScanParams bw125[6] = {
-        { D_, D_, D_ },   /* SF7 */
-        { D_, D_, D_ },   /* SF8 */
-        { D_, D_, D_ },   /* SF9 */
-        { D_, D_, D_ },   /* SF10 */
-        { D_, D_, D_ },   /* SF11 */
-        { D_, D_, D_ },   /* SF12 */
+        /* SF7: no detection leg D (PREAMBLE range), so RadioLib's default. */
+        { D_, D_, D_ },
+        /* SF8: S + NOTE + guard 0/1 + D R_b/R_t 1.00/1.00 on both. */
+        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 23, 10 },
+        /* SF9: S + NOTE + guard 0/1 (26 failed: 0/3) + D 1.00/1.00 on both. */
+        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 27, 10 },
+        /* SF10: S + NOTE + guard 0/0 + D 1.00/1.00 on both. */
+        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 27, 10 },
+        /* SF11: S + NOTE + guard 0/0 + D 1.00/1.00 on both. */
+        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 28, 10 },
+        /* SF12: S + NOTE + guard 1/1 + D 1.00/1.00 on both. */
+        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 31, 10 },
     };
     RadioCadScanParams p = { D_, D_, D_ };
 #undef D_

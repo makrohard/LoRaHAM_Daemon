@@ -3,8 +3,10 @@
  * bandwidth record the REAL Sx1262Driver keeps for it, on the REAL pinned
  * RadioLib with tests/fakes/sx126x_register_model.h where the chip would be.
  *
- * - The table holds RadioLib's "default" byte (0xFF) in every field, so AUTO is
- *   the no-argument scan by construction, at every SF and bandwidth.
+ * - The table holds the measured entries for SF8..SF12 at BW 125 kHz (4 symbols,
+ *   detPeak 23/27/27/28/31, detMin 10). Everywhere else (SF7, SF5/6, every other
+ *   bandwidth, no record) AUTO is RadioLib's "default" byte (0xFF) in every
+ *   field, the no-argument scan by construction.
  * - The table is for BW 125 kHz, matched on the applied value within 0.01 kHz;
  *   the CONF spellings 125 / 125.0 / 125.00 all land on it.
  * - The driver records SF and bandwidth only when RadioLib accepted them: a SET
@@ -54,25 +56,44 @@ static void expect_params(const char *name, RadioCadScanParams p, uint8_t sym, u
 
 /* --- resolution ------------------------------------------------------------ */
 
-static void test_auto_is_radiolib_default_everywhere(void)
+/* The table entry AUTO resolves to at BW 125 kHz; 0 = every field 0xFF. */
+static uint8_t table_peak(int sf)
+{
+    static const uint8_t peak[13] = { 0, 0, 0, 0, 0, 0, 0, 0, 23, 27, 27, 28, 31 };
+
+    return sf >= 0 && sf <= 12 ? peak[sf] : 0;
+}
+
+static void test_auto_table(void)
 {
     static const float bws[] = { 7.8f, 10.4f, 15.6f, 20.8f, 31.25f, 41.7f, 62.5f, 125.0f, 250.0f, 500.0f, 0.0f };
-    int bad = 0, n = 0;
+    int bad = 0, n = 0, entries = 0;
 
     for (int sf = 5; sf <= 12; sf++) {
         for (float bw : bws) {
             RadioCadScanParams p = radio_cad_sx126x_params(sf, bw, ALL_AUTO);
+            uint8_t peak = bw == 125.0f ? table_peak(sf) : 0;
+            bool ok = peak ? p.sym_code == RADIOLIB_SX126X_CAD_ON_4_SYMB && p.det_peak == peak && p.det_min == 10
+                           : p.sym_code == D && p.det_peak == D && p.det_min == D;
 
             n++;
-            if (p.sym_code != D || p.det_peak != D || p.det_min != D) {
+            entries += peak != 0;
+            if (!ok) {
                 bad++;
                 printf("       SF%d BW%.2f -> %02X %02X %02X\n", sf, (double)bw,
                        p.sym_code, p.det_peak, p.det_min);
             }
         }
     }
-    expect_int("AUTO: every field 0xFF at SF5-12 x 11 bandwidths (88 points)", bad, 0);
+    expect_int("AUTO: table at SF8-12/BW125, 0xFF elsewhere (88 points)", bad, 0);
     expect_int("AUTO: points checked", n, 88);
+    expect_int("AUTO: table points", entries, 5);
+    expect_params("AUTO SF12/BW125: 4 symbols, 31, 10", radio_cad_sx126x_params(12, 125.0f, ALL_AUTO),
+                  RADIOLIB_SX126X_CAD_ON_4_SYMB, 31, 10);
+    expect_params("AUTO SF7/BW125: RadioLib default", radio_cad_sx126x_params(7, 125.0f, ALL_AUTO), D, D, D);
+    expect_params("AUTO SF12/BW125.009: table", radio_cad_sx126x_params(12, 125.009f, ALL_AUTO),
+                  RADIOLIB_SX126X_CAD_ON_4_SYMB, 31, 10);
+    expect_params("AUTO SF13/BW125: RadioLib default", radio_cad_sx126x_params(13, 125.0f, ALL_AUTO), D, D, D);
 }
 
 static void test_table_bandwidth(void)
@@ -127,8 +148,8 @@ static void test_explicit_beats_auto(void)
 {
     RadioCadParamSettings set = { 8, RADIO_CAD_PARAM_AUTO, 12 };
 
-    expect_params("explicit CADSYM 8 + CADMIN 12, CADPEAK AUTO at SF12/BW125",
-                  radio_cad_sx126x_params(12, 125.0f, set), RADIOLIB_SX126X_CAD_ON_8_SYMB, D, 12);
+    expect_params("explicit CADSYM 8 + CADMIN 12, CADPEAK AUTO (table 31) at SF12/BW125",
+                  radio_cad_sx126x_params(12, 125.0f, set), RADIOLIB_SX126X_CAD_ON_8_SYMB, 31, 12);
     set = { RADIO_CAD_PARAM_AUTO, 28, RADIO_CAD_PARAM_AUTO };
     expect_params("explicit CADPEAK 28 at BW250 (off the table)",
                   radio_cad_sx126x_params(11, 250.0f, set), D, 28, D);
@@ -214,7 +235,7 @@ static void test_driver_record(void)
 
 int main(void)
 {
-    test_auto_is_radiolib_default_everywhere();
+    test_auto_table();
     test_table_bandwidth();
     test_symbol_map();
     test_explicit_beats_auto();

@@ -8,7 +8,9 @@
  * (radio_cad_probe, daemon_data_tx_runtime.cpp) then scan. The model keeps the
  * bytes of the last SetCadParams command, so each test reads what the chip
  * would have been told. Before any SET, those bytes must equal what RadioLib's
- * own no-argument scanChannel() sends.
+ * own no-argument scanChannel() sends where the per-SF table leaves every field
+ * to RadioLib (SF7, any bandwidth other than 125 kHz), and the table entry at
+ * SF8..SF12 / BW 125 kHz.
  *
  * Uses only interfaces that predate the setters, so the same file runs against
  * the earlier sources (red-before).
@@ -197,7 +199,8 @@ struct Rig {
 
 /* --- tests ----------------------------------------------------------------- */
 
-/* Before any SET: both probe sites send RadioLib's own no-argument scan bytes. */
+/* Before any SET, where the table leaves every field to RadioLib (SF7 at
+ * BW 125 kHz): both probe sites send RadioLib's own no-argument scan bytes. */
 static void test_no_set_is_radiolib_default_bytes(void)
 {
     uint8_t want[7];
@@ -210,7 +213,7 @@ static void test_no_set_is_radiolib_default_bytes(void)
 
         ref_model.irq_high_pin = PIN_IRQ;
         ref_model.irq_status = RADIOLIB_SX126X_IRQ_CAD_DONE;
-        ref.begin(869.525f, 125.0f, 12, 5, 0x12, 10, 8, 1.8f, false);
+        ref.begin(869.525f, 125.0f, 7, 5, 0x12, 10, 8, 1.8f, false);
         expect_true("RadioLib no-arg scan: free",
                     ref.scanChannel() == RADIOLIB_CHANNEL_FREE, "not CHANNEL_FREE");
         memcpy(want, ref_model.cad_params, 7);
@@ -218,12 +221,12 @@ static void test_no_set_is_radiolib_default_bytes(void)
         g_have_ref_dio_irq = true;
         expect_true("RadioLib no-arg scan: CadDone/CadDetected on DIO1",
                     (g_ref_dio_irq[3] & 0x80) && (g_ref_dio_irq[2] & 0x01), hex8(g_ref_dio_irq));
-        expect_true("RadioLib no-arg scan at SF12: 4 symbols, detPeak 25, detMin 10",
-                    want[0] == RADIOLIB_SX126X_CAD_ON_4_SYMB && want[1] == 25 && want[2] == 10,
+        expect_true("RadioLib no-arg scan at SF7: 4 symbols, detPeak 20, detMin 10",
+                    want[0] == RADIOLIB_SX126X_CAD_ON_4_SYMB && want[1] == 20 && want[2] == 10,
                     hex7(want));
     }
 
-    Rig rig;
+    Rig rig(7);
 
     rig.get_channel("no SET: GET CHANNEL scanned");
     expect_true("no SET: GET CHANNEL bytes == RadioLib no-arg",
@@ -239,6 +242,32 @@ static void test_no_set_is_radiolib_default_bytes(void)
     expect_true("no SET: MANAGED probe IRQ params == RadioLib no-arg",
                 memcmp(rig.model.cad_dio_irq, g_ref_dio_irq, 8) == 0,
                 hex8(rig.model.cad_dio_irq) + " vs " + hex8(g_ref_dio_irq));
+}
+
+/* Before any SET at BW 125 kHz, SF8..SF12: both probe sites send the measured
+ * table entry (4 symbols, detPeak per SF, detMin 10), and STATUS shows it. */
+static void test_auto_table_at_bw125(void)
+{
+    static const struct { int sf; uint8_t peak; const char *status; } k[] = {
+        { 8, 23, " CADSYM=4 CADPEAK=23 CADMIN=10\n" },
+        { 9, 27, " CADSYM=4 CADPEAK=27 CADMIN=10\n" },
+        { 10, 27, " CADSYM=4 CADPEAK=27 CADMIN=10\n" },
+        { 11, 28, " CADSYM=4 CADPEAK=28 CADMIN=10\n" },
+        { 12, 31, " CADSYM=4 CADPEAK=31 CADMIN=10\n" },
+    };
+
+    for (const auto &e : k) {
+        Rig rig(e.sf);
+        std::string n = "SF" + std::to_string(e.sf) + " AUTO";
+
+        rig.get_channel((n + ": GET CHANNEL scanned").c_str());
+        expect_cad((n + ": GET CHANNEL sends 4, " + std::to_string(e.peak) + ", 10").c_str(),
+                   rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, e.peak, 10);
+        rig.managed_probe((n + ": MANAGED probe scanned").c_str());
+        expect_cad((n + ": MANAGED sends 4, " + std::to_string(e.peak) + ", 10").c_str(),
+                   rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, e.peak, 10);
+        expect_has((n + ": STATUS").c_str(), rig.ask("GET STATUS"), e.status);
+    }
 }
 
 /* SET CADPEAK reaches the chip through GET CHANNEL. */
@@ -271,8 +300,8 @@ static void test_set_all_reach_managed_probe(void)
     expect_true("SET CADPEAK=auto OK", rig.ask("SET CADPEAK=auto") == "OK\n", "not OK");
     expect_true("SET CADMIN=AUTO OK", rig.ask("SET CADMIN=AUTO") == "OK\n", "not OK");
     rig.managed_probe("AUTO again: MANAGED probe scanned");
-    expect_cad("AUTO again: RadioLib default bytes at SF12 (4, 25, 10)", rig.model,
-               RADIOLIB_SX126X_CAD_ON_4_SYMB, 25, 10);
+    expect_cad("AUTO again: the SF12 table entry (4, 31, 10)", rig.model,
+               RADIOLIB_SX126X_CAD_ON_4_SYMB, 31, 10);
 }
 
 /* Each symbol count goes out as RadioLib's code, never as the count. */
@@ -292,7 +321,7 @@ static void test_symbol_counts_map_to_codes(void)
 
         expect_true((n + " OK").c_str(), rig.ask(e.cmd) == "OK\n", "not OK");
         rig.get_channel((n + ": scanned").c_str());
-        expect_cad((n + ": code").c_str(), rig.model, e.code, 25, 10);
+        expect_cad((n + ": code, SF12 table detPeak 31").c_str(), rig.model, e.code, 31, 10);
     }
 }
 
@@ -328,10 +357,14 @@ static void test_auto_follows_sf(void)
     expect_cad("SF7 AUTO: RadioLib default bytes at SF7 (4, 20, 10)", rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, 20, 10);
     expect_has("SF7 AUTO: STATUS", rig.ask("GET STATUS"), " CADSYM=AUTO CADPEAK=AUTO CADMIN=AUTO\n");
 
-    expect_true("SET CADPEAK=28 OK", rig.ask("SET CADPEAK=28") == "OK\n", "not OK");
     expect_true("SET SF=11 applied", rig.ctrl.driver->applyLoraParam("T", "SF", "11") == 0, "error");
-    rig.managed_probe("SF11 explicit peak: scanned");
-    expect_cad("SF11 explicit peak 28, AUTO rest", rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, 28, 10);
+    rig.get_channel("SF11 AUTO: scanned");
+    expect_cad("SF11 AUTO: the SF11 table entry (4, 28, 10)", rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, 28, 10);
+
+    expect_true("SET CADPEAK=30 OK", rig.ask("SET CADPEAK=30") == "OK\n", "not OK");
+    expect_true("SET SF=10 applied", rig.ctrl.driver->applyLoraParam("T", "SF", "10") == 0, "error");
+    rig.managed_probe("SF10 explicit peak: scanned");
+    expect_cad("SF10 explicit peak 30, AUTO rest", rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, 30, 10);
 }
 
 /* Off BW 125 AUTO leaves every field to RadioLib; an explicit value still goes out. */
@@ -349,8 +382,8 @@ static void test_other_bw_is_radiolib_default(void)
     expect_cad("BW250 CADMIN=14", rig.model, RADIOLIB_SX126X_CAD_ON_4_SYMB, 24, 14);
 
     expect_true("SET BW=125 applied", rig.ctrl.driver->applyLoraParam("T", "BW", "125") == 0, "error");
-    expect_has("BW125 after SET BW: STATUS explicit CADMIN, rest AUTO", rig.ask("GET STATUS"),
-               " CADSYM=AUTO CADPEAK=AUTO CADMIN=14\n");
+    expect_has("BW125 after SET BW: STATUS explicit CADMIN, rest the SF11 entry", rig.ask("GET STATUS"),
+               " CADSYM=4 CADPEAK=28 CADMIN=14\n");
 }
 
 /* The settings live in the controller: a new driver object keeps them. */
@@ -369,13 +402,13 @@ static void test_status_dash_without_lora(void)
 {
     Rig rig;
 
-    expect_has("LoRa SF12: STATUS AUTO", rig.ask("GET STATUS"), " CADSYM=AUTO CADPEAK=AUTO CADMIN=AUTO\n");
+    expect_has("LoRa SF12: STATUS table entry", rig.ask("GET STATUS"), " CADSYM=4 CADPEAK=31 CADMIN=10\n");
     expect_true("MODE FSK", rig.ctrl.driver->switchMode(RADIO_MODE_FSK, &rig.def) == 0, "error");
     rig.ctrl.mode = RADIO_MODE_FSK;
     expect_has("FSK: STATUS -", rig.ask("GET STATUS"), " CADSYM=- CADPEAK=- CADMIN=-\n");
     expect_true("MODE LORA", rig.ctrl.driver->switchMode(RADIO_MODE_LORA, &rig.def) == 0, "error");
     rig.ctrl.mode = RADIO_MODE_LORA;
-    expect_has("LoRa again: STATUS AUTO", rig.ask("GET STATUS"), " CADSYM=AUTO CADPEAK=AUTO CADMIN=AUTO\n");
+    expect_has("LoRa again: STATUS table entry", rig.ask("GET STATUS"), " CADSYM=4 CADPEAK=31 CADMIN=10\n");
     rig.ctrl.driver.reset();
     rig.ctrl.health = RADIO_HEALTH_UNPLUGGED;
     expect_has("no driver: STATUS -", rig.ask("GET STATUS"), " CADSYM=- CADPEAK=- CADMIN=-\n");
@@ -398,6 +431,7 @@ static void test_no_controller_refuses(void)
 int main(void)
 {
     test_no_set_is_radiolib_default_bytes();
+    test_auto_table_at_bw125();
     test_set_cadpeak_reaches_get_channel();
     test_set_all_reach_managed_probe();
     test_symbol_counts_map_to_codes();
