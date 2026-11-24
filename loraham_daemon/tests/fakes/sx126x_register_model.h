@@ -14,6 +14,8 @@
  *   0x1D ReadRegister   [op, addrHi, addrLo, NOP, data...] answered from the map
  *   0x8A SetPacketType  [op, type]                         stored
  *   0x11 GetPacketType  [op, status, type]                 answered
+ *   0x08 SetDioIrqParams [op, 8 mask bytes]                stored; copied to cad_dio_irq
+ *                                                          by the next SetCadParams
  *   0x88 SetCadParams   [op, 7 parameter bytes]            stored (cad_params)
  *   0x12 GetIrqStatus   [op, status, irqHi, irqLo]         answered from irq_status
  *   anything else       accepted; reply bytes after the status are zero
@@ -40,6 +42,7 @@ class Sx126xRegisterModel : public RadioLibHal {
     static const uint8_t OP_SET_PACKET_TYPE = 0x8A;
     static const uint8_t OP_GET_PACKET_TYPE = 0x11;
     static const uint8_t OP_SET_CAD_PARAMS = 0x88;
+    static const uint8_t OP_SET_DIO_IRQ_PARAMS = 0x08;
     static const uint8_t OP_GET_IRQ_STATUS = 0x12;
 
     static const uint16_t REG_VERSION_STRING = 0x0320;
@@ -51,6 +54,8 @@ class Sx126xRegisterModel : public RadioLibHal {
     /* --- observations ---------------------------------------------------- */
     bool seen[256];
     uint8_t cad_params[7];        /* the last SetCadParams bytes */
+    uint8_t dio_irq[8];           /* the last SetDioIrqParams bytes */
+    uint8_t cad_dio_irq[8];       /* the SetDioIrqParams in force at the last SetCadParams */
     int cad_params_count = 0;     /* SetCadParams commands since reset() */
     int irq_high_pin = -1;        /* the pin that reads HIGH; -1 = none */
     uint16_t irq_status = 0;      /* what GetIrqStatus answers */
@@ -67,12 +72,17 @@ class Sx126xRegisterModel : public RadioLibHal {
         memset(regs_, 0, sizeof(regs_));
         memset(seen, 0, sizeof(seen));
         memset(cad_params, 0, sizeof(cad_params));
+        memset(dio_irq, 0, sizeof(dio_irq));
+        memset(cad_dio_irq, 0, sizeof(cad_dio_irq));
         cad_params_count = 0;
         /* findChip() compares the first six bytes with "SX1261" -- the
          * SX1262 reports the SX1261 string, and RadioLib expects that. */
         memcpy(&regs_[REG_VERSION_STRING], "SX1261 V2D 2D02", 16);
         packet_type_ = 0;
     }
+
+    /* What GetPacketType answers next (RadioLib refuses LoRa setters off LoRa). */
+    void set_packet_type(uint8_t type) { packet_type_ = type; }
 
     uint8_t peek(uint16_t addr) const { return regs_[addr]; }
     void poke(uint16_t addr, uint8_t value) { regs_[addr] = value; }
@@ -124,8 +134,11 @@ class Sx126xRegisterModel : public RadioLibHal {
             packet_type_ = out[1];
         } else if (op == OP_GET_PACKET_TYPE && len > 2 && in) {
             in[2] = packet_type_;
+        } else if (op == OP_SET_DIO_IRQ_PARAMS && len >= 9) {
+            memcpy(dio_irq, out + 1, sizeof(dio_irq));
         } else if (op == OP_SET_CAD_PARAMS && len >= 8) {
             memcpy(cad_params, out + 1, sizeof(cad_params));
+            memcpy(cad_dio_irq, dio_irq, sizeof(cad_dio_irq));
             cad_params_count++;
         } else if (op == OP_GET_IRQ_STATUS && len > 3 && in) {
             in[2] = (uint8_t)(irq_status >> 8);

@@ -456,10 +456,10 @@ static void scenario_unplug_and_return(void)
     expect("S1 the stick without a serial: READY", wait_status(C, "RADIO=READY", 8000));
     std::string st = status(C);
     /* Changed guard (1.3.0): the applied FREQ= SF= POWER= follow; since 1.6.2 the
-     * CAD parameters end the line (SF11/BW250 band default: RadioLib's). */
+     * CAD parameters end the line (SF11/BW250 band default: AUTO). */
     expect("T21/BOUND READY: ... USBWAIT=- BOUND=-@1-2 ID=ms1, nothing applied yet",
            st.find(" USBWAIT=- BOUND=-@1-2 ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-") != std::string::npos &&
-           st.size() > 98 && st.substr(st.size() - 98) == "ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=- CADSYM=DEFAULT CADPEAK=DEFAULT CADMIN=DEFAULT");
+           st.size() > 89 && st.substr(st.size() - 89) == "ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=- CADSYM=AUTO CADPEAK=AUTO CADMIN=AUTO");
     expect("S1 SET SF=9 POWER=5 applied", conf(C, "SET SF=9 POWER=5", "") == "OK");
     expect("S1 STATUS reports the applied SF and POWER, FREQ unset",
            status(C).find(" ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=9 POWER=5") != std::string::npos);

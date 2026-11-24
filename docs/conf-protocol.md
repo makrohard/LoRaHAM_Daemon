@@ -202,8 +202,9 @@ count, `detPeak` and `detMin` of the SX126x channel-activity scan, passed to
 RadioLib's `scanChannel(const ChannelScanConfig_t &)`. They apply from the next
 scan on: `GET CHANNEL` and the `MANAGED` TX gate. `AUTO` takes the daemon's
 per-SF table for SF7 to SF12 at BW 125 kHz; at any other SF or bandwidth it
-leaves the value to RadioLib's default (4 symbols, SF+13, 10). The table holds
-RadioLib's defaults for now, so `AUTO` scans exactly as earlier releases did.
+leaves the value to RadioLib's own default (4 symbols, SF+13, 10). The table has
+no entries yet: every field is left to RadioLib, so `AUTO` scans exactly as
+earlier releases did.
 `255` is RadioLib's "default" marker and is not accepted. On an SX127x board a
 valid value answers `ERR INVALID` and nothing is stored (its CAD has no such
 parameters). The values survive a USB stick re-init, like `CADWAIT`.
@@ -249,7 +250,7 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `TXQSEQ` | Sequence number of the last queued TX |
 | `CADWAIT`, `CADIDLE`, `CADPOLL`, `CADTXAFTERTIMEOUT`, `CADMONITOR` | The current CAD policy |
 | `CADRSSI` | The busy threshold, printed integer-rounded (`%.0f`), not as a float |
-| `CADSYM`, `CADPEAK`, `CADMIN` | SX126x: the CAD parameters the next scan uses, `AUTO` resolved at the SF and bandwidth in effect (`CADSYM` as a symbol count); `DEFAULT` = left to RadioLib's default. `-` on SX127x, in FSK and without a radio. Added in 1.6.2 at the end of the line |
+| `CADSYM`, `CADPEAK`, `CADMIN` | SX126x: the CAD parameters the next scan uses, resolved at the SF and bandwidth the driver applied (`CADSYM` as a symbol count); `AUTO` = left to RadioLib's own default (the daemon does not compute it). `-` on SX127x, in FSK and without a radio. Added in 1.6.2 at the end of the line |
 | `RXREADY` | `0` while a failed RX re-arm is being retried. `RADIO=READY RXREADY=0` means the daemon is temporarily deaf; persistent re-arm failure escalates the radio to `RADIO=FAILED` |
 | `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (that is `POWER`, below), and it is `1` on an SX1262 started with the flag even where the flag does nothing (every SX1262 preset but `meshstick-1262`) — combine it with `CHIPFAMILY` |
 | `CHIPFAMILY` | The running process's resolved chip family, `SX127x` or `SX1262`. Added so a controller reads the family off the daemon instead of trusting a hardware setup that may have been saved after the process started. Both fields are additive at the end of the line; a reader that does not find them is talking to an older daemon and must treat them as unknown, not as `0` |

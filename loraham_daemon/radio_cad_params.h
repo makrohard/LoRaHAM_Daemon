@@ -60,31 +60,37 @@ static inline unsigned radio_cad_sym_count(uint8_t code)
     }
 }
 
+/* The bandwidth the per-SF table is for: 125 kHz, compared on the applied value. */
+static inline bool radio_cad_table_bw(float bw_khz)
+{
+    return fabsf(bw_khz - 125.0f) < 0.01f;
+}
+
 /*
  * The parameters one scan uses at (sf, bw_khz). An explicit setting is used as
  * given. AUTO takes the table entry for SF7..SF12 at BW 125 kHz; any other SF or
  * bandwidth leaves the field to RadioLib's default.
  *
- * Table: RadioLib's own defaults (4 symbols, SF+13, detMin 10), so AUTO scans
- * exactly as the no-argument scanChannel() did. The no-TX sweep on two SX1262
- * boards replaces them per SF.
+ * Table: every field RADIOLIB_SX126X_CAD_PARAM_DEFAULT for now, so AUTO sends
+ * exactly the bytes of the no-argument scanChannel() (RadioLib fills each 0xFF
+ * field with its own default). The no-TX sweep on two SX1262 boards fills it.
  */
 static inline RadioCadScanParams radio_cad_sx126x_params(int sf, float bw_khz,
                                                          RadioCadParamSettings set)
 {
+#define D_ RADIOLIB_SX126X_CAD_PARAM_DEFAULT
     static const RadioCadScanParams bw125[6] = {
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 20, 10 },   /* SF7 */
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 21, 10 },   /* SF8 */
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 22, 10 },   /* SF9 */
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 23, 10 },   /* SF10 */
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 24, 10 },   /* SF11 */
-        { RADIOLIB_SX126X_CAD_ON_4_SYMB, 25, 10 },   /* SF12 */
+        { D_, D_, D_ },   /* SF7 */
+        { D_, D_, D_ },   /* SF8 */
+        { D_, D_, D_ },   /* SF9 */
+        { D_, D_, D_ },   /* SF10 */
+        { D_, D_, D_ },   /* SF11 */
+        { D_, D_, D_ },   /* SF12 */
     };
-    RadioCadScanParams p = { RADIOLIB_SX126X_CAD_PARAM_DEFAULT,
-                             RADIOLIB_SX126X_CAD_PARAM_DEFAULT,
-                             RADIOLIB_SX126X_CAD_PARAM_DEFAULT };
+    RadioCadScanParams p = { D_, D_, D_ };
+#undef D_
 
-    if (fabsf(bw_khz - 125.0f) < 0.01f && sf >= 7 && sf <= 12)
+    if (radio_cad_table_bw(bw_khz) && sf >= 7 && sf <= 12)
         p = bw125[sf - 7];
 
     if (set.symbols != RADIO_CAD_PARAM_AUTO)

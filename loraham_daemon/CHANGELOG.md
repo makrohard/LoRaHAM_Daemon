@@ -4,10 +4,10 @@
 
 - CONF: `SET CADSYM=<1|2|4|8|16|AUTO>`, `SET CADPEAK=<1..254|AUTO>`, `SET CADMIN=<1..254|AUTO>` set the SX126x CAD
   symbol count, `detPeak` and `detMin` for `GET CHANNEL` and the `MANAGED` TX gate, through RadioLib's
-  `scanChannel(const ChannelScanConfig_t &)`. `AUTO` (the default) is a per-SF table at BW 125 kHz that holds
-  RadioLib's defaults, so scans are unchanged. SX127x answers `ERR INVALID`.
-- `GET STATUS`: three fields at the end, `CADSYM=` `CADPEAK=` `CADMIN=` (the values the next scan uses; `DEFAULT` =
-  RadioLib's; `-` on SX127x, in FSK and without a radio).
+  `scanChannel(const ChannelScanConfig_t &)`. `AUTO` (the default) is a per-SF table at BW 125 kHz with no entries yet,
+  so every field is left to RadioLib and scans are unchanged. SX127x answers `ERR INVALID`.
+- `GET STATUS`: three fields at the end, `CADSYM=` `CADPEAK=` `CADMIN=` (the values the next scan uses; `AUTO` =
+  RadioLib's own default; `-` on SX127x, in FSK and without a radio).
 
 ## 1.6.1
 

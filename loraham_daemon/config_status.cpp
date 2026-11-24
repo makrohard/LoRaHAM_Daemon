@@ -419,11 +419,12 @@ unsigned config_status_txq_last_seq(const RadioController *ctrl)
     return result.seq;
 }
 
-/* One CADSYM / CADPEAK / CADMIN value of GET STATUS; DEFAULT = left to RadioLib. */
+/* One CADSYM / CADPEAK / CADMIN value of GET STATUS; AUTO = left to RadioLib's own
+ * default (never computed here: RadioLib derives detPeak from its own SF). */
 static void config_status_cad_param_text(unsigned v, char *out, size_t out_size)
 {
     if (v == RADIOLIB_SX126X_CAD_PARAM_DEFAULT)
-        snprintf(out, out_size, "DEFAULT");
+        snprintf(out, out_size, "AUTO");
     else
         snprintf(out, out_size, "%u", v);
 }
@@ -512,8 +513,8 @@ void config_status_format(char *buf,
               * the last MODE switch (the band default is in effect). */
              freq, sf, power,
              /* CADSYM / CADPEAK / CADMIN (appended 1.6.2): the SX126x CAD
-              * parameters the next scan uses (AUTO resolved); "-" on SX127x,
-              * in FSK and without a radio. */
+              * parameters the next scan uses; AUTO = RadioLib's default; "-"
+              * on SX127x, in FSK and without a radio. */
              cadsym, cadpeak, cadmin);
 }
 
