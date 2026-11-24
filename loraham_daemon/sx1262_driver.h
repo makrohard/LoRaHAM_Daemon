@@ -1,6 +1,7 @@
 #ifndef LORAHAM_SX1262_DRIVER_H
 #define LORAHAM_SX1262_DRIVER_H
 
+#include <atomic>
 #include <memory>
 
 #include <RadioLib.h>
@@ -55,6 +56,14 @@ public:
     /* Reads the SX126x IRQ status and reports RxDone. See
      * RadioDriver::rxDonePending(): only meaningful after standby(). */
     bool rxDonePending() override;
+
+    /* CAD with the parameters from setCadScanParams() through RadioLib's
+     * scanChannel(const ChannelScanConfig_t &); until the first call every
+     * field is RADIOLIB_SX126X_CAD_PARAM_DEFAULT, the no-argument scan. */
+    int16_t scanChannel() override;
+    void setCadScanParams(const RadioCadScanParams &params) override;
+    bool loraSfBw(int *sf, float *bw_khz) const override;
+
     const char *chipName() const override;
     DaemonChipFamily chipFamily() const override
     {
@@ -68,6 +77,15 @@ private:
     int txen_pin_;
     int ocp_ma_;
     bool high_power_;   /* the process's --high-power permission (defence in depth) */
+
+    /* What loraSfBw() reports: written on the main loop at every apply,
+     * read by the CAD probe on the TX worker (both under radio_mutex);
+     * atomic so GET STATUS may read them without it. sf_ 0 = not LoRa. */
+    std::atomic<int> sf_{0};
+    std::atomic<float> bw_khz_{0.0f};
+    RadioCadScanParams cad_params_ = { RADIOLIB_SX126X_CAD_PARAM_DEFAULT,
+                                       RADIOLIB_SX126X_CAD_PARAM_DEFAULT,
+                                       RADIOLIB_SX126X_CAD_PARAM_DEFAULT };
 };
 
 RadioDriver *sx1262_driver_create(Module *mod, float tcxo_voltage,

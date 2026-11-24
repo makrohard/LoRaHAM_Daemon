@@ -99,6 +99,7 @@ test_binaries=(
   "$TEST_DIR/test_sx127x_cad_register"
   "$TEST_DIR/test_sx127x_power_register"
   "$TEST_DIR/test_sx1262_ocp_register"
+  "$TEST_DIR/test_sx1262_cad_params"
   "$TEST_DIR/test_rx_rearm"
   "$TEST_DIR/test_cad_monitor_state"
   "$TEST_DIR/test_rf_packet"
@@ -1172,6 +1173,47 @@ build_one_config_dispatch_test() {
     "${radiolib_libs[@]}"
 }
 
+build_one_sx1262_cad_params_test() {
+  local src="$1"
+  local out="$2"
+
+  # The CONF dispatch line entry, both CAD probe sites and the real
+  # Sx1262Driver against the real pinned RadioLib, with
+  # tests/fakes/sx126x_register_model.h where the chip would be.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for SX1262 CAD parameter test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/config_status.cpp" \
+    "$SCRIPT_DIR/config_radio.cpp" \
+    "$SCRIPT_DIR/config_replay.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_dispatch.cpp" \
+    "$SCRIPT_DIR/daemon_lifecycle.cpp" \
+    "$SCRIPT_DIR/config_parser.cpp" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/sx1262_driver.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "${radiolib_libs[@]}"
+}
+
 build_tests() {
   build_one_data_tx_test "$TEST_DIR/test_data_tx.cpp" "$TEST_DIR/test_data_tx"
   build_one_data_tx_queue_runtime_test "$TEST_DIR/test_data_tx_queue_runtime.cpp" "$TEST_DIR/test_data_tx_queue_runtime"
@@ -1225,6 +1267,7 @@ build_tests() {
   build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_cad_register.cpp" "$TEST_DIR/test_sx127x_cad_register"
   build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_power_register.cpp" "$TEST_DIR/test_sx127x_power_register"
   build_one_sx1262_register_test "$TEST_DIR/test_sx1262_ocp_register.cpp" "$TEST_DIR/test_sx1262_ocp_register"
+  build_one_sx1262_cad_params_test "$TEST_DIR/test_sx1262_cad_params.cpp" "$TEST_DIR/test_sx1262_cad_params"
   build_one_sx1262_register_test "$TEST_DIR/test_ch341_hal.cpp" "$TEST_DIR/test_ch341_hal"
   build_one_cad_monitor_state_test "$TEST_DIR/test_cad_monitor_state.cpp" "$TEST_DIR/test_cad_monitor_state"
   build_one_rx_rearm_test "$TEST_DIR/test_rx_rearm.cpp" "$TEST_DIR/test_rx_rearm"

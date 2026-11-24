@@ -14,6 +14,8 @@
  *   0x1D ReadRegister   [op, addrHi, addrLo, NOP, data...] answered from the map
  *   0x8A SetPacketType  [op, type]                         stored
  *   0x11 GetPacketType  [op, status, type]                 answered
+ *   0x88 SetCadParams   [op, 7 parameter bytes]            stored (cad_params)
+ *   0x12 GetIrqStatus   [op, status, irqHi, irqLo]         answered from irq_status
  *   anything else       accepted; reply bytes after the status are zero
  *
  * Every opcode is recorded, so the test can name exactly which commands
@@ -21,7 +23,9 @@
  * against. Zero is the right answer for the one command on these paths that
  * reads data back besides the four above (GetDeviceErrors): no error.
  *
- * BUSY reads LOW at all times, so RadioLib's BUSY waits end at once.
+ * BUSY reads LOW at all times, so RadioLib's BUSY waits end at once. The IRQ
+ * pin reads LOW too unless a test names it in irq_high_pin, so RadioLib's
+ * unbounded CAD wait (scanChannel) can end; irq_status is 0 unless set.
  */
 
 #include <stdint.h>
@@ -35,6 +39,8 @@ class Sx126xRegisterModel : public RadioLibHal {
     static const uint8_t OP_READ_REGISTER  = 0x1D;
     static const uint8_t OP_SET_PACKET_TYPE = 0x8A;
     static const uint8_t OP_GET_PACKET_TYPE = 0x11;
+    static const uint8_t OP_SET_CAD_PARAMS = 0x88;
+    static const uint8_t OP_GET_IRQ_STATUS = 0x12;
 
     static const uint16_t REG_VERSION_STRING = 0x0320;
 
@@ -44,6 +50,10 @@ class Sx126xRegisterModel : public RadioLibHal {
 
     /* --- observations ---------------------------------------------------- */
     bool seen[256];
+    uint8_t cad_params[7];        /* the last SetCadParams bytes */
+    int cad_params_count = 0;     /* SetCadParams commands since reset() */
+    int irq_high_pin = -1;        /* the pin that reads HIGH; -1 = none */
+    uint16_t irq_status = 0;      /* what GetIrqStatus answers */
 
     Sx126xRegisterModel()
       : RadioLibHal(/*input*/ 0, /*output*/ 1, /*low*/ 0, /*high*/ 1,
@@ -56,6 +66,8 @@ class Sx126xRegisterModel : public RadioLibHal {
     {
         memset(regs_, 0, sizeof(regs_));
         memset(seen, 0, sizeof(seen));
+        memset(cad_params, 0, sizeof(cad_params));
+        cad_params_count = 0;
         /* findChip() compares the first six bytes with "SX1261" -- the
          * SX1262 reports the SX1261 string, and RadioLib expects that. */
         memcpy(&regs_[REG_VERSION_STRING], "SX1261 V2D 2D02", 16);
@@ -68,7 +80,10 @@ class Sx126xRegisterModel : public RadioLibHal {
     /* --- RadioLibHal ----------------------------------------------------- */
     void pinMode(uint32_t, uint32_t) override { }
     void digitalWrite(uint32_t, uint32_t) override { }
-    uint32_t digitalRead(uint32_t) override { return 0; }   /* BUSY low */
+    uint32_t digitalRead(uint32_t pin) override   /* BUSY low */
+    {
+        return irq_high_pin >= 0 && pin == (uint32_t)irq_high_pin ? 1 : 0;
+    }
     void attachInterrupt(uint32_t, void (*)(void), uint32_t) override { }
     void detachInterrupt(uint32_t) override { }
     void delay(RadioLibTime_t) override { }
@@ -109,6 +124,12 @@ class Sx126xRegisterModel : public RadioLibHal {
             packet_type_ = out[1];
         } else if (op == OP_GET_PACKET_TYPE && len > 2 && in) {
             in[2] = packet_type_;
+        } else if (op == OP_SET_CAD_PARAMS && len >= 8) {
+            memcpy(cad_params, out + 1, sizeof(cad_params));
+            cad_params_count++;
+        } else if (op == OP_GET_IRQ_STATUS && len > 3 && in) {
+            in[2] = (uint8_t)(irq_status >> 8);
+            in[3] = (uint8_t)(irq_status & 0xFF);
         }
     }
 

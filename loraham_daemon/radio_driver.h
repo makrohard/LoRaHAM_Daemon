@@ -9,6 +9,7 @@
 
 #include "hardware_profile.h" /* DaemonChipFamily */
 #include "radio_channel.h"   /* RadioMode_t */
+#include "radio_cad_params.h" /* RadioCadScanParams */
 
 /* --- Radio driver interface ----------------------------------------------- */
 /*
@@ -57,6 +58,20 @@ public:
         phy_->clearPacketReceivedAction();
     }
     virtual int16_t scanChannel() { return phy_->scanChannel(); }
+
+    /*
+     * SX126x CAD parameters for the next scanChannel(); the CAD probe sets
+     * them right before each scan (radio_cad.cpp). A chip without them keeps
+     * this no-op, and its scanChannel() is unchanged.
+     */
+    virtual void setCadScanParams(const RadioCadScanParams &) {}
+
+    /*
+     * The LoRa SF and bandwidth this driver last applied to the chip (boot,
+     * SET SF / SET BW, MODE=LORA), for the per-SF CAD parameters. false: not
+     * in LoRa, or a chip without SX126x CAD parameters.
+     */
+    virtual bool loraSfBw(int *, float *) const { return false; }
 
     /*
      * True when the CHIP's own IRQ state says a packet has finished arriving.

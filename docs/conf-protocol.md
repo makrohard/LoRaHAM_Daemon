@@ -36,6 +36,9 @@ SET CADWAIT=<milliseconds>
 SET CADIDLE=<milliseconds>
 SET CADPOLL=<milliseconds>
 SET CADTXAFTERTIMEOUT=0|1
+SET CADSYM=1|2|4|8|16|AUTO
+SET CADPEAK=<1..254>|AUTO
+SET CADMIN=<1..254>|AUTO
 GET STATUS
 GET RADIO
 GET STATS
@@ -165,7 +168,7 @@ preamble bits on both families.
 
 ## Runtime setters
 
-These nine commands are matched as exact literals, take effect immediately, and
+These twelve commands are matched as exact literals, take effect immediately, and
 never touch the radio. They are classified before the radio-readiness gate, so
 they answer the same way whether or not the radio is ready.
 
@@ -180,6 +183,9 @@ they answer the same way whether or not the radio is ready.
 | `SET CADIDLE=<ms>` | `0` to `2000` | `250` | Stable-idle window |
 | `SET CADPOLL=<ms>` | `10` to `500` | `50` | CAD poll interval |
 | `SET CADTXAFTERTIMEOUT=0\|1` | `0`, `1` | `0` | Whether to transmit anyway after a CAD wait timeout |
+| `SET CADSYM=<n>\|AUTO` | `1`, `2`, `4`, `8`, `16`, `AUTO` | `AUTO` | SX126x only: CAD symbol count |
+| `SET CADPEAK=<v>\|AUTO` | integer `1` to `254`, `AUTO` | `AUTO` | SX126x only: CAD `detPeak` |
+| `SET CADMIN=<v>\|AUTO` | integer `1` to `254`, `AUTO` | `AUTO` | SX126x only: CAD `detMin` |
 
 An out-of-range or unparsable value answers `ERR INVALID` and leaves the previous
 value in place — the matcher accepts only a fully valid line, so no store
@@ -190,6 +196,17 @@ happens. A structurally incomplete form (`SET CADWAIT`, `SET TXQUEUE=`) answers
 is executing (drain before disable); `SET TXQUEUE=1` always succeeds. The `TXQ*`
 counters keep reporting the worker's real state regardless of the `TXQUEUE`
 flag.
+
+**SX126x CAD parameters.** `CADSYM`, `CADPEAK` and `CADMIN` are the symbol
+count, `detPeak` and `detMin` of the SX126x channel-activity scan, passed to
+RadioLib's `scanChannel(const ChannelScanConfig_t &)`. They apply from the next
+scan on: `GET CHANNEL` and the `MANAGED` TX gate. `AUTO` takes the daemon's
+per-SF table for SF7 to SF12 at BW 125 kHz; at any other SF or bandwidth it
+leaves the value to RadioLib's default (4 symbols, SF+13, 10). The table holds
+RadioLib's defaults for now, so `AUTO` scans exactly as earlier releases did.
+`255` is RadioLib's "default" marker and is not accepted. On an SX127x board a
+valid value answers `ERR INVALID` and nothing is stored (its CAD has no such
+parameters). The values survive a USB stick re-init, like `CADWAIT`.
 
 CAD policy changes apply to future TX attempts. A queued TX job snapshots band,
 TX mode, CAD policy and payload at submission time — but no RF configuration.
@@ -206,13 +223,13 @@ connected to.
 One runtime snapshot line, in this exact field order:
 
 ```text
-STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP= USBWAIT= BOUND= ID= RADIOERR= USBFAULT= FREQ= SF= POWER=
+STATUS RADIO= TX= CAD= GETRSSI= TXRESULT= TXMODE= TXQUEUE= TXQ= TXQDROP= TXQREJECT= TXQSTALE= TXQRESULTDROP= TXQDONE= TXQLAST= TXQSEQ= CADWAIT= CADIDLE= CADPOLL= CADTXAFTERTIMEOUT= CADMONITOR= CADRSSI= RXREADY= HIGHPOWER= CHIPFAMILY= OCP= USBWAIT= BOUND= ID= RADIOERR= USBFAULT= FREQ= SF= POWER= CADSYM= CADPEAK= CADMIN=
 ```
 
 A default snapshot reads:
 
 ```text
-STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-
+STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=0 TXQDROP=0 TXQREJECT=0 TXQSTALE=0 TXQRESULTDROP=0 TXQDONE=0 TXQLAST=NONE TXQSEQ=0 CADWAIT=1500 CADIDLE=250 CADPOLL=50 CADTXAFTERTIMEOUT=0 CADMONITOR=0 CADRSSI=-90 RXREADY=1 HIGHPOWER=0 CHIPFAMILY=SX127x OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-
 ```
 
 | Field | Meaning |
@@ -232,6 +249,7 @@ STATUS RADIO=READY TX=0 CAD=0 GETRSSI=0 TXRESULT=0 TXMODE=MANAGED TXQUEUE=1 TXQ=
 | `TXQSEQ` | Sequence number of the last queued TX |
 | `CADWAIT`, `CADIDLE`, `CADPOLL`, `CADTXAFTERTIMEOUT`, `CADMONITOR` | The current CAD policy |
 | `CADRSSI` | The busy threshold, printed integer-rounded (`%.0f`), not as a float |
+| `CADSYM`, `CADPEAK`, `CADMIN` | SX126x: the CAD parameters the next scan uses, `AUTO` resolved at the SF and bandwidth in effect (`CADSYM` as a symbol count); `DEFAULT` = left to RadioLib's default. `-` on SX127x, in FSK and without a radio. Added in 1.6.2 at the end of the line |
 | `RXREADY` | `0` while a failed RX re-arm is being retried. `RADIO=READY RXREADY=0` means the daemon is temporarily deaf; persistent re-arm failure escalates the radio to `RADIO=FAILED` |
 | `HIGHPOWER` | The raw `--high-power` boot flag of this process, `0` or `1`. It reports the permission, not the selected power (that is `POWER`, below), and it is `1` on an SX1262 started with the flag even where the flag does nothing (every SX1262 preset but `meshstick-1262`) — combine it with `CHIPFAMILY` |
 | `CHIPFAMILY` | The running process's resolved chip family, `SX127x` or `SX1262`. Added so a controller reads the family off the daemon instead of trusting a hardware setup that may have been saved after the process started. Both fields are additive at the end of the line; a reader that does not find them is talking to an older daemon and must treat them as unknown, not as `0` |

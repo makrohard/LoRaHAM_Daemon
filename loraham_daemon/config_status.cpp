@@ -270,6 +270,51 @@ int config_status_is_set_cadpoll(const char *line, uint32_t *ms)
     return config_status_parse_set_uval(cmd, "SET CADPOLL=", 10u, 500u, ms);
 }
 
+/* "SET <KEY>=AUTO" or a decimal lo..hi; AUTO stores RADIO_CAD_PARAM_AUTO. */
+static int config_status_parse_set_cad_param(const char *line, const char *prefix,
+                                             uint32_t lo, uint32_t hi, uint8_t *out)
+{
+    char cmd[64];
+    uint32_t v = 0;
+    size_t plen = strlen(prefix);
+
+    config_status_trim_copy(cmd, sizeof(cmd), line);
+    config_status_uppercase(cmd);
+    if (strncmp(cmd, prefix, plen) == 0 && strcmp(cmd + plen, "AUTO") == 0)
+        v = RADIO_CAD_PARAM_AUTO;
+    else if (!config_status_parse_set_uval(cmd, prefix, lo, hi, &v))
+        return 0;
+
+    if (out)
+        *out = (uint8_t)v;
+    return 1;
+}
+
+int config_status_is_set_cadsym(const char *line, uint8_t *symbols)
+{
+    uint8_t v = 0;
+    uint8_t code = 0;
+
+    if (!config_status_parse_set_cad_param(line, "SET CADSYM=", 1u, 16u, &v))
+        return 0;
+    if (v != RADIO_CAD_PARAM_AUTO && !radio_cad_sym_code(v, &code))
+        return 0;
+
+    if (symbols)
+        *symbols = v;
+    return 1;
+}
+
+int config_status_is_set_cadpeak(const char *line, uint8_t *det_peak)
+{
+    return config_status_parse_set_cad_param(line, "SET CADPEAK=", 1u, 254u, det_peak);
+}
+
+int config_status_is_set_cadmin(const char *line, uint8_t *det_min)
+{
+    return config_status_parse_set_cad_param(line, "SET CADMIN=", 1u, 254u, det_min);
+}
+
 int config_status_is_set_cadtxaftertimeout(const char *line, int *val)
 {
     char cmd[64];
@@ -374,11 +419,30 @@ unsigned config_status_txq_last_seq(const RadioController *ctrl)
     return result.seq;
 }
 
+/* One CADSYM / CADPEAK / CADMIN value of GET STATUS; DEFAULT = left to RadioLib. */
+static void config_status_cad_param_text(unsigned v, char *out, size_t out_size)
+{
+    if (v == RADIOLIB_SX126X_CAD_PARAM_DEFAULT)
+        snprintf(out, out_size, "DEFAULT");
+    else
+        snprintf(out, out_size, "%u", v);
+}
+
 void config_status_format(char *buf,
                                         size_t buf_size,
                                         const RadioController *ctrl)
 {
     char freq[32], sf[24], power[24], usbfault[24];
+    char cadsym[16] = "-", cadpeak[16] = "-", cadmin[16] = "-";
+    RadioCadScanParams cad;
+
+    if (radio_cad_effective_params(ctrl, &cad)) {
+        config_status_cad_param_text(cad.sym_code == RADIOLIB_SX126X_CAD_PARAM_DEFAULT
+                                         ? cad.sym_code : radio_cad_sym_count(cad.sym_code),
+                                     cadsym, sizeof(cadsym));
+        config_status_cad_param_text(cad.det_peak, cadpeak, sizeof(cadpeak));
+        config_status_cad_param_text(cad.det_min, cadmin, sizeof(cadmin));
+    }
 
     config_radio_applied("FREQ", true, freq, sizeof(freq));
     config_radio_applied("SF", false, sf, sizeof(sf));
@@ -389,7 +453,7 @@ void config_status_format(char *buf,
         snprintf(usbfault, sizeof(usbfault), "-");
     snprintf(buf,
              buf_size,
-             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d USBWAIT=%s BOUND=%s ID=%s RADIOERR=%s USBFAULT=%s FREQ=%s SF=%s POWER=%s\n",
+             "STATUS RADIO=%s TX=%d CAD=%d GETRSSI=%d TXRESULT=%d TXMODE=%s TXQUEUE=%d TXQ=%zu TXQDROP=%zu TXQREJECT=%zu TXQSTALE=%zu TXQRESULTDROP=%zu TXQDONE=%zu TXQLAST=%s TXQSEQ=%u CADWAIT=%u CADIDLE=%u CADPOLL=%u CADTXAFTERTIMEOUT=%d CADMONITOR=%d CADRSSI=%.0f RXREADY=%d HIGHPOWER=%d CHIPFAMILY=%s OCP=%d USBWAIT=%s BOUND=%s ID=%s RADIOERR=%s USBFAULT=%s FREQ=%s SF=%s POWER=%s CADSYM=%s CADPEAK=%s CADMIN=%s\n",
              radio_health_name(radio_controller_health(ctrl)),
              (ctrl && ctrl->tx_busy.load()) ? 1 : 0,
              (ctrl && ctrl->cad_broadcast_active.load()) ? 1 : 0,
@@ -446,7 +510,11 @@ void config_status_format(char *buf,
               * path last applied, from the replay record, normalized
               * (config_status_applied); "-" for a key not set since boot or
               * the last MODE switch (the band default is in effect). */
-             freq, sf, power);
+             freq, sf, power,
+             /* CADSYM / CADPEAK / CADMIN (appended 1.6.2): the SX126x CAD
+              * parameters the next scan uses (AUTO resolved); "-" on SX127x,
+              * in FSK and without a radio. */
+             cadsym, cadpeak, cadmin);
 }
 
 const char *config_status_cad_state_name(RadioCadProbeStatus status)
@@ -608,6 +676,7 @@ int config_status_classify_reserved_setter(const char *line)
     static const char *const reserved[] = {
         "TXRESULT", "TXQUEUE", "TXMODE", "CADRSSI", "CADMONITOR",
         "CADWAIT", "CADIDLE", "CADPOLL", "CADTXAFTERTIMEOUT",
+        "CADSYM", "CADPEAK", "CADMIN",
     };
 
     if (!line || strncmp(line, "SET ", 4) != 0)

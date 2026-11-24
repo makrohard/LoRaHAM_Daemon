@@ -527,7 +527,7 @@ static void test_status_reports_high_power_and_family(void)
      * BOUND=, ID= and the applied FREQ=, SF=, POWER= follow it, "-" without
      * a waiting port, an open Meshstick, --id and an applied value. */
     expect_contains("status default OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-, last fields, newline",
-                    status, " OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+                    status, " OCP=100 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
 
     ctrl.high_power_enabled = true;
     ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
@@ -541,18 +541,18 @@ static void test_status_reports_high_power_and_family(void)
 
     ctrl.instance_id = "r3";
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status ID=r3 last", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+    expect_contains("status ID=r3 last", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "1-2");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+    expect_contains("status USBWAIT=1-2 before ID=", status, " USBWAIT=1-2 BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     snprintf(ctrl.usb_wait_port, sizeof(ctrl.usb_wait_port), "-");
     /* BOUND= (1.3.0; <serial>@<port> since 1.4.0): the open stick, reported only while READY. */
     snprintf(ctrl.bound, sizeof(ctrl.bound), "TESTSN01@1-2");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status BOUND=<serial>@<port> while READY", status, " USBWAIT=- BOUND=TESTSN01@1-2 ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+    expect_contains("status BOUND=<serial>@<port> while READY", status, " USBWAIT=- BOUND=TESTSN01@1-2 ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     ctrl.health = RADIO_HEALTH_UNPLUGGED;
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+    expect_contains("status BOUND=- unless READY", status, " USBWAIT=- BOUND=- ID=r3 RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     ctrl.health = RADIO_HEALTH_READY;
     snprintf(ctrl.bound, sizeof(ctrl.bound), "-");
     /* RADIOERR= and USBFAULT= (1.5.0): after ID=, before FREQ=; the running
@@ -561,7 +561,7 @@ static void test_status_reports_high_power_and_family(void)
     ctrl.usb_faults = 0;
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status RADIOERR=retry USBFAULT=0 after ID=, before FREQ=", status,
-                    " BOUND=- ID=r3 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-\n");
+                    " BOUND=- ID=r3 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     ctrl.usb_faults = 3;
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("status USBFAULT=3 is the count", status, " ID=r3 RADIOERR=retry USBFAULT=3 FREQ=");
@@ -615,7 +615,7 @@ static void test_status_reports_high_power_and_family(void)
             }
         }
         expect_int("status at wide counters: at most 64 tokens", tokens <= 64, 1);
-        expect_int("status: 33 KEY=VALUE pairs (28 + FREQ, SF, POWER + RADIOERR, USBFAULT)", (long)pairs, 33);
+        expect_int("status: 36 KEY=VALUE pairs (28 + FREQ, SF, POWER + RADIOERR, USBFAULT + CADSYM, CADPEAK, CADMIN)", (long)pairs, 36);
         expect_int("status at wide counters: no token over 128 bytes", longest <= 128, 1);
     }
     config_apply_replay_reset();
@@ -635,32 +635,32 @@ static void test_status_reports_applied_rf(void)
     init_fake_controller(&ctrl, RADIO_HEALTH_READY);
     config_apply_replay_reset();
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: nothing set reads -", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n");
+    expect_contains("applied RF: nothing set reads -", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
 
     config_apply_replay_note("FREQ", "869.4");
     config_apply_replay_note("SF", "9");
     config_apply_replay_note("POWER", "5");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: the values as applied", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=9 POWER=5\n");
+    expect_contains("applied RF: the values as applied", status, " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=9 POWER=5 CADSYM=- CADPEAK=- CADMIN=-\n");
 
     config_apply_replay_note("BW", "125");                  /* other keys are not echoed */
     config_apply_replay_note("SF", "11");                   /* the last value wins */
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("applied RF: the last value, other keys not echoed", status,
-                    " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=11 POWER=5\n");
+                    " ID=- RADIOERR=exit USBFAULT=- FREQ=869.4 SF=11 POWER=5 CADSYM=- CADPEAK=- CADMIN=-\n");
 
     /* Unplugged: the record is kept for the replay, so STATUS keeps it. */
     ctrl.health = RADIO_HEALTH_UNPLUGGED;
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: kept while UNPLUGGED", status, " FREQ=869.4 SF=11 POWER=5\n");
+    expect_contains("applied RF: kept while UNPLUGGED", status, " FREQ=869.4 SF=11 POWER=5 CADSYM=- CADPEAK=- CADMIN=-\n");
     ctrl.health = RADIO_HEALTH_READY;
 
     config_apply_replay_start_mode("FSK");                  /* band defaults again */
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: a MODE switch starts over", status, " FREQ=- SF=- POWER=-\n");
+    expect_contains("applied RF: a MODE switch starts over", status, " FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     config_apply_replay_note("FREQ", "869.525");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: one key after the switch", status, " FREQ=869.525 SF=- POWER=-\n");
+    expect_contains("applied RF: one key after the switch", status, " FREQ=869.525 SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
 
     /* Normalized to LHPC's SET grammar, whatever spelling the strict parser
      * let through: MHz decimal with at least one place, integers. */
@@ -668,17 +668,17 @@ static void test_status_reports_applied_rf(void)
     config_apply_replay_note("SF", "09");
     config_apply_replay_note("POWER", "+5");
     config_status_format(status, sizeof(status), &ctrl);
-    expect_contains("applied RF: normalized spellings", status, " FREQ=869.525 SF=9 POWER=5\n");
+    expect_contains("applied RF: normalized spellings", status, " FREQ=869.525 SF=9 POWER=5 CADSYM=- CADPEAK=- CADMIN=-\n");
     config_apply_replay_note("FREQ", "868");
     config_apply_replay_note("SF", "9\r");                  /* a CR the parser trimmed past */
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("applied RF: one decimal kept, trailing whitespace dropped", status,
-                    " FREQ=868.0 SF=9 POWER=5\n");
+                    " FREQ=868.0 SF=9 POWER=5 CADSYM=- CADPEAK=- CADMIN=-\n");
     config_apply_replay_note("SF", "x");                     /* cannot come from the parser */
     config_apply_replay_note("POWER", "");
     config_status_format(status, sizeof(status), &ctrl);
     expect_contains("applied RF: unparseable reads ?, empty reads -", status,
-                    " FREQ=868.0 SF=? POWER=-\n");
+                    " FREQ=868.0 SF=? POWER=- CADSYM=- CADPEAK=- CADMIN=-\n");
     /* LHPC's parse_conf_reply: every value non-empty, every key once. */
     config_apply_replay_note("SF", "11");
     config_status_format(status, sizeof(status), &ctrl);
@@ -2002,8 +2002,8 @@ static void test_stable_conf_replies(void)
         dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                        "GET STATUS\n", line, sizeof(line));
         n = strlen(line);
-        expect_int("reply: GET STATUS ends with OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- and newline",
-                   n > 77 && strcmp(line + n - 77, " OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=-\n") == 0, 1);
+        expect_int("reply: GET STATUS ends with OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=- and newline",
+                   n > 105 && strcmp(line + n - 105, " OCP=150 USBWAIT=- BOUND=- ID=- RADIOERR=exit USBFAULT=- FREQ=- SF=- POWER=- CADSYM=- CADPEAK=- CADMIN=-\n") == 0, 1);
         ctrl.ocp_ma = 100;
     }
 
@@ -2082,6 +2082,110 @@ static void test_txqueue_disable_transition(void)
 /* Audit P2: invalid reserved runtime setters answer ERR INVALID (or
  * ERR MALFORMED when incomplete), classified from the REAL input strings and
  * independent of radio readiness. */
+/* SET CADSYM / CADPEAK / CADMIN: SX126x only. On SX127x a valid value answers
+ * ERR INVALID and stores nothing; on SX1262 it is stored without a radio call,
+ * whatever the radio state. */
+static void test_dispatch_cad_params_family(void)
+{
+    int sv[2];
+    ClientSlot slots[2];
+    uint8_t buf[buf_SIZE];
+    EventLoopSet set;
+    EventLoopReadySet readfds;
+    RadioController ctrl;
+    char out[128];
+
+    memset(&g_apply_state, 0, sizeof(g_apply_state));
+    init_fake_controller(&ctrl, RADIO_HEALTH_READY);
+    client_slot_init_all(slots, 2);
+    memset(buf, 0, sizeof(buf));
+
+    if (!make_socket_pair(sv)) {
+        g_fail++;
+        return;
+    }
+    client_slot_set_fd(&slots[0], sv[1]);
+    if (event_loop_init(&set) != 0) {
+        close(sv[0]);
+        client_slot_close(&slots[0]);
+        g_fail++;
+        return;
+    }
+
+    expect_int("cad params: boot AUTO", ctrl.cad_det_peak.load(), (int)RADIO_CAD_PARAM_AUTO);
+    fake(&ctrl)->calls = 0;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADPEAK=28\n", out, sizeof(out));
+    expect_str("cad params: SX127x refuses CADPEAK=28", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADSYM=8\n", out, sizeof(out));
+    expect_str("cad params: SX127x refuses CADSYM=8", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADMIN=AUTO\n", out, sizeof(out));
+    expect_str("cad params: SX127x refuses CADMIN=AUTO", out, "ERR INVALID\n");
+    expect_int("cad params: SX127x stored nothing (peak)", ctrl.cad_det_peak.load(), (int)RADIO_CAD_PARAM_AUTO);
+    expect_int("cad params: SX127x stored nothing (sym)", ctrl.cad_symbols.load(), (int)RADIO_CAD_PARAM_AUTO);
+
+    ctrl.chip_family = DAEMON_CHIP_FAMILY_SX1262;
+    ctrl.health = RADIO_HEALTH_FAILED;
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADPEAK=28\n", out, sizeof(out));
+    expect_str("cad params: SX1262 CADPEAK=28 OK, radio not ready", out, "OK\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADSYM=16\n", out, sizeof(out));
+    expect_str("cad params: SX1262 CADSYM=16 OK", out, "OK\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADMIN=254\n", out, sizeof(out));
+    expect_str("cad params: SX1262 CADMIN=254 OK", out, "OK\n");
+    expect_int("cad params: peak stored", ctrl.cad_det_peak.load(), 28);
+    expect_int("cad params: symbols stored as the count", ctrl.cad_symbols.load(), 16);
+    expect_int("cad params: min stored", ctrl.cad_det_min.load(), 254);
+    expect_int("cad params: no radio call", fake(&ctrl)->calls.load(), 0);
+    expect_int("cad params: generic apply never ran", g_apply_state.calls, 0);
+
+    event_loop_close(&set);
+    close(sv[0]);
+    client_slot_close(&slots[0]);
+}
+
+static void test_set_cad_param_parsers(void)
+{
+    uint8_t v = 77;
+
+    expect_int("cadsym 1 accept", config_status_is_set_cadsym("SET CADSYM=1", &v), 1);
+    expect_int("cadsym 1 value", v, 1);
+    expect_int("cadsym 16 accept", config_status_is_set_cadsym("SET CADSYM=16", &v), 1);
+    expect_int("cadsym 16 value", v, 16);
+    expect_int("cadsym auto accept", config_status_is_set_cadsym("set cadsym=auto", &v), 1);
+    expect_int("cadsym auto value", v, (int)RADIO_CAD_PARAM_AUTO);
+    v = 77;
+    expect_int("cadsym 3 reject", config_status_is_set_cadsym("SET CADSYM=3", &v), 0);
+    expect_int("cadsym 0 reject", config_status_is_set_cadsym("SET CADSYM=0", &v), 0);
+    expect_int("cadsym 32 reject", config_status_is_set_cadsym("SET CADSYM=32", &v), 0);
+    expect_int("cadsym empty reject", config_status_is_set_cadsym("SET CADSYM=", &v), 0);
+    expect_int("cadsym null reject", config_status_is_set_cadsym(NULL, &v), 0);
+    expect_int("cadsym rejects leave the value", v, 77);
+
+    expect_int("cadpeak 1 accept", config_status_is_set_cadpeak("SET CADPEAK=1", &v), 1);
+    expect_int("cadpeak 1 value", v, 1);
+    expect_int("cadpeak 254 accept", config_status_is_set_cadpeak("SET CADPEAK=254", &v), 1);
+    expect_int("cadpeak 254 value", v, 254);
+    expect_int("cadpeak AUTO accept", config_status_is_set_cadpeak("SET CADPEAK=AUTO", &v), 1);
+    expect_int("cadpeak AUTO value", v, (int)RADIO_CAD_PARAM_AUTO);
+    expect_int("cadpeak 0 reject", config_status_is_set_cadpeak("SET CADPEAK=0", &v), 0);
+    expect_int("cadpeak 255 reject", config_status_is_set_cadpeak("SET CADPEAK=255", &v), 0);
+    expect_int("cadpeak suffix reject", config_status_is_set_cadpeak("SET CADPEAK=25x", &v), 0);
+    expect_int("cadpeak AUTO suffix reject", config_status_is_set_cadpeak("SET CADPEAK=AUTO1", &v), 0);
+
+    expect_int("cadmin 1 accept", config_status_is_set_cadmin("SET CADMIN=1", &v), 1);
+    expect_int("cadmin 254 accept", config_status_is_set_cadmin("SET CADMIN=254", &v), 1);
+    expect_int("cadmin 254 value", v, 254);
+    expect_int("cadmin auto accept", config_status_is_set_cadmin("set cadmin=Auto", &v), 1);
+    expect_int("cadmin 0 reject", config_status_is_set_cadmin("SET CADMIN=0", &v), 0);
+    expect_int("cadmin 255 reject", config_status_is_set_cadmin("SET CADMIN=255", &v), 0);
+    expect_int("cadmin other key reject", config_status_is_set_cadmin("SET CADPEAK=10", &v), 0);
+}
+
 static void test_reserved_setter_classification(void)
 {
     int sv[2];
@@ -2122,6 +2226,12 @@ static void test_reserved_setter_classification(void)
     dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                    "SET TXRESULT=9\n", out, sizeof(out));
     expect_str("setter: TXRESULT=9 invalid", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADSYM=3\n", out, sizeof(out));
+    expect_str("setter: CADSYM=3 invalid", out, "ERR INVALID\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADPEAK=255\n", out, sizeof(out));
+    expect_str("setter: CADPEAK=255 invalid", out, "ERR INVALID\n");
     expect_int("setter: generic apply never ran", g_apply_state.calls, 0);
 
     /* Structurally incomplete -> ERR MALFORMED. */
@@ -2131,6 +2241,16 @@ static void test_reserved_setter_classification(void)
     dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
                    "SET TXQUEUE=\n", out, sizeof(out));
     expect_str("setter: empty TXQUEUE malformed", out, "ERR MALFORMED\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADSYM\n", out, sizeof(out));
+    expect_str("setter: bare CADSYM malformed", out, "ERR MALFORMED\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADPEAK=\n", out, sizeof(out));
+    expect_str("setter: empty CADPEAK malformed", out, "ERR MALFORMED\n");
+    dispatch_round(slots, &ctrl, sv, &set, &readfds, buf,
+                   "SET CADMIN\n", out, sizeof(out));
+    expect_str("setter: bare CADMIN malformed", out, "ERR MALFORMED\n");
+    expect_int("setter: generic apply never ran (CAD params)", g_apply_state.calls, 0);
 
     /* Independent of radio readiness. */
     ctrl.health = RADIO_HEALTH_FAILED;
@@ -2450,6 +2570,8 @@ int main(int argc, char **argv)
     test_dispatch_defers_config_while_queue_busy();
     test_stable_conf_replies();
     test_txqueue_disable_transition();
+    test_dispatch_cad_params_family();
+    test_set_cad_param_parsers();
     test_reserved_setter_classification();
     test_dispatch_ready_client_epoll();
     test_dispatch_ignores_not_ready_client();

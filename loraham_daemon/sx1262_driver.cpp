@@ -147,6 +147,8 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
         return state;
     }
 
+    sf_.store(defaults->spreading_factor);
+    bw_khz_.store(defaults->bandwidth_khz);
     return RADIOLIB_ERR_NONE;
 }
 
@@ -163,6 +165,7 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
         return RADIOLIB_ERR_NULL_POINTER;
 
     if (mode == RADIO_MODE_FSK) {
+        sf_.store(0);   /* no LoRa CAD in FSK */
         /* FSK modem params stay the established legacy values; only the
          * frequency comes from the band. TCXO always applied. */
         state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
@@ -194,6 +197,8 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
         if (config_value_parse_int_exact(val, &sf) && config_policy_lora_sf_valid(sf)) {
             state = radio.setSpreadingFactor(sf);
             driver_config_print_state_int("SF", sf, state);
+            if (state == RADIOLIB_ERR_NONE)
+                sf_.store(sf);
         } else {
             driver_config_print_rejected("SF", val);
         }
@@ -204,6 +209,8 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
         if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
             state = radio.setBandwidth(bw);
             driver_config_print_state_float("BW", bw, state);
+            if (state == RADIOLIB_ERR_NONE)
+                bw_khz_.store(bw);
         } else {
             driver_config_print_rejected("BW", val);
         }
@@ -507,4 +514,42 @@ void sx1262_diagnose_begin_failure(const char *band, int state)
     printf("[%s] diagnosis (profile %s): begin() error %d; pins per profile: "
            "%s (is another process holding one of these lines?)\n",
            band, hw->name, state, pins);
+}
+
+/* --- CAD scan parameters ---------------------------------------------------- */
+
+void Sx1262Driver::setCadScanParams(const RadioCadScanParams &params)
+{
+    cad_params_ = params;
+}
+
+bool Sx1262Driver::loraSfBw(int *sf, float *bw_khz) const
+{
+    int s = sf_.load();
+
+    if (s == 0)
+        return false;
+    *sf = s;
+    *bw_khz = bw_khz_.load();
+    return true;
+}
+
+/* Exit mode, timeout and IRQ flags/mask give the bytes RadioLib's no-argument
+ * scanChannel() sends (SX126x.cpp:413-425 at the pinned commit; setCad's
+ * default exit mode is GOTO_STDBY): only the three parameters can differ. */
+int16_t Sx1262Driver::scanChannel()
+{
+    ChannelScanConfig_t cfg = {
+        .cad = {
+            .symNum = cad_params_.sym_code,
+            .detPeak = cad_params_.det_peak,
+            .detMin = cad_params_.det_min,
+            .exitMode = RADIOLIB_SX126X_CAD_GOTO_STDBY,
+            .timeout = 0,
+            .irqFlags = RADIOLIB_IRQ_CAD_DEFAULT_FLAGS,
+            .irqMask = RADIOLIB_IRQ_CAD_DEFAULT_MASK,
+        },
+    };
+
+    return radio_->scanChannel(cfg);
 }

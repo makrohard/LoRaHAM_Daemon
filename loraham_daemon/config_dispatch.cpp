@@ -287,6 +287,40 @@ void config_dispatch_apply_line(const char *line, void *user)
         return;
     }
 
+    /* SX126x CAD parameters (radio_cad_params.h). A chip without them refuses
+     * a valid value with ERR INVALID, as for any other missing capability;
+     * nothing is stored. */
+    uint8_t cad_param = 0;
+    const char *cad_key = NULL;
+    std::atomic<uint8_t> *cad_slot = NULL;
+    if(config_status_is_set_cadsym(upper_line, &cad_param)) {
+        cad_key = "CADSYM";
+        cad_slot = ctx->ctrl ? &ctx->ctrl->cad_symbols : NULL;
+    } else if(config_status_is_set_cadpeak(upper_line, &cad_param)) {
+        cad_key = "CADPEAK";
+        cad_slot = ctx->ctrl ? &ctx->ctrl->cad_det_peak : NULL;
+    } else if(config_status_is_set_cadmin(upper_line, &cad_param)) {
+        cad_key = "CADMIN";
+        cad_slot = ctx->ctrl ? &ctx->ctrl->cad_det_min : NULL;
+    }
+    if(cad_key) {
+        if(!cad_slot || ctx->ctrl->chip_family != DAEMON_CHIP_FAMILY_SX1262) {
+            printf("[%s] CONFIG rejected: %s (no SX126x CAD parameters on this chip)\n",
+                   ctx->tag, line);
+            fflush(stdout);
+            config_dispatch_reply(ctx->slot, "ERR INVALID\n");
+            return;
+        }
+        cad_slot->store(cad_param);
+        if(cad_param == RADIO_CAD_PARAM_AUTO)
+            printf("[%s] %s=AUTO\n", ctx->tag, cad_key);
+        else
+            printf("[%s] %s=%u\n", ctx->tag, cad_key, (unsigned)cad_param);
+        fflush(stdout);
+        config_dispatch_reply(ctx->slot, "OK\n");
+        return;
+    }
+
     /* Reserved runtime setters with bad values: the dedicated
      * matchers above only accept fully valid lines, so "SET CADWAIT=1" or
      * "SET TXMODE=foo" used to fall through to the generic path and answer

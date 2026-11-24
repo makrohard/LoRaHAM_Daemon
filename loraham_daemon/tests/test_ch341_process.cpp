@@ -455,10 +455,11 @@ static void scenario_unplug_and_return(void)
     const std::string C = "loraconf-ms1.sock";
     expect("S1 the stick without a serial: READY", wait_status(C, "RADIO=READY", 8000));
     std::string st = status(C);
-    /* Changed guard (1.3.0): the applied FREQ= SF= POWER= now end the line. */
+    /* Changed guard (1.3.0): the applied FREQ= SF= POWER= follow; since 1.6.2 the
+     * CAD parameters end the line (SF11/BW250 band default: RadioLib's). */
     expect("T21/BOUND READY: ... USBWAIT=- BOUND=-@1-2 ID=ms1, nothing applied yet",
            st.find(" USBWAIT=- BOUND=-@1-2 ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-") != std::string::npos &&
-           st.size() > 52 && st.substr(st.size() - 52) == "ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=-");
+           st.size() > 98 && st.substr(st.size() - 98) == "ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=- POWER=- CADSYM=DEFAULT CADPEAK=DEFAULT CADMIN=DEFAULT");
     expect("S1 SET SF=9 POWER=5 applied", conf(C, "SET SF=9 POWER=5", "") == "OK");
     expect("S1 STATUS reports the applied SF and POWER, FREQ unset",
            status(C).find(" ID=ms1 RADIOERR=retry USBFAULT=0 FREQ=- SF=9 POWER=5") != std::string::npos);
@@ -1710,7 +1711,8 @@ static void scenario_chat_keeps_power(void)
         drain(master, 500);                         /* nothing later changes the power */
     std::string st = status(C);
     size_t at = st.rfind(" POWER=");
-    std::string pw = at == std::string::npos ? "?" : st.substr(at + 7);
+    /* The POWER value only: the CAD parameters follow it since 1.6.2. */
+    std::string pw = at == std::string::npos ? "?" : st.substr(at + 7, st.find(' ', at + 7) - (at + 7));
     while (!pw.empty() && (pw.back() == '\n' || pw.back() == '\r' || pw.back() == ' '))
         pw.pop_back();
     expect("S10 after chat's SET, STATUS still POWER=12 (was POWER=" + pw + ")", pw == "12");

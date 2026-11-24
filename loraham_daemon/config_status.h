@@ -91,6 +91,13 @@ int config_status_is_set_cadidle(const char *line, uint32_t *ms);
 int config_status_is_set_cadpoll(const char *line, uint32_t *ms);
 
 int config_status_is_set_cadtxaftertimeout(const char *line, int *val);
+/* SET CADSYM=<1|2|4|8|16|AUTO>, SET CADPEAK=<1..254|AUTO>, SET CADMIN=<1..254|AUTO>:
+ * the SX126x CAD parameters (radio_cad_params.h). CADSYM stores the symbol
+ * count; AUTO stores RADIO_CAD_PARAM_AUTO. 255 is RadioLib's "default"
+ * sentinel and never accepted. */
+int config_status_is_set_cadsym(const char *line, uint8_t *symbols);
+int config_status_is_set_cadpeak(const char *line, uint8_t *det_peak);
+int config_status_is_set_cadmin(const char *line, uint8_t *det_min);
 
 size_t config_status_txq_pending(const RadioController *ctrl);
 

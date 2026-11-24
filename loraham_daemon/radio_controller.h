@@ -105,6 +105,11 @@ struct RadioController {
     std::atomic<uint32_t> cad_idle_stable_ms;
     std::atomic<uint32_t> cad_poll_interval_ms;
     std::atomic<bool>     cad_send_after_timeout;
+    /* SET CADSYM / CADPEAK / CADMIN (radio_cad_params.h): RADIO_CAD_PARAM_AUTO
+     * = the per-SF table. SX126x only; the setter refuses them elsewhere. */
+    std::atomic<uint8_t>  cad_symbols;
+    std::atomic<uint8_t>  cad_det_peak;
+    std::atomic<uint8_t>  cad_det_min;
 
     /* Hardware capability (set once at init from the hardware profile):
      * false = scanChannel()-based CAD is unusable on this wiring (SX127x
@@ -192,6 +197,9 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->cad_poll_interval_ms.store(DAEMON_TX_POLICY_POLL_INTERVAL_MS);
     ctrl->cad_send_after_timeout.store(
         DAEMON_TX_POLICY_SEND_AFTER_CAD_TIMEOUT ? true : false);
+    ctrl->cad_symbols.store(RADIO_CAD_PARAM_AUTO);
+    ctrl->cad_det_peak.store(RADIO_CAD_PARAM_AUTO);
+    ctrl->cad_det_min.store(RADIO_CAD_PARAM_AUTO);
     ctrl->cad_scan_available = true;
     ctrl->chip_family = DAEMON_CHIP_FAMILY_SX127X;
     ctrl->high_power_enabled = false;

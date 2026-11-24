@@ -240,6 +240,32 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl)
     return result;
 }
 
+bool radio_cad_effective_params(const RadioController *ctrl, RadioCadScanParams *out)
+{
+    int sf = 0;
+    float bw_khz = 0.0f;
+
+    if (!ctrl || !ctrl->driver || !ctrl->driver->loraSfBw(&sf, &bw_khz))
+        return false;
+
+    RadioCadParamSettings set = { ctrl->cad_symbols.load(),
+                                  ctrl->cad_det_peak.load(),
+                                  ctrl->cad_det_min.load() };
+
+    *out = radio_cad_sx126x_params(sf, bw_khz, set);
+    return true;
+}
+
+/* Right before each scanChannel(): the parameters of THIS scan, so a SET or an
+ * SF change since the last one is in effect. */
+static void radio_cad_pass_scan_params(RadioController *ctrl)
+{
+    RadioCadScanParams params;
+
+    if (radio_cad_effective_params(ctrl, &params))
+        ctrl->driver->setCadScanParams(params);
+}
+
 RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
 {
     RadioCadProbeResult result = radio_cad_probe_unavailable();
@@ -305,6 +331,7 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
     /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert
      * must come off it first, or CAD completion re-delivers the last packet. */
     radio_cad_detach_rx_before_probe(ctrl);
+    radio_cad_pass_scan_params(ctrl);
     result.scan_state = ctrl->driver->scanChannel();
     ctrl->cad_active.store(false);
     radio_cad_restore_rx_after_probe(ctrl);
@@ -372,6 +399,7 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
     /* DIO0 is about to mean CadDone, not RxDone: the packet-received alert
      * must come off it first, or CAD completion re-delivers the last packet. */
     radio_cad_detach_rx_before_probe(ctrl);
+    radio_cad_pass_scan_params(ctrl);
     result.scan_state = ctrl->driver->scanChannel();
     ctrl->cad_active.store(false);
     radio_cad_restore_rx_after_probe(ctrl);

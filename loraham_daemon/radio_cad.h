@@ -51,6 +51,12 @@ RadioCadProbeResult radio_cad_probe_passive(RadioController *ctrl);
 
 RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl);
 
+/* The SX126x CAD parameters the next scan uses: SET CADSYM / CADPEAK / CADMIN,
+ * AUTO resolved at the SF and bandwidth the driver last applied
+ * (radio_cad_sx126x_params). false: no driver, or the driver reports no LoRa
+ * SF/BW (FSK, or a chip without SX126x CAD parameters). */
+bool radio_cad_effective_params(const RadioController *ctrl, RadioCadScanParams *out);
+
 RadioCadProbeResult radio_cad_probe(RadioController *ctrl);
 
 #endif
