@@ -136,6 +136,11 @@ Dieser Code wird auf eigenes Risiko und eigene Verantwortung zur Verfügung gest
 
 ## Credits und Lizenz
 
+LoRaHAM_Daemon nutzt [RadioLib](https://github.com/jgromes/RadioLib) zur Ansteuerung der Funkchips
+und, für die USB-Sticks, einen [Fork](https://github.com/makrohard/libch341-spi-userspace) von
+pine64s [libch341-spi-userspace](https://github.com/pine64/libch341-spi-userspace) für die
+CH341-USB-SPI-Brücke.
+
     Copyright (c) 2020-2026 Alexander Walter
     refactored, enhanced and maintained by makrohard Johannes Loose 410733@gmail.com
     Licensed under the GNU GPL v3 (see LICENSE)

@@ -132,6 +132,11 @@ This code is provided at your own risk and responsibility.
 
 ## Credits and license
 
+LoRaHAM_Daemon uses [RadioLib](https://github.com/jgromes/RadioLib) to drive the radio chips and,
+for the USB sticks, a [fork](https://github.com/makrohard/libch341-spi-userspace) of pine64's
+[libch341-spi-userspace](https://github.com/pine64/libch341-spi-userspace) for the CH341 USB-to-SPI
+bridge.
+
     Copyright (c) 2020-2026 Alexander Walter
     refactored, enhanced and maintained by makrohard Johannes Loose 410733@gmail.com
     Licensed under the GNU GPL v3 (see LICENSE)
