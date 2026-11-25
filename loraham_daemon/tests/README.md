@@ -167,7 +167,8 @@ Lifecycle/helper behavior:
   are BUSY with no standby, CAD or IRQ clear reaching the chip; RxDone (on SX127x latched in
   RegIrqFlags, whatever RegModemStat shows) keeps the pending-packet path, a header error alone and SX127x
   signal-detected alone, and RX on-going alone (0x04 / 0x24, what idle sx1276 boards read all the time),
-  a normal probe, and the MANAGED TX keys on that idle status; FSK RX keeps RadioLib's no-argument call)
+  a normal probe, and the MANAGED TX keys on that idle status; the SX127x stage: header valid is HEADER
+  also beside sync / RX on-going, sync alone PREAMBLE; FSK RX keeps RadioLib's no-argument call)
 - `test_sx127x_cad_register` (register-polled CAD on the REAL `Sx127xDriver` against the REAL pinned
   RadioLib, with `tests/fakes/sx127x_register_model.h` where the chip would be: CadDone alone is
   FREE, CadDone+CadDetected in the same sample is BUSY, a chip that never asserts CadDone is a

@@ -8,9 +8,10 @@
  * in progress -- SX126x: the latched IRQ status, SX127x: the live RegModemStat
  * -- and must answer BUSY without stopping the receiver.
  *
- * Uses only interfaces that predate the repair (the probe entries, the MANAGED
- * TX loop, driver->startReceive()), so the same file runs against the earlier
- * sources (red-before).
+ * The probe and TX-loop cases use only interfaces that predate the repair (the
+ * probe entries, the MANAGED TX loop, driver->startReceive()), so they run
+ * against the earlier sources (red-before); the stage asserts call
+ * rxProgress(), which the repair added.
  */
 
 #include "../daemon_band.h"
@@ -316,6 +317,31 @@ static void test_sx127x_frame_in_progress_is_left_alone(void)
     }
 }
 
+/* The stage the driver reports, which picks the probe's bound: a valid header
+ * is HEADER (the 255-byte bound) also with sync or RX on-going beside it;
+ * sync alone is PREAMBLE (the 4-byte bound). */
+static void test_sx127x_stage_of_a_frame_in_progress(void)
+{
+    static const struct {
+        const char *name;
+        uint8_t stat;
+        RadioRxProgress want;
+    } cases[] = {
+        { "sync 0x02", 0x02, RADIO_RX_PROGRESS_PREAMBLE },
+        { "header 0x08", 0x08, RADIO_RX_PROGRESS_HEADER },
+        { "header + sync 0x0A", 0x0A, RADIO_RX_PROGRESS_HEADER },
+        { "header + sync + RX on-going 0x0E", 0x0E, RADIO_RX_PROGRESS_HEADER },
+        { "RX on-going alone 0x04", 0x04, RADIO_RX_PROGRESS_NONE },
+    };
+
+    for (const auto &c : cases) {
+        Sx127xRig rig;
+
+        rig.model.poke(REG_MODEM_STAT, c.stat);
+        expect_int(std::string("sx127x stage, ") + c.name, rig.ctrl.driver->rxProgress(), c.want);
+    }
+}
+
 /* No frame, a normal probe: bit 0 (signal detected) alone, modem clear, and
  * bit 2 (RX on-going) alone -- what both sx1276 boards read on an idle channel
  * all the time (0x04; the Zero's 0x24 also has RxCodingRate bit 5). */
@@ -423,6 +449,7 @@ int main(void)
     test_sx1262_fsk_rx_is_radiolib_default();
     test_sx1262_fsk_unchanged();
     test_sx127x_frame_in_progress_is_left_alone();
+    test_sx127x_stage_of_a_frame_in_progress();
     test_sx127x_no_frame_is_a_normal_probe();
     test_sx127x_rx_done_is_not_in_progress();
     test_sx127x_idle_managed_tx_keys();
