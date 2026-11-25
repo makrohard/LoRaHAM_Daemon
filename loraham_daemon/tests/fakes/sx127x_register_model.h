@@ -21,6 +21,9 @@
  * after how many RegIrqFlags reads that happens and whether CadDetected comes
  * with it, or that it never happens at all, which is the wedged chip the
  * deadline exists for.
+ *
+ * For readData() a test can load a received frame (load_rx_fifo) and set the
+ * flag registers by poke(); RadioLib reads both as it would on the chip.
  */
 
 #include <stdint.h>
@@ -96,6 +99,8 @@ class Sx127xRegisterModel : public RadioLibHal {
         attach_pin = -1;
         attach_mode = 0;
         detach_pin = -1;
+        rx_fifo_len = 0;
+        rx_fifo_pos = 0;
     }
 
     uint8_t peek(uint8_t addr) const { return regs_[addr & 0x7F]; }
@@ -148,6 +153,22 @@ class Sx127xRegisterModel : public RadioLibHal {
      * value was rejected before the chip was touched. -1 disables it.
      */
     int reject_writes_to = -1;
+
+    /*
+     * A received frame for readData(): when rx_fifo_len > 0, FIFO (0x00) reads
+     * return rx_fifo[] in order (the FSK length byte included, if the test puts
+     * one there) instead of the register byte. 0 = the FIFO is the plain
+     * register, as the TX tests use it.
+     */
+    uint8_t rx_fifo[256];
+    size_t rx_fifo_len = 0;
+    size_t rx_fifo_pos = 0;
+    void load_rx_fifo(const uint8_t *bytes, size_t n)
+    {
+        memcpy(rx_fifo, bytes, n);
+        rx_fifo_len = n;
+        rx_fifo_pos = 0;
+    }
 
     void attachInterrupt(uint32_t pin, void (*)(void), uint32_t mode) override
     {
@@ -208,6 +229,9 @@ class Sx127xRegisterModel : public RadioLibHal {
 
     uint8_t read_reg(uint8_t addr)
     {
+        if (addr == 0x00 && rx_fifo_len > 0)
+            return rx_fifo_pos < rx_fifo_len ? rx_fifo[rx_fifo_pos++] : 0;
+
         if (addr == REG_IRQ_FLAGS && lora_modem()) {
             irq_flag_reads++;
             advance_cad();

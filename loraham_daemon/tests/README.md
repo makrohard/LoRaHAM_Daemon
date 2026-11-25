@@ -181,6 +181,13 @@ Lifecycle/helper behavior:
   parameter bytes plus the register windows RadioLib writes -- compared line by line with
   `tests/golden/radio_register_image.inc`, recorded with the RadioLib revision before the pin.
   `--print FILE` writes the current image)
+- `test_radio_rx_verdict` (same rigs: one received frame per case, read the daemon's way
+  (getPacketLength(), then readData()); per case the length, readData()'s return code -- the
+  daemon delivers only RADIOLIB_ERR_NONE -- the returned bytes and the flags left behind:
+  SX127x LoRa good / payload CRC error / header without CRC under CRC=1 and CRC=0 / short read,
+  SX127x FSK with and without CrcOk, SX1262 LoRa and FSK good / CRC error / header error / a
+  failed or timed-out command; compared with `tests/golden/radio_rx_verdict.inc`, recorded with
+  the RadioLib revision before the pin)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:

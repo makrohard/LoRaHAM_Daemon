@@ -18,6 +18,8 @@
  *                                                          by the next SetCadParams
  *   0x88 SetCadParams   [op, 7 parameter bytes]            stored (cad_params)
  *   0x12 GetIrqStatus   [op, status, irqHi, irqLo]         answered from irq_status
+ *   0x13 GetRxBufferStatus [op, status, len, offset]       answered (rx_len, 0)
+ *   0x1E ReadBuffer     [op, offset, NOP, data...]         answered from rx_buf
  *   anything else       accepted; reply bytes after the status are zero
  *
  * The parameter bytes of the last command per opcode are kept (op_bytes), and
@@ -47,6 +49,8 @@ class Sx126xRegisterModel : public RadioLibHal {
     static const uint8_t OP_SET_CAD_PARAMS = 0x88;
     static const uint8_t OP_SET_DIO_IRQ_PARAMS = 0x08;
     static const uint8_t OP_GET_IRQ_STATUS = 0x12;
+    static const uint8_t OP_GET_RX_BUFFER_STATUS = 0x13;
+    static const uint8_t OP_READ_BUFFER = 0x1E;
 
     static const uint16_t REG_VERSION_STRING = 0x0320;
 
@@ -71,6 +75,13 @@ class Sx126xRegisterModel : public RadioLibHal {
     int attach_pin = -1;
     uint32_t attach_mode = 0;
     int detach_pin = -1;
+    /* A received frame: GetRxBufferStatus answers (rx_len, offset 0) and
+     * ReadBuffer answers rx_buf from the requested offset. */
+    uint8_t rx_buf[256];
+    uint8_t rx_len = 0;
+    /* The status byte every reply carries (byte 1); STATUS_OK unless a test
+     * scripts a command error. */
+    uint8_t status = STATUS_OK;
 
     Sx126xRegisterModel()
       : RadioLibHal(/*input*/ 0, /*output*/ 1, /*low*/ 0, /*high*/ 1,
@@ -92,6 +103,9 @@ class Sx126xRegisterModel : public RadioLibHal {
         attach_pin = -1;
         attach_mode = 0;
         detach_pin = -1;
+        memset(rx_buf, 0, sizeof(rx_buf));
+        rx_len = 0;
+        status = STATUS_OK;
         /* findChip() compares the first six bytes with "SX1261" -- the
          * SX1262 reports the SX1261 string, and RadioLib expects that. */
         memcpy(&regs_[REG_VERSION_STRING], "SX1261 V2D 2D02", 16);
@@ -151,7 +165,7 @@ class Sx126xRegisterModel : public RadioLibHal {
         if (in) {
             memset(in, 0, len);
             if (len > 1)
-                in[1] = STATUS_OK;
+                in[1] = status;
         }
 
         if (op == OP_WRITE_REGISTER && len > 3) {
@@ -172,6 +186,12 @@ class Sx126xRegisterModel : public RadioLibHal {
             memcpy(cad_params, out + 1, sizeof(cad_params));
             memcpy(cad_dio_irq, dio_irq, sizeof(cad_dio_irq));
             cad_params_count++;
+        } else if (op == OP_GET_RX_BUFFER_STATUS && len > 3 && in) {
+            in[2] = rx_len;
+            in[3] = 0;
+        } else if (op == OP_READ_BUFFER && len > 3 && in) {
+            for (size_t i = 3; i < len; i++)
+                in[i] = rx_buf[(uint8_t)(out[1] + (i - 3))];
         } else if (op == OP_GET_IRQ_STATUS && len > 3 && in) {
             in[2] = (uint8_t)(irq_status >> 8);
             in[3] = (uint8_t)(irq_status & 0xFF);
