@@ -171,6 +171,7 @@ static void sx127x_lora(const char *chip, bool is_hf, int band)
 
 struct Fsk127Case {
     const char *name;
+    const char *lora_crc;  /* "0": SET CRC=0 in LoRa before MODE=FSK; NULL: boot default */
     uint8_t flags2;        /* RegIrqFlags2: PayloadReady 0x04, CrcOk 0x02 */
     bool deliver;
 };
@@ -178,16 +179,24 @@ struct Fsk127Case {
 static void sx127x_fsk(const char *chip, bool is_hf, int band)
 {
     static const Fsk127Case cases[] = {
-        { "payload-ready+crc-ok", 0x06, true },
+        { "payload-ready+crc-ok", NULL, 0x06, true },
         /* RadioLib 8 sets CrcAutoClearOff, so the chip presents a bad-CRC
          * frame with CrcOk clear instead of discarding it: it must be dropped
          * (RadioLib 7 never read CrcOk; its chip setting discarded the frame). */
-        { "payload-ready+crc-bad", 0x04, false },
+        { "payload-ready+crc-bad", NULL, 0x04, false },
+        /* FSK has no CRC key: its CRC is on after every MODE=FSK. The one way
+         * to reach FSK with CRC disabled somewhere is a LoRa SET CRC=0 before
+         * the switch -- which RadioLib keeps in one CRC flag for both modems.
+         * The FSK frame with a bad CRC must still not be delivered. */
+        { "after-lora-crc-0/payload-ready+crc-ok", "0", 0x06, true },
+        { "after-lora-crc-0/payload-ready+crc-bad", "0", 0x04, false },
     };
     const RadioRfDefaults *def = band_defaults(band);
     for (const Fsk127Case &c : cases) {
         Rig127 r(is_hf);
         r.drv.begin(def);
+        if (c.lora_crc)
+            r.drv.applyLoraParam("T", "CRC", c.lora_crc);
         r.drv.switchMode(RADIO_MODE_FSK, def);
         r.drv.setPacketReceivedAction(rx_callback);
         r.drv.startReceive();
