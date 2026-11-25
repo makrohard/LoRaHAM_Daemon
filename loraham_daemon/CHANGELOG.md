@@ -14,12 +14,13 @@
   - Trusted for at most the airtime of a 4-byte frame until a valid header, and of a 255-byte frame after it,
     from the first sighting; then the probe scans as before, at every probe, until the chip shows no frame once.
     A status that stays set can therefore not keep the channel BUSY.
-  - Not covered: a frame whose first symbols arrive before the chip reports the preamble (SX127x: signal
-    synchronized, how early it sets in a real preamble is not measured; it never set on an idle channel), or
-    during the CAD scan itself. Where the 255-byte airtime exceeds `CADWAIT` (SF12), a stale latched header ends
-    the waiting TX as `CHANNEL_BUSY`, as a real frame of that length does. On SX127x, signal synchronized or
-    header valid that flapped on and off on an idle channel would keep the `MANAGED` TX from keying again: the
-    hold-off covers only a status that stays set (neither bit set on an idle channel in the measurement).
+  - Not covered: a frame whose first symbols arrive before the chip reports the preamble (SX127x, measured at
+    SF8/BW125 with an 8-symbol preamble: a probe 24-47 ms after the frame's start still cut it in 8 of 19 early
+    probes; signal synchronized never set on an idle channel), or during the CAD scan itself. Where the 255-byte
+    airtime exceeds `CADWAIT` (SF12), a stale latched header ends the waiting TX as `CHANNEL_BUSY`, as a real frame
+    of that length does. On SX127x, signal synchronized or header valid that flapped on and off on an idle channel
+    would keep the `MANAGED` TX from keying again: the hold-off covers only a status that stays set (neither bit
+    set on an idle channel in the measurement).
 
 ## 1.7.1
 
