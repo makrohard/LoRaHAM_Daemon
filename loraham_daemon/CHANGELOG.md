@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.0
+
+- **Build change:** RadioLib 8.0.0 (`72be77dafe64`, was `187ef24791c3`). A source build needs that checkout
+  (`docs/hardware.md`); RadioLib 7 no longer builds. Protocol, settings and their values are unchanged.
+- SX1262 LoRa: the packet RSSI is RadioLib 8's average over the packet (RssiPkt, RadioLib #1913), not the
+  despread signal RSSI, so received frames report a different RSSI.
+- SX127x FSK: a frame with a bad CRC is now presented by the chip and dropped by the daemon (RX re-armed); it
+  counts in `rx_drops` and the rate-limited `RX read error` line. 1.6.x: the chip discarded it unseen.
+- SX1262 FSK at 0.6 and 1.2 kbps: Semtech's GFSK register workaround is applied (RadioLib 7 never applied it).
+- Frequency register 1 LSB lower at: SX127x 869.525 MHz (61 Hz); SX1262 439.9125, 869.4625 and 869.525 MHz
+  (0.95 Hz), from RadioLib 8's integer frequency math. Every other tested frequency is unchanged.
+
 ## 1.6.2
 
 - CONF: `SET CADSYM=<1|2|4|8|16|AUTO>`, `SET CADPEAK=<1..254|AUTO>`, `SET CADMIN=<1..254|AUTO>` set the SX126x CAD
