@@ -98,6 +98,9 @@ struct RadioController {
      * from the main loop or the TX worker. */
     std::atomic<bool> cad_rx_seen;
     int64_t cad_rx_seen_ms;
+    /* A sighting ran out its bound: rxProgress() is not believed again until
+     * it reads NONE once (radio_cad.cpp). Probe-only, under radio_mutex. */
+    bool cad_rx_held_off;
     std::atomic<bool> cad_broadcast_active;
     std::atomic<bool> cad_monitor_active;
     std::atomic<int> cad_monitor_free_streak;
@@ -191,6 +194,7 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->cad_active.store(false);
     ctrl->cad_rx_seen.store(false);
     ctrl->cad_rx_seen_ms = 0;
+    ctrl->cad_rx_held_off = false;
     ctrl->cad_broadcast_active.store(false);
     ctrl->cad_monitor_active.store(false);
     ctrl->cad_monitor_free_streak.store(0);

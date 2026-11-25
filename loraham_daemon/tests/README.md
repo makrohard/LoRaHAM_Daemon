@@ -157,14 +157,17 @@ Lifecycle/helper behavior:
   bound on that: no header yet = the 4 B airtime, valid header = the 255 B airtime, from the first
   sighting; past it the scan decides; a quiet reading, a completed packet or any successful RX re-arm
   starts a new sighting (a frame right behind a drained one is not cut);
-  a frame that keeps arriving is never scanned, flapping noise is scanned at each quiet reading
+  a frame that keeps arriving is never scanned, flapping noise is scanned at each quiet reading;
+  past the bound a status that stays true is held off (the scan decides at every probe, also over
+  re-arms) until it reads NONE once, so the MANAGED loop (daemon_tx_executor, CADIDLE 5 polls) keys
 - `test_cad_rx_progress` (both probe sites on the REAL `Sx1262Driver` and `Sx127xDriver` against the
   REAL pinned RadioLib and the register models: SX1262 RX latches PREAMBLE_DETECTED on top of
   RadioLib's default RX IRQs with DIO1 still on RxDone only; a latched preamble or header without
-  RxDone (also beside a stale header error, which raises no interrupt), and SX127x RegModemStat signal synchronized / RX on-going / header valid,
+  RxDone (also beside a stale header error, which raises no interrupt), and SX127x RegModemStat signal synchronized / header valid,
   are BUSY with no standby, CAD or IRQ clear reaching the chip; RxDone (on SX127x latched in
   RegIrqFlags, whatever RegModemStat shows) keeps the pending-packet path, a header error alone and SX127x
-  signal-detected alone a normal probe; FSK RX keeps RadioLib's no-argument call and its IRQ set)
+  signal-detected alone, and RX on-going alone (0x04 / 0x24, what idle sx1276 boards read all the time),
+  a normal probe, and the MANAGED TX keys on that idle status; FSK RX keeps RadioLib's no-argument call)
 - `test_sx127x_cad_register` (register-polled CAD on the REAL `Sx127xDriver` against the REAL pinned
   RadioLib, with `tests/fakes/sx127x_register_model.h` where the chip would be: CadDone alone is
   FREE, CadDone+CadDetected in the same sample is BUSY, a chip that never asserts CadDone is a

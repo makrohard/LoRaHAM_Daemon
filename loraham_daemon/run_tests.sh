@@ -778,7 +778,8 @@ build_one_cad_rx_progress_test() {
   local src="$1"
   local out="$2"
 
-  # Both CAD probe sites with the real Sx1262Driver and Sx127xDriver against
+  # Both CAD probe sites and the MANAGED TX loop (daemon_tx_executor with the
+  # worker's CAD adapter) with the real Sx1262Driver and Sx127xDriver against
   # the real pinned RadioLib, with tests/fakes/sx126x_register_model.h and
   # sx127x_register_model.h where the chips would be.
   if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
@@ -797,6 +798,23 @@ build_one_cad_rx_progress_test() {
     "$SCRIPT_DIR/radio_health.cpp" \
     "$SCRIPT_DIR/daemon_timing.cpp" \
     "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/daemon_tx_queue.cpp" \
+    "$SCRIPT_DIR/daemon_tx_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_worker.cpp" \
+    "$SCRIPT_DIR/daemon_tx_completion.cpp" \
+    "$SCRIPT_DIR/daemon_tx_executor.cpp" \
+    "$SCRIPT_DIR/daemon_band.cpp" \
+    "$SCRIPT_DIR/daemon_data_tx_runtime.cpp" \
+    "$SCRIPT_DIR/radio_tx_limit.cpp" \
+    "$SCRIPT_DIR/data_tx.cpp" \
+    "$SCRIPT_DIR/daemon_tx_async_runtime.cpp" \
+    "$SCRIPT_DIR/tx_result.cpp" \
+    "$SCRIPT_DIR/daemon_log.cpp" \
+    "$SCRIPT_DIR/framed_data.cpp" \
+    "$SCRIPT_DIR/client_slot.cpp" \
+    "$SCRIPT_DIR/client_output_queue.cpp" \
+    "$SCRIPT_DIR/config_stream.cpp" \
+    "${event_loop_sources[@]}" \
     "$SCRIPT_DIR/sx1262_driver.cpp" \
     "$SCRIPT_DIR/sx127x_driver.cpp" \
     "$SCRIPT_DIR/hardware_profile.cpp" \

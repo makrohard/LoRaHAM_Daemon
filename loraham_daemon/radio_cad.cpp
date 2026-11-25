@@ -78,7 +78,12 @@ RadioCadProbeResult radio_cad_probe_unavailable(void)
  *     the header and at least one more coding block (>= 5 symbols) at SF7-12;
  *     a real frame has shown its header by then.
  *   - valid header: the airtime of a 255-byte frame, the longest there is.
- * Past that the probe goes on normally and its scan decides.
+ * Past that the probe goes on normally and its scan decides, and keeps doing
+ * so until rxProgress() reads NONE once: a status that stays true (a stuck
+ * bit, a latch nothing clears) would otherwise start a new sighting at the
+ * next probe, answer BUSY again, and the MANAGED loop, which needs CADIDLE of
+ * FREE probes in a row, would never key. A re-arm does not end this hold-off
+ * (it does not make a stuck live bit read NONE); a NONE reading does.
  *
  * A sighting belongs to one frame. It ends with a quiet reading, a completed
  * packet (the pending-RX returns below), and every successful RX re-arm --
@@ -94,8 +99,12 @@ static bool radio_cad_rx_in_progress(RadioController *ctrl)
 
     if (progress == RADIO_RX_PROGRESS_NONE) {
         ctrl->cad_rx_seen.store(false);
+        ctrl->cad_rx_held_off = false;
         return false;
     }
+
+    if (ctrl->cad_rx_held_off)
+        return false;   /* ran out its bound: the scan decides until NONE */
 
     const int64_t now = daemon_now_ms();
 
@@ -108,7 +117,11 @@ static bool radio_cad_rx_in_progress(RadioController *ctrl)
     const int64_t bound_ms =
         (int64_t)((ctrl->driver->getTimeOnAir(len) + 999) / 1000);
 
-    return now - ctrl->cad_rx_seen_ms <= bound_ms;
+    if (now - ctrl->cad_rx_seen_ms <= bound_ms)
+        return true;
+
+    ctrl->cad_rx_held_off = true;
+    return false;
 }
 
 /*

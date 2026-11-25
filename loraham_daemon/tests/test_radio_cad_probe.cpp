@@ -2,6 +2,7 @@
 #include "../daemon_band.h"
 #include "../daemon_data_tx_runtime.h"
 #include "../daemon_rx_rearm.h"
+#include "../daemon_tx_executor.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -1182,6 +1183,65 @@ static void test_a_quiet_reading_ends_the_sighting_without_a_rearm(void)
     expect_int("quiet without re-arm: frame 2 not cut", fake(&ctrl)->standby_count, 1);
 }
 
+/* --- The MANAGED TX loop itself (daemon_tx_executor), CADIDLE 5 ticks ---- */
+
+/* One poll of the managed loop: the clock moves on by the poll interval (the
+ * sighting ages by it), and `each_tick` may change what the chip shows. */
+struct ManagedRun {
+    RadioController *ctrl;
+    int ticks;
+    int sends;
+    void (*each_tick)(ManagedRun *run);
+};
+
+static void managed_sleep(uint32_t usec, void *ctx)
+{
+    ManagedRun *run = (ManagedRun *)ctx;
+
+    run->ticks++;
+    run->ctrl->cad_rx_seen_ms -= (int64_t)(usec / 1000u);
+    if (run->each_tick)
+        run->each_tick(run);
+}
+
+static TxResult managed_send(uint8_t *, size_t, int, void *ctx)
+{
+    ((ManagedRun *)ctx)->sends++;
+    return TX_RESULT_OK;
+}
+
+/* CADWAIT 1500 / CADIDLE 250 / CADPOLL 50 ms, the stored bench values:
+ * 30 polls at most, 5 FREE polls in a row to key. */
+static DaemonTxJobResult run_managed_job(ManagedRun *run)
+{
+    DaemonTxJob job;
+    static const uint8_t payload[1] = { 0x42 };
+
+    daemon_tx_job_init(&job, radio_controller_band_number(run->ctrl), RADIO_TX_MODE_MANAGED, 1);
+    daemon_tx_job_set_payload(&job, payload, sizeof(payload));
+    daemon_tx_job_configure_cad_policy(&job, 1, 30, 5, 50000, 0);
+    return daemon_tx_execute_job_with_sender_and_cad(&job, managed_send, run,
+                                                    daemon_data_tx_worker_cad_probe, run->ctrl,
+                                                    managed_sleep, run);
+}
+
+/* T2 (c): a live status stuck true on an idle (FREE) channel must not wedge
+ * the TX: it keys within CADWAIT, as on 1.7.1. (Bench S2: 20/20 CAD_TIMEOUT.) */
+static void test_a_stuck_live_status_does_not_wedge_the_managed_tx(void)
+{
+    RadioController ctrl;
+    ManagedRun run = { &ctrl, 0, 0, NULL };
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;   /* the scan says FREE */
+    fake(&ctrl)->rx_progress_latched = false;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    DaemonTxJobResult r = run_managed_job(&run);
+    expect_int("stuck live status, managed TX: keys (OK)", r.outcome, DAEMON_TX_OUTCOME_OK);
+    expect_int("stuck live status, managed TX: sent once", run.sends, 1);
+}
+
 /* T2 (b), the two cases the bound tells apart. A frame that keeps arriving
  * (status true probe after probe, inside its bound, then RxDone) is never
  * scanned. Noise that flaps (true, false, true, ...) gets a scan at every
@@ -1231,30 +1291,39 @@ static void test_an_ongoing_frame_and_flapping_noise(void)
     }
 }
 
-/* T2 (b): a LIVE status stuck true on noise. After each bound one probe
- * scans (FREE here, so a TX would go), and the scan's re-arm starts the next
- * sighting. */
-static void test_a_stuck_live_status_lets_a_scan_through_per_bound(void)
+/* T2 (c)/(e): a LIVE status stuck true. Once the bound has run out, the scan
+ * decides at every probe -- also after the scan's own re-arms -- until the
+ * status reads NONE once; the next frame is then protected again (BUSY, no
+ * standby). Without the hold-off, every re-arm started a new sighting and
+ * the probes alternated BUSY / FREE. */
+static void test_a_stuck_live_status_is_held_off_until_a_quiet_reading(void)
 {
     RadioController ctrl;
     RadioCadProbeResult r;
+    char n[96];
 
     init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
     fake(&ctrl)->scan_result = 0;
     fake(&ctrl)->rx_progress_latched = false;
     fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
 
-    for (int round = 1; round <= 2; round++) {
-        char n[96];
-
+    r = radio_cad_probe(&ctrl);
+    expect_int("stuck live status: BUSY inside the bound", r.status, RADIO_CAD_PROBE_BUSY);
+    age_sighting(&ctrl, 1000);
+    for (int i = 1; i <= 3; i++) {
         r = radio_cad_probe(&ctrl);
-        snprintf(n, sizeof(n), "stuck live status round %d: BUSY inside the bound", round);
-        expect_int(n, r.status, RADIO_CAD_PROBE_BUSY);
-        age_sighting(&ctrl, 1000);
-        r = radio_cad_probe(&ctrl);
-        snprintf(n, sizeof(n), "stuck live status round %d past the bound", round);
-        expect_normal_probe(n, &ctrl, r, round);
+        snprintf(n, sizeof(n), "stuck live status, held off, probe %d", i);
+        expect_normal_probe(n, &ctrl, r, i);
     }
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_NONE;
+    r = radio_cad_probe(&ctrl);
+    expect_normal_probe("stuck live status: quiet reading", &ctrl, r, 4);
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+    const int standby_before = fake(&ctrl)->standby_count;
+    r = radio_cad_probe(&ctrl);
+    expect_int("after the quiet reading: a new frame is BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("after the quiet reading: a new frame is not cut",
+               fake(&ctrl)->standby_count, standby_before);
 }
 
 int main(int argc, char **argv)
@@ -1314,8 +1383,9 @@ int main(int argc, char **argv)
     test_the_next_frame_gets_its_own_sighting();
     test_a_quiet_reading_starts_a_new_sighting();
     test_a_quiet_reading_ends_the_sighting_without_a_rearm();
+    test_a_stuck_live_status_does_not_wedge_the_managed_tx();
     test_an_ongoing_frame_and_flapping_noise();
-    test_a_stuck_live_status_lets_a_scan_through_per_bound();
+    test_a_stuck_live_status_is_held_off_until_a_quiet_reading();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

@@ -8,11 +8,14 @@
  * in progress -- SX126x: the latched IRQ status, SX127x: the live RegModemStat
  * -- and must answer BUSY without stopping the receiver.
  *
- * Uses only interfaces that predate the repair (the probe entries,
- * driver->startReceive()), so the same file runs against the earlier sources
- * (red-before).
+ * Uses only interfaces that predate the repair (the probe entries, the MANAGED
+ * TX loop, driver->startReceive()), so the same file runs against the earlier
+ * sources (red-before).
  */
 
+#include "../daemon_band.h"
+#include "../daemon_data_tx_runtime.h"
+#include "../daemon_tx_executor.h"
 #include "../radio_cad.h"
 #include "../sx1262_driver.h"
 #include "../sx127x_driver.h"
@@ -43,6 +46,12 @@ static void expect_int(const std::string &name, long got, long want)
 }
 
 static void rx_callback(void) { }
+
+/* Link stub: daemon_data_tx_runtime.cpp references the production sender. */
+TxResult lora_send(uint8_t *, size_t, int)
+{
+    return TX_RESULT_RADIO_ERROR;
+}
 
 static RadioCadProbeResult probe(RadioController *ctrl, bool try_probe)
 {
@@ -276,8 +285,8 @@ struct Sx127xRig {
     }
 };
 
-/* RegModemStat bits 1 (signal synchronized), 2 (RX on-going) and 3 (header
- * valid): a frame in progress, from the preamble lock on. */
+/* RegModemStat bits 1 (signal synchronized) and 3 (header valid): a frame in
+ * progress, from the preamble lock on. */
 static void test_sx127x_frame_in_progress_is_left_alone(void)
 {
     static const struct {
@@ -285,8 +294,8 @@ static void test_sx127x_frame_in_progress_is_left_alone(void)
         uint8_t stat;
     } cases[] = {
         { "signal synchronized", 0x02 },
-        { "RX on-going", 0x04 },
-        { "header valid", 0x0B },
+        { "header valid", 0x08 },
+        { "header valid with sync and RX on-going", 0x0E },
     };
 
     for (const auto &c : cases) {
@@ -307,7 +316,9 @@ static void test_sx127x_frame_in_progress_is_left_alone(void)
     }
 }
 
-/* Bit 0 (signal detected) alone, and modem clear: no frame, a normal probe. */
+/* No frame, a normal probe: bit 0 (signal detected) alone, modem clear, and
+ * bit 2 (RX on-going) alone -- what both sx1276 boards read on an idle channel
+ * all the time (0x04; the Zero's 0x24 also has RxCodingRate bit 5). */
 static void test_sx127x_no_frame_is_a_normal_probe(void)
 {
     static const struct {
@@ -316,6 +327,8 @@ static void test_sx127x_no_frame_is_a_normal_probe(void)
     } cases[] = {
         { "signal detected alone", 0x01 },
         { "modem clear", 0x10 },
+        { "RX on-going alone (idle)", 0x04 },
+        { "RX on-going + coding-rate bit (idle, Zero r2)", 0x24 },
     };
 
     for (const auto &c : cases) {
@@ -346,6 +359,47 @@ static void test_sx127x_rx_done_is_not_in_progress(void)
     expect_int("sx127x RxDone: no CAD", rig.model.cad_entries, 0);
 }
 
+/* The MANAGED TX loop on an idle channel, the bench values (CADWAIT 1500 /
+ * CADIDLE 250 / CADPOLL 50 ms: 30 polls, 5 FREE in a row): with RegModemStat
+ * at its idle 0x04 the TX keys. (Bench, 1.7.2 candidate: 20/20 CAD_TIMEOUT.) */
+static int g_sends = 0;
+
+static TxResult count_send(uint8_t *, size_t, int, void *)
+{
+    g_sends++;
+    return TX_RESULT_OK;
+}
+
+static void no_sleep(uint32_t, void *) { }
+
+static void test_sx127x_idle_managed_tx_keys(void)
+{
+    static const struct {
+        const char *name;
+        uint8_t stat;
+    } cases[] = {
+        { "0x04", 0x04 },
+        { "0x24", 0x24 },
+    };
+
+    for (const auto &c : cases) {
+        Sx127xRig rig;
+        DaemonTxJob job;
+        static const uint8_t payload[1] = { 0x42 };
+        const std::string n = std::string("sx127x idle RegModemStat ") + c.name + ", managed TX: ";
+
+        rig.model.poke(REG_MODEM_STAT, c.stat);
+        g_sends = 0;
+        daemon_tx_job_init(&job, radio_controller_band_number(&rig.ctrl), RADIO_TX_MODE_MANAGED, 1);
+        daemon_tx_job_set_payload(&job, payload, sizeof(payload));
+        daemon_tx_job_configure_cad_policy(&job, 1, 30, 5, 50000, 0);
+        DaemonTxJobResult r = daemon_tx_execute_job_with_sender_and_cad(
+            &job, count_send, NULL, daemon_data_tx_worker_cad_probe, &rig.ctrl, no_sleep, NULL);
+        expect_int(n + "keys (OK)", r.outcome, DAEMON_TX_OUTCOME_OK);
+        expect_int(n + "sent once", g_sends, 1);
+    }
+}
+
 /* FSK: the probe never reaches the chip, as before. */
 static void test_sx127x_fsk_unchanged(void)
 {
@@ -361,6 +415,8 @@ static void test_sx127x_fsk_unchanged(void)
 
 int main(void)
 {
+    /* daemon_data_tx_context() reads log tags from the band descriptor. */
+    daemon_band_resolve(RADIO_BAND_433);
     test_sx1262_rx_latches_the_preamble();
     test_sx1262_frame_in_progress_is_left_alone();
     test_sx1262_ended_frame_is_not_in_progress();
@@ -369,6 +425,7 @@ int main(void)
     test_sx127x_frame_in_progress_is_left_alone();
     test_sx127x_no_frame_is_a_normal_probe();
     test_sx127x_rx_done_is_not_in_progress();
+    test_sx127x_idle_managed_tx_keys();
     test_sx127x_fsk_unchanged();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
