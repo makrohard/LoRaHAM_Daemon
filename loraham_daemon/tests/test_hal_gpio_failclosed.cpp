@@ -390,7 +390,7 @@ static void test_gpio_open_failure_survives_real_radio_init(void)
 #define FAKE_GPIO_BUSY LG_GPIO_BUSY   /* -79 in lgpio.h */
 
 enum FailCall { F_CLAIM_IN, F_CLAIM_OUT, F_CLAIM_ALERT, F_SET_ALERTS, F_WRITE, F_READ,
-                F_FREE, F_SET_ALERTS_DETACH };
+                F_FREE, F_SET_ALERTS_DETACH, F_UNKNOWN_MODE };
 
 static void inject_and_call(LockingPiHal &hal, FailCall c)
 {
@@ -406,6 +406,7 @@ static void inject_and_call(LockingPiHal &hal, FailCall c)
     case F_FREE:        g.free_result = FAKE_GPIO_BUSY;  hal.detachInterrupt(19); break;
     case F_SET_ALERTS_DETACH:
                         g.set_alerts_result = FAKE_GPIO_BUSY; hal.detachInterrupt(19); break;
+    case F_UNKNOWN_MODE: hal.pinMode(19, 99); break;   /* no lgpio call: neither input nor output */
     }
 }
 
@@ -454,6 +455,7 @@ static void test_gpio_failure_names_call_pin_and_error(void)
         { F_READ,        "lgGpioRead failed (pin 19: GPIO busy, -79)" },
         { F_FREE,        "lgGpioFree failed (pin 19: GPIO busy, -79)" },
         { F_SET_ALERTS_DETACH, "lgGpioSetAlertsFunc (detach) failed (pin 19: GPIO busy, -79)" },
+        { F_UNKNOWN_MODE, "pinMode with an unknown mode 99 (pin 19)" },
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         reset_fake();
