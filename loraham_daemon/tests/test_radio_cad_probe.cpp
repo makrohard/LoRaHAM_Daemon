@@ -1291,6 +1291,40 @@ static void test_an_ongoing_frame_and_flapping_noise(void)
     }
 }
 
+/* T2 (b) through the MANAGED loop: noise that flaps true / NONE at every
+ * poll restarts the sighting at each true reading (BUSY, no scan), so the
+ * loop never sees CADIDLE FREE polls in a row and the TX ends CHANNEL_BUSY
+ * at CADWAIT with nothing sent -- the stated limit, held: the wait ends in
+ * bounded time, nothing is sent over a possible frame start and no frame is
+ * cut (LBT as on 1.7.1). That a TX on an idle channel makes progress is the
+ * on-air bench's proof, not this test's. */
+static void flap_live_status(ManagedRun *run)
+{
+    FakeRadio *f = fake(run->ctrl);
+
+    f->rx_progress = f->rx_progress == RADIO_RX_PROGRESS_NONE
+                         ? RADIO_RX_PROGRESS_PREAMBLE
+                         : RADIO_RX_PROGRESS_NONE;
+}
+
+static void test_flapping_noise_through_the_managed_tx(void)
+{
+    RadioController ctrl;
+    ManagedRun run = { &ctrl, 0, 0, flap_live_status };
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;   /* the scan says FREE */
+    fake(&ctrl)->rx_progress_latched = false;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    DaemonTxJobResult r = run_managed_job(&run);
+    expect_int("flapping noise, managed TX: CHANNEL_BUSY", r.outcome,
+               DAEMON_TX_OUTCOME_CHANNEL_BUSY);
+    expect_int("flapping noise, managed TX: nothing sent", run.sends, 0);
+    expect_int("flapping noise, managed TX: scans ran", fake(&ctrl)->scan_count > 0, 1);
+    expect_int("flapping noise, managed TX: waited to CADWAIT", run.ticks >= 29, 1);
+}
+
 /* T2 (c)/(e): a LIVE status stuck true. Once the bound has run out, the scan
  * decides at every probe -- also after the scan's own re-arms -- until the
  * status reads NONE once; the next frame is then protected again (BUSY, no
@@ -1385,6 +1419,7 @@ int main(int argc, char **argv)
     test_a_quiet_reading_ends_the_sighting_without_a_rearm();
     test_a_stuck_live_status_does_not_wedge_the_managed_tx();
     test_an_ongoing_frame_and_flapping_noise();
+    test_flapping_noise_through_the_managed_tx();
     test_a_stuck_live_status_is_held_off_until_a_quiet_reading();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
