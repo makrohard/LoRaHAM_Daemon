@@ -285,6 +285,41 @@ bool Sx127xDriver::rxDonePending()
             RADIOLIB_SX127X_CLEAR_IRQ_FLAG_RX_DONE) != 0;
 }
 
+/* --- A frame still arriving -------------------------------------------------- */
+
+/*
+ * RegModemStat (0x18, datasheet SX1276/77/78/79 "RegModemStat"): bit 3 header
+ * info valid, bit 2 RX on-going, bit 1 signal synchronized, bit 0 signal
+ * detected. Unlike RegIrqFlags it is live, not latched: it reads clear again
+ * once the modem is back to searching. Bit 0 is left out on purpose, it flaps
+ * on noise; bits 1 and 2 are set from the preamble lock on, which is the part
+ * of a frame bit 3 alone would miss.
+ *
+ * A latched RxDone comes first: that frame is complete, and the probe's
+ * pending-packet path (standby, then rxDonePending()) must hand it to the
+ * drain, whatever the modem has started on since.
+ */
+static const uint8_t SX127X_MODEM_STAT_HEADER_VALID = 0x08;
+static const uint8_t SX127X_MODEM_STAT_RX_ONGOING   = 0x04;
+static const uint8_t SX127X_MODEM_STAT_SIGNAL_SYNC  = 0x02;
+
+RadioRxProgress Sx127xDriver::rxProgress()
+{
+    if (mode_ != RADIO_MODE_LORA)
+        return RADIO_RX_PROGRESS_NONE;
+
+    if (radio_->getIRQFlags() & RADIOLIB_SX127X_CLEAR_IRQ_FLAG_RX_DONE)
+        return RADIO_RX_PROGRESS_NONE;
+
+    const uint8_t stat = radio_->getModemStatus();
+
+    if (stat & SX127X_MODEM_STAT_HEADER_VALID)
+        return RADIO_RX_PROGRESS_HEADER;
+    if (stat & (SX127X_MODEM_STAT_RX_ONGOING | SX127X_MODEM_STAT_SIGNAL_SYNC))
+        return RADIO_RX_PROGRESS_PREAMBLE;
+    return RADIO_RX_PROGRESS_NONE;
+}
+
 /* --- Register-polled CAD --------------------------------------------------- */
 
 /*

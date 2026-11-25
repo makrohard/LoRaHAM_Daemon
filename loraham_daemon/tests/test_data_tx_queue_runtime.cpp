@@ -144,6 +144,7 @@ struct FakeRadio : public RadioDriver {
     }
 
     bool rxDonePending() override { return rx_packet_pending; }
+    RadioRxProgress rxProgress() override { return RADIO_RX_PROGRESS_NONE; }
 
 
 

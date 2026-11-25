@@ -57,6 +57,15 @@ public:
      * RadioDriver::rxDonePending(): only meaningful after standby(). */
     bool rxDonePending() override;
 
+    /* RadioLib's continuous RX with PREAMBLE_DETECTED latched on top of the
+     * default flags, so rxProgress() sees a frame from its preamble on. DIO1
+     * still rises on RxDone only. FSK: RadioLib's no-argument call. */
+    int16_t startReceive() override;
+
+    /* The latched IRQ status: PREAMBLE_DETECTED / HEADER_VALID without
+     * RX_DONE. See RadioDriver::rxProgress(). */
+    RadioRxProgress rxProgress() override;
+
     /* CAD with the parameters from setCadScanParams() through RadioLib's
      * scanChannel(const ChannelScanConfig_t &); until the first call every
      * field is RADIOLIB_SX126X_CAD_PARAM_DEFAULT, the no-argument scan. */

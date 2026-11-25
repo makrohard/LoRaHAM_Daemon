@@ -90,6 +90,7 @@ struct FakeRadio : public RadioDriver {
      * default of false silently preserved the RX-erasure defect in any driver
      * that forgot it. These fakes never have a packet pending. */
     bool rxDonePending() override { return false; }
+    RadioRxProgress rxProgress() override { return RADIO_RX_PROGRESS_NONE; }
 
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override

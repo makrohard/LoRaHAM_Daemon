@@ -1,6 +1,7 @@
 #include "../radio_cad.h"
 #include "../daemon_band.h"
 #include "../daemon_data_tx_runtime.h"
+#include "../daemon_rx_rearm.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,6 +62,8 @@ struct FakeRadio : public RadioDriver {
     int16_t clearIrq(uint32_t) override
     {
         clear_irq_count++;
+        if (rx_progress_latched)
+            rx_progress = RADIO_RX_PROGRESS_NONE;
         return 0;
     }
 
@@ -102,6 +105,25 @@ struct FakeRadio : public RadioDriver {
                                rx_done_queries >= rx_done_after_checks);
         rx_done_queries++;
         return scripted || rx_done_latched;
+    }
+
+    /*
+     * Scripted frame in progress. `rx_progress_latched` = the SX126x kind,
+     * which the probe restore's clearIrq() wipes; false = the SX127x kind,
+     * a live status that stays as scripted. Airtime: len x 100 ms, so the
+     * stage bounds are 400 ms (4 B) and 25.5 s (255 B), far from the
+     * microseconds a probe takes.
+     */
+    RadioRxProgress rx_progress = RADIO_RX_PROGRESS_NONE;
+    bool rx_progress_latched = true;
+    size_t last_airtime_len = 0;
+
+    RadioRxProgress rxProgress() override { return rx_progress; }
+
+    RadioLibTime_t getTimeOnAir(size_t len) override
+    {
+        last_airtime_len = len;
+        return (RadioLibTime_t)len * 100000UL;
     }
 
     float getRSSI() override
@@ -853,6 +875,388 @@ static void test_managed_wait_pending_rx_blocks(void)
                ctrl.received.load() ? 1 : 0, 1);
 }
 
+/* --- A frame still arriving (radio_cad_rx_in_progress) ------------------- */
+
+/* Nothing touched: no standby, no IRQ clear, no detach, no scan, no re-arm,
+ * and `received` stays as it was (the frame has not ended). */
+static void expect_receiver_untouched(const char *what, RadioController *ctrl,
+                                      const RadioCadProbeResult &r)
+{
+    char name[160];
+
+#define UNTOUCHED(label, got, want) \
+    snprintf(name, sizeof(name), "%s: %s", what, label); \
+    expect_int(name, got, want)
+    UNTOUCHED("BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    UNTOUCHED("no scan", r.scan_ran, 0);
+    UNTOUCHED("standby not called", fake(ctrl)->standby_count, 0);
+    UNTOUCHED("IRQ flags not cleared", fake(ctrl)->clear_irq_count, 0);
+    UNTOUCHED("RX callback not detached", fake(ctrl)->clear_callback_count, 0);
+    UNTOUCHED("scanChannel not called", fake(ctrl)->scan_count, 0);
+    UNTOUCHED("RX not re-armed", fake(ctrl)->start_receive_count, 0);
+    UNTOUCHED("received not set", ctrl->received.load() ? 1 : 0, 0);
+#undef UNTOUCHED
+}
+
+/* T1: both probe sites, both stages. */
+static void test_a_frame_in_progress_is_left_alone(void)
+{
+    static const struct {
+        const char *name;
+        RadioRxProgress progress;
+        bool try_probe;
+    } cases[] = {
+        { "managed probe, preamble", RADIO_RX_PROGRESS_PREAMBLE, false },
+        { "managed probe, header", RADIO_RX_PROGRESS_HEADER, false },
+        { "GET CHANNEL probe, preamble", RADIO_RX_PROGRESS_PREAMBLE, true },
+        { "GET CHANNEL probe, header", RADIO_RX_PROGRESS_HEADER, true },
+    };
+
+    for (const auto &c : cases) {
+        RadioController ctrl;
+
+        init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+        fake(&ctrl)->scan_result = 0;   /* a scan would say FREE */
+        fake(&ctrl)->rx_progress = c.progress;
+
+        RadioCadProbeResult r = c.try_probe ? radio_cad_try_probe(&ctrl)
+                                            : radio_cad_probe(&ctrl);
+        expect_receiver_untouched(c.name, &ctrl, r);
+    }
+}
+
+/* T1 through the MANAGED wait: a frame arriving all through the wait blocks
+ * the TX and is never cut off. */
+static void test_managed_wait_frame_in_progress_blocks(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext tx;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    tx.ctrl = &ctrl;
+    tx.log_ctx = "TEST";
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+
+    expect_int("managed wait frame in progress blocks",
+               data_tx_wait_channel_free_with_limits_ex(&tx, 3, 1, 0, false),
+               DATA_TX_CAD_WAIT_BLOCK);
+    expect_int("managed wait frame in progress: standby never called",
+               fake(&ctrl)->standby_count, 0);
+    expect_int("managed wait frame in progress: never scanned",
+               fake(&ctrl)->scan_count, 0);
+}
+
+/* Age the current sighting by `ms` (the probe records it on first sight). */
+static void age_sighting(RadioController *ctrl, int64_t ms)
+{
+    ctrl->cad_rx_seen_ms -= ms;
+}
+
+/* The probe after the bound runs normally: standby, scan, restore. */
+static void expect_normal_probe(const char *name, RadioController *ctrl,
+                                const RadioCadProbeResult &r, int scans)
+{
+    char n[160];
+
+    snprintf(n, sizeof(n), "%s: scanned", name);
+    expect_int(n, r.scan_ran, 1);
+    snprintf(n, sizeof(n), "%s: scan count", name);
+    expect_int(n, fake(ctrl)->scan_count, scans);
+    snprintf(n, sizeof(n), "%s: FREE from the scan", name);
+    expect_int(n, r.status, RADIO_CAD_PROBE_FREE);
+}
+
+/* T2 (a): a latched header flag with no RxDone is trusted for ToA(255 B),
+ * then the scan decides, and its re-arm clears the latch: no wedge.
+ * Residual: at high SF ToA(255 B) exceeds CADWAIT (~10 s at SF12 against
+ * 1.5 s), so a stale header flag there ends the waiting TX as CHANNEL_BUSY
+ * (a dropped TX, not a cut frame), as a real frame of that length does. */
+static void test_a_stale_header_flag_is_bounded(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+
+    r = radio_cad_probe(&ctrl);
+    expect_int("stale header: first sighting BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("stale header: bound is the 255 B airtime",
+               (int)fake(&ctrl)->last_airtime_len, 255);
+    age_sighting(&ctrl, 25000);
+    r = radio_cad_probe(&ctrl);
+    expect_int("stale header: inside 25.5 s still BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("stale header: inside 25.5 s no standby", fake(&ctrl)->standby_count, 0);
+    age_sighting(&ctrl, 1000);
+    r = radio_cad_probe(&ctrl);
+    expect_normal_probe("stale header past 25.5 s", &ctrl, r, 1);
+    expect_int("stale header: the scan's restore cleared the latch",
+               fake(&ctrl)->rx_progress, RADIO_RX_PROGRESS_NONE);
+    r = radio_cad_probe(&ctrl);
+    expect_normal_probe("stale header: next probe", &ctrl, r, 2);
+}
+
+/* T2 (a'): a preamble on noise, no header following, is released at the
+ * stage (i) bound ToA(4 B) = 400 ms here, not at ToA(255 B). */
+static void test_a_preamble_without_header_is_released_early(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    r = radio_cad_probe(&ctrl);
+    expect_int("noise preamble: first sighting BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("noise preamble: bound is the 4 B airtime",
+               (int)fake(&ctrl)->last_airtime_len, 4);
+    age_sighting(&ctrl, 1000);
+    r = radio_cad_probe(&ctrl);
+    expect_normal_probe("noise preamble past 400 ms", &ctrl, r, 1);
+}
+
+/* A packet that completes while a stale sighting runs out keeps the
+ * pending-packet path: BUSY, `received` set, the IRQ flags left for the
+ * drain (never cleared by the probe). */
+static void test_a_packet_pending_at_the_bound_is_kept(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+    r = radio_cad_probe(&ctrl);
+    expect_int("pending at the bound: stale preamble BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    age_sighting(&ctrl, 1000);
+    fake(&ctrl)->rx_done_on_standby = true;   /* RxDone is latched at the quiesce */
+    r = radio_cad_probe(&ctrl);
+    expect_int("pending at the bound: BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("pending at the bound: received set", ctrl.received.load() ? 1 : 0, 1);
+    expect_int("pending at the bound: IRQ flags not cleared", fake(&ctrl)->clear_irq_count, 0);
+    expect_int("pending at the bound: no scan", fake(&ctrl)->scan_count, 0);
+    expect_int("pending at the bound: not re-armed", fake(&ctrl)->start_receive_count, 0);
+}
+
+/* A sighting belongs to one frame. Frame 1 is seen, completes (RxDone
+ * pending) and is drained; frame 2 starts right behind it, 50 ms later. It
+ * must get its own sighting, not frame 1's stamp, which is past the bound by
+ * then -- or the probe cuts it. Both probe sites; and the end of frame 1
+ * through a successful RX re-arm alone (the drain's, without the probe
+ * seeing the pending packet). */
+static void test_the_next_frame_gets_its_own_sighting(void)
+{
+    for (int site = 0; site < 3; site++) {
+        static const char *names[] = { "managed probe", "GET CHANNEL probe", "re-arm" };
+        RadioController ctrl;
+        RadioCadProbeResult r;
+        char n[128];
+
+        init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+        fake(&ctrl)->scan_result = 0;
+        fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+        r = site == 1 ? radio_cad_try_probe(&ctrl) : radio_cad_probe(&ctrl);
+        snprintf(n, sizeof(n), "next frame (%s): frame 1 BUSY", names[site]);
+        expect_int(n, r.status, RADIO_CAD_PROBE_BUSY);
+        age_sighting(&ctrl, 600);
+        fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_NONE;   /* frame 1 complete */
+        if (site < 2) {
+            ctrl.received.store(true);
+            r = site == 1 ? radio_cad_try_probe(&ctrl) : radio_cad_probe(&ctrl);
+            snprintf(n, sizeof(n), "next frame (%s): frame 1 RxDone pending BUSY", names[site]);
+            expect_int(n, r.status, RADIO_CAD_PROBE_BUSY);
+            ctrl.received.store(false);                       /* drained */
+        } else {
+            daemon_rx_rearm_note_result(&ctrl, 0, "RX restart");
+        }
+        fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;   /* frame 2 */
+        age_sighting(&ctrl, 50);
+        r = site == 1 ? radio_cad_try_probe(&ctrl) : radio_cad_probe(&ctrl);
+        snprintf(n, sizeof(n), "next frame (%s): frame 2 BUSY", names[site]);
+        expect_int(n, r.status, RADIO_CAD_PROBE_BUSY);
+        snprintf(n, sizeof(n), "next frame (%s): frame 2 not cut (no standby)", names[site]);
+        expect_int(n, fake(&ctrl)->standby_count, 0);
+    }
+}
+
+/* The bound runs on the radio's clock, not per TX job: a stale header flag
+ * (SF12-like, ToA(255 B) far beyond CADWAIT) ends job 1 as BLOCK
+ * (CHANNEL_BUSY); job 2, after the bound, gets the normal probe and goes. */
+static void test_the_bound_outlives_a_tx_job(void)
+{
+    RadioController ctrl;
+    DataTxDaemonContext tx;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    ctrl.tx_mode = RADIO_TX_MODE_MANAGED;
+    tx.ctrl = &ctrl;
+    tx.log_ctx = "TEST";
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;   /* latched, no RxDone */
+
+    expect_int("stale header, job 1: CHANNEL_BUSY",
+               data_tx_wait_channel_free_with_limits_ex(&tx, 3, 1, 0, false),
+               DATA_TX_CAD_WAIT_BLOCK);
+    expect_int("stale header, job 1: never scanned", fake(&ctrl)->scan_count, 0);
+    age_sighting(&ctrl, 26000);
+    expect_int("stale header, job 2 past the bound: FREE",
+               data_tx_wait_channel_free_with_limits_ex(&tx, 3, 1, 0, false),
+               DATA_TX_CAD_WAIT_FREE);
+    expect_int("stale header, job 2: the scan decided", fake(&ctrl)->scan_count, 1);
+}
+
+/* A header after the preamble raises the bound to ToA(255 B), counted from
+ * the first (preamble) sighting. */
+static void test_a_header_after_the_preamble_extends_the_bound(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    r = radio_cad_probe(&ctrl);
+    expect_int("preamble then header: preamble BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+    age_sighting(&ctrl, 1000);
+    r = radio_cad_probe(&ctrl);
+    expect_int("preamble then header: header 1 s on still BUSY", r.status,
+               RADIO_CAD_PROBE_BUSY);
+    expect_int("preamble then header: no standby", fake(&ctrl)->standby_count, 0);
+}
+
+/* A probe that reads no frame forgets the old sighting: the next frame gets
+ * its full bound. */
+static void test_a_quiet_reading_starts_a_new_sighting(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress_latched = false;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    r = radio_cad_probe(&ctrl);
+    expect_int("new sighting: first frame BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    age_sighting(&ctrl, 1000);
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_NONE;
+    r = radio_cad_probe(&ctrl);
+    expect_normal_probe("new sighting: quiet in between", &ctrl, r, 1);
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+    r = radio_cad_probe(&ctrl);
+    expect_int("new sighting: next frame BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("new sighting: next frame no standby", fake(&ctrl)->standby_count, 1);
+}
+
+/* A quiet reading ends the sighting by itself, also when the probe that
+ * read it re-arms nothing: here the radio will not stop (UNAVAILABLE, no
+ * scan, no restore). The next frame still gets its own bound. */
+static void test_a_quiet_reading_ends_the_sighting_without_a_rearm(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+    r = radio_cad_probe(&ctrl);
+    expect_int("quiet without re-arm: frame 1 BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    age_sighting(&ctrl, 600);
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_NONE;
+    fake(&ctrl)->standby_result = -1;
+    r = radio_cad_probe(&ctrl);
+    expect_int("quiet without re-arm: radio will not stop, UNAVAILABLE", r.status,
+               RADIO_CAD_PROBE_UNAVAILABLE);
+    expect_int("quiet without re-arm: nothing re-armed", fake(&ctrl)->start_receive_count, 0);
+    fake(&ctrl)->standby_result = 0;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+    age_sighting(&ctrl, 50);
+    r = radio_cad_probe(&ctrl);
+    expect_int("quiet without re-arm: frame 2 BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+    expect_int("quiet without re-arm: frame 2 not cut", fake(&ctrl)->standby_count, 1);
+}
+
+/* T2 (b), the two cases the bound tells apart. A frame that keeps arriving
+ * (status true probe after probe, inside its bound, then RxDone) is never
+ * scanned. Noise that flaps (true, false, true, ...) gets a scan at every
+ * false reading -- a true reading cannot be told from a frame start, so it
+ * stays BUSY (stated limit). */
+static void test_an_ongoing_frame_and_flapping_noise(void)
+{
+    {
+        RadioController ctrl;
+        RadioCadProbeResult r;
+
+        init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+        fake(&ctrl)->scan_result = 0;
+        fake(&ctrl)->rx_progress_latched = false;
+        fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+        r = radio_cad_probe(&ctrl);
+        expect_int("ongoing frame: preamble BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+        age_sighting(&ctrl, 300);
+        r = radio_cad_probe(&ctrl);
+        expect_int("ongoing frame: preamble 300 ms BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+        fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_HEADER;
+        for (int i = 0; i < 3; i++) {
+            age_sighting(&ctrl, 5000);
+            r = radio_cad_probe(&ctrl);
+            expect_int("ongoing frame: payload BUSY", r.status, RADIO_CAD_PROBE_BUSY);
+        }
+        expect_int("ongoing frame: never scanned", fake(&ctrl)->scan_count, 0);
+        expect_int("ongoing frame: never stopped", fake(&ctrl)->standby_count, 0);
+    }
+    {
+        RadioController ctrl;
+        RadioCadProbeResult r;
+        int busy = 0, scans = 0;
+
+        init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+        fake(&ctrl)->scan_result = 0;
+        fake(&ctrl)->rx_progress_latched = false;
+        for (int i = 0; i < 6; i++) {
+            fake(&ctrl)->rx_progress = (i % 2) ? RADIO_RX_PROGRESS_NONE
+                                               : RADIO_RX_PROGRESS_PREAMBLE;
+            r = radio_cad_probe(&ctrl);
+            busy += r.status == RADIO_CAD_PROBE_BUSY;
+            scans += r.scan_ran;
+        }
+        expect_int("flapping noise: BUSY on each true reading", busy, 3);
+        expect_int("flapping noise: a scan on each false reading", scans, 3);
+    }
+}
+
+/* T2 (b): a LIVE status stuck true on noise. After each bound one probe
+ * scans (FREE here, so a TX would go), and the scan's re-arm starts the next
+ * sighting. */
+static void test_a_stuck_live_status_lets_a_scan_through_per_bound(void)
+{
+    RadioController ctrl;
+    RadioCadProbeResult r;
+
+    init_ctrl(&ctrl, RADIO_HEALTH_READY, RADIO_MODE_LORA);
+    fake(&ctrl)->scan_result = 0;
+    fake(&ctrl)->rx_progress_latched = false;
+    fake(&ctrl)->rx_progress = RADIO_RX_PROGRESS_PREAMBLE;
+
+    for (int round = 1; round <= 2; round++) {
+        char n[96];
+
+        r = radio_cad_probe(&ctrl);
+        snprintf(n, sizeof(n), "stuck live status round %d: BUSY inside the bound", round);
+        expect_int(n, r.status, RADIO_CAD_PROBE_BUSY);
+        age_sighting(&ctrl, 1000);
+        r = radio_cad_probe(&ctrl);
+        snprintf(n, sizeof(n), "stuck live status round %d past the bound", round);
+        expect_normal_probe(n, &ctrl, r, round);
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* daemon_data_tx_context() reads log tags from the band descriptor. */
@@ -900,6 +1304,18 @@ int main(int argc, char **argv)
     test_a_radio_that_will_not_quiesce_is_unavailable();
     test_restore_clears_received_and_irq();
     test_active_probe_leaves_no_spurious_received();
+    test_a_frame_in_progress_is_left_alone();
+    test_managed_wait_frame_in_progress_blocks();
+    test_a_stale_header_flag_is_bounded();
+    test_a_preamble_without_header_is_released_early();
+    test_a_header_after_the_preamble_extends_the_bound();
+    test_a_packet_pending_at_the_bound_is_kept();
+    test_the_bound_outlives_a_tx_job();
+    test_the_next_frame_gets_its_own_sighting();
+    test_a_quiet_reading_starts_a_new_sighting();
+    test_a_quiet_reading_ends_the_sighting_without_a_rearm();
+    test_an_ongoing_frame_and_flapping_noise();
+    test_a_stuck_live_status_lets_a_scan_through_per_bound();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
 

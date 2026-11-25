@@ -16,6 +16,9 @@ void daemon_rx_rearm_note_result(RadioController *ctrl, int16_t state,
         return;
 
     if (state == 0 /* RADIOLIB_ERR_NONE */) {
+        /* A re-armed receiver starts on a new frame: the CAD probe's
+         * sighting of the last one must not carry over (radio_cad.cpp). */
+        ctrl->cad_rx_seen.store(false);
         ctrl->rx_rearm_consecutive_failures.store(0);
         if (ctrl->rx_rearm_pending.exchange(false)) {
             printf("[%s] RX re-arm recovered (%s)\n",

@@ -1,6 +1,7 @@
 #include "radio_cad.h"
 #include "daemon_rx_rearm.h"
 #include "daemon_cad_monitor.h"
+#include "daemon_timing.h"
 
 /* Bodies moved verbatim from radio_cad.h and daemon_cad_monitor.h. */
 
@@ -60,6 +61,57 @@ RadioCadProbeResult radio_cad_probe_unavailable(void)
 }
 
 /*
+ * A frame still arriving: the receiver must be left alone.
+ *
+ * standby() below stops reception, and a frame that has started but not yet
+ * reached RxDone is lost with it. With a TX queued the MANAGED loop probes
+ * every 50 ms until the channel stays free, so a frame of a few hundred ms
+ * never completes: the station is deaf for exactly the frame that makes the
+ * channel busy. So a frame in progress is BUSY with nothing touched -- no
+ * standby, no IRQ clear, no re-arm -- and the main loop drains it on RxDone
+ * as usual.
+ *
+ * Trusted only for as long as a real frame could take, from the first
+ * sighting: a latched SX126x flag that noise set, or a frame whose tail was
+ * lost, must not hold the channel BUSY until CADWAIT drops the TX.
+ *   - no header yet: the airtime of a 4-byte frame, which is the preamble,
+ *     the header and at least one more coding block (>= 5 symbols) at SF7-12;
+ *     a real frame has shown its header by then.
+ *   - valid header: the airtime of a 255-byte frame, the longest there is.
+ * Past that the probe goes on normally and its scan decides.
+ *
+ * A sighting belongs to one frame. It ends with a quiet reading, a completed
+ * packet (the pending-RX returns below), and every successful RX re-arm --
+ * the drain's, the scan's restore, any other (daemon_rx_rearm_note_result) --
+ * which also clears the latched flags. Otherwise a frame right behind a
+ * drained one would inherit its stamp, be past the bound at once, and be cut.
+ * A probe that returns early on a pending re-arm (rx_rearm_pending) never gets
+ * here; the re-arm that ends it clears the sighting like any other.
+ */
+static bool radio_cad_rx_in_progress(RadioController *ctrl)
+{
+    const RadioRxProgress progress = ctrl->driver->rxProgress();
+
+    if (progress == RADIO_RX_PROGRESS_NONE) {
+        ctrl->cad_rx_seen.store(false);
+        return false;
+    }
+
+    const int64_t now = daemon_now_ms();
+
+    if (!ctrl->cad_rx_seen.load()) {
+        ctrl->cad_rx_seen_ms = now;
+        ctrl->cad_rx_seen.store(true);
+    }
+
+    const size_t len = progress == RADIO_RX_PROGRESS_HEADER ? 255 : 4;
+    const int64_t bound_ms =
+        (int64_t)((ctrl->driver->getTimeOnAir(len) + 999) / 1000);
+
+    return now - ctrl->cad_rx_seen_ms <= bound_ms;
+}
+
+/*
  * Stop reception, then decide whether a packet is pending.
  *
  * Asking the chip for RxDone is only meaningful if the receiver can no longer
@@ -74,13 +126,21 @@ RadioCadProbeResult radio_cad_probe_unavailable(void)
  * us. startChannelScan() would have gone to standby anyway, so this costs
  * nothing on the path where no packet is pending.
  *
+ * Before any of that: a frame still arriving is left alone (see
+ * radio_cad_rx_in_progress() above).
+ *
  * Returns true when the caller must abandon the probe. `pending` distinguishes
- * "a packet is waiting" (report BUSY; the main loop drains the FIFO and re-arms)
+ * "a packet is waiting or arriving" (report BUSY; the main loop drains the FIFO and re-arms)
  * from "the radio would not quiesce" (report UNAVAILABLE, state untouched).
  */
 static bool radio_cad_quiesce_and_check_rx(RadioController *ctrl, bool *pending)
 {
     *pending = false;
+
+    if (radio_cad_rx_in_progress(ctrl)) {
+        *pending = true;   /* BUSY, reception left running */
+        return true;
+    }
 
     if (ctrl->driver->standby() != RADIOLIB_ERR_NONE)
         return true;   /* fail closed: no scan on a radio we could not stop */
@@ -294,6 +354,7 @@ RadioCadProbeResult radio_cad_try_probe(RadioController *ctrl)
      * comes from the passive live read (mirrors GET CHANNEL's pending path).
      */
     if (ctrl->received.load()) {
+        ctrl->cad_rx_seen.store(false);   /* that frame is complete */
         result.rssi_dbm = ctrl->driver->rssiProbe();
         result.scan_ran = 0;
         result.status = RADIO_CAD_PROBE_BUSY;
@@ -361,6 +422,7 @@ RadioCadProbeResult radio_cad_probe(RadioController *ctrl)
      * comes from the passive live read (mirrors GET CHANNEL's pending path).
      */
     if (ctrl->received.load()) {
+        ctrl->cad_rx_seen.store(false);   /* that frame is complete */
         result.rssi_dbm = ctrl->driver->rssiProbe();
         result.scan_ran = 0;
         result.status = RADIO_CAD_PROBE_BUSY;

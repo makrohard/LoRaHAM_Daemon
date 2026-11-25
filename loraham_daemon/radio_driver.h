@@ -29,6 +29,13 @@
 
 #include "radio_rf_defaults.h"
 
+/* RadioDriver::rxProgress(): how far a frame still arriving has got. */
+enum RadioRxProgress {
+    RADIO_RX_PROGRESS_NONE = 0,
+    RADIO_RX_PROGRESS_PREAMBLE,
+    RADIO_RX_PROGRESS_HEADER
+};
+
 class RadioDriver {
 public:
     virtual ~RadioDriver() = default;
@@ -97,6 +104,28 @@ public:
      * answer cannot change under the caller.
      */
     virtual bool rxDonePending() = 0;
+
+    /*
+     * Where the receiver stands in a frame that has started but not finished:
+     * NONE (no frame, or it already ended in RxDone),
+     * PREAMBLE (preamble seen, no valid header yet) or HEADER (valid header
+     * seen, payload still arriving). LoRa only; NONE outside LoRa.
+     *
+     * Asked while reception is still RUNNING, unlike rxDonePending(): the CAD
+     * probe asks first and, on anything but NONE, leaves the receiver alone,
+     * because its standby() would cut the frame off (radio_cad.cpp).
+     *
+     * Pure virtual for the reason given at rxDonePending(): a default of NONE
+     * would silently keep the defect in a driver that forgot it.
+     */
+    virtual RadioRxProgress rxProgress() = 0;
+
+    /* RadioLib's airtime of a len-byte frame at the configured modulation, in
+     * microseconds; the CAD probe bounds how long it trusts rxProgress(). */
+    virtual RadioLibTime_t getTimeOnAir(size_t len)
+    {
+        return phy_->getTimeOnAir(len);
+    }
 
     /* --- Chip-specific (pure virtual) --- */
 

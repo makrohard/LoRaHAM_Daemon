@@ -82,6 +82,7 @@ struct FakeRadio : public RadioDriver {
     float rssiProbe() override { return -200.0f; }
     int16_t standby() override { return 0; }
     bool rxDonePending() override { return false; }
+    RadioRxProgress rxProgress() override { return RADIO_RX_PROGRESS_NONE; }
     const char *chipName() const override { return "FAKE"; }
     DaemonChipFamily chipFamily() const override { return DAEMON_CHIP_FAMILY_SX1262; }
 };

@@ -91,6 +91,13 @@ struct RadioController {
     /* The health last announced as RADIO=<state> on CONF (main-loop-only). */
     RadioHealth health_broadcast;
     std::atomic<bool> cad_active;
+    /* When the CAD probe first saw the frame it is leaving alone
+     * (radio_cad.cpp, radio_cad_rx_in_progress). The stamp is written and
+     * read only by the probe, under radio_mutex; the flag is atomic because
+     * every successful RX re-arm clears it (daemon_rx_rearm_note_result),
+     * from the main loop or the TX worker. */
+    std::atomic<bool> cad_rx_seen;
+    int64_t cad_rx_seen_ms;
     std::atomic<bool> cad_broadcast_active;
     std::atomic<bool> cad_monitor_active;
     std::atomic<int> cad_monitor_free_streak;
@@ -182,6 +189,8 @@ static inline void radio_controller_init(RadioController *ctrl,
     ctrl->tx_status_broadcast_generation = 0u;
     ctrl->health_broadcast = RADIO_HEALTH_UNINITIALIZED;
     ctrl->cad_active.store(false);
+    ctrl->cad_rx_seen.store(false);
+    ctrl->cad_rx_seen_ms = 0;
     ctrl->cad_broadcast_active.store(false);
     ctrl->cad_monitor_active.store(false);
     ctrl->cad_monitor_free_streak.store(0);

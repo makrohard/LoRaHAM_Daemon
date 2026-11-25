@@ -152,6 +152,19 @@ Lifecycle/helper behavior:
   never calls scanChannel and answers from the passive RSSI probe; and the HW-3 preconditions --
   outside LoRa or while an RX re-arm is pending the passive probe makes ZERO radio calls and the
   active probes keep their non-destructive snapshot but run neither the CAD nor the re-arm)
+- `test_radio_cad_probe` also pins that a probe leaves a frame still arriving alone (BUSY with no
+  standby, IRQ clear, scan or re-arm, on both probe sites and through the MANAGED wait), and the
+  bound on that: no header yet = the 4 B airtime, valid header = the 255 B airtime, from the first
+  sighting; past it the scan decides; a quiet reading, a completed packet or any successful RX re-arm
+  starts a new sighting (a frame right behind a drained one is not cut);
+  a frame that keeps arriving is never scanned, flapping noise is scanned at each quiet reading
+- `test_cad_rx_progress` (both probe sites on the REAL `Sx1262Driver` and `Sx127xDriver` against the
+  REAL pinned RadioLib and the register models: SX1262 RX latches PREAMBLE_DETECTED on top of
+  RadioLib's default RX IRQs with DIO1 still on RxDone only; a latched preamble or header without
+  RxDone (also beside a stale header error, which raises no interrupt), and SX127x RegModemStat signal synchronized / RX on-going / header valid,
+  are BUSY with no standby, CAD or IRQ clear reaching the chip; RxDone (on SX127x latched in
+  RegIrqFlags, whatever RegModemStat shows) keeps the pending-packet path, a header error alone and SX127x
+  signal-detected alone a normal probe; FSK RX keeps RadioLib's no-argument call and its IRQ set)
 - `test_sx127x_cad_register` (register-polled CAD on the REAL `Sx127xDriver` against the REAL pinned
   RadioLib, with `tests/fakes/sx127x_register_model.h` where the chip would be: CadDone alone is
   FREE, CadDone+CadDetected in the same sample is BUSY, a chip that never asserts CadDone is a

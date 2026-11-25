@@ -96,6 +96,7 @@ test_binaries=(
   "$TEST_DIR/test_stdout_stamp"
   "$TEST_DIR/test_radio_health"
   "$TEST_DIR/test_radio_cad_probe"
+  "$TEST_DIR/test_cad_rx_progress"
   "$TEST_DIR/test_sx127x_cad_register"
   "$TEST_DIR/test_sx127x_power_register"
   "$TEST_DIR/test_sx1262_ocp_register"
@@ -773,6 +774,38 @@ build_one_radio_cad_probe_test() {
     -llgpio
 }
 
+build_one_cad_rx_progress_test() {
+  local src="$1"
+  local out="$2"
+
+  # Both CAD probe sites with the real Sx1262Driver and Sx127xDriver against
+  # the real pinned RadioLib, with tests/fakes/sx126x_register_model.h and
+  # sx127x_register_model.h where the chips would be.
+  if [[ "${#radiolib_cflags[@]}" -eq 0 ]]; then
+    if ! find_radiolib; then
+      echo "ERROR: RadioLib not found for CAD RX progress test." >&2
+      exit 1
+    fi
+  fi
+
+  build_one_cpp_sources \
+    "$out" \
+    "${radiolib_cflags[@]}" \
+    "$src" \
+    "$SCRIPT_DIR/radio_cad.cpp" \
+    "$SCRIPT_DIR/daemon_rx_rearm.cpp" \
+    "$SCRIPT_DIR/radio_health.cpp" \
+    "$SCRIPT_DIR/daemon_timing.cpp" \
+    "$SCRIPT_DIR/daemon_stats.cpp" \
+    "$SCRIPT_DIR/sx1262_driver.cpp" \
+    "$SCRIPT_DIR/sx127x_driver.cpp" \
+    "$SCRIPT_DIR/hardware_profile.cpp" \
+    "$SCRIPT_DIR/config_policy.cpp" \
+    "$SCRIPT_DIR/config_value.cpp" \
+    "${radiolib_libs[@]}" \
+    -llgpio
+}
+
 build_one_sx127x_cad_register_test() {
   local src="$1"
   local out="$2"
@@ -1297,6 +1330,7 @@ build_tests() {
   build_one_cpp_sources "$TEST_DIR/test_stdout_stamp" "$TEST_DIR/test_stdout_stamp.cpp" "$SCRIPT_DIR/daemon_stdout_stamp.cpp"
   build_one_radio_health_test "$TEST_DIR/test_radio_health.cpp" "$TEST_DIR/test_radio_health"
   build_one_radio_cad_probe_test "$TEST_DIR/test_radio_cad_probe.cpp" "$TEST_DIR/test_radio_cad_probe"
+  build_one_cad_rx_progress_test "$TEST_DIR/test_cad_rx_progress.cpp" "$TEST_DIR/test_cad_rx_progress"
   build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_cad_register.cpp" "$TEST_DIR/test_sx127x_cad_register"
   build_one_sx127x_cad_register_test "$TEST_DIR/test_sx127x_power_register.cpp" "$TEST_DIR/test_sx127x_power_register"
   build_one_sx1262_register_test "$TEST_DIR/test_sx1262_ocp_register.cpp" "$TEST_DIR/test_sx1262_ocp_register"

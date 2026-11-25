@@ -69,6 +69,9 @@ public:
     /* Reads RegIrqFlags and reports RxDone. See RadioDriver::rxDonePending()
      * for why a probe must ask the chip and not only the software flag. */
     bool rxDonePending() override;
+
+    /* The live RegModemStat. See RadioDriver::rxProgress(). */
+    RadioRxProgress rxProgress() override;
     const char *chipName() const override;
     DaemonChipFamily chipFamily() const override
     {

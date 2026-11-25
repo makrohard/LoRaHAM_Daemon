@@ -521,6 +521,58 @@ bool Sx1262Driver::rxDonePending()
     return (radio_->getIrqFlags() & RADIOLIB_SX126X_IRQ_RX_DONE) != 0;
 }
 
+/* --- A frame still arriving -------------------------------------------------- */
+
+/*
+ * Every re-arm in the daemon goes through driver->startReceive(), so this is
+ * the one place that decides which IRQs the chip latches during reception.
+ * RadioLib's default set already has HEADER_VALID, but HEADER_VALID comes
+ * (preamble + 4.25 + 8) symbols into a frame, ~41 ms at SF8 with an 8-symbol
+ * preamble: a CAD probe every 50 ms would land before it most of the time.
+ * PREAMBLE_DETECTED comes a few symbols in. The DIO1 mask is unchanged, so the
+ * RX callback still fires on RxDone only. The CAD probe is LoRa-only, so FSK
+ * keeps RadioLib's own no-argument call, as before.
+ */
+int16_t Sx1262Driver::startReceive()
+{
+    if (sf_.load() == 0)
+        return radio_->startReceive();   /* not LoRa */
+
+    return radio_->startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF,
+                                RADIOLIB_IRQ_RX_DEFAULT_FLAGS |
+                                    (1UL << RADIOLIB_IRQ_PREAMBLE_DETECTED),
+                                RADIOLIB_IRQ_RX_DEFAULT_MASK, 0);
+}
+
+/*
+ * The IRQ status is latched: every bit stays set until the next clear, which
+ * every re-arm and every drain does. RX_DONE next to a preamble/header bit
+ * means that frame is complete, and it goes to the drain.
+ *
+ * HEADER_ERR does not end anything: it raises no DIO1 interrupt, so no drain
+ * or re-arm follows and it stays latched while the receiver goes on
+ * searching. A later frame's PREAMBLE_DETECTED latches next to it, and only
+ * the bits say nothing about which came first -- so a preamble or header bit
+ * counts as a frame in progress, with or without HEADER_ERR. A stale pair
+ * (and a PREAMBLE_DETECTED that noise set) is what the CAD probe's bound is
+ * for (radio_cad.cpp); the scan after it clears the flags.
+ */
+RadioRxProgress Sx1262Driver::rxProgress()
+{
+    if (sf_.load() == 0)
+        return RADIO_RX_PROGRESS_NONE;   /* not LoRa */
+
+    const uint32_t irq = radio_->getIrqFlags();
+
+    if (irq & RADIOLIB_SX126X_IRQ_RX_DONE)
+        return RADIO_RX_PROGRESS_NONE;
+    if (irq & RADIOLIB_SX126X_IRQ_HEADER_VALID)
+        return RADIO_RX_PROGRESS_HEADER;
+    if (irq & RADIOLIB_SX126X_IRQ_PREAMBLE_DETECTED)
+        return RADIO_RX_PROGRESS_PREAMBLE;
+    return RADIO_RX_PROGRESS_NONE;
+}
+
 /* --- D8 diagnosis for a failed begin() -------------------------------------- */
 
 void sx1262_diagnose_begin_failure(const char *band, int state)
