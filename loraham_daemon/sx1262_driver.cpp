@@ -6,6 +6,7 @@
 #include "driver_config_print.h"
 #include "config_value.h"
 #include "hardware_profile.h"
+#include "radio_units.h"
 
 /* --- Construction ---------------------------------------------------------- */
 
@@ -82,7 +83,7 @@ static void sx1262_warn_above_20(int power_dbm, int state)
  * the daemon's 100 mA default (daemon_ocp_boot.h); RadioLib accepts 0..140.
  * Written after both init paths, which are the only
  * places RadioLib resets it. The caller returns setCurrentLimit()'s result; with
- * RadioLib 187ef247 that fails only on an out-of-range value (its
+ * RadioLib 8.0.0 that fails only on an out-of-range value (its
  * writeRegister() does not report the chip's status).
  */
 static int16_t sx1262_apply_ocp(SX1262 *radio, int ocp_ma)
@@ -100,6 +101,22 @@ static int16_t sx1262_apply_ocp(SX1262 *radio, int ocp_ma)
 // TCXO voltage (DIO3) in one call; the RF switch, CRC and LDRO follow
 // explicitly, as in the SX127x driver, so that the effective configuration is
 // deterministic in the same way.
+//
+// RadioLib 8 takes the radio settings as one struct in Hz, and the TCXO
+// voltage and regulator as members read by begin()/beginFSK(): both are set
+// on every call, exactly as the RadioLib 7 arguments were.
+
+/* The TCXO voltage and the DC-DC regulator for the next begin()/beginFSK();
+ * false = a profile voltage the SX126x does not offer. */
+static bool sx1262_set_oscillator(SX1262 *radio, float tcxo_voltage)
+{
+    RadioLibTCXOVoltage_t tcxo;
+    if (!radio_tcxo_voltage(tcxo_voltage, &tcxo))
+        return false;
+    radio->tcxoVoltage = tcxo;
+    radio->useRegulatorLDO = false;
+    return true;
+}
 
 int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
 {
@@ -108,15 +125,18 @@ int16_t Sx1262Driver::begin(const RadioRfDefaults *defaults)
     if (!defaults)
         return RADIOLIB_ERR_NULL_POINTER;
 
-    int16_t state = radio_->begin(defaults->freq_mhz,
-                                  defaults->bandwidth_khz,
-                                  (uint8_t)defaults->spreading_factor,
-                                  (uint8_t)defaults->coding_rate,
-                                  defaults->sync_word,
-                                  (int8_t)defaults->power_dbm,
-                                  (uint16_t)defaults->preamble_len,
-                                  tcxo_voltage_,
-                                  false);
+    if (!sx1262_set_oscillator(radio_.get(), tcxo_voltage_))
+        return RADIOLIB_ERR_INVALID_TCXO_VOLTAGE;
+
+    ConfigLoRa_t cfg;
+    cfg.frequency = radio_hz_from_mhz(defaults->freq_mhz);
+    cfg.bandwidth = radio_hz_from_khz(defaults->bandwidth_khz);
+    cfg.spreadingFactor = (uint8_t)defaults->spreading_factor;
+    cfg.codingRate = (uint8_t)defaults->coding_rate;
+    cfg.syncWord = defaults->sync_word;
+    cfg.power = (int8_t)defaults->power_dbm;
+    cfg.preambleLength = (uint16_t)defaults->preamble_len;
+    int16_t state = radio_->begin(cfg);
 
     if (state != RADIOLIB_ERR_NONE)
         return state;
@@ -166,10 +186,19 @@ int16_t Sx1262Driver::switchMode(RadioMode_t mode,
 
     if (mode == RADIO_MODE_FSK) {
         sf_.store(0);   /* no LoRa CAD in FSK */
-        /* FSK modem params stay the established legacy values; only the
-         * frequency comes from the band. TCXO always applied. */
-        state = radio_->beginFSK(defaults->freq_mhz, 4.8, 5.0, 156.2, 10, 16,
-                                 tcxo_voltage_, false);
+        /* FSK modem params stay the established legacy values (4.8 kbps,
+         * 5 kHz deviation, 156.2 kHz RX bandwidth, 10 dBm, 16 preamble bits);
+         * only the frequency comes from the band. TCXO always applied. */
+        if (!sx1262_set_oscillator(radio_.get(), tcxo_voltage_))
+            return RADIOLIB_ERR_INVALID_TCXO_VOLTAGE;
+        ConfigFSK_t cfg;
+        cfg.frequency = radio_hz_from_mhz(defaults->freq_mhz);
+        cfg.bitRate = 4800;
+        cfg.frequencyDeviation = 5000;
+        cfg.receiverBandwidth = 156200;
+        cfg.power = 10;
+        cfg.preambleLength = 16;
+        state = radio_->beginFSK(cfg);
         if (state == RADIOLIB_ERR_NONE)
             state = sx1262_apply_ocp(radio_.get(), ocp_ma_);
         if (state == RADIOLIB_ERR_NONE)
@@ -207,7 +236,7 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "BW") {
         float bw = 0.0f;
         if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
-            state = radio.setBandwidth(bw);
+            state = radio.setBandwidth(radio_hz_from_khz(bw));
             driver_config_print_state_float("BW", bw, state);
             if (state == RADIOLIB_ERR_NONE)
                 bw_khz_.store(bw);
@@ -219,7 +248,7 @@ int16_t Sx1262Driver::applyLoraParam(const char *tag,
     if (key == "FREQ") {
         float f = 0.0f;
         if (config_value_parse_float_exact(val, &f) && f > 0.0f) {
-            state = radio.setFrequency(f);
+            state = radio.setFrequency(radio_hz_from_mhz(f));
             if (state == RADIOLIB_ERR_NONE)
                 printf(" FREQ=\033[92m%.6f\033[0m", f);
             else
@@ -329,7 +358,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     if (key == "FREQ") {
         float f = 0.0f;
         if (config_value_parse_float_exact(val, &f) && f > 0.0f) {
-            state = radio.setFrequency(f);
+            state = radio.setFrequency(radio_hz_from_mhz(f));
             if (state == RADIOLIB_ERR_NONE)
                 printf(" FREQ=\033[92m%.6f\033[0m", f);
             else
@@ -355,7 +384,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     if (key == "BR") {
         float br = 0.0f;
         if (config_value_parse_float_exact(val, &br) && config_policy_fsk_bitrate_valid(br)) {
-            state = radio.setBitRate(br);
+            state = radio.setBitRate(radio_bps_from_kbps(br));
             driver_config_print_state_float("BR", br, state);
         } else {
             driver_config_print_rejected("BR", val);
@@ -365,7 +394,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
     if (key == "FREQDEV") {
         float fd = 0.0f;
         if (config_value_parse_float_exact(val, &fd) && config_policy_fsk_freqdev_valid(fd)) {
-            state = radio.setFrequencyDeviation(fd);
+            state = radio.setFrequencyDeviation(radio_hz_from_khz(fd));
             driver_config_print_state_float("FREQDEV", fd, state);
         } else {
             driver_config_print_rejected("FREQDEV", val);
@@ -378,7 +407,7 @@ int16_t Sx1262Driver::applyFskParam(const char *tag,
          * validates the chip's own raster and returns an error for foreign
          * values (a red state rather than a silent acceptance). */
         if (config_value_parse_float_exact(val, &bw) && bw > 0.0f) {
-            state = radio.setRxBandwidth(bw);
+            state = radio.setRxBandwidth(radio_hz_from_khz(bw));
             driver_config_print_state_float("RXBW", bw, state);
         } else {
             driver_config_print_rejected("RXBW", val);
@@ -534,8 +563,8 @@ bool Sx1262Driver::loraSfBw(int *sf, float *bw_khz) const
     return true;
 }
 
-/* Exit mode, timeout and IRQ flags/mask give the bytes RadioLib's no-argument
- * scanChannel() sends (SX126x.cpp:413-425 at the pinned commit; setCad's
+/* Exit mode, timeouts and IRQ flags/mask give the bytes RadioLib's no-argument
+ * scanChannel() sends (SX126x.cpp:411-425 at RadioLib 8.0.0; setCad's
  * default exit mode is GOTO_STDBY): only the three parameters can differ. */
 int16_t Sx1262Driver::scanChannel()
 {
@@ -545,7 +574,8 @@ int16_t Sx1262Driver::scanChannel()
             .detPeak = cad_params_.det_peak,
             .detMin = cad_params_.det_min,
             .exitMode = RADIOLIB_SX126X_CAD_GOTO_STDBY,
-            .timeout = 0,
+            .rxTimeout = 0,
+            .rxSymbols = 0,
             .irqFlags = RADIOLIB_IRQ_CAD_DEFAULT_FLAGS,
             .irqMask = RADIOLIB_IRQ_CAD_DEFAULT_MASK,
         },

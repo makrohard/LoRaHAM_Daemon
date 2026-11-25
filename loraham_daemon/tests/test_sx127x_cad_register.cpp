@@ -99,8 +99,8 @@ static void test_cad_detected_is_busy(void)
 
     int16_t state = rig.drv.scanChannel();
 
-    expect_int("CadDone+CadDetected -> PREAMBLE_DETECTED", state,
-               RADIOLIB_PREAMBLE_DETECTED);
+    expect_int("CadDone+CadDetected -> LORA_DETECTED", state,
+               RADIOLIB_LORA_DETECTED);
 }
 
 /*
@@ -117,7 +117,7 @@ static void test_detection_survives_because_the_clear_comes_after(void)
     int16_t state = rig.drv.scanChannel();
 
     expect_int("a late detection is still BUSY", state,
-               RADIOLIB_PREAMBLE_DETECTED);
+               RADIOLIB_LORA_DETECTED);
     expect_int("the stale flags were cleared once",
                rig.model.irq_flag_clears >= 1, 1);
     expect_int("both CAD bits were cleared",
@@ -152,13 +152,13 @@ static void test_wedged_chip_times_out_indeterminate(void)
 
     expect("a wedged CAD is neither FREE nor BUSY",
            state != RADIOLIB_CHANNEL_FREE &&
-               state != RADIOLIB_PREAMBLE_DETECTED,
+               state != RADIOLIB_LORA_DETECTED,
            "a timeout reported as a verdict is how a broken scan reaches the "
            "air: BUSY would let CADTXAFTERTIMEOUT send anyway, FREE sends "
            "immediately");
     expect("the timeout is a negative RadioLib error (-> UNAVAILABLE)",
            state < 0 && state != RADIOLIB_CHANNEL_FREE &&
-               state != RADIOLIB_PREAMBLE_DETECTED,
+               state != RADIOLIB_LORA_DETECTED,
            "radio_cad_status_from_scan_state() only maps unrecognised "
            "NEGATIVE states to UNAVAILABLE");
     expect("the wait actually polled the register",
@@ -332,7 +332,7 @@ static void test_both_profiles_get_the_same_register_verdict(void)
 
         snprintf(name, sizeof(name), "%s wiring -> BUSY from the register",
                  routed ? "LoRaHAM (DIO1 routed)" : "Uputronics (no DIO1)");
-        expect_int(name, state, RADIOLIB_PREAMBLE_DETECTED);
+        expect_int(name, state, RADIOLIB_LORA_DETECTED);
 
         snprintf(name, sizeof(name), "%s wiring -> no pin consulted",
                  routed ? "LoRaHAM (DIO1 routed)" : "Uputronics (no DIO1)");

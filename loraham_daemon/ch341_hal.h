@@ -100,8 +100,11 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     loraham_ch341 *device() const { return _dev; }
 
     /* ---- RadioLibHal ----------------------------------------------------- */
-    void init() override { }
-    void term() override { }
+    /* The status returns RadioLib 8 added are RADIOLIB_ERR_NONE on every path:
+     * failures go through failure() as before, and a refused read keeps its
+     * zero fill (Module skips the copy-out after a non-OK transfer). */
+    int16_t init() override { return RADIOLIB_ERR_NONE; }
+    int16_t term() override { return RADIOLIB_ERR_NONE; }
 
     void pinMode(uint32_t pin, uint32_t mode) override
     {
@@ -122,8 +125,8 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
     uint32_t digitalRead(uint32_t pin) override
     {
         /* After a latched loss the interrupt line reads HIGH: RadioLib's
-         * unbounded waits on it (SX126x::scanChannel() at the pinned commit,
-         * SX126x.cpp:434-436, has no timeout) end at once, the next SPI call
+         * unbounded waits on it (SX126x::scanChannel() at RadioLib 8.0.0,
+         * SX126x.cpp:433-435, has no timeout) end at once, the next SPI call
          * fails, and the TX worker lets go of radio_mutex for the teardown. */
         if (_lost && pin != RADIOLIB_NC)
             return pin == _irq_pin.load() ? 1 : 0;
@@ -186,23 +189,24 @@ class Ch341Hal : public RadioLibHal, public DaemonHalControl {
 
     long pulseIn(uint32_t, uint32_t, RadioLibTime_t) override { return 0; }
 
-    void spiBegin() override { }
+    int16_t spiBegin() override { return RADIOLIB_ERR_NONE; }
     void spiBeginTransaction() override { }
     void spiEndTransaction() override { }
-    void spiEnd() override { }
+    int16_t spiEnd() override { return RADIOLIB_ERR_NONE; }
 
-    void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
+    int16_t spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
     {
         if (!ready("spiTransfer")) {
             if (in)
                 memset(in, 0, len);
-            return;
+            return RADIOLIB_ERR_NONE;
         }
         if (_api->in_error(_dev) || _api->transceive(_dev, out, in, (uint32_t)len) < 0) {
             failure("CH341 SPI transfer failed");
             if (in)
                 memset(in, 0, len);
         }
+        return RADIOLIB_ERR_NONE;
     }
 
   private:

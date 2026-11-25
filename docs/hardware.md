@@ -36,7 +36,7 @@ Target platform: Raspberry Pi 3/4/5 and Zero 2 W running a Raspbian image, or an
     git clone https://github.com/makrohard/LoRaHAM_Daemon ~/LoRaHAM
 
     git clone https://github.com/jgromes/RadioLib ~/RadioLib
-    git -C ~/RadioLib checkout 187ef24791c3d844939b2be13a68bd890bd04e4c
+    git -C ~/RadioLib checkout 72be77dafe64ed10d8ade01b59744f684accf21c
 
     cmake -S ~/RadioLib -B ~/RadioLib/build -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     cmake --build ~/RadioLib/build

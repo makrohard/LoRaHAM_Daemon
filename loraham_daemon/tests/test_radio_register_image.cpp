@@ -1,6 +1,6 @@
 /*
  * The register image of every RadioLib setter path the daemon drives, against
- * a golden image recorded with the RadioLib revision before the current pin.
+ * a golden image recorded with the pinned RadioLib.
  *
  * A RadioLib update may change the API (units, structs, return codes) while
  * the daemon's protocol stays the same: SET FREQ=869.525 must still put the
@@ -15,6 +15,9 @@
  *           plus the register windows RadioLib writes;
  *   both:   the setter's return code and the RX interrupt (pin, edge) after
  *           the callback is attached.
+ *
+ * Independent of the golden, every RX arm must be continuous RX (SX127x
+ * RegOpMode RXCONTINUOUS, SX1262 SetRx timeout 0xFFFFFF).
  *
  * The boot image of each (chip, band) is recorded in full; a case records only
  * what differs from its boot image (FSK cases: from the FSK boot image). Before
@@ -50,6 +53,8 @@ static const char *const golden[] = {
 };
 
 static std::vector<std::string> g_lines;
+static int g_prop_ok = 0;
+static int g_prop_fail = 0;
 
 static void rx_callback(void) { }
 
@@ -129,6 +134,9 @@ struct Rig127 {
     }
 
     void forget_ops() { }   /* the register map is the whole image */
+
+    /* RegOpMode mode bits = RXCONTINUOUS (5), in LoRa and in FSK. */
+    bool rx_continuous() { return (model.peek(0x01) & 0x07) == 0x05; }
 };
 
 /* ---- SX1262 -------------------------------------------------------------- */
@@ -184,7 +192,27 @@ struct Rig1262 {
     }
 
     void forget_ops() { model.forget_ops(); }
+
+    /* The last SetRx (0x82) has timeout 0xFFFFFF: continuous RX. */
+    bool rx_continuous()
+    {
+        return model.seen[0x82] && model.op_len[0x82] == 3 && model.op_bytes[0x82][0] == 0xFF &&
+               model.op_bytes[0x82][1] == 0xFF && model.op_bytes[0x82][2] == 0xFF;
+    }
 };
+
+/* Independent of the golden: every RX arm the daemon makes is continuous RX,
+ * so a symbol timeout RadioLib writes there has no effect. */
+template <class Rig>
+static void expect_rx_continuous(const std::string &name, Rig *r)
+{
+    if (r->rx_continuous()) {
+        g_prop_ok++;
+    } else {
+        g_prop_fail++;
+        printf("[FAIL] %s: RX not continuous after startReceive()\n", name.c_str());
+    }
+}
 
 /* ---- cases --------------------------------------------------------------- */
 
@@ -286,6 +314,7 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         r->drv.setPacketReceivedAction(rx_callback);
         record(base_name + "/boot-begin", rc, r->image(), nullptr);
         rc = r->drv.startReceive();
+        expect_rx_continuous(base_name + "/boot", r);
         lora_base = r->image();
         record(base_name + "/boot", rc, lora_base, nullptr);
 
@@ -293,6 +322,7 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         rc = r->drv.switchMode(RADIO_MODE_FSK, def);
         r->drv.setPacketReceivedAction(rx_callback);
         r->drv.startReceive();
+        expect_rx_continuous(base_name + "/fsk", r);
         fsk_base = r->image();
         record(base_name + "/fsk", rc, fsk_base, nullptr);
 
@@ -300,6 +330,7 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         rc = r->drv.switchMode(RADIO_MODE_LORA, def);
         r->drv.setPacketReceivedAction(rx_callback);
         r->drv.startReceive();
+        expect_rx_continuous(base_name + "/fsk-lora", r);
         record(base_name + "/fsk-lora", rc, r->image(), &lora_base);
 
         r->drv.clearPacketReceivedAction();
@@ -318,9 +349,25 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         r->drv.startReceive();
         cad_script(r->model, detected);
         int rc = r->drv.scanChannel();
+        /* What the scan itself left, before the re-arm rewrites the RX
+         * commands. */
+        record(base_name + (detected ? "/cad-detected/scan" : "/cad-free/scan"), rc, r->image(),
+               &lora_base);
         r->drv.startReceive();
+        expect_rx_continuous(base_name + "/cad", r);
         record(base_name + (detected ? "/cad-detected" : "/cad-free"), rc, r->image(),
                &lora_base);
+        delete r;
+    }
+
+    /* A cold FSK switch, without the LoRa boot before it: what the FSK path
+     * configures by itself (oscillator, modem, power). */
+    {
+        Rig *r = make();
+        int rc = r->drv.switchMode(RADIO_MODE_FSK, def);
+        r->drv.setPacketReceivedAction(rx_callback);
+        r->drv.startReceive();
+        record(base_name + "/fsk-cold", rc, r->image(), &fsk_base);
         delete r;
     }
 
@@ -330,6 +377,7 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         r->drv.setPacketReceivedAction(rx_callback);
         int rc = r->drv.applyLoraParam("T", s.key, s.val);
         r->drv.startReceive();
+        expect_rx_continuous(base_name + "/lora/" + s.key + "=" + s.val, r);
         record(base_name + "/lora/" + s.key + "=" + s.val, rc, r->image(), &lora_base);
         delete r;
     }
@@ -342,6 +390,7 @@ static void run_chip(const std::string &chip, int band, bool sx1262, Make make)
         r->drv.setPacketReceivedAction(rx_callback);
         int rc = r->drv.applyFskParam("T", s.key, s.val);
         r->drv.startReceive();
+        expect_rx_continuous(base_name + "/fsk/" + s.key + "=" + s.val, r);
         record(base_name + "/fsk/" + s.key + "=" + s.val, rc, r->image(), &fsk_base);
         delete r;
     }
@@ -394,6 +443,9 @@ int main(int argc, char **argv)
     }
     printf("[%s] register image: %d lines identical, %d differ (golden %zu, now %zu)\n",
            fail ? "FAIL" : " OK ", ok, fail, n_golden, g_lines.size());
-    printf("Summary: %d passed, %d failed\n", fail ? 0 : 1, fail ? 1 : 0);
-    return fail ? 1 : 0;
+    printf("[%s] RX arms continuous: %d, not: %d\n", g_prop_fail ? "FAIL" : " OK ", g_prop_ok,
+           g_prop_fail);
+    printf("Summary: %d passed, %d failed\n", (fail ? 0 : 1) + (g_prop_fail ? 0 : 1),
+           (fail ? 1 : 0) + (g_prop_fail ? 1 : 0));
+    return (fail || g_prop_fail) ? 1 : 0;
 }

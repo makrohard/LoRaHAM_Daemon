@@ -213,7 +213,17 @@ static void test_no_set_is_radiolib_default_bytes(void)
 
         ref_model.irq_high_pin = PIN_IRQ;
         ref_model.irq_status = RADIOLIB_SX126X_IRQ_CAD_DONE;
-        ref.begin(869.525f, 125.0f, 7, 5, 0x12, 10, 8, 1.8f, false);
+        ConfigLoRa_t cfg;   /* 869.525 MHz, BW 125, SF7, CR5, sync 0x12, 10 dBm, preamble 8 */
+        cfg.frequency = 869525000;
+        cfg.bandwidth = 125000;
+        cfg.spreadingFactor = 7;
+        cfg.codingRate = 5;
+        cfg.syncWord = 0x12;
+        cfg.power = 10;
+        cfg.preambleLength = 8;
+        ref.tcxoVoltage = Voltage1V8;   /* TCXO 1.8 V, DC-DC regulator */
+        ref.useRegulatorLDO = false;
+        ref.begin(cfg);
         expect_true("RadioLib no-arg scan: free",
                     ref.scanChannel() == RADIOLIB_CHANNEL_FREE, "not CHANNEL_FREE");
         memcpy(want, ref_model.cad_params, 7);

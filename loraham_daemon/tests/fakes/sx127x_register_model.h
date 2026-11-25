@@ -188,16 +188,16 @@ class Sx127xRegisterModel : public RadioLibHal {
     RadioLibTime_t micros() override { clock_us_ += 100; return clock_us_; }
     long pulseIn(uint32_t, uint32_t, RadioLibTime_t) override { return 0; }
 
-    void spiBegin() override { }
+    int16_t spiBegin() override { return RADIOLIB_ERR_NONE; }
     void spiBeginTransaction() override { }
     void spiEndTransaction() override { }
-    void spiEnd() override { }
+    int16_t spiEnd() override { return RADIOLIB_ERR_NONE; }
 
-    void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
+    int16_t spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
     {
         spi_transfers++;
         if (len == 0)
-            return;
+            return RADIOLIB_ERR_NONE;
 
         uint8_t addr = out[0] & 0x7F;
         const bool write = (out[0] & 0x80) != 0;
@@ -214,6 +214,7 @@ class Sx127xRegisterModel : public RadioLibHal {
             if (addr != 0x00)   /* FIFO does not auto-increment */
                 addr++;
         }
+        return RADIOLIB_ERR_NONE;
     }
 
   private:

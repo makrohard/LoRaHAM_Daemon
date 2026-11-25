@@ -166,6 +166,7 @@ static void test_radio_over_ch341(void)
             { 0x97, "SetDio3AsTcxoCtrl (write)" },
             { 0x98, "CalibrateImage (write)" },
             { 0x9D, "SetDio2AsRfSwitchCtrl (write)" },
+            { 0xA0, "SetLoRaSymbNumTimeout (write; RadioLib 8 sends 0 on every LoRa RX arm)" },
         };
         int unchecked = 0;
         for (int op = 0; op < 256; op++) {

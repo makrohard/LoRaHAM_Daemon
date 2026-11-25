@@ -108,30 +108,32 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
      * fails closed: an open failure leaves the handle invalid (transfers
      * fatal), a transfer failure is fatal — silent register corruption is
      * never an option. */
-    void spiBegin() override {
+    int16_t spiBegin() override {
         if (_ownSpiHandle >= 0)
-            return;
+            return RADIOLIB_ERR_NONE;
 
         _ownSpiHandle = lgSpiOpen(_ownSpiDevice, _ownSpiChannel,
                                   _ownSpiSpeed, 0);
         if (_ownSpiHandle < 0)
             fprintf(stderr, "[SPI] lgSpiOpen failed: %s\n",
                     lguErrorText(_ownSpiHandle));
+        return RADIOLIB_ERR_NONE;
     }
 
-    void spiEnd() override {
+    int16_t spiEnd() override {
         if (_ownSpiHandle >= 0) {
             lgSpiClose(_ownSpiHandle);
             _ownSpiHandle = -1;
         }
+        return RADIOLIB_ERR_NONE;
     }
 
-    void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override {
+    int16_t spiTransfer(uint8_t *out, size_t len, uint8_t *in) override {
         /*
          * A GPIO open that already failed during startup must not be turned
          * into a RUNTIME fatal here.
          *
-         * init() latches the failure and returns void, but RadioLib carries on:
+         * init() latches the failure and returns RADIOLIB_ERR_NONE, so RadioLib carries on:
          * Module::init() and the SX127x chip detection run regardless, and the
          * detection's register read arrives at this guard. Exiting 5 from here
          * killed the process before lora_init() could inspect the latch and
@@ -145,7 +147,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
         if (_gpioStartupFailed && !_gpioOperational) {
             if (in)
                 memset(in, 0, len);
-            return;
+            return RADIOLIB_ERR_NONE;
         }
 
         /* Hard invariant: never touch the shared SPI bus without the lock. */
@@ -161,6 +163,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
                     lguErrorText(result));
             fatal("SPI transfer failed (bus error)");
         }
+        return RADIOLIB_ERR_NONE;
     }
 
     void spiEndTransaction() override {
@@ -208,11 +211,17 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
      * NOTE on pull-up flags: PiHal keeps `pinFlags` private and only
      * pullUpDown() ever writes it. Nothing in this daemon or in the SX127x
      * path calls pullUpDown, so the flags are always 0 -- which is what is
-     * passed below. If a profile ever needs pulls, this is the place. */
+     * passed below. If a profile ever needs pulls, this is the place.
+     *
+     * RadioLib 8 gives the HAL methods a status return. Every one here returns
+     * RADIOLIB_ERR_NONE: the failures are handled above as before (latched,
+     * fatal or zero-filled), and Module::init() stops at a non-OK init(), so an
+     * error code would skip the chip detection whose result the startup path
+     * reads together with the latch. */
 
-    void init() override {
+    int16_t init() override {
         if (_ownGpioHandle >= 0)
-            return;
+            return RADIOLIB_ERR_NONE;
 
         int handle = lgGpiochipOpen(_ownGpioDevice);
         if (handle < 0) {
@@ -221,14 +230,15 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
             /* Deliberately do NOT store the negative result: a later init()
              * must really retry, and no read may ever run against it. */
             _gpioStartupFailed = true;
-            return;
+            return RADIOLIB_ERR_NONE;
         }
 
         _ownGpioHandle = handle;
         spiBegin();
+        return RADIOLIB_ERR_NONE;
     }
 
-    void term() override {
+    int16_t term() override {
         /* The base term() closes PiHal's own private handle, which this class
          * never opens -- it would close -1 and leave ours dangling. */
         spiEnd();
@@ -236,6 +246,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
             lgGpiochipClose(_ownGpioHandle);
             _ownGpioHandle = -1;
         }
+        return RADIOLIB_ERR_NONE;
     }
 
     void pinMode(uint32_t pin, uint32_t mode) override {

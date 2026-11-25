@@ -49,13 +49,16 @@ public:
     virtual int16_t standby() { return phy_->standby(); }
     virtual int16_t sleep() { return phy_->sleep(); }
     virtual int16_t clearIrq(uint32_t flags) { return phy_->clearIrq(flags); }
+    /* The RX callback on the IRQ pin (SX127x DIO0, SX1262 DIO1), rising edge:
+     * RadioLib 8's setIrqAction()/clearIrqAction(), which attach and detach
+     * exactly what RadioLib 7's packet-received action did. */
     virtual void setPacketReceivedAction(void (*func)(void))
     {
-        phy_->setPacketReceivedAction(func);
+        phy_->setIrqAction(func);
     }
     virtual void clearPacketReceivedAction()
     {
-        phy_->clearPacketReceivedAction();
+        phy_->clearIrqAction();
     }
     virtual int16_t scanChannel() { return phy_->scanChannel(); }
 

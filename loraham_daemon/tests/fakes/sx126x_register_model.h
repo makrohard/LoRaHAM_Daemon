@@ -147,15 +147,15 @@ class Sx126xRegisterModel : public RadioLibHal {
     RadioLibTime_t micros() override { clock_us_ += 100; return clock_us_; }
     long pulseIn(uint32_t, uint32_t, RadioLibTime_t) override { return 0; }
 
-    void spiBegin() override { }
+    int16_t spiBegin() override { return RADIOLIB_ERR_NONE; }
     void spiBeginTransaction() override { }
     void spiEndTransaction() override { }
-    void spiEnd() override { }
+    int16_t spiEnd() override { return RADIOLIB_ERR_NONE; }
 
-    void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
+    int16_t spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
     {
         if (len == 0)
-            return;
+            return RADIOLIB_ERR_NONE;
 
         const uint8_t op = out[0];
         seen[op] = true;
@@ -196,6 +196,7 @@ class Sx126xRegisterModel : public RadioLibHal {
             in[2] = (uint8_t)(irq_status >> 8);
             in[3] = (uint8_t)(irq_status & 0xFF);
         }
+        return RADIOLIB_ERR_NONE;
     }
 
   private:

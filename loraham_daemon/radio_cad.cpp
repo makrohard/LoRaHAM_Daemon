@@ -33,10 +33,6 @@ RadioCadProbeStatus radio_cad_status_from_scan_state(int state)
     if (state == RADIOLIB_LORA_DETECTED)
         return RADIO_CAD_PROBE_BUSY;
 #endif
-#ifdef RADIOLIB_PREAMBLE_DETECTED
-    if (state == RADIOLIB_PREAMBLE_DETECTED)
-        return RADIO_CAD_PROBE_BUSY;
-#endif
 #ifdef RADIOLIB_ERR_CHANNEL_BUSY
     if (state == RADIOLIB_ERR_CHANNEL_BUSY)
         return RADIO_CAD_PROBE_BUSY;

@@ -1,6 +1,6 @@
 /*
  * The receive verdict of every RX path the daemon reads, against a golden
- * recorded with the RadioLib revision before the current pin.
+ * recorded with the pinned RadioLib.
  *
  * The daemon delivers a received frame only when readData() returns
  * RADIOLIB_ERR_NONE (daemon_rx_read_ok()); every other code is a drop. So the
@@ -41,6 +41,26 @@ static const char *const golden[] = {
 };
 
 static std::vector<std::string> g_lines;
+static int g_prop_ok = 0;
+static int g_prop_fail = 0;
+
+/*
+ * Independent of the golden: the daemon delivers a frame only when readData()
+ * returns RADIOLIB_ERR_NONE. A good frame (and a short read of one) must be
+ * delivered; a frame with a payload CRC error, a header without CRC under
+ * CRC=1, a header error without a valid header, a bad FSK CRC or a failed
+ * command must be dropped -- on every RadioLib revision.
+ */
+static void expect_verdict(const std::string &name, int rc, bool deliver)
+{
+    if ((rc == RADIOLIB_ERR_NONE) == deliver) {
+        g_prop_ok++;
+        printf("[ OK ] %s %s (rc=%d)\n", name.c_str(), deliver ? "delivered" : "dropped", rc);
+    } else {
+        g_prop_fail++;
+        printf("[FAIL] %s: must be %s, rc=%d\n", name.c_str(), deliver ? "delivered" : "dropped", rc);
+    }
+}
 
 static void rx_callback(void) { }
 
@@ -66,7 +86,7 @@ static const RadioRfDefaults *band_defaults(int band)
 
 /* The daemon's read: length first, then readData() with that length. */
 template <class Drv>
-static std::string read_frame(Drv &drv, size_t want)
+static std::string read_frame(Drv &drv, size_t want, int *rc_out)
 {
     size_t len = drv.getPacketLength();
     uint8_t buf[256];
@@ -75,6 +95,7 @@ static std::string read_frame(Drv &drv, size_t want)
     if (n > sizeof(buf))
         n = sizeof(buf);
     int rc = drv.readData(buf, n);
+    *rc_out = rc;
     char head[64];
     snprintf(head, sizeof(head), "len=%zu rc=%d data=", len, rc);
     return std::string(head) + hex_bytes(buf, n);
@@ -108,20 +129,21 @@ struct Lora127Case {
     uint8_t irq;           /* RegIrqFlags: RxDone 0x40, PayloadCrcError 0x20, ValidHeader 0x10 */
     uint8_t hop;           /* RegHopChannel: 0x40 = the header says CRC on */
     size_t want;           /* 0 = the packet length */
+    bool deliver;          /* the daemon must deliver it */
 };
 
 static void sx127x_lora(const char *chip, bool is_hf, int band)
 {
     static const Lora127Case cases[] = {
-        { "good",                       NULL, 0x50, 0x40, 0 },
-        { "payload-crc-error",          NULL, 0x70, 0x40, 0 },
-        { "header-says-no-crc",         NULL, 0x50, 0x00, 0 },
-        { "header-says-no-crc+crc-err", NULL, 0x70, 0x00, 0 },
-        { "crc-off/good",               "0",  0x50, 0x00, 0 },
-        { "crc-off/header-says-crc",    "0",  0x50, 0x40, 0 },
-        { "crc-off/payload-crc-error",  "0",  0x70, 0x00, 0 },
-        { "crc-on-set/header-says-no-crc", "1", 0x50, 0x00, 0 },
-        { "short-read-3-of-5",          NULL, 0x50, 0x40, 3 },
+        { "good",                       NULL, 0x50, 0x40, 0, true },
+        { "payload-crc-error",          NULL, 0x70, 0x40, 0, false },
+        { "header-says-no-crc",         NULL, 0x50, 0x00, 0, false },
+        { "header-says-no-crc+crc-err", NULL, 0x70, 0x00, 0, false },
+        { "crc-off/good",               "0",  0x50, 0x00, 0, true },
+        { "crc-off/header-says-crc",    "0",  0x50, 0x40, 0, true },
+        { "crc-off/payload-crc-error",  "0",  0x70, 0x00, 0, false },
+        { "crc-on-set/header-says-no-crc", "1", 0x50, 0x00, 0, false },
+        { "short-read-3-of-5",          NULL, 0x50, 0x40, 3, true },
     };
     const RadioRfDefaults *def = band_defaults(band);
     for (const Lora127Case &c : cases) {
@@ -135,26 +157,32 @@ static void sx127x_lora(const char *chip, bool is_hf, int band)
         r.model.poke(R127_HOP_CHANNEL, c.hop);
         r.model.poke(R127_IRQ_FLAGS, c.irq);
         r.model.load_rx_fifo(FRAME, FRAME_LEN);
-        std::string got = read_frame(r.drv, c.want);
+        int rc = 0;
+        std::string got = read_frame(r.drv, c.want, &rc);
         char tail[96];
         snprintf(tail, sizeof(tail), " irq-after=%02X cfg=%02X%02X",
                  r.model.peek(R127_IRQ_FLAGS), r.model.peek(R127_MODEM_CFG1),
                  r.model.peek(R127_MODEM_CFG2));
-        g_lines.push_back(std::string(chip) + "/" + std::to_string(band) + "/lora/" + c.name +
-                          " " + got + tail);
+        std::string name = std::string(chip) + "/" + std::to_string(band) + "/lora/" + c.name;
+        expect_verdict(name, rc, c.deliver);
+        g_lines.push_back(name + " " + got + tail);
     }
 }
 
 struct Fsk127Case {
     const char *name;
     uint8_t flags2;        /* RegIrqFlags2: PayloadReady 0x04, CrcOk 0x02 */
+    bool deliver;
 };
 
 static void sx127x_fsk(const char *chip, bool is_hf, int band)
 {
     static const Fsk127Case cases[] = {
-        { "payload-ready+crc-ok", 0x06 },
-        { "payload-ready+crc-bad", 0x04 },
+        { "payload-ready+crc-ok", 0x06, true },
+        /* RadioLib 8 sets CrcAutoClearOff, so the chip presents a bad-CRC
+         * frame with CrcOk clear instead of discarding it: it must be dropped
+         * (RadioLib 7 never read CrcOk; its chip setting discarded the frame). */
+        { "payload-ready+crc-bad", 0x04, false },
     };
     const RadioRfDefaults *def = band_defaults(band);
     for (const Fsk127Case &c : cases) {
@@ -170,13 +198,15 @@ static void sx127x_fsk(const char *chip, bool is_hf, int band)
         memcpy(fifo + 1, FRAME, FRAME_LEN);
         r.model.poke(R127_IRQ_FLAGS2, c.flags2);
         r.model.load_rx_fifo(fifo, sizeof(fifo));
-        std::string got = read_frame(r.drv, 0);
+        int rc = 0;
+        std::string got = read_frame(r.drv, 0, &rc);
         char tail[96];
         snprintf(tail, sizeof(tail), " flags-after=%02X%02X pktcfg1=%02X",
                  r.model.peek(R127_IRQ_FLAGS1), r.model.peek(R127_IRQ_FLAGS2),
                  r.model.peek(R127_PKT_CFG1));
-        g_lines.push_back(std::string(chip) + "/" + std::to_string(band) + "/fsk/" + c.name +
-                          " " + got + tail);
+        std::string name = std::string(chip) + "/" + std::to_string(band) + "/fsk/" + c.name;
+        expect_verdict(name, rc, c.deliver);
+        g_lines.push_back(name + " " + got + tail);
     }
 }
 
@@ -195,25 +225,26 @@ struct Case1262 {
     const char *crc_set;   /* LoRa only: "0"/"1" before the frame; NULL: boot default */
     uint16_t irq;          /* RxDone 0x0002, HeaderValid 0x0010, HeaderErr 0x0020, CrcErr 0x0040, Timeout 0x0200 */
     uint8_t status;        /* reply status byte; 0x22 = OK */
+    bool deliver;
 };
 
 static void sx1262_rx(bool fsk)
 {
     static const Case1262 lora_cases[] = {
-        { "good",                    NULL, 0x0012, 0x22 },
-        { "crc-error",               NULL, 0x0052, 0x22 },
-        { "header-error",            NULL, 0x0022, 0x22 },
-        { "header-error+valid",      NULL, 0x0032, 0x22 },
-        { "crc-off/good",            "0",  0x0012, 0x22 },
-        { "crc-off/crc-error",       "0",  0x0052, 0x22 },
-        { "command-failed-status",   NULL, 0x0012, 0x2A },
-        { "command-timeout+irq-timeout", NULL, 0x0200, 0x26 },
-        { "command-timeout",         NULL, 0x0012, 0x26 },
+        { "good",                    NULL, 0x0012, 0x22, true },
+        { "crc-error",               NULL, 0x0052, 0x22, false },
+        { "header-error",            NULL, 0x0022, 0x22, false },
+        { "header-error+valid",      NULL, 0x0032, 0x22, true },
+        { "crc-off/good",            "0",  0x0012, 0x22, true },
+        { "crc-off/crc-error",       "0",  0x0052, 0x22, false },
+        { "command-failed-status",   NULL, 0x0012, 0x2A, false },
+        { "command-timeout+irq-timeout", NULL, 0x0200, 0x26, false },
+        { "command-timeout",         NULL, 0x0012, 0x26, false },
     };
     static const Case1262 fsk_cases[] = {
-        { "good",                    NULL, 0x0002, 0x22 },
-        { "crc-error",               NULL, 0x0042, 0x22 },
-        { "command-failed-status",   NULL, 0x0002, 0x2A },
+        { "good",                    NULL, 0x0002, 0x22, true },
+        { "crc-error",               NULL, 0x0042, 0x22, false },
+        { "command-failed-status",   NULL, 0x0002, 0x2A, false },
     };
     const RadioRfDefaults *def = band_defaults(868);
     const Case1262 *cases = fsk ? fsk_cases : lora_cases;
@@ -234,12 +265,14 @@ static void sx1262_rx(bool fsk)
         r.model.irq_status = c.irq;
         r.model.seen[0x02] = false;   /* ClearIrqStatus: only readData()'s own */
         r.model.status = c.status;
-        std::string got = read_frame(r.drv, 0);
+        int rc = 0;
+        std::string got = read_frame(r.drv, 0, &rc);
         r.model.status = Sx126xRegisterModel::STATUS_OK;
         std::string clr = r.model.seen[0x02] ? hex_bytes(r.model.op_bytes[0x02], r.model.op_len[0x02])
                                               : std::string("-");
-        g_lines.push_back(std::string("sx1262-tcxo18/868/") + (fsk ? "fsk/" : "lora/") + c.name +
-                          " " + got + " clear-irq=" + clr);
+        std::string name = std::string("sx1262-tcxo18/868/") + (fsk ? "fsk/" : "lora/") + c.name;
+        expect_verdict(name, rc, c.deliver);
+        g_lines.push_back(name + " " + got + " clear-irq=" + clr);
     }
 }
 
@@ -280,6 +313,6 @@ int main(int argc, char **argv)
             printf("[FAIL] rx verdict line %zu:\n  golden: %s\n  now:    %s\n", i, want, got);
         }
     }
-    printf("Summary: %d passed, %d failed\n", ok, fail);
-    return fail ? 1 : 0;
+    printf("Summary: %d passed, %d failed\n", ok + g_prop_ok, fail + g_prop_fail);
+    return (fail || g_prop_fail) ? 1 : 0;
 }

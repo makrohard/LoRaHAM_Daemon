@@ -9,6 +9,20 @@
 #include "driver_config_print.h"
 #include "config_value.h"
 #include "hardware_profile.h"
+#include "radio_units.h"
+
+/* --- FSK RX bandwidth ------------------------------------------------------ */
+/*
+ * The daemon's SX127x RXBW values (config_policy.cpp, 2.6 ... 250 kHz) are the
+ * datasheet's RxBw names, which are single-sideband. RadioLib 8 reads the
+ * value as double-sideband (RadioLib #1891: its table entry 2.6 is 5200 Hz),
+ * so the same register needs twice the value. The FSK boot default is the
+ * 125 kHz RadioLib 7 used.
+ */
+static uint32_t sx127x_rxbw_dsb_hz(float ssb_khz)
+{
+    return 2u * radio_hz_from_khz(ssb_khz);
+}
 
 /* --- Construction ---------------------------------------------------------- */
 
@@ -47,7 +61,10 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
     if (!defaults)
         return RADIOLIB_ERR_NULL_POINTER;
 
-    int16_t state = radio_->begin();
+    /* RadioLib 8: begin() takes one struct; its defaults are the defaults of
+     * RadioLib 7's no-argument begin(). The band's values follow below. */
+    ConfigLoRa_t cfg;
+    int16_t state = radio_->begin(cfg);
 
     if (state != RADIOLIB_ERR_NONE)
         return state;
@@ -57,9 +74,9 @@ int16_t Sx127xDriver::begin(const RadioRfDefaults *defaults)
      * rejected over SPI — the first failure is logged with its stage and
      * returned, and the caller marks the radio FAILED. */
     struct BootStep { const char *stage; int16_t state; } steps[] = {
-        { "FREQ",     radio_->setFrequency(defaults->freq_mhz) },
+        { "FREQ",     radio_->setFrequency(radio_hz_from_mhz(defaults->freq_mhz)) },
         { "SF",       radio_->setSpreadingFactor(defaults->spreading_factor) },
-        { "BW",       radio_->setBandwidth(defaults->bandwidth_khz) },
+        { "BW",       radio_->setBandwidth(radio_hz_from_khz(defaults->bandwidth_khz)) },
         { "SYNC",     radio_->setSyncWord(defaults->sync_word) },
         { "PREAMBLE", radio_->setPreambleLength(defaults->preamble_len) },
         { "CR",       radio_->setCodingRate(defaults->coding_rate) },
@@ -119,7 +136,10 @@ int16_t Sx127xDriver::switchMode(RadioMode_t mode,
         /* FSK modem params stay the established legacy values (RadioLib
          * defaults: 4.8 kbps / 5 kHz dev / family RXBW raster) — only the
          * frequency comes from the band so the process never parks off-band. */
-        int16_t state = radio_->beginFSK(defaults->freq_mhz);
+        ConfigFSK_t cfg;
+        cfg.frequency = radio_hz_from_mhz(defaults->freq_mhz);
+        cfg.receiverBandwidth = sx127x_rxbw_dsb_hz(125.0f);
+        int16_t state = radio_->beginFSK(cfg);
 
         if (state != RADIOLIB_ERR_NONE)
             return state;
@@ -308,6 +328,31 @@ std::chrono::microseconds Sx127xDriver::cadDeadline() const
     return std::chrono::microseconds((long long)deadline_us);
 }
 
+/* --- LoRa receive verdict -------------------------------------------------- */
+/*
+ * With CRC=1 a LoRa frame whose header says "no payload CRC" carried no CRC
+ * check at all, and the most likely cause is a damaged header: the daemon
+ * drops it (daemon_rx_read_ok()). RadioLib 7's readData() returned
+ * RADIOLIB_ERR_LORA_HEADER_DAMAGED for it; RadioLib 8 no longer checks
+ * (RadioLib #1906), so the rule is the daemon's own here: RegModemConfig2
+ * RxPayloadCrcOn set and RegHopChannel CrcOnPayload clear -> the same code.
+ * Both are read before readData(), which clears the frame's flags; a payload
+ * CRC error keeps RadioLib's RADIOLIB_ERR_CRC_MISMATCH, as before.
+ */
+int16_t Sx127xDriver::readData(uint8_t *data, size_t len)
+{
+    bool header_without_crc = false;
+    if (mode_ == RADIO_MODE_LORA)
+        header_without_crc =
+            mod_->SPIgetRegValue(RADIOLIB_SX127X_REG_MODEM_CONFIG_2, 2, 2) != 0 &&
+            mod_->SPIgetRegValue(RADIOLIB_SX127X_REG_HOP_CHANNEL, 6, 6) == 0;
+
+    int16_t state = radio_->readData(data, len);
+    if (state == RADIOLIB_ERR_NONE && header_without_crc)
+        return RADIOLIB_ERR_LORA_HEADER_DAMAGED;
+    return state;
+}
+
 int16_t Sx127xDriver::scanChannel()
 {
     /* startChannelScan() checks the active modem itself (ERR_WRONG_MODEM),
@@ -338,7 +383,7 @@ int16_t Sx127xDriver::scanChannel()
             radio_->clearIrqFlags(RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DONE |
                                   RADIOLIB_SX127X_CLEAR_IRQ_FLAG_CAD_DETECTED);
 
-            return detected ? RADIOLIB_PREAMBLE_DETECTED
+            return detected ? RADIOLIB_LORA_DETECTED
                             : RADIOLIB_CHANNEL_FREE;
         }
 
@@ -421,7 +466,7 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
     if (key == "BW") {
         float bw = 0.0f;
         if (config_value_parse_float_exact(val, &bw) && config_policy_lora_bandwidth_valid(bw)) {
-            state = radio.setBandwidth(bw);
+            state = radio.setBandwidth(radio_hz_from_khz(bw));
             if (state == RADIOLIB_ERR_NONE)
                 bw_khz_ = bw;   /* only a written value describes the chip */
             driver_config_print_state_float("BW", bw, state);
@@ -433,7 +478,7 @@ int16_t Sx127xDriver::applyLoraParam(const char *tag,
     if (key == "FREQ") {
         float f = 0.0f;
         if (config_value_parse_float_exact(val, &f) && f > 0.0f) {
-            state = radio.setFrequency(f);
+            state = radio.setFrequency(radio_hz_from_mhz(f));
             if (state == RADIOLIB_ERR_NONE)
                 printf(" FREQ=\033[92m%.6f\033[0m", f);
             else
@@ -540,7 +585,7 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
     if (key == "FREQ") {
         float f = 0.0f;
         if (config_value_parse_float_exact(val, &f) && f > 0.0f) {
-            state = radio.setFrequency(f);
+            state = radio.setFrequency(radio_hz_from_mhz(f));
             if (state == RADIOLIB_ERR_NONE)
                 printf(" FREQ=\033[92m%.6f\033[0m", f);
             else
@@ -567,7 +612,7 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
     if (key == "BR") {
         float br = 0.0f;
         if (config_value_parse_float_exact(val, &br) && config_policy_fsk_bitrate_valid(br)) {
-            state = radio.setBitRate(br);
+            state = radio.setBitRate(radio_bps_from_kbps(br));
             driver_config_print_state_float("BR", br, state);
         } else {
             driver_config_print_rejected("BR", val);
@@ -577,7 +622,7 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
     if (key == "FREQDEV") {
         float fd = 0.0f;
         if (config_value_parse_float_exact(val, &fd) && config_policy_fsk_freqdev_valid(fd)) {
-            state = radio.setFrequencyDeviation(fd);
+            state = radio.setFrequencyDeviation(radio_hz_from_khz(fd));
             driver_config_print_state_float("FREQDEV", fd, state);
         } else {
             driver_config_print_rejected("FREQDEV", val);
@@ -587,7 +632,7 @@ int16_t Sx127xDriver::applyFskParam(const char *tag,
     if (key == "RXBW") {
         float bw = 0.0f;
         if (config_value_parse_float_exact(val, &bw) && config_policy_fsk_rxbw_valid(bw)) {
-            state = radio.setRxBandwidth(bw);
+            state = radio.setRxBandwidth(sx127x_rxbw_dsb_hz(bw));
             driver_config_print_state_float("RXBW", bw, state);
         } else {
             driver_config_print_rejected("RXBW", val);

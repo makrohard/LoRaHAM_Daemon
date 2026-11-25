@@ -53,14 +53,18 @@ public:
      * no wired interrupt line. This is what RadioLib itself does on SX126x and
      * LR11x0; SX127x is the sole outlier.
      *
-     * Returns RADIOLIB_CHANNEL_FREE, RADIOLIB_PREAMBLE_DETECTED (the same value
-     * the blocking implementation returned when DIO1 fired), or a negative
+     * Returns RADIOLIB_CHANNEL_FREE, RADIOLIB_LORA_DETECTED (what RadioLib 8's
+     * blocking implementation returns when DIO1 fires), or a negative
      * RadioLib error. A hardware-deadline expiry is RADIOLIB_ERR_RX_TIMEOUT,
      * which the daemon maps to UNAVAILABLE: an indeterminate scan ends the TX
      * attempt and must never be flattened into BUSY, or CADTXAFTERTIMEOUT would
      * let a sequence of broken scans reach send-anyway.
      */
     int16_t scanChannel() override;
+
+    /* RadioLib's readData(), plus the daemon's LoRa header rule under CRC=1
+     * (see sx127x_driver.cpp). */
+    int16_t readData(uint8_t *data, size_t len) override;
 
     /* Reads RegIrqFlags and reports RxDone. See RadioDriver::rxDonePending()
      * for why a probe must ask the chip and not only the software flag. */

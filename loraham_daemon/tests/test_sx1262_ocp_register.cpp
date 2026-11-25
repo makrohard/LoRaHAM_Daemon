@@ -130,7 +130,7 @@ static void test_ocp_100_on_every_path(void)
     expect_hex("--ocp 100: back to LoRa", rig.model.peek(REG_OCP), OCP_100MA);
 }
 
-/* The driver returns setCurrentLimit()'s result. With RadioLib 187ef247 that
+/* The driver returns setCurrentLimit()'s result. With RadioLib 8.0.0 that
  * fails only on an out-of-range value: its writeRegister() returns ERR_NONE
  * whatever the chip answers, so no SPI-level fault can make the write fail.
  * 145 mA is outside RadioLib's 0..140 and is refused by --ocp's validation;
@@ -155,9 +155,19 @@ static void test_radiolib_alone_leaves_60(void)
     Module mod(&model, 21, 16, 18, 20);
     SX1262 radio(&mod);
 
-    expect_int("RadioLib begin() succeeds on the model",
-               radio.begin(869.525f, 250.0f, 11, 5, 0x2B, 10, 16, 1.8f, false),
-               RADIOLIB_ERR_NONE);
+    /* 869.525 MHz, BW 250 kHz, SF11, CR5, sync 0x2B, 10 dBm, preamble 16,
+     * TCXO 1.8 V, DC-DC regulator. */
+    ConfigLoRa_t cfg;
+    cfg.frequency = 869525000;
+    cfg.bandwidth = 250000;
+    cfg.spreadingFactor = 11;
+    cfg.codingRate = 5;
+    cfg.syncWord = 0x2B;
+    cfg.power = 10;
+    cfg.preambleLength = 16;
+    radio.tcxoVoltage = Voltage1V8;
+    radio.useRegulatorLDO = false;
+    expect_int("RadioLib begin() succeeds on the model", radio.begin(cfg), RADIOLIB_ERR_NONE);
     expect_hex("RadioLib alone: OCP 60 mA", model.peek(REG_OCP), OCP_60MA);
 }
 

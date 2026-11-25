@@ -179,15 +179,20 @@ Lifecycle/helper behavior:
   SET key over its accepted values; per case the setter's return code, the RX interrupt pin/edge
   and what the chip holds -- SX127x all registers, SX1262 every opcode sent with its last
   parameter bytes plus the register windows RadioLib writes -- compared line by line with
-  `tests/golden/radio_register_image.inc`, recorded with the RadioLib revision before the pin.
-  `--print FILE` writes the current image)
+  `tests/golden/radio_register_image.inc`, recorded with the pinned RadioLib (its first line names
+  the revision; a pin update regenerates it with `--print FILE` in the same commit and names every
+  moved byte there); every RX arm must be continuous RX)
 - `test_radio_rx_verdict` (same rigs: one received frame per case, read the daemon's way
   (getPacketLength(), then readData()); per case the length, readData()'s return code -- the
   daemon delivers only RADIOLIB_ERR_NONE -- the returned bytes and the flags left behind:
   SX127x LoRa good / payload CRC error / header without CRC under CRC=1 and CRC=0 / short read,
   SX127x FSK with and without CrcOk, SX1262 LoRa and FSK good / CRC error / header error / a
-  failed or timed-out command; compared with `tests/golden/radio_rx_verdict.inc`, recorded with
-  the RadioLib revision before the pin)
+  failed or timed-out command; compared with `tests/golden/radio_rx_verdict.inc`, recorded like
+  the register image; independent of the golden, every case must be delivered or dropped as the
+  daemon's rule says)
+- `test_radio_units` (`radio_units.h`: every policy-listed LoRa BW and SX126x RXBW to the exact Hz
+  RadioLib takes, band defaults and FSK values to the nearest Hz, the TCXO voltage table incl.
+  crystal and refused voltages, and every SX1262 hardware profile's voltage)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:
