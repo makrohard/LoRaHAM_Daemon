@@ -42,6 +42,7 @@
 #define LG_BAD_GPIO_NUMBER      -73
 #define LG_BAD_READ             -76
 #define LG_BAD_WRITE            -77
+#define LG_GPIO_BUSY            -79
 #define LG_GPIO_NOT_ALLOCATED   -80
 
 /* Line and edge flags (lgpio.h lines 286-308) */

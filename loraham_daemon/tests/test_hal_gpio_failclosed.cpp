@@ -57,6 +57,7 @@ struct FakeGpio {
     int  chip_open_result = 7;      /* >= 0 is a handle; < 0 is a failure */
     int  read_result      = 0;      /* 0/1 normally, negative to inject */
     int  claim_input_result = 0;
+    int  claim_output_result = 0;
     int  claim_alert_result = 0;
     int  write_result       = 0;
     int  free_result        = 0;
@@ -81,7 +82,7 @@ extern "C" {
 int lgGpiochipOpen(int)                       { g.chip_opens++; return g.chip_open_result; }
 int lgGpiochipClose(int)                      { return 0; }
 int lgGpioClaimInput(int, int, int)           { return g.claim_input_result; }
-int lgGpioClaimOutput(int, int, int, int)     { return 0; }
+int lgGpioClaimOutput(int, int, int, int)     { return g.claim_output_result; }
 int lgGpioClaimAlert(int, int, int, int, int) { return g.claim_alert_result; }
 int lgGpioFree(int, int)                      { return g.free_result; }
 int lgGpioRead(int, int)                      { g.reads++; return g.read_result; }
@@ -98,7 +99,9 @@ int lgSpiXfer(int, const char *, char *rx, int count)
     return count;
 }
 
-const char *lguErrorText(int)  { return "fake lgpio error"; }
+/* Code-dependent, so a test can see that the failing call's own code is the
+ * one named. */
+const char *lguErrorText(int e) { return e == LG_GPIO_BUSY ? "GPIO busy" : "fake lgpio error"; }
 void        lguSleep(double)   { }
 uint64_t    lguTimestamp(void) { return 0; }
 
@@ -377,6 +380,101 @@ static void test_gpio_open_failure_survives_real_radio_init(void)
            code == LORAHAM_EXIT_LOCK_ERROR, detail);
 }
 
+/*
+ * A GPIO failure names the failing call, the pin and lgpio's own error (text
+ * and code): a kit log that says only "lgGpioClaim* failed" cannot tell a busy
+ * line from a bad handle, nor which line it was. Every lgpio call of the HAL,
+ * once operational (exit 5, message on the FATAL line) and the claim also at
+ * startup (latched "[GPIO] startup error:" line, no exit).
+ */
+#define FAKE_GPIO_BUSY LG_GPIO_BUSY   /* -79 in lgpio.h */
+
+enum FailCall { F_CLAIM_IN, F_CLAIM_OUT, F_CLAIM_ALERT, F_SET_ALERTS, F_WRITE, F_READ,
+                F_FREE, F_SET_ALERTS_DETACH };
+
+static void inject_and_call(LockingPiHal &hal, FailCall c)
+{
+    switch (c) {
+    case F_CLAIM_IN:    g.claim_input_result = FAKE_GPIO_BUSY;  hal.pinMode(19, PI_INPUT); break;
+    case F_CLAIM_OUT:   g.claim_output_result = FAKE_GPIO_BUSY; hal.pinMode(19, PI_OUTPUT); break;
+    case F_CLAIM_ALERT: g.claim_alert_result = FAKE_GPIO_BUSY;
+                        hal.attachInterrupt(19, NULL, LG_RISING_EDGE); break;
+    case F_SET_ALERTS:  g.set_alerts_result = FAKE_GPIO_BUSY;
+                        hal.attachInterrupt(19, NULL, LG_RISING_EDGE); break;
+    case F_WRITE:       g.write_result = FAKE_GPIO_BUSY; hal.digitalWrite(19, 1); break;
+    case F_READ:        g.read_result = FAKE_GPIO_BUSY;  (void)hal.digitalRead(19); break;
+    case F_FREE:        g.free_result = FAKE_GPIO_BUSY;  hal.detachInterrupt(19); break;
+    case F_SET_ALERTS_DETACH:
+                        g.set_alerts_result = FAKE_GPIO_BUSY; hal.detachInterrupt(19); break;
+    }
+}
+
+/* Runs one injected failure in a child; returns the exit code (or -1) and
+ * the child's stderr in err. */
+static int run_failure_child(FailCall c, bool operational, char *err, size_t errsz)
+{
+    int fds[2];
+    err[0] = '\0';
+    if (pipe(fds) != 0)
+        return -1;
+    fflush(NULL);
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(fds[0]);
+        dup2(fds[1], 2);
+        LockingPiHal hal(0, 2000000, 0, 0, fake_flock);
+        hal.init();
+        if (operational)
+            hal.gpio_mark_operational();
+        inject_and_call(hal, c);
+        fflush(NULL);
+        _exit(0);
+    }
+    close(fds[1]);
+    size_t n = 0;
+    ssize_t r;
+    while (n + 1 < errsz && (r = read(fds[0], err + n, errsz - 1 - n)) > 0)
+        n += (size_t)r;
+    err[n] = '\0';
+    close(fds[0]);
+    int status = 0;
+    if (pid < 0 || waitpid(pid, &status, 0) != pid || !WIFEXITED(status))
+        return -1;
+    return WEXITSTATUS(status);
+}
+
+static void test_gpio_failure_names_call_pin_and_error(void)
+{
+    static const struct { FailCall c; const char *text; } cases[] = {
+        { F_CLAIM_IN,    "lgGpioClaimInput failed (pin 19: GPIO busy, -79)" },
+        { F_CLAIM_OUT,   "lgGpioClaimOutput failed (pin 19: GPIO busy, -79)" },
+        { F_CLAIM_ALERT, "lgGpioClaimAlert failed (pin 19: GPIO busy, -79)" },
+        { F_SET_ALERTS,  "lgGpioSetAlertsFunc failed (pin 19: GPIO busy, -79)" },
+        { F_WRITE,       "lgGpioWrite failed (pin 19: GPIO busy, -79)" },
+        { F_READ,        "lgGpioRead failed (pin 19: GPIO busy, -79)" },
+        { F_FREE,        "lgGpioFree failed (pin 19: GPIO busy, -79)" },
+        { F_SET_ALERTS_DETACH, "lgGpioSetAlertsFunc (detach) failed (pin 19: GPIO busy, -79)" },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        reset_fake();
+        char err[512], want[200], name[160], detail[700];
+        int rc = run_failure_child(cases[i].c, true, err, sizeof(err));
+        snprintf(want, sizeof(want), "[RADIO] FATAL: %s - aborting", cases[i].text);
+        snprintf(name, sizeof(name), "operational: \"%s\", exit 5", cases[i].text);
+        snprintf(detail, sizeof(detail), "exit %d, stderr: %s", rc, err);
+        expect(name, rc == LORAHAM_EXIT_RUNTIME_RADIO_IO_ERROR && strstr(err, want) != NULL,
+               detail);
+    }
+
+    reset_fake();
+    char err[512], detail[700];
+    int rc = run_failure_child(F_CLAIM_IN, false, err, sizeof(err));
+    snprintf(detail, sizeof(detail), "exit %d, stderr: %s", rc, err);
+    expect("startup: the claim failure is latched with call, pin and error, no exit",
+           rc == 0 && strstr(err, "[GPIO] startup error: lgGpioClaimInput failed "
+                                  "(pin 19: GPIO busy, -79)") != NULL, detail);
+}
+
 int main(void)
 {
     test_read_error_is_not_a_level();
@@ -388,6 +486,7 @@ int main(void)
     test_a_failed_detach_is_not_swallowed();
     test_gpio_open_failure_survives_real_radio_init();
     test_a_failed_alert_clear_is_not_swallowed();
+    test_gpio_failure_names_call_pin_and_error();
 
     printf("\nSummary: ok=%d fail=%d\n", g_ok, g_fail);
     return g_fail ? 1 : 0;

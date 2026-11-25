@@ -263,13 +263,18 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
             case PI_OUTPUT:
                 result = lgGpioClaimOutput(_ownGpioHandle, 0, (int)pin, LG_HIGH);
                 break;
-            default:
-                gpio_failure("pinMode with an unknown mode");
+            default: {
+                char why[96];
+                snprintf(why, sizeof(why), "pinMode with an unknown mode %u (pin %u)",
+                         (unsigned)mode, (unsigned)pin);
+                gpio_failure(why);
                 return;
+            }
         }
 
         if (result < 0)
-            gpio_failure("lgGpioClaim* failed");
+            gpio_call_failed(mode == PI_INPUT ? "lgGpioClaimInput" : "lgGpioClaimOutput",
+                             pin, result);
     }
 
     void digitalWrite(uint32_t pin, uint32_t value) override {
@@ -278,8 +283,9 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
         if (!gpio_ready("digitalWrite"))
             return;
 
-        if (lgGpioWrite(_ownGpioHandle, (int)pin, (int)value) < 0)
-            gpio_failure("lgGpioWrite failed");
+        int result = lgGpioWrite(_ownGpioHandle, (int)pin, (int)value);
+        if (result < 0)
+            gpio_call_failed("lgGpioWrite", pin, result);
     }
 
     uint32_t digitalRead(uint32_t pin) override {
@@ -290,7 +296,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
 
         int result = lgGpioRead(_ownGpioHandle, (int)pin);
         if (result < 0) {
-            gpio_failure("lgGpioRead failed");
+            gpio_call_failed("lgGpioRead", pin, result);
             /* Startup path only (gpio_failure() does not return once
              * operational). LOW is the safe answer: it lets a bounded wait
              * time out, whereas HIGH manufactures a finished TX or a free
@@ -314,7 +320,7 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
             /* An unregistered RX callback is silent deafness: the radio
              * reports READY and no packet ever arrives. The base class only
              * printed here. */
-            gpio_failure("lgGpioClaimAlert failed");
+            gpio_call_failed("lgGpioClaimAlert", interruptNum, result);
             return;
         }
 
@@ -323,9 +329,10 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
         interruptModes[interruptNum] =
             (mode == this->GpioInterruptFalling) ? LG_LOW : LG_HIGH;
 
-        if (lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum,
-                                lgpioAlertHandler, (void *)this) < 0)
-            gpio_failure("lgGpioSetAlertsFunc failed");
+        result = lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum,
+                                     lgpioAlertHandler, (void *)this);
+        if (result < 0)
+            gpio_call_failed("lgGpioSetAlertsFunc", interruptNum, result);
     }
 
     void detachInterrupt(uint32_t interruptNum) override {
@@ -349,12 +356,13 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
          * unexpected negative lgpio result means radio-I/O integrity is gone;
          * swallowing it here would have been the one place that quietly broke
          * that rule. */
-        if (lgGpioFree(_ownGpioHandle, (int)interruptNum) < 0)
-            gpio_failure("lgGpioFree failed");
+        int result = lgGpioFree(_ownGpioHandle, (int)interruptNum);
+        if (result < 0)
+            gpio_call_failed("lgGpioFree", interruptNum, result);
 
-        if (lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum,
-                                NULL, NULL) < 0)
-            gpio_failure("lgGpioSetAlertsFunc (detach) failed");
+        result = lgGpioSetAlertsFunc(_ownGpioHandle, (int)interruptNum, NULL, NULL);
+        if (result < 0)
+            gpio_call_failed("lgGpioSetAlertsFunc (detach)", interruptNum, result);
     }
 
     /* True until a GPIO operation failed during startup. The daemon checks
@@ -375,6 +383,16 @@ class LockingPiHal : public PiHal, public DaemonHalControl {
         snprintf(why, sizeof(why), "%s without an open GPIO handle", what);
         gpio_failure(why);
         return false;
+    }
+
+    /* A failed lgpio call on one line: the call, the pin and lgpio's own
+     * error (text and code) go into the message, so a log names what failed
+     * and why -- "busy" and "bad handle" call for different actions. */
+    void gpio_call_failed(const char *call, uint32_t pin, int code) {
+        char why[160];
+        snprintf(why, sizeof(why), "%s failed (pin %u: %s, %d)",
+                 call, (unsigned)pin, lguErrorText(code), code);
+        gpio_failure(why);
     }
 
     /* Startup: latch and return, so initialisation fails cleanly and the
