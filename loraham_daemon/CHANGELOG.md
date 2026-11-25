@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.7.2
+
+- **Fix:** a `MANAGED` TX waiting for a free channel no longer cuts off a frame that is still arriving. Since
+  0.9.0 each CAD probe of the wait stopped the receiver before it looked and kept only a frame that had already
+  completed, so while a TX waited the station lost the frame that kept the channel busy (every client that sends
+  with `MANAGED` TX, and `GET CHANNEL`). A frame in progress now answers BUSY with reception left running, and
+  the frame is received as usual; the TX waits as on any busy channel (`CADWAIT` unchanged).
+  - SX1262: a preamble or a valid header latched without RxDone. LoRa RX now also latches PREAMBLE_DETECTED in
+    the IRQ status (the RX interrupt still fires on RxDone only); FSK RX is unchanged.
+  - SX127x: RegModemStat signal synchronized or header valid, unless RxDone is already latched. "RX on-going" is not
+    used: on sx1276 boards it reads set on an idle channel all the time the receiver runs.
+  - Trusted for at most the airtime of a 4-byte frame until a valid header, and of a 255-byte frame after it,
+    from the first sighting; then the probe scans as before, at every probe, until the chip shows no frame once.
+    A status that stays set can therefore not keep the channel BUSY.
+  - Not covered: a frame whose first symbols arrive before the chip reports the preamble (SX127x: signal
+    synchronized, how early it sets in a real preamble is not measured; it never set on an idle channel), or
+    during the CAD scan itself. Where the 255-byte airtime exceeds `CADWAIT` (SF12), a stale latched header ends
+    the waiting TX as `CHANNEL_BUSY`, as a real frame of that length does. On SX127x, signal synchronized or
+    header valid that flapped on and off on an idle channel would keep the `MANAGED` TX from keying again: the
+    hold-off covers only a status that stays set (neither bit set on an idle channel in the measurement).
+
 ## 1.7.1
 
 - A failed per-pin lgpio operation (claim input/output, claim alert, alert function set or clear, write,
