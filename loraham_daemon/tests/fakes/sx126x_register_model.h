@@ -20,6 +20,9 @@
  *   0x12 GetIrqStatus   [op, status, irqHi, irqLo]         answered from irq_status
  *   anything else       accepted; reply bytes after the status are zero
  *
+ * The parameter bytes of the last command per opcode are kept (op_bytes), and
+ * the last attachInterrupt/detachInterrupt, for the register-image test.
+ *
  * Every opcode is recorded, so the test can name exactly which commands
  * begin() and beginFSK() send and fail on one the model has not been checked
  * against. Zero is the right answer for the one command on these paths that
@@ -59,6 +62,15 @@ class Sx126xRegisterModel : public RadioLibHal {
     int cad_params_count = 0;     /* SetCadParams commands since reset() */
     int irq_high_pin = -1;        /* the pin that reads HIGH; -1 = none */
     uint16_t irq_status = 0;      /* what GetIrqStatus answers */
+    /* The parameter bytes (after the opcode) of the last command per opcode,
+     * capped at OP_BYTES_MAX, and their count. */
+    static const size_t OP_BYTES_MAX = 24;
+    uint8_t op_bytes[256][OP_BYTES_MAX];
+    uint8_t op_len[256];
+    /* The last attachInterrupt (pin, mode) and detachInterrupt pin; -1 = none. */
+    int attach_pin = -1;
+    uint32_t attach_mode = 0;
+    int detach_pin = -1;
 
     Sx126xRegisterModel()
       : RadioLibHal(/*input*/ 0, /*output*/ 1, /*low*/ 0, /*high*/ 1,
@@ -75,10 +87,24 @@ class Sx126xRegisterModel : public RadioLibHal {
         memset(dio_irq, 0, sizeof(dio_irq));
         memset(cad_dio_irq, 0, sizeof(cad_dio_irq));
         cad_params_count = 0;
+        memset(op_bytes, 0, sizeof(op_bytes));
+        memset(op_len, 0, sizeof(op_len));
+        attach_pin = -1;
+        attach_mode = 0;
+        detach_pin = -1;
         /* findChip() compares the first six bytes with "SX1261" -- the
          * SX1262 reports the SX1261 string, and RadioLib expects that. */
         memcpy(&regs_[REG_VERSION_STRING], "SX1261 V2D 2D02", 16);
         packet_type_ = 0;
+    }
+
+    /* Forget which opcodes were sent and their bytes (the register map
+     * stays): the next image shows only what the following path sends. */
+    void forget_ops()
+    {
+        memset(seen, 0, sizeof(seen));
+        memset(op_bytes, 0, sizeof(op_bytes));
+        memset(op_len, 0, sizeof(op_len));
     }
 
     /* What GetPacketType answers next (RadioLib refuses LoRa setters off LoRa). */
@@ -94,8 +120,12 @@ class Sx126xRegisterModel : public RadioLibHal {
     {
         return irq_high_pin >= 0 && pin == (uint32_t)irq_high_pin ? 1 : 0;
     }
-    void attachInterrupt(uint32_t, void (*)(void), uint32_t) override { }
-    void detachInterrupt(uint32_t) override { }
+    void attachInterrupt(uint32_t pin, void (*)(void), uint32_t mode) override
+    {
+        attach_pin = (int)pin;
+        attach_mode = mode;
+    }
+    void detachInterrupt(uint32_t pin) override { detach_pin = (int)pin; }
     void delay(RadioLibTime_t) override { }
     void delayMicroseconds(RadioLibTime_t) override { }
     /* A clock that moves when read, so a bounded RadioLib wait cannot spin. */
@@ -115,6 +145,8 @@ class Sx126xRegisterModel : public RadioLibHal {
 
         const uint8_t op = out[0];
         seen[op] = true;
+        op_len[op] = (uint8_t)(len - 1 < OP_BYTES_MAX ? len - 1 : OP_BYTES_MAX);
+        memcpy(op_bytes[op], out + 1, op_len[op]);
 
         if (in) {
             memset(in, 0, len);

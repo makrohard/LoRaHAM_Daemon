@@ -174,6 +174,13 @@ Lifecycle/helper behavior:
   `MODE=FSK` and after the return to LoRa, where RadioLib alone leaves 60 mA; a value RadioLib refuses (145 mA, past
   `--ocp`'s validation) fails `begin()` with RadioLib's error; and the test fails on any SPI opcode the minimal model has
   not been checked against)
+- `test_radio_register_image` (both real drivers and the real pinned RadioLib on the register
+  models, every band's boot defaults: boot, RX re-arm, FSK and back, CAD free/detected and every
+  SET key over its accepted values; per case the setter's return code, the RX interrupt pin/edge
+  and what the chip holds -- SX127x all registers, SX1262 every opcode sent with its last
+  parameter bytes plus the register windows RadioLib writes -- compared line by line with
+  `tests/golden/radio_register_image.inc`, recorded with the RadioLib revision before the pin.
+  `--print FILE` writes the current image)
 - `test_cad_monitor_state` (opt-in `CAD=0/1` CONF monitor: single-edge emission, RX-pending must not suppress `CAD=0`, free-confirmation hysteresis/dead band, non-destructive to RX, and latch-reset semantics)
 
 Multi-instance (split per-band) operation:

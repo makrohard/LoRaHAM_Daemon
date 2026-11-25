@@ -65,6 +65,10 @@ class Sx127xRegisterModel : public RadioLibHal {
     uint8_t last_irq_clear_mask = 0;
     int spi_transfers = 0;
     int digital_reads = 0;      /* must stay 0: the repair reads registers */
+    /* The last attachInterrupt (pin, mode) and detachInterrupt pin; -1 = none. */
+    int attach_pin = -1;
+    uint32_t attach_mode = 0;
+    int detach_pin = -1;
 
     Sx127xRegisterModel()
       : RadioLibHal(/*input*/ 0, /*output*/ 1, /*low*/ 0, /*high*/ 1,
@@ -89,6 +93,9 @@ class Sx127xRegisterModel : public RadioLibHal {
         last_irq_clear_mask = 0;
         spi_transfers = 0;
         digital_reads = 0;
+        attach_pin = -1;
+        attach_mode = 0;
+        detach_pin = -1;
     }
 
     uint8_t peek(uint8_t addr) const { return regs_[addr & 0x7F]; }
@@ -142,8 +149,12 @@ class Sx127xRegisterModel : public RadioLibHal {
      */
     int reject_writes_to = -1;
 
-    void attachInterrupt(uint32_t, void (*)(void), uint32_t) override { }
-    void detachInterrupt(uint32_t) override { }
+    void attachInterrupt(uint32_t pin, void (*)(void), uint32_t mode) override
+    {
+        attach_pin = (int)pin;
+        attach_mode = mode;
+    }
+    void detachInterrupt(uint32_t pin) override { detach_pin = (int)pin; }
     void delay(RadioLibTime_t) override { }
     void delayMicroseconds(RadioLibTime_t) override { }
     /*
