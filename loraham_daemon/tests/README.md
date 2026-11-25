@@ -204,8 +204,8 @@ Multi-instance (split per-band) operation:
   level and never as a truthy one -- RadioLib's TX and CAD waits are `while(!digitalRead(irq))`, so a
   negative code read through `uint32_t` would end the wait at once and report success; a failed
   gpiochip open does not proceed to SPI and does not block a retry; and a read on a pin whose alert was
-  detached stays legal, because every TX detaches and reinstalls it; and every GPIO failure message names
-  the lgpio call, the pin and lgpio's error text and code, at startup and once operational. Injects lgpio failures through
+  detached stays legal, because every TX detaches and reinstalls it; and the failure message of each per-pin
+  lgpio operation names the lgpio call, the pin and lgpio's error text and code, at startup and once operational. Injects lgpio failures through
   `tests/fakes/lgpio.h`, so no library and no hardware are involved)
 - `test_runtime_lockdir` (trusted lock-directory/file validation: missing, symlink, non-directory, group/world-writable, non-root-owner-when-required, regular-file and non-regular/symlink lock files, and override-mode directory creation)
 - `test_stdout_stamp` (UTC timestamps on the log: a line built from SIX printf calls comes out as

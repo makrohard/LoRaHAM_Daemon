@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.1
+
+- A failed per-pin lgpio operation (claim input/output, claim alert, alert function set or clear, write,
+  read, free) now names the lgpio call, the pin, and lgpio's error text and code, e.g.
+  `[RADIO] FATAL: lgGpioClaimInput failed (pin 19: GPIO busy, -79) - aborting to prevent unsynchronised radio I/O`
+  (1.7.0: `lgGpioClaim* failed`). The gpiochip-open and no-open-handle messages are unchanged. Exit codes, and
+  which failures are fatal, are unchanged.
+
 ## 1.7.0
 
 - **Build change:** RadioLib 8.0.0 (`72be77dafe64`, was `187ef24791c3`). A source build needs that checkout
