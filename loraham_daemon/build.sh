@@ -435,10 +435,11 @@ compiler_flags() {
 
 # The Pi's SPI and GPIO (every preset but the USB sticks) need lgpio. A host without <lgpio.h> (a PC
 # distribution that does not package it) gets a daemon for the USB stick presets only, which refuses the others
-# at start (docs/cli.md).
+# at start (docs/cli.md). The probe gets the daemon compile's flags, LDFLAGS too: a --sysroot given there reaches
+# that compile's header search (the preprocessor ignores the linker options).
 find_lgpio() {
   if printf '#include <lgpio.h>\n' |
-    "$cxx" "${cxxflags[@]}" "${extra_cxxflags[@]}" -x c++ -E - >/dev/null 2>&1; then
+    "$cxx" "${cxxflags[@]}" "${extra_cxxflags[@]}" "${extra_ldflags[@]}" -x c++ -E - >/dev/null 2>&1; then
     lgpio_flags=(-llgpio)
     lgpio_note="yes"
   else

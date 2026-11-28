@@ -229,11 +229,15 @@ int main(void)
        "/radiolib/src/RadioLib.h' '" + g_tmp + "/radiolib/src/hal/RPi/PiHal.h' '" + g_tmp +
        "/radiolib/build/libRadioLib.a'");
 
-    /* The stub daemon compiler: answers the lgpio probe, records its arguments, writes -o. */
+    /* The stub daemon compiler: answers the lgpio probe, records its arguments, writes -o. With
+     * FAKE_LGPIO_NEEDS=<arg> it finds <lgpio.h> only when the probe passes that argument (a header search
+     * option given in LDFLAGS, such as --sysroot). */
     {
         FILE *f = fopen((g_tmp + "/fake-cxx").c_str(), "w");
         fputs("#!/bin/sh\ncase \" $* \" in *\" -E \"*)\n"
-              "  in=$(cat); case \"$in\" in *'<lgpio.h>'*) [ \"${FAKE_NO_LGPIO:-}\" = 1 ] && exit 1 ;; esac\n"
+              "  in=$(cat); case \"$in\" in *'<lgpio.h>'*) [ \"${FAKE_NO_LGPIO:-}\" = 1 ] && exit 1\n"
+              "    [ -z \"${FAKE_LGPIO_NEEDS:-}\" ] || case \" $* \" in *\" $FAKE_LGPIO_NEEDS \"*) ;; *) exit 1 ;; esac ;;\n"
+              "  esac\n"
               "  exit 0 ;;\nesac\n"
               "printf '%s\\n' \"$@\" > \"$FAKE_CXX_RECORD\"\n"
               "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then : > \"$2\"; fi; shift; done\n", f);
@@ -330,6 +334,25 @@ int main(void)
                sh("grep -qx -- -llgpio '" + args + "'") != 0);
         expect("no lgpio: log says USB stick presets only",
                log_contains(log, "Pi SPI/GPIO:  no (no <lgpio.h>): USB stick presets only"));
+    }
+
+    /* <lgpio.h> found only through an option given in LDFLAGS (run_build's -L stands for a --sysroot there):
+     * the probe searches with it, so the daemon links -llgpio, as its compile would find the header. */
+    {
+        std::string out, log;
+        int rc = run_build("lgpio-via-ldflags", "", lock, &out, &log,
+                           "FAKE_LGPIO_NEEDS='-L" + g_tmp + "/fakeusb' ");
+        std::string args = out + "/cxx-args.txt";
+        expect("lgpio via LDFLAGS: build succeeds", rc == 0);
+        if (rc != 0)
+            sh("cat '" + log + "'");
+        expect("lgpio via LDFLAGS: the record is the daemon's compile and link",
+               sh("grep -qx -- -ldl '" + args + "'") == 0 &&
+                   log_contains(args, ("-DLORAHAM_CH341_PIN_EXPECTED=\"" + head + "\"").c_str()));
+        expect("lgpio via LDFLAGS: daemon links -llgpio", sh("grep -qx -- -llgpio '" + args + "'") == 0);
+        expect("lgpio via LDFLAGS: no -DLORAHAM_NO_LGPIO",
+               sh("grep -qx -- -DLORAHAM_NO_LGPIO '" + args + "'") != 0);
+        expect("lgpio via LDFLAGS: log says Pi SPI/GPIO yes", log_contains(log, "Pi SPI/GPIO:  yes"));
     }
 
     /* The same output directory rebuilt without a tree: the library of the

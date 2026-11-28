@@ -23,9 +23,8 @@ This page is what the daemon is and how to get it running. Everything else has i
 
 ## Build
 
-Prerequisites are a C++ compiler, the lgpio development headers (for the Pi boards; without them the
-daemon runs the USB sticks only), a RadioLib source and build tree, and pthread support — [`../docs/hardware.md`](../docs/hardware.md) has the package list and the
-pinned RadioLib checkout.
+Prerequisites are a C++ compiler, the lgpio development headers (Pi boards), a RadioLib source and build tree, and
+pthread support — [`../docs/hardware.md`](../docs/hardware.md) has the package list and the pinned RadioLib checkout.
 
     ./build.sh
 

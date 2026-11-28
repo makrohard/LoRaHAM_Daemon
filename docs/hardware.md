@@ -30,8 +30,10 @@ Target platform: Raspberry Pi 3/4/5 and Zero 2 W running a Raspbian image, or an
     sudo apt install socat -y
 
 `libncurses` is needed only for the chat client, `socat` only for talking to the sockets by hand, and
-`liblgpio-dev` only for the Pi boards: on a host without the lgpio headers `build.sh` builds a daemon for the
-USB stick presets only, which refuses the other presets at start ([cli.md](cli.md#argument-errors)).
+`liblgpio-dev` only for the Pi boards: where the compiler, given the build's own flags, finds no `<lgpio.h>`,
+`build.sh` builds a daemon for the USB stick presets only and prints
+`Pi SPI/GPIO:  no (no <lgpio.h>): USB stick presets only`; that daemon refuses the other presets at start
+([cli.md](cli.md#argument-errors)).
 
 ## RadioLib
 

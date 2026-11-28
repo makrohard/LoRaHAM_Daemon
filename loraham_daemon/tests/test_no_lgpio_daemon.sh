@@ -3,8 +3,9 @@
 # Meshstick library its build made beside it (lib/). Its runs: no lgpio is linked; every SPI preset is refused at
 # start (exit 4) before any lock, socket or device; a USB stick preset passes that gate. The runs need no stick: the
 # USB rows ask for a serial no stick has, so an attached stick is never opened.
-# Two positive controls show that the dirs this test watches are the ones the daemon uses: a USB row takes its
-# instance lock in LORAHAM_RUNTIME_DIR, and a LORAHAM_SOCKET_DIR too long for a socket path is refused by name.
+# Positive controls show that the dirs this test watches are the ones the daemon uses: a USB row takes its instance
+# lock in LORAHAM_RUNTIME_DIR and binds its sockets in LORAHAM_SOCKET_DIR, and a LORAHAM_SOCKET_DIR too long for a
+# socket path is refused by name.
 set -euo pipefail
 bin="$(realpath -- "$1")"
 work="$(mktemp -d)"
@@ -15,13 +16,15 @@ fails=0
 ok() { echo "[ OK ] $1"; }
 bad() { echo "[FAIL] $1"; cat "$work/out" 2>/dev/null || true; fails=$((fails + 1)); }
 
-# run SOCKDIR BINARY ARGS...: one start with fresh dirs; rc in $rc, output in $work/out, files left in the two
-# dirs in $work/files. The one place the dirs reach the daemon.
+# [place=NAME] run SOCKDIR BINARY ARGS...: one start with fresh dirs (with place, a regular file NAME in SOCKDIR
+# first); rc in $rc, output in $work/out, files left in the two dirs in $work/files. The one place the dirs reach
+# the daemon.
 run() {
   local sock="$1" b="$2"; shift 2
   rm -rf -- "$work/rt" "$sock"
   mkdir -p -- "$work/rt" "$sock"
   chmod 700 "$work/rt" "$sock"
+  [[ -z "${place:-}" ]] || : > "$sock/$place"
   rc=0
   LORAHAM_SOCKET_DIR="$sock" LORAHAM_RUNTIME_DIR="$work/rt" timeout 30 "$b" "$@" > "$work/out" 2>&1 || rc=$?
   find "$work/rt" "$sock" -mindepth 1 > "$work/files"
@@ -52,6 +55,16 @@ if [[ "$rc" == 4 ]] && grep -qF "[SOCKET] refused: socket path too long" "$work/
   ok "LORAHAM_SOCKET_DIR is the daemon's socket dir (too long -> refused by name, exit 4)"
 else
   bad "socket dir positive control: rc $rc"
+fi
+
+# 3b. Positive control, socket dir at the bind step: the USB row binds its sockets after the lock and before it looks
+# for the stick, so a regular file where its 868 data socket goes stops it there, by that path.
+place=lora868.sock run "$work/sock" "$bin" --hw meshstick-1262 --radio 868 --usb-serial "$NO_STICK"
+if [[ "$rc" == 1 ]] && grep -qF "ERROR: socket path exists but is not a socket: $work/sock/lora868.sock" "$work/out" &&
+   grep -qF "[Daemon] socket setup 868 failed, exiting." "$work/out" && ! grep -qF '[GPIO] refused' "$work/out"; then
+  ok "meshstick-1262: binds its sockets in LORAHAM_SOCKET_DIR (a file at lora868.sock there stops it, exit 1)"
+else
+  bad "socket dir bind control: rc $rc"
 fi
 
 # 4. Every SPI preset the binary knows (its --help list without the USB sticks), on both bands: refused, nothing
