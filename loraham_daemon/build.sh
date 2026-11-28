@@ -16,6 +16,7 @@ hardening_active=false
 
 radiolib_cflags=()
 radiolib_libs=()
+lgpio_flags=()
 hardening_ldflags=()
 
 # The Meshstick library (lib/libloraham-ch341.so): optional, built only from a
@@ -432,11 +433,26 @@ compiler_flags() {
   fi
 }
 
+# The Pi's SPI and GPIO (every preset but the USB sticks) need lgpio. A host without <lgpio.h> (a PC
+# distribution that does not package it) gets a daemon for the USB stick presets only, which refuses the others
+# at start (docs/cli.md).
+find_lgpio() {
+  if printf '#include <lgpio.h>\n' |
+    "$cxx" "${cxxflags[@]}" "${extra_cxxflags[@]}" -x c++ -E - >/dev/null 2>&1; then
+    lgpio_flags=(-llgpio)
+    lgpio_note="yes"
+  else
+    lgpio_flags=(-DLORAHAM_NO_LGPIO)
+    lgpio_note="no (no <lgpio.h>): USB stick presets only"
+  fi
+}
+
 print_build_config() {
   echo "Build target: $DAEMON_OUT"
   echo "Build mode:   $build_mode"
   echo "Compiler:     $cxx"
   echo "Strict build: $strict_build"
+  echo "Pi SPI/GPIO:  $lgpio_note"
 
   if [[ "$hardening_active" == true ]]; then
     echo "Hardening:   enabled"
@@ -518,6 +534,7 @@ build_daemon() {
   fi
 
   compiler_flags
+  find_lgpio
   print_build_config
 
   # Before the daemon: a refused pine64 tree stops the build early.
@@ -558,7 +575,7 @@ build_daemon() {
     "${radiolib_libs[@]}" \
     "${hardening_ldflags[@]}" \
     "${extra_ldflags[@]}" \
-    -llgpio \
+    "${lgpio_flags[@]}" \
     -ldl
 
   verify_daemon_hardening "$tmp_out"

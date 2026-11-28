@@ -2,7 +2,9 @@
 
 #include <stdio.h>
 
+#ifndef LORAHAM_NO_LGPIO
 #include <lgpio.h>
+#endif
 
 #include "daemon_band.h"
 #include "daemon_radio_runtime.h"
@@ -19,9 +21,6 @@
  * failed claim is treated as fatal by the caller because the LED is a required
  * hardware resource for that band.
  */
-
-static int daemon_led_chip = -1;
-static int daemon_led_claimed = 0;
 
 /* Profile-configurable LED line (legacy default set at configure time);
  * < 0 = LED disabled. */
@@ -41,6 +40,10 @@ int daemon_led_pin_configured(void)
 
     return daemon_led_pin;
 }
+
+#ifndef LORAHAM_NO_LGPIO
+static int daemon_led_chip = -1;
+static int daemon_led_claimed = 0;
 
 static int daemon_led_claim_pin(int pin, int *claimed)
 {
@@ -147,6 +150,30 @@ void daemon_led_set_pin(int pin, int state)
     if (daemon_led_ready())
         lgGpioWrite(daemon_led_chip, pin, state ? 1 : 0);
 }
+
+#else
+/* Built without lgpio (build.sh found no <lgpio.h>): no gpiochip in this
+ * binary. main() admits only the USB stick presets, which claim no line, so
+ * these are not reached; init fails closed as a missing gpiochip does. */
+int daemon_led_init(void)
+{
+    printf("[GPIO] error: built without lgpio\n");
+    return -1;
+}
+
+void daemon_led_shutdown(void)
+{
+}
+
+int daemon_led_ready(void)
+{
+    return 0;
+}
+
+void daemon_led_set_pin(int, int)
+{
+}
+#endif
 
 /* --- Bodies moved verbatim from daemon_radio_runtime.h (D3; hosted here so LED logic links without the TX runtime) --- */
 

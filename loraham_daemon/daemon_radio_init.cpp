@@ -2,11 +2,10 @@
 #include "daemon_radio_init.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
-#include "hal/RPi/PiHal.h"
 #include <RadioLib.h>
 
-#include "locking_pihal.h"
 #include "radio_wiring.h"
 #include "ch341_hal.h"
 #include "ch341_loader.h"
@@ -20,6 +19,7 @@
 #include "daemon_radio_runtime.h"
 #include "daemon_rx_rearm.h"
 #include "hardware_profile.h"
+#include "loraham_runtime.h"
 #include "radio_controller.h"
 #include "radio_driver.h"
 #include "radio_health.h"
@@ -83,10 +83,17 @@ static RadioLibHal *daemon_radio_hal_for_profile(const DaemonHardwareProfile &p,
         return hal;
     }
 
+#ifdef LORAHAM_NO_LGPIO
+    /* main() refuses an SPI preset in a build without lgpio; never reached. */
+    printf("[GPIO] refused: built without lgpio (exit %d).\n", LORAHAM_EXIT_LOCK_ERROR);
+    fflush(stdout);
+    exit(LORAHAM_EXIT_LOCK_ERROR);
+#else
     LockingPiHal *hal = daemon_radio_hal(p);
 
     *ctl = hal;
     return hal;
+#endif
 }
 
 /* Boot RF defaults live in the band descriptor (daemon_band.cpp). */

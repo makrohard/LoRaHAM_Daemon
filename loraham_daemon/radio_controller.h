@@ -6,7 +6,6 @@
 #include <atomic>
 #include <mutex>
 
-#include "hal/RPi/PiHal.h"
 #include "daemon_hal_control.h"
 #include <RadioLib.h>
 

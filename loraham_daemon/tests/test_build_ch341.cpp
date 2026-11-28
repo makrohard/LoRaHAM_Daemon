@@ -1,6 +1,8 @@
 /*
- * build.sh and the Meshstick library: the pine64 tree is attested before
- * anything is compiled from it.
+ * build.sh: the Meshstick library and lgpio. The pine64 tree is attested
+ * before anything is compiled from it; lgpio is linked where <lgpio.h> is
+ * found, else the daemon is built for the USB stick presets only
+ * (-DLORAHAM_NO_LGPIO).
  *
  * build.sh builds lib/libloraham-ch341.so only from a git checkout that is
  * exactly the commit in the lock and unmodified, and embeds the MEASURED
@@ -21,6 +23,9 @@
  * it): this test is about build.sh's handling of the pine64 tree, and the
  * real daemon compile is run_tests.sh's own build. The stub's record shows
  * the daemon gets the lock's commit as LORAHAM_CH341_PIN_EXPECTED and -ldl.
+ * Its lgpio probe (`-E -` on `#include <lgpio.h>`) is answered without
+ * touching the record: found, or not found under FAKE_NO_LGPIO=1 (a host
+ * without the header), so the record stays the daemon's compile and link.
  *
  * build.sh also looks beside its checkout (../libch341-spi-userspace,
  * ../RadioLib), where a box keeps the real clones (LHPC's src/ layout). So it
@@ -161,7 +166,8 @@ static void write_lock(const std::string &path, const std::string &commit)
 /* Run build.sh with this pine64 source (empty = PINEDIO_DIR unset) and lock,
  * into its own output directory; the log is kept for the checks. */
 static int run_build(const char *name, const std::string &pinedio_dir,
-                     const std::string &lock, std::string *out_dir, std::string *log)
+                     const std::string &lock, std::string *out_dir, std::string *log,
+                     const std::string &extra_env = "")
 {
     *out_dir = g_tmp + "/out-" + name;
     *log = g_tmp + "/log-" + name + ".txt";
@@ -170,6 +176,7 @@ static int run_build(const char *name, const std::string &pinedio_dir,
                       lock + "' CXX='" + g_tmp + "/fake-cxx' FAKE_CXX_RECORD='" + *out_dir +
                       "/cxx-args.txt' LDFLAGS='-L" + g_tmp + "/fakeusb' ";
     env += pinedio_dir.empty() ? "env -u PINEDIO_DIR " : "PINEDIO_DIR='" + pinedio_dir + "' ";
+    env += extra_env;
     return sh(env + "'" + g_build_sh + "' --debug --output '" + *out_dir + "/loraham_daemon' > '" +
               *log + "' 2>&1");
 }
@@ -222,10 +229,13 @@ int main(void)
        "/radiolib/src/RadioLib.h' '" + g_tmp + "/radiolib/src/hal/RPi/PiHal.h' '" + g_tmp +
        "/radiolib/build/libRadioLib.a'");
 
-    /* The stub daemon compiler: records its arguments, writes -o. */
+    /* The stub daemon compiler: answers the lgpio probe, records its arguments, writes -o. */
     {
         FILE *f = fopen((g_tmp + "/fake-cxx").c_str(), "w");
-        fputs("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FAKE_CXX_RECORD\"\n"
+        fputs("#!/bin/sh\ncase \" $* \" in *\" -E \"*)\n"
+              "  in=$(cat); case \"$in\" in *'<lgpio.h>'*) [ \"${FAKE_NO_LGPIO:-}\" = 1 ] && exit 1 ;; esac\n"
+              "  exit 0 ;;\nesac\n"
+              "printf '%s\\n' \"$@\" > \"$FAKE_CXX_RECORD\"\n"
               "while [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then : > \"$2\"; fi; shift; done\n", f);
         fclose(f);
         sh("chmod 755 '" + g_tmp + "/fake-cxx'");
@@ -293,6 +303,33 @@ int main(void)
                log_contains(out + "/cxx-args.txt",
                             ("-DLORAHAM_CH341_PIN_EXPECTED=\"" + head + "\"").c_str()));
         expect("locked: daemon links -ldl", sh("grep -qx -- -ldl '" + out + "/cxx-args.txt'") == 0);
+        expect("locked: <lgpio.h> found -> daemon links -llgpio",
+               sh("grep -qx -- -llgpio '" + out + "/cxx-args.txt'") == 0);
+        expect("locked: no -DLORAHAM_NO_LGPIO",
+               sh("grep -qx -- -DLORAHAM_NO_LGPIO '" + out + "/cxx-args.txt'") != 0);
+        expect("locked: log says Pi SPI/GPIO yes", log_contains(log, "Pi SPI/GPIO:  yes"));
+    }
+
+    /* A host without <lgpio.h>: the daemon for the USB stick presets only. The
+     * flags are read from the recorded daemon compile and link (the record
+     * also holds its pin define and -ldl), not from the log. */
+    {
+        std::string out, log;
+        int rc = run_build("no-lgpio", "", lock, &out, &log, "FAKE_NO_LGPIO=1 ");
+        std::string args = out + "/cxx-args.txt";
+        expect("no lgpio: build succeeds", rc == 0);
+        if (rc != 0)
+            sh("cat '" + log + "'");
+        expect("no lgpio: daemon built", file_exists(out + "/loraham_daemon"));
+        expect("no lgpio: the record is the daemon's compile and link",
+               sh("grep -qx -- -ldl '" + args + "'") == 0 &&
+                   log_contains(args, ("-DLORAHAM_CH341_PIN_EXPECTED=\"" + head + "\"").c_str()));
+        expect("no lgpio: daemon compiled with -DLORAHAM_NO_LGPIO",
+               sh("grep -qx -- -DLORAHAM_NO_LGPIO '" + args + "'") == 0);
+        expect("no lgpio: daemon does not link -llgpio",
+               sh("grep -qx -- -llgpio '" + args + "'") != 0);
+        expect("no lgpio: log says USB stick presets only",
+               log_contains(log, "Pi SPI/GPIO:  no (no <lgpio.h>): USB stick presets only"));
     }
 
     /* The same output directory rebuilt without a tree: the library of the

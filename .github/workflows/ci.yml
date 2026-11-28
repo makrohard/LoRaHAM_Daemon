@@ -129,3 +129,57 @@ jobs:
         run: |
           sudo apt-get install --yes --no-install-recommends libncurses-dev
           clients/chat/run_tests.sh
+
+  # A host without the lgpio headers (a PC distribution): build.sh builds the daemon for the USB
+  # stick presets only, and that binary refuses every SPI preset at start. The RadioLib and
+  # libch341 steps are the test job's (same lock files).
+  no-lgpio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install build dependencies (no liblgpio-dev)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            cmake \
+            git \
+            libusb-1.0-0-dev
+
+      - name: No lgpio headers on this runner
+        run: |
+          if [ -e /usr/include/lgpio.h ]; then
+            echo "::error::/usr/include/lgpio.h exists: this job must build without lgpio"
+            exit 1
+          fi
+
+      - name: Build pinned RadioLib
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/ci/radiolib.lock"
+          git clone --filter=blob:none "$RADIOLIB_URL" "$RUNNER_TEMP/RadioLib"
+          git -C "$RUNNER_TEMP/RadioLib" checkout --detach "$RADIOLIB_COMMIT"
+          cmake -S "$RUNNER_TEMP/RadioLib" -B "$RUNNER_TEMP/RadioLib/build" \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build "$RUNNER_TEMP/RadioLib/build" --parallel 2
+          test -f "$RUNNER_TEMP/RadioLib/build/libRadioLib.a"
+
+      - name: Check out pinned libch341-spi-userspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/ci/libpinedio.lock"
+          git clone --filter=blob:none "$PINEDIO_URL" "$RUNNER_TEMP/libch341-spi-userspace"
+          git -C "$RUNNER_TEMP/libch341-spi-userspace" checkout --detach "$PINEDIO_COMMIT"
+          echo "PINEDIO_DIR=$RUNNER_TEMP/libch341-spi-userspace" >> "$GITHUB_ENV"
+
+      - name: Build the daemon without lgpio
+        working-directory: loraham_daemon
+        run: RADIOLIB_DIR="$RUNNER_TEMP/RadioLib" ./build.sh --strict
+
+      - name: Test the daemon built without lgpio
+        run: loraham_daemon/tests/test_no_lgpio_daemon.sh loraham_daemon/loraham_daemon

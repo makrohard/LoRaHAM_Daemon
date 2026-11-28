@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- A host without the lgpio headers (Debian 13 on a PC) now builds the daemon for the USB stick presets; it does
+  not link lgpio and refuses the SPI presets at start with `[GPIO] refused: ...` (exit 4). Builds with lgpio are
+  unchanged.
+
 ## 1.7.2
 
 - **Fix:** a `MANAGED` TX waiting for a free channel no longer cuts off a frame that is still arriving. Since

@@ -600,6 +600,18 @@ static bool daemon_parse_args(int argc, char *argv[])
         daemon_print_usage(argv[0]);
         exit(EXIT_FAILURE);
     }
+#ifdef LORAHAM_NO_LGPIO
+    /* Built without lgpio: no SPI or GPIO of the Pi in this binary. Every
+     * restart gives the same answer: the non-restartable exit. */
+    if (!daemon_hw_profile.usb_ch341) {
+        printf("[GPIO] refused: preset %s needs the Pi's SPI and GPIO, and this daemon was "
+               "built without lgpio (USB stick presets only: meshstick-1262, pinedio-usb-1262, "
+               "ch341-rfm98pw-433) (exit %d).\n",
+               daemon_hardware_preset_name(), LORAHAM_EXIT_LOCK_ERROR);
+        fflush(stdout);
+        exit(LORAHAM_EXIT_LOCK_ERROR);
+    }
+#endif
     if ((g_usb_serial || g_usb_port) && !daemon_hw_profile.usb_ch341) {
         fprintf(stderr, "--usb-serial / --usb-port are only for a USB stick preset "
                         "(meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433)\n");

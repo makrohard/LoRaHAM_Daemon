@@ -225,6 +225,10 @@ within the line.
 A socket path longer than 107 bytes (the directory plus `loraconf-<id>.sock`) is refused before
 anything is bound: `[SOCKET] refused: socket path too long (<n> bytes, at most 107): <path> (exit 4).`
 
+A daemon built without lgpio (no `<lgpio.h>` on the build host; `build.sh` prints `Pi SPI/GPIO:  no`)
+refuses every preset but the USB sticks the same way, before any lock, socket or device:
+`[GPIO] refused: preset <name> needs the Pi's SPI and GPIO, and this daemon was built without lgpio (USB stick presets only: meshstick-1262, pinedio-usb-1262, ch341-rfm98pw-433) (exit 4).`
+
 | Cause | Message |
 | --- | --- |
 | Bad `--radio` value | `invalid radio mode: <value>` + `allowed: 433, 868, 915` |

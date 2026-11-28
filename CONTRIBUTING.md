@@ -25,8 +25,8 @@ Work larger than a commit or two gets a topic branch off `dev`.
 
 Prerequisites and the pinned RadioLib checkout: [`docs/hardware.md`](docs/hardware.md).
 
-CI runs four jobs on every push — `normal`, `strict`, `asan-ubsan`, `tsan` — and all four must be
-green before anything reaches `main`.
+CI runs five jobs on every push — `normal`, `strict`, `asan-ubsan`, `tsan` and `no-lgpio` (the daemon
+built and run on a host without lgpio) — and all five must be green before anything reaches `main`.
 
 Two things about running the suite off a Pi:
 

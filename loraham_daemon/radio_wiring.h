@@ -4,7 +4,9 @@
 #include <RadioLib.h>
 
 #include "hardware_profile.h"
+#ifndef LORAHAM_NO_LGPIO
 #include "locking_pihal.h"
+#endif
 
 /*
  * The radio's SPI wiring as RadioLib sees it, from the resolved profile: the
@@ -18,11 +20,13 @@ static inline uint32_t hw_pin_or_nc(int pin)
     return pin < 0 ? RADIOLIB_NC : (uint32_t)pin;
 }
 
+#ifndef LORAHAM_NO_LGPIO
 static inline LockingPiHal *daemon_radio_hal(const DaemonHardwareProfile &p,
                                              loraham_flock_fn flock_fn = flock)
 {
     return new LockingPiHal((uint8_t)p.spi_channel, 2000000, 0, 0, flock_fn);
 }
+#endif
 
 static inline Module *daemon_radio_module(RadioLibHal *hal, const DaemonHardwareProfile &p)
 {

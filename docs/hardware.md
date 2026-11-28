@@ -29,7 +29,9 @@ Target platform: Raspberry Pi 3/4/5 and Zero 2 W running a Raspbian image, or an
     sudo apt install libncurses5-dev libncursesw5-dev -y
     sudo apt install socat -y
 
-`libncurses` is needed only for the chat client, `socat` only for talking to the sockets by hand.
+`libncurses` is needed only for the chat client, `socat` only for talking to the sockets by hand, and
+`liblgpio-dev` only for the Pi boards: on a host without the lgpio headers `build.sh` builds a daemon for the
+USB stick presets only, which refuses the other presets at start ([cli.md](cli.md#argument-errors)).
 
 ## RadioLib
 
@@ -234,8 +236,8 @@ restarted) and one line naming the reason when:
 ```
 
 Running it needs only the libusb runtime (`libusb-1.0-0`), which is not the development package.
-The daemon binary links lgpio for every preset, so a PC running the Meshstick also needs the lgpio
-runtime (`liblgpio1` where the distribution packages it; otherwise build lgpio from source). Its
+A daemon built where the lgpio headers are installed links lgpio, so that host also needs the lgpio
+runtime (`liblgpio1`); built without them (the usual PC), it links no lgpio. Its
 instance lock needs `/run/lock/loraham` as on a Pi ([Deployment](deployment.md), the
 tmpfiles fragment).
 The startup log names the loaded commit: `[CH341] Meshstick library loaded (pine64 <commit>)`.
